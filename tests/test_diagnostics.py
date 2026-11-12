@@ -1,5 +1,4 @@
-"""The diagnostics skill's diff_stats.py and inspect_card_data.py read the data build's db/ JSON: a db/ folder, a
-stats.json, a data commit."""
+"""The diagnostics skill's diff_stats.py reads the data build's db/ JSON: a db/ folder, a stats.json, a data commit."""
 import subprocess
 import sys
 from collections import defaultdict

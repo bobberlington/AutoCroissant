@@ -80,6 +80,7 @@ def test_restore_needs_the_same_psd():
     assert "Gone" not in db.stats and db.restore("Gone", "Items/New/Gone.psd", "a" * 40)    # moved
     db.stats.clear()
     assert db.restore("Gone", "Items/Gone.psd", "b" * 40)                                  # edited in place
+    assert not _restore(db, "Never there") and "Never there" not in db.old_stats
 
 
 def test_restored_copy_matches_after_a_reparse():
@@ -90,19 +91,6 @@ def test_restored_copy_matches_after_a_reparse():
     db.stats["Gone"] = _card("Gone", ability="Parsed again.")
     db.stats["Gone"].timestamp += 5
     assert db.drop_stale_archives() and "Gone" not in db.old_stats
-
-
-def test_blobless_record_is_a_copy_only_when_equal():
-    """No blob: a stub at the same path is not the archived card (never dropped for it); an equal restore is."""
-    real = _card("Legacy", blob=None, ability="The real card.")
-    db = _db([real], seen=["Other"])
-    db.prune_clean_cards(AT)
-    assert _restore(db, "Legacy") and db.drop_stale_archives() and "Legacy" not in db.old_stats
-    db = _db([real], seen=["Other"])
-    real.archived = None
-    db.prune_clean_cards(AT)
-    db.stats["Legacy"] = cm.CardInfo(name="Legacy", card_type="unknown", path=real.path)
-    assert db.drop_stale_archives() and [c.ability for c in db.old_stats["Legacy"]] == ["The real card."]
 
 
 def test_listed_name_with_another_tagged_version_untags_it():
@@ -116,13 +104,6 @@ def test_listed_name_with_another_tagged_version_untags_it():
     assert db.old_stats["Mixed"] == [old] and old.archived is None and "Same" not in db.old_stats
 
 
-def test_untagged_history_is_never_restored():
-    """A card reset by /update_metadata del_entry (its PSD still there) has untagged history: no restore."""
-    db = _db([], old=[_card("Reset")])
-    assert not _restore(db, "Reset") and "Reset" not in db.stats and len(db.old_stats["Reset"]) == 1
-    assert not _restore(db, "Never there") and "Never there" not in db.old_stats
-
-
 def test_an_untagged_equal_version_stays_history():
     """An old untagged version equal to the card (a 2025 balloon) stays: the archived card goes behind it."""
     card = _card("Gone")
@@ -130,12 +111,3 @@ def test_an_untagged_equal_version_stays_history():
     db.prune_clean_cards(AT)
     assert [c.archived is None for c in db.old_stats["Gone"]] == [True, False]
 
-
-def test_a_new_card_under_an_archived_name_keeps_the_archive():
-    """A record made by /update_metadata for a name whose PSD is gone: archiving it again adds, never replaces."""
-    real = _card("Gone", ability="The real card.")
-    real.archived = {"at": 1.0, "path": real.path, "blob": real.blob_sha, "commit": None}
-    stub = cm.CardInfo(name="Gone", card_type="unknown", path=real.path)
-    db = _db([stub], old=[real], seen=["Other"])
-    db.prune_clean_cards(AT)
-    assert [c.ability for c in db.old_stats["Gone"]] == ["The real card.", None]

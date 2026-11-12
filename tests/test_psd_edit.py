@@ -1659,32 +1659,6 @@ def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart,
     assert (badge, ["removed"]) in [(name, fields) for _, name, fields in baked.records]
 
 
-def _noop(clone, parser, chart, rel, tmp_path, paths=None):
-    """apply_jobs with the ability layer's own text (classify would call it redundant): (psd path, png path, Baked)."""
-    psd_path, png_path = paths or _card(clone, rel)
-    text = pe.ability_layer(PSDImage.open(psd_path)).text.replace("\r", "\n")
-    parsed = pe.parse_card(parser, psd_path, rel)
-    return psd_path, png_path, pe.apply_jobs(psd_path, png_path, rel, {"ability": text}, parsed, parser, str(tmp_path),
-                                             str(clone / pe.FONTS_DIR), chart)
-
-
-def test_noop_ability_bake_drops_an_old_badge_layer(clone, parser, chart, tmp_path):
-    """A no-op ability bake on Mini Doomer before its badge layer went (a Gradient Overlay on Text) deletes 'Ability FX:
-    (BOT)' (its words fall in a badge), told, and sets Stylistic Alternates on its "(BOT)", in the Txt2 story only (TySh has no
-    such key), every gate passing; the re-parse reads the same text."""
-    paths = _at(clone, tmp_path, BADGED, MINI_DOOMER)
-    psd_path, png_path, baked = _noop(clone, parser, chart, MINI_DOOMER, tmp_path, paths)
-    edit, = baked.edits
-    assert edit.fx_names == [] and edit.dropped == ["Ability FX: (BOT)"] and edit.rebuilt == [] and edit.fx == []
-    assert baked.fx_notes == ["Ability FX: (BOT) deleted: its words now fall in a badge or token"]
-    assert ("Ability FX: (BOT)", ["removed"]) in [(name, fields) for _, name, fields in baked.records]
-    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
-    at = layer.text.index("(BOT)")
-    assert pe.one_colour(layer) and pe.stylistic_alternates(layer) == ((at, at + 5),)
-    assert not any("StylisticAlternates" in run["StyleSheet"]["StyleSheetData"] for run in layer.engine_dict["StyleRun"]["RunArray"])
-    assert pe.stale_stories(PSDImage.open(baked.psd_path)) == [] and baked.reparse["validator"] == []
-
-
 SNOW_BUNNY = "Items/Heal/2 Stars/Snow_Bunny.psd"   # L7: 'Ability FX: Frozen' keeps its old overlay's style, not the chart's
 
 

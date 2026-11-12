@@ -256,11 +256,12 @@ def _swap(stats: dict, old_stats, rulebook: list, commit: Optional[str]) -> None
     _loaded["commit"] = commit
 
 
-def load_local(folder: str = CARD_DATA_DIR) -> bool:
+def load_local() -> bool:
     """
     stats_db from the local copy (no network). False when it holds no readable card data. A copy that doesn't match
     its manifest (a sync cut off midway) is loaded with no commit, so the next sync reloads it whole.
     """
+    folder = CARD_DATA_DIR
     if not isfile(join(folder, card_db.STATS_JSON)):
         return False
     try:

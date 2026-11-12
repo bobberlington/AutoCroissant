@@ -166,7 +166,8 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
         return ({"01-a.md": "# A\n![[Mushroom]] and [[Panda|the panda]]\n"}, shots if new else None,
                 rulebook_pages.Printer(lambda: b"%PDF", lambda: None), drawn["key"], "pg", {})
     monkeypatch.setattr(rulebook_pages, "draw", draw)
-    run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), exe="/no/chrome", **kw)
+    monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
+    run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), **kw)
     mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [], "/no/chrome")
     assert "pre-key held" not in run() and rulebook_pages.read_pages(str(tmp_path))["pre"] == mine            # stored with the key
     monkeypatch.setattr(rulebook_pages, "PRE_SKIP", False)

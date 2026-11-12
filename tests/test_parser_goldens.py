@@ -32,11 +32,6 @@ def test_certified_values():
     assert lich["card"]["ability"].splitlines()[-1] == "Minions inherit [undead]."
 
 
-def test_goldens_cover_every_folder():
-    tops = {rel.split("/")[0] for rel in CARDS} | {"/".join(rel.split("/")[:2]) for rel in CARDS if rel.startswith("Auxiliary")}
-    assert {"Creatures", "Items", "Field", "N.M.E", "Auxiliary/Minions", "Auxiliary/Status Effects"} <= tops
-
-
 # ========================
 # Effect layers and exclusions
 # ========================

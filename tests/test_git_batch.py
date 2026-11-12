@@ -20,8 +20,7 @@ def clean_git(monkeypatch, tmp_path):
     """No ssh variables, no user or system git config, a fresh core.sshCommand cache."""
     for key in ("GIT_SSH_COMMAND", "GIT_SSH"):
         monkeypatch.delenv(key, raising=False)
-    for key, value in {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(tmp_path),
-                       "XDG_CONFIG_HOME": str(tmp_path)}.items():   # git 2.25 ignores GIT_CONFIG_GLOBAL
+    for key, value in {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(rh, "_ssh_cache", {})
     return tmp_path

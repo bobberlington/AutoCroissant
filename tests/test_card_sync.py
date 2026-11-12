@@ -216,7 +216,7 @@ def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monke
     (tmp_path / "card_data").mkdir()
     for file, data in files.items():                                  # on disk anyway (an older bot, a hand copy)
         (tmp_path / "card_data" / file).write_bytes(data)
-    assert cs.load_local("card_data") is False and cdb.check_db("card_data")
+    assert cs.load_local() is False and cdb.check_db("card_data")
     _start()
     assert cm.stats_db.stats == {}                                    # no cards until a sync works
 
@@ -283,7 +283,7 @@ def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypa
     github.publish({"A": _card("A", ability="New.")}, defaultdict(list), tmp_path)
     (tmp_path / "card_data" / cdb.STATS_JSON).write_bytes(github.commits[github.tip][cdb.STATS_JSON])
     github.tip = first
-    assert cs.load_local("card_data") and cm.stats_db.stats["A"].ability == "New." and cs._loaded["commit"] is None
+    assert cs.load_local() and cm.stats_db.stats["A"].ability == "New." and cs._loaded["commit"] is None
     cs.sync(ME)
     assert cm.stats_db.stats["A"].ability == "Old." and cs._loaded["commit"] == first and cdb.check_db("card_data") == []
 

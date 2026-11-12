@@ -439,7 +439,6 @@ def test_publish_retries_a_moved_head_and_a_moved_lease(remote, tmp_path, monkey
             request = f"race-0-{lease is not None:d}-00"
             calls[0] = br.publish(str(_out(tmp_path, request)), request, str(other))
         real(where, commit, lease)
-    monkeypatch.setattr(br, "sleep", lambda s: None)
     br.publish(str(_out(tmp_path, "base-0-0000")), "base-0-0000", str(remote.work))
     monkeypatch.setattr(br, "_push", racing)
     done = br.publish(str(_out(tmp_path, "mine-0-0000")), "mine-0-0000", str(remote.work))

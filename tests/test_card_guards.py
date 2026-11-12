@@ -1759,15 +1759,12 @@ def jq(data):
 
 
 if os.environ.get("FAKE_FAIL") and os.environ["FAKE_FAIL"] in " ".join(args):
-    # FAKE_FAIL_TIMES: only the first n matching calls fail (a transient error)
-    db["failed"] = db.get("failed", 0) + 1
-    if db["failed"] <= int(os.environ.get("FAKE_FAIL_TIMES", "1000")):
-        json.dump(db, open(state, "w"))
-        sys.exit(1)
+    json.dump(db, open(state, "w"))
+    sys.exit(1)
 if args[:2] == ["workflow", "run"]:
     pass
 elif args[:2] == ["run", "list"]:
-    out = jq(json.loads(os.environ["FAKE_RUNS"])) if "FAKE_RUNS" in os.environ else os.environ.get("FAKE_LAST", "")
+    out = jq(json.loads(os.environ["FAKE_RUNS"])) if "FAKE_RUNS" in os.environ else ""
 elif args[0] == "api":
     method = args[args.index("--method") + 1] if "--method" in args else "GET"
     path = next(a for a in args[1:] if a.startswith("repos/"))
@@ -2001,7 +1998,7 @@ def _shell(step, env, cwd=None):
 FAKE_PYTHON = r"""#!/bin/sh
 echo "$*" >> "$FAKE_PYTHON_ARGS"
 printf '%s' "$FAKE_LANDED" > "$OUT/landed.json"
-exit "${FAKE_LAND_STATUS:-0}"
+exit 0
 """
 
 

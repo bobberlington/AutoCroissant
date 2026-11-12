@@ -673,7 +673,7 @@ lines (Card Authors.txt, Card Edits.json, Card Creation Dates.json) under no lis
 archived card's are named in the archive report (move them to the new name or drop them). An alt-art duplicate whose
 PNG or original left is archived too (2026-10-23; its tag at its own PNG, `duplicate_of` kept, dated like its original
 when the PNG stayed; listed apart, never counted by G2) and back when it is found again. `save()` writes old_stats.pkl, then stats.pkl, then handles each listed name whose last old_stats version is
-still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
+still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob)
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
 re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
 the next run cleans up. `add_history` (removed 2026-10-25) kept a tagged copy as is (the save untags it) and replaces a last version equal

@@ -15,11 +15,10 @@ def repo(tmp_path, monkeypatch):
     path = tmp_path / "history"
     path.mkdir()
     monkeypatch.setattr(rh, "HISTORY_CLONE", str(path))
-    env = {**ENV, "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path)}   # git 2.25 ignores GIT_CONFIG_GLOBAL
 
     def git(*args) -> str:
         return subprocess.run(["git", "-C", str(path), *args], capture_output=True, encoding="utf-8",
-                              check=True, env=env).stdout.strip()
+                              check=True, env=ENV).stdout.strip()
 
     def commit(message, **files) -> str:
         for name, text in files.items():
@@ -31,8 +30,7 @@ def repo(tmp_path, monkeypatch):
         git("commit", "-q", "-m", message)
         return git("rev-parse", "HEAD")
 
-    git("init", "-q")
-    git("symbolic-ref", "HEAD", "refs/heads/main")      # git 2.25 has no init -b
+    git("init", "-q", "-b", "main")
     git.commit = commit
     return git
 

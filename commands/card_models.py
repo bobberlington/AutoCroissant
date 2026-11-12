@@ -3,7 +3,7 @@ The card database's data: CardType, CardStats and CardInfo, StatsDatabase and it
 card data's JSON by card_sync). Pure data, so anything may import it (no Discord, network, pandas or psd-tools).
 """
 from collections import defaultdict
-from copy import copy, deepcopy
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from os.path import basename, splitext
@@ -229,19 +229,11 @@ def _archive_tag(card: CardInfo, at: float) -> dict:
 
 
 def _tagged_copy(old: CardInfo, card: CardInfo) -> bool:
-    """Whether old is this card archived already: tagged, same PSD path and blob (no blob: equal but the tag)."""
+    """Whether old is this card archived already: tagged, same PSD path and blob."""
     if not getattr(old, "archived", None) or any(getattr(old, key, None) != getattr(card, key, None)
                                                  for key in ("path", "blob_sha")):
         return False
-    return bool(getattr(old, "blob_sha", None)) or _equal_but(old, card, "archived")
-
-
-def _equal_but(old: CardInfo, card: CardInfo, key: str) -> bool:
-    """Whether old equals card but for one field."""
-    a, b = copy(old), copy(card)
-    setattr(a, key, None)
-    setattr(b, key, None)
-    return a == b
+    return bool(getattr(old, "blob_sha", None))
 
 
 # ========================

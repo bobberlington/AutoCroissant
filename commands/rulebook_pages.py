@@ -483,7 +483,7 @@ def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional
 # ========================
 # Public API Functions
 # ========================
-def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float = 0, full: bool = False) -> str:
+def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False) -> str:
     """
     The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
     and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
@@ -496,7 +496,7 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
     Raises:
         RuntimeError, TimeoutError, OSError: the pages could not be drawn (nothing written)
     """
-    exe = exe or find_chrome()
+    exe = find_chrome()
     if not exe:
         raise RuntimeError(f"no Chrome: set CHROME or install one of {', '.join(CHROMES)}")
     mine = chapter_sources(checkout)
