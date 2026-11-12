@@ -413,6 +413,13 @@ def test_types_add_from_types_png_and_close_up(parser, tmp_path):
         ("Water", 0, -170)]
 
 
+def test_stars_and_types_bake_together(parser, tmp_path):
+    """Stars and types in one bake, real renders (87cfb4a3's files dict shared the icon render's name: AttributeError)."""
+    paths = _fixture(tmp_path)
+    _, baked = _bake(parser, paths, {"stars": 3, "types": ["fire", "water"]}, tmp_path, types_dir=_types_dir(tmp_path))
+    assert baked.reparse["card"]["stars"] == 3 and sorted(baked.reparse["card"]["types"]) == ["fire", "water"]
+
+
 def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
     paths = _fixture(tmp_path)
     with pytest.raises(pe.Refused, match="'lava' is no type icon") as refused:

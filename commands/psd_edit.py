@@ -11172,9 +11172,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     """
     hold = ExitStack()
     try:
-        with _files_seen(parser) as shown:
+        with _files_seen(parser) as files:
             return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
-                               view, hold, template, ability_from, title_anchor, shown)
+                               view, hold, template, ability_from, title_anchor, files)
     finally:
         hold.close()
 
@@ -11196,7 +11196,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
                 psd: Optional[PSDImage] = None, view: Optional[int] = None, hold: ExitStack = None,
                 template: Optional[tuple] = None,
-                ability_from: Optional[tuple] = None, title_anchor: int = 0, shown: Optional[dict] = None) -> Baked:
+                ability_from: Optional[tuple] = None, title_anchor: int = 0, files: Optional[dict] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save (stripped: save_psd) and run every gate.
 
@@ -11214,7 +11214,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy
             (edit_copy: opened again from psd_path's bytes); None: opened here. Each PSD file is opened once per bake,
             the saved one too (tests/test_card_bake.py)
-        shown: Filled with the files the edits set (Edit.files), which the parser reads meanwhile (_files_seen)
+        files: Filled with the files the edits set (Edit.files), which the parser reads meanwhile (_files_seen)
 
     Returns:
         Baked; raises Refused (any other exception is the driver's "error"); a refusal of a stars or types edit's own
@@ -11304,7 +11304,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     for edit in edits:
-        (shown if shown is not None else {}).update(edit.files)
+        (files if files is not None else {}).update(edit.files)
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
     start = perf_counter()
     dirty = bool(others) and not any(edit.field in ICON_FIELDS for edit in edits)   # renders the dirty box only
@@ -11366,7 +11366,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     hold.close()                                # the saved card keeps its own eye flags
     save_psd(new, new_psd)
-    for path, data in (shown or {}).items():    # a placed title's file beside them (set_placed_title)
+    for path, data in (files or {}).items():    # a placed title's file beside them (set_placed_title)
         with open(join(out_dir, basename(path)), "wb") as fh:
             fh.write(data)
     timings["save"] = perf_counter() - start
