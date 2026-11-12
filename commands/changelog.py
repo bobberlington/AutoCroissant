@@ -417,20 +417,28 @@ def rewrite_events(db: str, fix) -> None:
 def drop_misread(db: str) -> int:
     """
     Past changed events' stat lines and verdict where a side was misread, as field_changes leaves them out now (a kind
-    with bars: a stat none, or above STAT_MAX without the card's allow_high_stats or 6+ stars); an event left with no
-    field is art. Every seq and the posted cursor kept (png_changes backfill --events). Returns the events changed.
+    with bars: HP or DEF none, ATK or SPD none unless active, or a stat above STAT_MAX without the card's
+    allow_high_stats or 6+ stars; never a kind change); an event left with no field is art. Every seq and the posted
+    cursor kept (png_changes backfill --events). Returns the events changed.
     """
     with open(join(db, "stats.json"), encoding="utf-8") as fh:
         stats = parse_stats(fh.read())
     keys, done = {key for key, _, _ in STATS}, []
 
+    def misread(fields: dict, i: int, types, high: bool) -> bool:
+        need = keys & set(fields) - ({"atk", "spd"} if "active" in (types or []) else set())   # misread_stats' rule
+        side = [fields[key][i] for key in keys & set(fields)]
+        return any(fields[key][i] is None for key in need) or (not high and any(isinstance(v, int) and v > STAT_MAX for v in side))
+
     def fix(event: dict) -> dict:
         fields = event.get("fields")
-        if event.get("kind") != "changed" or not isinstance(fields, dict) or event.get("card_type") not in STAT_KINDS:
+        if (event.get("kind") != "changed" or not isinstance(fields, dict) or event.get("card_type") not in STAT_KINDS
+                or "card_type" in fields):                  # a kind change: stats none -> values are real
             return event
-        high = getattr(stats.get(event.get("card")), "allow_high_stats", False) or (event.get("stars") or 0) >= RAID_STARS
-        sides = [[fields[key][i] for key in keys & set(fields)] for i in (0, 1)]
-        if not any(None in side or (not high and any(isinstance(v, int) and v > STAT_MAX for v in side)) for side in sides):
+        card = stats.get(event.get("card"))
+        high = getattr(card, "allow_high_stats", False) or (event.get("stars") or 0) >= RAID_STARS
+        types = fields["types"] if isinstance(fields.get("types"), list) else [getattr(card, "types", None)] * 2
+        if not any(misread(fields, i, types[i], high) for i in (0, 1)):
             return event
         done.append(event.get("seq"))
         kept = {key: value for key, value in fields.items() if key not in keys | {"creatures"}}
