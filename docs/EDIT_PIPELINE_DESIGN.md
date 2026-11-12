@@ -170,7 +170,8 @@ dropped from the file with no pixels.
 ## 4. Architecture
 
 One pure-Python entry point run identically by both runners:
-`python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>]`. Two flags only
+`python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>]` (since 2026-11-12
+also `--local <clone>`, required: the GitHub API mode is deleted, see step 10). Two flags only
 (simple-tooling rule): `--dry-run` writes the artifacts and commits nothing, `--card` restricts the run to one card. Whether
 the saved PSD carries a regenerated preview is question 2's answer baked into the code, not a flag. Input: one tree snapshot
 + blobs by sha. Output: at most one commit per run (section 5 step 10) and a markdown report on stdout in `tts_save._render` style. The
@@ -491,7 +492,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
    the render is held to the same floor (refused past 25% bad); a miss is told, as `(re-render)` when only it missed.
-10. **Commit, one per run** (since 2026-10-22; `card_bake.land`). Re-fetch head H' and the file at H'. Per card: gate
+10. **Commit, one per run** (since 2026-10-22; `card_bake.land`). Since 2026-11-12 always `--local`'s: one commit B in the
+    clone on the snapshot's head, no ref update and no retry (the API path below, its 409/422 retries and its race tests
+    deleted, owner). As first built: re-fetch head H' and the file at H'. Per card: gate
     `head-moved`, its PSD and PNG at H' still hold the blobs it read, and gate `edit-changed`, its PSD-kind values at H' equal
     what was baked (never remove a value you did not render); a card that fails either stays out of the commit as a try-again
     refusal and the others still land. Tree on `base_tree` H': every remaining card's PSD and PNG (existing path and case),
@@ -1209,7 +1212,7 @@ python3: the standard library and git only (import closure `card_preview_branch.
 The card repo (2026-11-08, no actions/checkout): Clone fetches it into the workspace in the background (depth 1, blob:none, sparse `/.github/`; the token in a header, never saved, as on a font miss); Reads waits for its trees (`cards.trees`, written before the .github checkout) and the bot clone, and Cards (before cards-python and Start) waits 15 s, else fetches it again in the foreground.
 The venv's key (2026-11-09): Clone also reads AC main's requirements-cards.txt once through the API (`bot.reqs`), so the venv restores while the bot clone runs (that clone moves itself into bot/ and compiles there; a failed one waits for the read); no read: the clone's file as before. venv-ok, after Bot, checks the clone's file gives the same sha (AC main moved in between: the venv is removed, cards-python sets up as on a miss).
 
-    python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>] [--request <id>]
+    python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> --clone <checkout> [--request <id>]
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
     python -m commands.card_preview_branch --warm [--git <checkout>]
 
@@ -1226,7 +1229,7 @@ the step that parses the dispatched edit and the repo's PSDs with pip-installed 
 publisher needs no install (hence a second module: `card_preview` imports PIL, psd-tools and requests through
 card_bake); the PNG is not published (1.5 of a preview's 1.6 MB, and the site shows the WebP). No change to card_bake.py
 or psd_edit.py (work/fx-rebuild was editing both): the preview calls `bake_card`, `vocabulary`,
-`local_snapshot`/`snapshot_at`, `psd_fields` and two private helpers, `_fonts_dir` and `_describe`, so the verdict text
+`local_snapshot` (`snapshot_at`, the API, until 2026-11-12), `psd_fields` and two private helpers, `_fonts_dir` and `_describe`, so the verdict text
 is the bake's.
 
 **Input.** `card`: the card's key as Card Edits.json keys it (the PSD's file name with spaces, the website's `c.key`; a

@@ -340,7 +340,7 @@ ttscardmaker-companion §1.6.
 | Constant | Value | Meaning |
 |---|---|---|
 | `RULES_PATH` | `"TTS/decks.json"` (global_config.py since 2026-10-20) | deck rules (which repo PNGs each complete deck holds): the checkout's, else raw main |
-| `HTTP_TIMEOUT` | `30` s | the website's cards.json and raw rules reads |
+| `HTTP_TIMEOUT` | `30` s | the raw rules read (the website's cards.json fallback for names deleted 2026-11-12: `--names` only) |
 
 The bot's own run (`update_repo_save`, /update_tts_save, committing through git_commit) was retired 2026-10-25; tts_save is
 the card-sync.yml CLI only.
@@ -368,11 +368,10 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns t
 | `FONTS_DIR` | `"MDW/Fonts"` | the card repo's fonts folder; top level only (`stoogedings-src/` is the icon font's source) |
 | `EXCLUDE_FOLDERS` | `("MDW", "Markers")` | PSDs under these path parts are not cards (card_data's list) |
 | (`ROLE_ID`, `FONT_NOTE`) | in `commands/standards_post.py` since 2026-11-11 | the card makers' role (`546427268751294475`, the only role ping of the standards post, pinged only when a font is missing) and the per-card note "the {font} font is not in MDW/Fonts ({layers}), bite this user" of the one standards post per push |
-| `NOBODY` | `"Someone"` | the author when no login is known (a checkout scan, the bot) |
+| `NOBODY` | `"Someone"` | the author when no login is known (`--psd` files, the bot) |
 | `API_TIMEOUT` | `60` s | per GitHub API call |
 | `FILES_PAGE` | `300` | the compare and commit APIs list at most this many files; a bigger push, or a commit listing that many, is noted in the report |
 | `COMMITS_PAGE` | `250` | the compare API lists at most this many commits; a bigger push is noted (later files may carry the wrong author) |
-| `POOL_MIN`, `POOL_CHUNK` | `8`, `4` | `--all` parses this many PSDs or more in a process pool of half the cores, this many per task (813 PSDs: 98 s -> 9.8 s on the Mac, 2026-10-21); `--repo` reads blobs one by one (`/fonts` reads the card data since 2026-10-25: no download, no `CACHE_JSON`/`BATCH`) |
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
 
@@ -383,7 +382,7 @@ The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied 
 | (`LINE`, `SHORT`) | in `commands/standards_post.py` since 2026-11-11 | the standards post's line per card and each note as the action (owner 2026-11-06); the card check's job summary and comment use `short()` too |
 | `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
 
-Shared with font_check (imported): `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
+Shared with font_check (imported): `NOBODY`, `API_TIMEOUT`; the token
 through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR`, `STARS_DIR`, `ICON_MANIFEST_PATH`, `EDITS_PATH`.
 It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before; its `SPARSE_FILES` went: the guards'
 `card_guards.SPARSE_FILES` holds its closure).
@@ -475,7 +474,6 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
 | `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool, locally; on a GitHub runner (`GITHUB_ACTIONS`) from 2 cards (`least = 2` in `check`, efc7808, 2026-11-04). The pool: every core on a runner (K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
-| `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
 | `card_standards.AUTO_FIX` | deleted 2026-11-12 | was `("R9",)`, the Txt2 story fix; R9 and its fix went (owner), so every standards issue is told (the silent fixes are `PIXEL_FIXES`, R8 and the folders) |
 | `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
 | `EARLIER_WALK` | `40` | badge widths (2026-11-04; eras 2026-11-05; every era, drawings too, 2026-11-10): the icon font's newest versions read, every era of them kept (each era's newest version: an icon added keeps the era, an advance or a drawing changed ends it, SVG glyph ids read as names; none laid out and drawn as the current font; 5 eras of 10 versions on 11-10), read once a push, only with `--repo` (ttscardmaker-companion §1.2) |
@@ -743,7 +741,7 @@ table with its command before quoting it in the future.
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
-| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_COMMENT\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG\|^EARLIER_\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^FONT_\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
+| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_COMMENT\|^ANCHOR_WINDOW\|^POOL_\|^EARLIER_\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^FONT_\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/card_sync.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |

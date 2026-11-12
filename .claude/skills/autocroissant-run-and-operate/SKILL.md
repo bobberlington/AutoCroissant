@@ -275,7 +275,8 @@ Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role
   without `count` leaves its deck alone). Edit it in TTSCardMaker and push; the Action
   picks it up. A rule that matches no PNG, or a malformed deck entry, leaves its deck alone and is listed
   under Errors. Rules only cover PNGs: a .jpg/.jpeg card in a complete deck is never removed.
-- **Standalone:** `python -m commands.tts_save <save.json>` (from the bot's root; what the Action runs) updates a
+- **Standalone:** `python -m commands.tts_save <save.json> --names <db/stats.json>` (from the bot's root; what the Action
+  runs; the names come only from the card data since 2026-11-12, the website fallback deleted) updates a
   local file in place and, when it changed, writes `<stem>.<time>.bak.json`, `<stem>.report.md` and
   `<stem>.message.txt` (the commit subject) beside it. `TTS/decks.json` and
   `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
@@ -302,11 +303,9 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   no psd-tools or fontTools): no PSD or font is downloaded. Reply: `**font**: card (layers)` per missing font, errors.
   (Until 2026-10-25 a legacy path read every PSD through the API with a per-blob cache, `font_names.json`; the jetson
   may still hold that file: delete it.)
-- **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (9.8 s wall over the 813 PSDs on 2026-10-21 in a
-  process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
-  ttscardmaker-companion §3 on 15 cards, 29 visible layers; on 2026-10-23, TTSCardMaker 92b5ae6b with Kung-Fu-Panda's rename:
-812 PSDs, 274 files / 282 faces, nothing missing, 7 s), `--psd <files>`, `--json <out>`,
+- **Standalone:** `python -m commands.font_check --fonts <dir> --psd <files>` (the batch pre-push check), `--json <out>`,
   `--discord <payload out>` (this check's part of the standards post alone); `--help` lists the --repo options the Action uses.
+  (`--all <checkout>` deleted 2026-11-12, owner: `/fonts`' report and the guards' `all` dispatch cover the whole tree.)
 
 ### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, card-check.yml before)
 

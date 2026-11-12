@@ -143,8 +143,6 @@ OLDER_PNGS = 5                                  # R10 went back: the PNG's earli
 OLDER_MATCH = 0.1                               # share of the area an earlier version may still differ over and show it
 PUT_BACK_REACH = 32                             # px _put_back follows a went-back change past the rule's area
 SKIP_REACH = 8                                  # px past the PSD's change a PNG that skipped it may change (_skipped)
-TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
-                                                # two rules: the commit comment only until the owner asks)
 OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, "   # told (owner 2026-11-04)
             "Type > Update All Text Layers, save and push")
 NORMALISE = "normalise"                         # the 11-07 pass's fix (card_standards): linked pictures, normal text, no
@@ -253,8 +251,6 @@ class Result:
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
-        if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
-            out.append(self.r10["line"])
         out += [issue["text"] for issue in self.issues if issue["discord"] and issue["told"] and (fresh or issue["new"])]
         out += [text for text, discord in self.notes if discord]
         if self.error:
@@ -1027,7 +1023,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
                    else f"mean difference {stale['mean']:.1f}")
             why = "the PSD is new beside it" if job.case == "beside" else "though this push moved no pixel"
             result.notes.append((f"{basename(job.png)} does not match the PSD ({off}), {why}: export it in Photoshop",
-                                 TELL_PNG_MISMATCH))
+                                 False))
         elif found.outcome == "current":
             shown.update(numbered)
             shown[job.png] = old_png
@@ -2841,7 +2837,6 @@ __all__ = [
     'Result',
     'SPARSE_FILES',
     'Source',
-    'TELL_PNG_MISMATCH',
     'Writer',
     'added',
     'build_context',

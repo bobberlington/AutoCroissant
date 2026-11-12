@@ -2,9 +2,9 @@
 The edit pipeline's driver (docs/EDIT_PIPELINE_DESIGN.md sections 4, 5, 8-11): bake the PSD-kind edits of
 TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per run.
 
-    python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
-                                 [--local <clone>] [--verdicts <db/verdicts.json>]
-    run(repository, head, dry_run, card, pending_only, local, verdicts) -> (markdown report, commit shas: one at most)
+    python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> --local <clone> [--dry-run] [--card <Name>]
+                                 [--pending] [--verdicts <db/verdicts.json>]
+    run(repository, head, dry_run, card, pending_only, local=, verdicts=) -> (markdown report, commit shas: one at most)
     pending(repository, head, local, verdicts) -> the cards a live run has work for
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). A website-only field (the
@@ -12,18 +12,16 @@ entry's `_site`, owner 2026-10-25) is never baked, dropped or given a verdict: i
 file with a PSD-kind field: fetch its PSD and official PNG (gate `blob`), classify the edits against a fresh offline parse
 (psd_edit.classify), apply them with every gate (psd_edit.apply_jobs; an ability edit also makes its FX layers again,
 Effect Layers.jsx's Update all: section 7 idea 14, BUG 2).
-Then one commit on the branch's current head (land): every baked card's PSD and PNG and the file rewritten with the
-baked and redundant fields removed (a Python port of edit.js editsFile), through git_commit (the GitHub API, or git
-objects in the history clone pushed over SSH when the token can't write). A card whose PSD, PNG or edit changed meanwhile
-is left out of the commit as a try-again refusal; the others still land. The verdicts live on the data branch
+Then one commit B in the local clone (land, --local below): every baked card's PSD and PNG and the file rewritten with
+the baked and redundant fields removed (a Python port of edit.js editsFile). The verdicts live on the data branch
 (db/verdicts.json, docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md): the run writes them, with its bake events, to the work dir's
 verdicts.json and bake-events.json (records()), split into what needs no main commit (a refusal: none of its own; its
 website-only fields still move to `_site` in the run's commit) and what holds only once the commit lands; Card sync
 merges them into the data (card_data --verdicts, --events). A verdict is read from --verdicts.
---local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
-(blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
-checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
-exit 1, no B).
+--local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3; the GitHub API mode deleted 2026-11-12): the
+tree and blobs come from a local clone (blobless is enough; a blob it lacks by REST) and the run's commit B is made there
+on head, pushed by no one here; a checkout at head moves to B, and the report says where HEAD is. A --head the clone
+lacks is a failed run (a report, exit 1, no B).
 A name edit with `_rename` (the editor's "Also rename the card's files", owner 2026-10-25) also renames the card's PSD and
 PNGs in that commit (plan_rename), with Renamed trailers and the files keyed by the card (rename_edits, side_files).
 Refusals are data: one bad card never blocks another, and a refused stars or types edit never blocks its card's other
@@ -69,8 +67,8 @@ import commands.psd_edit as psd_edit
 from commands.card_edits import (ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings,
                                  color_text, dump_edits, dup_pictures)
 from commands.card_models import RENAMED, card_name, file_stem
-from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
-                                 commit_info, git, local_commit, plural, ref_head)
+from commands.git_commit import (API_TIMEOUT, AUTHOR, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_info, git,
+                                 local_commit, plural)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from commands.psd_parser import name_key, picture_numbers, shown_in, variant_view
@@ -521,73 +519,62 @@ def _now() -> str:
 # ========================
 # Commits (steps 10-11)
 # ========================
-def land(repository: str, shares: list, message: Callable[[list], str], dry_run: bool, out_path: str = "",
-         local: Optional[Snapshot] = None) -> Optional[str]:
+def land(shares: list, message: Callable[[list], str], dry_run: bool, local: Snapshot, out_path: str = "") -> Optional[str]:
     """
-    Step 10 for the whole run: one commit on the branch head H' with every share that still holds there. Re-read H'
-    and its tree; a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite
-    raises (edit-changed); the others' rewrites apply in turn to the edits file at H'. On 409/422 or a rejected push,
-    all again from the new H', up to COMMIT_TRIES times.
+    Step 10 for the whole run: one commit B in --local's clone on its snapshot's head H with every share that holds
+    there: a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite raises
+    (edit-changed); the others' rewrites apply in turn to the edits file at H.
 
     Args:
-        shares: [Share]; each attempt sets its `out` and `included`
+        shares: [Share]; sets their `out` and `included`
         message: The included shares -> commit message (subject, then any trailers)
         dry_run: Write out_path, commit nothing
+        local: --local's snapshot: the commit is made in its clone (local_commit)
         out_path: Where the rewritten file goes for the artifacts
-        local: --local's snapshot: H' is its head and the commit is made in its clone (local_commit), one attempt
 
     Returns:
         The commit's sha, None when nothing was committed (dry run, or no share had anything to write);
-        raises Refused("head-moved") after COMMIT_TRIES or when H' has no edits file
+        raises Refused("head-moved") when H has no edits file
     """
-    uploaded: set = set()                       # blob shas uploaded this run: a retry re-uploads only the rewritten file
-    for attempt in range(COMMIT_TRIES if local is None else 1):
-        tip = local if local is not None else snapshot_at(repository, ref_head(repository))
-        head, tree = tip.head, tip.tree
-        edits_path = EDITS_PATH if EDITS_PATH in tree else None
-        if edits_path is None:
-            raise Refused("head-moved", f"no {EDITS_PATH} on {CARD_BRANCH} `{head[:8]}`")
-        text = tip.fetch(tree[edits_path][1]).decode("utf-8")
-        new_text, files = text, {}
-        for share in shares:
-            share.out, share.included = None, False
-            moved = [path for path, sha in share.expect.items() if tree.get(path, ("", ""))[1] != sha]
-            if moved:
-                share.out = Refusal("head-moved", f"{moved[0]} changed on {CARD_BRANCH} `{head[:8]}` meanwhile")
-                continue
-            try:
-                rewritten = share.rewrite(new_text)
-            except Refused as refused:
-                share.out = refused.refusal
-                continue
-            if rewritten is None and not share.files:
-                continue                        # nothing of its own to write (an unchanged verdict)
-            new_text = new_text if rewritten is None else rewritten
-            files.update(share.files)
-            share.included = True
-        included = [share for share in shares if share.included]
-        if not included:
-            return None
-        sides = side_files(tip, included)       # a rename's other files keyed by the card
-        if out_path:
-            makedirs(dirname(out_path), exist_ok=True)
-            with open(out_path, "w", encoding="utf-8", newline="") as fh:
-                fh.write(new_text)
-            for path, data in sides.items():
-                with open(join(dirname(out_path), basename(path)), "wb") as fh:
-                    fh.write(data)
-        if dry_run:
-            return None
-        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {}), **sides}
-        if not payload:
-            return None                         # the rewrites gave back the files as they are
-        if local is not None:
-            return local_commit(local.local, head, payload, message(included))
-        modes = {path: tree[path][0] for path in payload if path in tree}
-        commit = commit_files(repository, head, tip.info["tree"]["sha"], modes, payload, message(included), uploaded)
-        if commit:
-            return commit
-    raise Refused("head-moved", f"{CARD_BRANCH} kept moving: not committed after {COMMIT_TRIES} tries")
+    head, tree = local.head, local.tree
+    edits_path = EDITS_PATH if EDITS_PATH in tree else None
+    if edits_path is None:
+        raise Refused("head-moved", f"no {EDITS_PATH} on {CARD_BRANCH} `{head[:8]}`")
+    text = local.fetch(tree[edits_path][1]).decode("utf-8")
+    new_text, files = text, {}
+    for share in shares:
+        share.out, share.included = None, False
+        moved = [path for path, sha in share.expect.items() if tree.get(path, ("", ""))[1] != sha]
+        if moved:
+            share.out = Refusal("head-moved", f"{moved[0]} changed on {CARD_BRANCH} `{head[:8]}` meanwhile")
+            continue
+        try:
+            rewritten = share.rewrite(new_text)
+        except Refused as refused:
+            share.out = refused.refusal
+            continue
+        if rewritten is None and not share.files:
+            continue                            # nothing of its own to write (an unchanged verdict)
+        new_text = new_text if rewritten is None else rewritten
+        files.update(share.files)
+        share.included = True
+    included = [share for share in shares if share.included]
+    if not included:
+        return None
+    sides = side_files(local, included)         # a rename's other files keyed by the card
+    if out_path:
+        makedirs(dirname(out_path), exist_ok=True)
+        with open(out_path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(new_text)
+        for path, data in sides.items():
+            with open(join(dirname(out_path), basename(path)), "wb") as fh:
+                fh.write(data)
+    if dry_run:
+        return None
+    payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {}), **sides}
+    if not payload:
+        return None                             # the rewrites gave back the files as they are
+    return local_commit(local.local, head, payload, message(included))
 
 
 # ========================
@@ -1822,19 +1809,19 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
     return doc, told
 
 
-def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) -> None:
+def land_cards(report: Report, dry_run: bool, local: Snapshot) -> None:
     """
-    Land the run's cards in one commit (land; with --local's snapshot, in its clone) and record the outcome on them. A
-    card left out at H' gets its try-again refusal; when the commit itself fails, the baked and redundant cards get that
-    failure and the run is failed (main exits 1). A refused card is in it only for its website-only fields (share_of)
-    and keeps its refusal either way (records()). Fenced like a card's steps: the report always comes out.
+    Land the run's cards in one commit (land, in --local's clone) and record the outcome on them. A card left out gets
+    its try-again refusal; when the commit itself fails, the baked and redundant cards get that failure and the run is
+    failed (main exits 1). A refused card is in it only for its website-only fields (share_of) and keeps its refusal
+    either way (records()). Fenced like a card's steps: the report always comes out.
     """
     shares = [s for s in (share_of(c) for c in report.cards) if s]
     if not shares:
         return
     try:
-        report.commit = land(report.repository, shares, lambda included: _message([s.card for s in included]), dry_run,
-                             join(report.work, basename(EDITS_PATH)), local)
+        report.commit = land(shares, lambda included: _message([s.card for s in included]), dry_run, local,
+                             join(report.work, basename(EDITS_PATH)))
     except Exception as error:                  # noqa: BLE001
         if isinstance(error, Refused):
             failure = error.refusal
@@ -1849,7 +1836,7 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
             else:
                 s.card.note = f"website only not moved: {failure.code}"
         return
-    if local is not None and report.commit:
+    if report.commit:
         try:
             bare = git(local.local, "rev-parse", "--is-bare-repository", env={**environ, **NO_LAZY}).decode().strip() == "true"
             report.checkout = "" if bare else checkout_head(local.local, {**environ, **NO_LAZY})
@@ -1901,9 +1888,8 @@ def _card_line(card: Card, dry_run: bool) -> str:
 def render(report: Report) -> str:
     """The markdown report (tts_save._render style)."""
     lines = ["# Card edits", "",
-             f"- Repo: `{report.repository}` {CARD_BRANCH} `{report.head[:8]}`" + (" (dry run)" if report.dry_run else "")]
-    if report.local:
-        lines.append(f"- Local: `{report.local}`: the commit is made there, nothing pushed")
+             f"- Repo: `{report.repository}` {CARD_BRANCH} `{report.head[:8]}`" + (" (dry run)" if report.dry_run else ""),
+             f"- Local: `{report.local}`: the commit is made there, nothing pushed"]
     lines += report.lines
     if report.note:
         lines += ["", f"**{report.note}**"]
@@ -1926,7 +1912,7 @@ def render(report: Report) -> str:
     for card in errors:
         if card.traceback:
             lines += ["", f"<details><summary>{card.name}</summary>", "", "```", card.traceback.rstrip(), "```", "</details>"]
-    if report.commit and report.local:
+    if report.commit:
         lines += ["", f"One local commit: `{report.commit}` {report.subject} (not pushed)."]
         if report.checkout == report.commit:
             lines.append("The checkout is on it.")
@@ -1937,8 +1923,6 @@ def render(report: Report) -> str:
                          f"`{report.commit[:8]}` before reading its tree.")
         else:
             lines.append("No checkout moved (a bare clone or an unborn HEAD).")
-    elif report.commit:
-        lines += ["", f"One commit: `{report.commit[:8]}` {report.subject}."]
     elif report.subject and report.dry_run:
         lines += ["", f"Would commit: {report.subject}."]
     if report.traceback:
@@ -1959,26 +1943,26 @@ def failure(report: Report) -> str:
 
 
 def run(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
-        pending_only: bool = False, local: str = "", verdicts: str = "") -> tuple:
+        pending_only: bool = False, *, local: str, verdicts: str = "") -> tuple:
     """
-    Bake the PSD-kind edits at head and land everything in one commit on the branch's current head (run_report).
+    Bake the PSD-kind edits at head and land everything in one commit B in the local clone (run_report).
 
     Returns:
         (markdown report, commit shas: one at most); raises on a failure outside a card's steps and the commit
     """
-    report = run_report(repository, head, dry_run, card, pending_only, local, verdicts)
+    report = run_report(repository, head, dry_run, card, pending_only, local=local, verdicts=verdicts)
     return report.text, [report.commit] if report.commit else []
 
 
 def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = False, card: Optional[str] = None,
-               pending_only: bool = False, local: str = "", verdicts: str = "") -> Report:
+               pending_only: bool = False, *, local: str, verdicts: str = "") -> Report:
     """
     run() as a Report: at most MAX_BAKES cards baked and none started after BUDGET; the rest are refused `capped`
     (try-again: pending next run).
 
     Args:
         repository: owner/name of the card repo
-        head: The commit whose tree and edits file are the snapshot ("" = the branch head)
+        head: The commit whose tree and edits file are the snapshot ("" = the clone's HEAD)
         dry_run: Write the artifacts, commit nothing
         card: Restrict the run to one card (matched like the authors file)
         pending_only: Skip the cards with a final verdict (the schedule: pending()'s cards only, so refused cards
@@ -1997,12 +1981,10 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     for name in (VERDICTS_OUT, EVENTS_OUT, RECORDS_OUT):    # a reused work dir: no earlier run's records
         if exists(join(work, name)):
             remove(join(work, name))
-    local = abspath(expanduser(local)) if local else ""
+    local = abspath(expanduser(local))
     try:
-        snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
+        snapshot = local_snapshot(repository, local, head)
     except Transient as error:
-        if not local:
-            raise
         snapshot = None                         # card-sync goes on from main's head: no B
         report = Report(repository, head, dry_run, work, local=local)
         report.error = report.note = f"Nothing baked: {error}"
@@ -2057,7 +2039,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                 if waiting:
                     report.lines.append(f"- Capped: {plural(waiting, 'card')} wait for the next run")
                 report.cards = cards
-                land_cards(report, dry_run, snapshot if local else None)
+                land_cards(report, dry_run, snapshot)
                 records(report, edits, known)
     report.seconds = perf_counter() - started
     report.text = render(report)
@@ -2069,7 +2051,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
 def _pending(repository: str, head: str, local: str, verdicts: str = "") -> tuple:
     """(snapshot, pending's Cards) at head."""
     token_from_env()
-    snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
+    snapshot = local_snapshot(repository, local, head)
     if snapshot.edits_path is None:
         return snapshot, []
     edits = CardEdits.parse(snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8"))
@@ -2077,7 +2059,7 @@ def _pending(repository: str, head: str, local: str, verdicts: str = "") -> tupl
     return snapshot, [card for card in select(edits, snapshot) if not final(snapshot, card, known)]
 
 
-def pending(repository: str = CARD_REPO, head: str = "", local: str = "", verdicts: str = "") -> list:
+def pending(repository: str, head: str, local: str, verdicts: str = "") -> list:
     """
     The schedule's change gate: the cards a live run has work for at head, i.e. a PSD-kind edit
     without a final verdict (final(); build_site.apply_edits shows a refusal by the same rule); a baked field leaves the
@@ -2085,7 +2067,7 @@ def pending(repository: str = CARD_REPO, head: str = "", local: str = "", verdic
     refusals whose PNGs changed are pending, and after a complete live run nothing is.
 
     Args:
-        local: A clone of the card repo to read the tree from (local_snapshot), else the API
+        local: A clone of the card repo to read the tree from (local_snapshot; head "" = its HEAD)
         verdicts: The data's db/verdicts.json (load_verdicts)
 
     Returns:
@@ -2101,19 +2083,19 @@ def main(args: Optional[list] = None) -> int:
                             description="Bake the PSD-kind edits of site/Card Edits.json into the card PSDs and PNGs, "
                                         "in one commit (docs/EDIT_PIPELINE_DESIGN.md).")
     parser.add_argument("--repo", default=CARD_REPO, help=f"owner/name of the card repo (default {CARD_REPO})")
-    parser.add_argument("--head", default="", help=f"commit to read the tree and edits file at (default: {CARD_BRANCH}'s head)")
+    parser.add_argument("--head", default="", help="commit to read the tree and edits file at (default: --local's HEAD)")
     parser.add_argument("--dry-run", action="store_true", help="write the artifacts, commit nothing")
     parser.add_argument("--card", default=None, help="only this card (matched like the authors file)")
     parser.add_argument("--pending", action="store_true", help="skip cards whose refused verdict still holds (the schedule)")
-    parser.add_argument("--local", default="", metavar="CLONE",
+    parser.add_argument("--local", required=True, metavar="CLONE",
                         help="read the tree and blobs from this clone of the card repo (--head default: its HEAD) and make "
                              "the commit there, pushing nothing; a checkout at --head moves to it (the card sync)")
     parser.add_argument("--verdicts", default="", metavar="FILE",
                         help="the data branch's db/verdicts.json (the verdicts --pending keeps to); the run's own go to the "
                              "work dir's verdicts.json and bake-events.json")
     options = parser.parse_args(args)
-    report = run_report(options.repo, options.head, options.dry_run, options.card, options.pending, options.local,
-                        options.verdicts)
+    report = run_report(options.repo, options.head, options.dry_run, options.card, options.pending, local=options.local,
+                        verdicts=options.verdicts)
     print(report.text, end="")
     why = failure(report)
     if why:

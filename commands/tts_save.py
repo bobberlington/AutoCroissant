@@ -1,16 +1,16 @@
 """
 Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Simulator.json in the card repo).
 
-    python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; card-sync.yml)
-    update_save(path) -> report text
+    python -m commands.tts_save <save.json> --names db/stats.json   (from the bot's root; card-sync.yml)
+    update_save(path, names_from) -> report text
 
 Pins every repo image link to the commit that last changed the file, follows renames (the bake's Renamed trailers too), syncs complete decks with
 their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
-comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
-from a card data build's stats.json), writes the global script and UI from TTS/Global.lua and TTS/Global.xml (nobody
-edits the save's script by hand) and regenerates their resizeTargets table, and puts the rulebook's PDF
+comes back unless excluded), sets card Nicknames to the card browser's names made from a card data build's
+stats.json (--names), writes the global script and UI from TTS/Global.lua and TTS/Global.xml (nobody edits the save's
+script by hand) and regenerates their resizeTargets table, and puts the rulebook's PDF
 (TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
@@ -45,7 +45,6 @@ RAW = f"{RAW_BASE}{CARD_REPO}/"
 MAIN_REFS = (CARD_BRANCH, f"refs/heads/{CARD_BRANCH}")
 LINK = regex(escape(RAW) + f"({escape(MAIN_REFS[1])}|{escape(MAIN_REFS[0])}|" + r"[0-9a-f]{7,40})/([^\s\"\\<>]+)")
 URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (GitHub raw style; spaces are %20)
-SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("MDW/Assets/Markers/",)        # marker cards: not website names
 RULEBOOK_BAG = "Rulebooks"                   # the save's bag holding the rulebook's PDF
@@ -67,12 +66,6 @@ TEAM_FIELDS = ("Description", "GMNotes", "Memo", "Tags", "LuaScript", "LuaScript
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
               "auxiliary_items": "auxiliary items", "status_effects": "status effects"}
 HTTP_TIMEOUT = 30
-
-# ========================
-# Global State
-# ========================
-_site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
-
 
 # ========================
 # Helper Functions
@@ -405,12 +398,12 @@ def db_names(stats_path: str, tree: dict) -> dict:
 
 
 class _Names:
-    """Website names for card images: Card Edits.json > the card browser's cards.json (or a build's stats.json) > PSD
-    stem > PNG stem."""
+    """Website names for card images: Card Edits.json > a card data build's stats.json (db_names) > PSD stem > PNG
+    stem."""
 
     def __init__(self, repo: _Repo, errors: list, stats_path: str = ""):
-        """stats_path: a card data build's stats.json, read instead of the website's cards.json (Card sync: the run's
-        own data)."""
+        """stats_path: a card data build's stats.json (Card sync: the run's own data); "": no names but Card Edits.json's
+        and the file stems, Nicknames left as they are."""
         edits = None
         self.repo = repo
         self.site: dict = {}
@@ -421,8 +414,6 @@ class _Names:
                 self.site, self.source = db_names(stats_path, repo.tree), f"the card data ({basename(stats_path)})"
             except (OSError, ValueError, TypeError) as e:
                 errors.append(f"Card data not read ({e}): Nicknames left as they are, new cards named by file stem.")
-        else:
-            self.site = self._website(repo, errors)
         try:
             path = EDITS_PATH if exists(join(repo.checkout, EDITS_PATH)) else None
             if path is not None:
@@ -432,31 +423,6 @@ class _Names:
                 self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
             pass
-
-    def _website(self, repo: _Repo, errors: list) -> dict:
-        """png -> name from the card browser's cards.json (an ETag 304 reuses the last), else the local site build."""
-        global _site
-        try:
-            etag, known = _site
-            reply = get(f"{SITE_URL}/data/cards.json", timeout=HTTP_TIMEOUT,
-                        headers={"If-None-Match": etag} if etag and known is not None else {})
-            if reply.status_code == 304 and known is not None:     # unchanged since the last run
-                cards = known
-            else:
-                reply.raise_for_status()
-                cards = reply.json()["cards"]
-                _site = (reply.headers.get("ETag", ""), cards)
-            self.source = "the card browser"
-        except Exception as e:
-            cards = []
-            try:
-                with open(join(repo.checkout, SITE_CARDS), encoding="utf-8") as f:
-                    cards, self.source = load(f)["cards"], "the local site build"
-            except (OSError, ValueError, KeyError):
-                pass
-            errors.append(f"Card browser data not fetched ({e}): names from {self.source}"
-                          + ("." if cards else "; Nicknames left as they are, new cards named by file stem."))
-        return {c["png"]: c["name"] for c in cards if isinstance(c, dict) and c.get("png") and c.get("name")}
 
     def _stem(self, path: str) -> str:
         psd = self.repo.by_lower.get(splitext(path)[0].lower() + ".psd")
@@ -470,7 +436,7 @@ class _Names:
         return self.site.get(path)
 
     def of(self, path: str) -> str:
-        """known(), else the file stem (offline, or a card the website doesn't list)."""
+        """known(), else the file stem (a card the data doesn't list)."""
         return self.known(path) or self._stem(path)
 
 
@@ -803,7 +769,7 @@ def _fix_cards(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
         if not path or path.startswith(HAND_NAMED):
             continue
         if path not in repo.tree or not names.site:
-            continue                                        # gone image, or no website data: name left alone
+            continue                                        # gone image, or no card data: name left alone
         old = card.get("Nickname") or ""
         name = names.known(path)
         if name is None:
@@ -1062,7 +1028,7 @@ def update_save(save_path: str, names_from: str = "") -> str:
 
     Args:
         save_path: The save's JSON file
-        names_from: A card data build's stats.json for the Nicknames ("" = the website's cards.json)
+        names_from: A card data build's stats.json for the Nicknames ("": Nicknames left as they are)
 
     Returns:
         The markdown change report (also written to <stem>.report.md when the save changed)
@@ -1074,8 +1040,7 @@ def main(args: Optional[list] = None) -> int:
     """The command line (card-sync.yml): update_save, the report on stdout."""
     parser = ArgumentParser(prog="python -m commands.tts_save", description="Update the TTS save of the card table in place.")
     parser.add_argument("save", help="the save's JSON file")
-    parser.add_argument("--names", default="", help="a card data build's stats.json for the Nicknames (default: the "
-                                                    "website's cards.json)")
+    parser.add_argument("--names", required=True, help="a card data build's stats.json for the Nicknames")
     options = parser.parse_args(args)
     print(update_save(options.save, options.names), end="")
     return 0

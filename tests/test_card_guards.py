@@ -217,7 +217,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["New_Card"]["export"]["outcome"] == "re-exported" and by["New_Card"]["writes"][0]["path"] == f"{FOLDER}/New_Card.png"
     assert by["New_Name"]["writes"][0]["sha"] == cg.Source(str(root)).tree(base)["Creatures/Other/3 Stars/Old_Name.png"][1]
     assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
-    assert by["Lonely"]["r10"]["ok"] is False and by["Lonely"]["told"] == []          # R10: the comment only (TELL_PNG_MISMATCH)
+    assert by["Lonely"]["r10"]["ok"] is False and by["Lonely"]["told"] == []          # R10: the comment only
     assert by["Gone"]["told"] == [] and by["Gone"]["notes"] == ["Gone.png is left without its PSD"]     # comment only
     # the PNGs the bot makes are never told (a dry run shows what on would do)
     assert by["New_Name"]["told"] == [] and by["New_Name"]["notes"] == ["Old_Name.png is left at the PSD's old name"]
@@ -481,13 +481,12 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     PNG current with push 1's Base change left out, nothing told (review of 2026-10-24)."""
     root, base, alice, bot = cards
     monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
-    real = pe.psd_edit.gate_region
+    real = pe._drawn
 
-    def gate(old_png, merged, region):              # the anchored region (push 1's Base: the whole card) refuses
-        if (region[2] - region[0]) * (region[3] - region[1]) > 21 * 21:
-            raise pe.psd_edit.Refused("region", "test")
-        return real(old_png, merged, region)
-    monkeypatch.setattr(pe.psd_edit, "gate_region", gate)
+    def drawn(result, key):                         # the anchored region (push 1's Base: the whole card) refuses
+        x0, y0, x1, y1 = result.numbers.get("region") or (0, 0, 0, 0)
+        return not (key == "baseline" and (x1 - x0) * (y1 - y0) > 21 * 21) and real(result, key)
+    monkeypatch.setattr(pe, "_drawn", drawn)
     work = tmp_path / "burst"
     work.mkdir()
     one = _dated(root, work, "Bread", card(base=(30, 200, 30)), "2026-10-22T10:00:00Z")
@@ -495,8 +494,8 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
     assert not entry["error"], entry["error"]
-    assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G7"), entry["export"]
-    assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
+    assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G6"), entry["export"]
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["export"]["why"] in entry["told"]
 
 
 def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, monkeypatch):

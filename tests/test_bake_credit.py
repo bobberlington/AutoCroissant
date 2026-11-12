@@ -1,7 +1,8 @@
 """
 card_bake's bake credit: the run's commit names every editor whose fields it prints, one "Edit-by: <login>" trailer per
-baked card and login after the subject and the card lines (TTSCardMaker build_site.EDIT_BY reads them), over the API path and
-the SSH path (git_commit with real git objects in a temp clone; the push is faked). apply_jobs is faked: no fork needed.
+baked card and login after the subject and the card lines (TTSCardMaker build_site.EDIT_BY reads them), in the local
+commit B (card_bake --local) and over git_commit's SSH path (real git objects in a temp clone; the push is faked).
+apply_jobs is faked: no fork needed.
 """
 from io import BytesIO
 from subprocess import CompletedProcess, run as run_process
@@ -66,15 +67,15 @@ def baking(github, monkeypatch):
     return github
 
 
-def test_api_commit_carries_the_trailer(baking):
-    text, commits = cb.run(card="Mini Doomer")
+def test_local_commit_carries_the_trailer(baking):
+    text, commits = cb.run(card="Mini Doomer", local=str(baking.clone))
     assert len(commits) == 1, text
     message = baking.commits[commits[0]]["message"]
     assert message == f"{SUBJECT}\n\n{BODY}\n\nEdit-by: amy" and _trailers(message) == ["amy"]
     assert baking.files_at(commits[0])[DOOMER] == b"new psd"
 
 
-def test_ssh_commit_carries_the_trailer(baking, monkeypatch, tmp_path):
+def test_ssh_commit_carries_the_trailer(monkeypatch, tmp_path):
     """The SSH path for real: objects and commit-tree in a temp clone (the push faked); git keeps the body whole."""
     clone = tmp_path / "clone"
     run_process(["git", "init", "-q", str(clone)], check=True)
@@ -96,10 +97,3 @@ def test_ssh_commit_carries_the_trailer(baking, monkeypatch, tmp_path):
     assert raw.split("\n\n", 1)[1] == f"{SUBJECT}\n\n{BODY}\n\nEdit-by: amy\nEdit-by: zed\n"       # as written, plus git's final newline
     trailers = gc.git(str(clone), "log", "-1", f"--format=%(trailers:key={cb.EDIT_BY},valueonly,separator=%x1f)", sha)
     assert trailers.decode().strip().split("\x1f") == ["amy", "zed"]      # build_site's HISTORY_FORMAT reads them so
-
-    baking.forbidden = True                                             # and card_bake hands git_commit the whole message
-    seen = []
-    monkeypatch.setattr(gc, "git_commit", lambda repository, head, files, message: seen.append(message)
-                        or baking.commit({**baking.files_at(head), **files}, "AutoCroissant", message))
-    text, commits = cb.run(card="Mini Doomer")
-    assert len(commits) == 1 and seen == [f"{SUBJECT}\n\n{BODY}\n\nEdit-by: amy"], text

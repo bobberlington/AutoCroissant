@@ -206,7 +206,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
   - `github_api.fetch_verified`;
   - `card_bake.Snapshot.png_for` / `duplicate_of` (PNG pairing, case-insensitive, numbered duplicates) and `recent_paths`;
   - `git_commit.commit_files`;
-  - `psd_edit`: `_measure`, `_within_bar`, `render_region`, `merge_png`, `gate_shape`, `gate_region`, `save_png`,
+  - `psd_edit`: `_measure`, `_within_bar`, `render_region`, `merge_png`, `save_png`,
     `stale_stories`, `ability_layer`, `name_layer`, `uses_icon_font`, plus `icc_vote` / `export_icc` / `foreign_profile` from
     work/r5-bot;
   - `psd_regions`: `overlay_words`, `fx_pad`;
@@ -330,7 +330,7 @@ one ends "export it in Photoshop").
 | # | Gate | Passes when | Refusal (report line) |
 |---|---|---|---|
 | G1 | blob | every downloaded PSD and PNG hashes to the tree's sha (`fetch_verified`) | an error line, retried by a dispatch |
-| G7 | shape | the old PNG is the canvas's size, RGB or RGBA (`gate_shape` and `gate_region` again after the merge) | "PNG not made: the card changed size; export it in Photoshop" |
+| G7 | shape | the old PNG is the canvas's size, RGB or RGBA (the gates after the merge, `gate_shape` and `gate_region`, deleted 2026-11-12: the merge writes only inside R) | "PNG not made: the card changed size; export it in Photoshop" |
 | G2 | composite | the new PSD has a stored composite of the canvas size, 8-bit RGB. Since 2026-10-24 (decision 4) one saved without Maximize Compatibility is rendered anyway under the bake's own gates (section 20: G5 and G6 (b) skipped, the baseline, the re-read of every changed text whose record changed, G7; beside its PNG no baseline and no pixel refusal, every drawn text shown); the Export is `unchecked` | told, not refused: "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"; a changed text the render shows no change for: "PNG not made: the bot draws nothing for the Ability text (and the PSD has no stored image to check it against); export it in Photoshop"; not 8-bit RGB (CMYK, 16-bit) still refuses: "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; export it in Photoshop" |
 | G3 | visible change | the render moved past 2 levels (F) or Photoshop's image did (D) | no refusal: "PNG still current", nothing written (2.3) |
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
@@ -395,7 +395,7 @@ its picture); an untagged one is refused ("tag its picture in the PSD"). Picture
 | `recent` | G9 (the same 30 min) |
 | `duplicate` | G8 (delta transfer instead of a flat refusal) |
 | `parity` (baseline) | G6 (a), over R, the same render and bar; both refuse only past the floor since 2026-10-23 (section 18) |
-| `shape`, `region` | G7 (`gate_shape`, `gate_region` on the merge) |
+| `shape` | G7 (on the old PNG, before the merge) |
 | `idempotence` | G6 (b): the merge against Photoshop's own image of the new PSD (the bake re-renders its saved PSD) |
 | `size`, `bytes`, `reparse`, `stories` | n/a (no PSD is written by guard 1) |
 
@@ -427,7 +427,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | **dropped 2026-10-24** (decision 3): font-check.yml alone reports missing fonts (its role ping, the standards channel); the guard has no R7, no `--fonts` and no fonts cache | (cards) | 1: Baba (BabaUI) | 0: BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker 92b5ae6b), and `font_check --all` finds nothing missing on 812 PSDs |
 | R8 | Single-line composer on visible Ability, Name and stat text layers (L10) | **auto-fix, never told** (owner 2026-10-25: "auto fix this and not report it"; `card_standards.single_line`: TySh and the Txt2 story's key 29, gated byte for byte; since work/clean (2026-10-25) every such layer is set; box text whose fork Single-line layout inks a line under `LINE_IOU` 0.9 of the stored one rewraps: the layer is redrawn whole by the fork with the stored preview patched (`card_standards.redraw`, gated: only its pixels, rectangle, TySh and the preview change) and its PNG re-exported by guard 1's `png_export.export` (pushed PSD -> fixed one), a silent PNG write; when the PNG can't follow (no PNG that shows the PSD, a refusal) or the redraw fails a gate, the PSD lands set but not redrawn, plan.json only (so is a render or font failure); box text's fonts: the clone's MDW/Fonts (until 2026-11-12, else only the files its faces look to be in, fetched, `FONT_FETCH_MAX` 12 a run; now without them the redraw is left out, owner); the guards' changes leave the composer out; only the commit message says "Single-line Composer on N cards") | cards | 0 | 0 (4 at 86733bd2: PoD08/09/10/12's Name) |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **dropped 2026-11-12** (owner): 0 cards since 10-23, Photoshop and the bake (`txt2_repair.sync_stories`) keep stories in sync; the check, its auto-fix, `txt2_repair.repair`/`verify` and the guards' told-fix lines (`fixed`, `fix_refused`) deleted; was **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
-| R10 | the PNG matches the PSD's composite (converted as voted) within the bar; with no stored image the fork's render, not past the floor, and a PNG gone back to an earlier picture where the PNG before showed the PSD (png_changes' rule, shown by one of its last 5 versions) is put back, silent (11-10); a PNG pushed with its PSD that skips the PSD's change (png_changes' rule over guard 1's export onto the PNG before, past the bar of it there) is made again as that export, silent (11-10), unless the PNG's own change is past the floor of it (kept, 11-11) | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
+| R10 | the PNG matches the PSD's composite (converted as voted) within the bar; with no stored image the fork's render, not past the floor, and a PNG gone back to an earlier picture where the PNG before showed the PSD (png_changes' rule, shown by one of its last 5 versions) is put back, silent (11-10); a PNG pushed with its PSD that skips the PSD's change (png_changes' rule over guard 1's export onto the PNG before, past the bar of it there) is made again as that export, silent (11-10), unless the PNG's own change is past the floor of it (kept, 11-11) | report, **commit comment only** (beyond the owner's two rules, review 2; the switch to post it deleted 2026-11-12) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
 | R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename built for it was deleted 2026-11-12, owner) | 651 cards | 0 | 0 |
 | R14 | card names in the ability text typed in their card's letter case (owner 2026-10-30): `card_standards.miscased_names`, text.js's rule of which words name a card (any of several words, a capitalised one, a lowercase one after its verb), the names from `db/stats.json` on the data branch (`card_guards.shown_cards`; no data, not checked) | report | every card | 9 cards (Gates of Ahn'Qiraj, Doctor Zomboss, Fawful, Mettaton, Nefarious Chip, Overseer, Papa Chip, Sans, Azamoth the Forgotten King) | 9 |
 | R15 | the ability's and title's text inside the card's edges (2026-11-04): `card_standards.rule_off_card`, the visible ability layers (`ability_layers`) and the Name layers (`PSDParser.title_parts`) through `psd_edit._ink_off_canvas` on Photoshop's stored pixels (a layer without them is not off); cut in the PNG and TTS | report, **new cards and regressions** (waived when the old blob had it, as R4) | every card | 1 of 813 at `a4d137bf` (PoD05Lead_Bloon's Ability) | 0 |
@@ -542,7 +542,7 @@ not land.**
   schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
   post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
   alert goes out instead.
-- **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`);
+- **Not sent:** R10 and "current, but outside the bar" (comment only);
   "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
   review 3).
 - **The login:** the commits API's login of the commit's author; an author with no GitHub account: the login in a
@@ -972,7 +972,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
 - Two quick PSD pushes without a PNG: G5 retries against the burst anchor (5.2), so the PNG is still made; since
   2026-10-24 (section 20) the export takes the anchor whenever the old PNG shows it, not the PSD before the push, with or
   without a stored image (`test_a_burst_of_psd_pushes_still_gets_its_png`; 4 hours apart it refuses as before).
-- R10 and "current, but outside the bar" stay in the comment (`TELL_PNG_MISMATCH`); report mode tells the fixable issues.
+- R10 and "current, but outside the bar" stay in the comment; report mode tells the fixable issues.
 
 **Review fixes, third pass (2026-10-22):**
 - `land` caught only `Transient` and `Refused`; a requests error (the commit POSTs, a GET past its 3 tries) escaped, no
@@ -1088,7 +1088,7 @@ Nothing pushed, dispatched or posted; the Desktop clone was only read. AutoCrois
 **Ruling 1: the PNG is a fork render** (5.1, 5.2, 5.5, 5.6).
 - `png_export.export` renders the changed layers' box R of the old and the new PSD with `psd_edit.render_region` (the fork
   pin `cards-20261023`, the card's `icc_vote` mode) and merges the new render into the old PNG with `psd_edit.merge_png`;
-  `gate_shape` and `gate_region` follow. The bake's parity gate is G6 (a). `export_new` writes the fork's whole-card render.
+  the bake's parity gate is G6 (a). `export_new` writes the fork's whole-card render.
 - The stored composite never reaches a PNG. It refuses only: G2 (none to check against), G5 (the old PNG against
   Photoshop's image of the new PSD outside R; inside R when the baseline fails and the old composite disagrees too), G6 (b)
   (the new PNG against Photoshop's image wherever either moved), and it keeps a PNG pushed first "current" (5.3).
@@ -1332,7 +1332,7 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   past the floor G6, a miss told), the **re-read** (`png_export.reread`: every type layer whose drawn text changed and whose
   record changed past the VOLATILE blocks must show a change in the render, else "PNG not made: the bot draws nothing for
   {what} (and the PSD has no stored image to check it against); export it in Photoshop", the bake's blank render), the delta
-  merge, `gate_shape` and `gate_region` (G7); the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
+  merge; the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
   Photoshop's image;
 - a PNG pushed before its PSD (old PSD): current when, over the pixels the render moved, the PNG is nearer the new render
   than the old and either within the bar of the new render, or not past the floor against it while the old render is

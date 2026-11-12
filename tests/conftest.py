@@ -30,7 +30,7 @@ PINNED_BASE = ("Types", "MDW/Fonts", "MDW/Croissant's Special Folder/Satus Effec
 LIVE = (REMIND_JSON, FORUM_JSON)                         # the checkout's live stores, never written by a test
 GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
               "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
-POOLED = ("commands.font_check", "commands.card_guards")   # process pools capped per worker
+POOLED = ("commands.card_guards",)                          # process pools capped per worker
 QUEUES = ("dispatch_queue", "edit_queue", "command_queue")                         # utils' deques, empty per test
 TOOLS = {"node": "node", "jq": "jq", "timeout": "coreutils", "sha256sum": "coreutils", "git": "git",   # CLIs the tests run:
          "oxipng": "oxipng"}                                                                           # brew formula
@@ -206,15 +206,6 @@ def pinned_clone() -> Pinned:
     for rel in PINNED_BASE:                               # what the code under test reads straight from disk
         _materialize(root, rel)
     return root
-
-
-def smallest(clone: Pinned, folder: str, n: int) -> list:
-    """The folder's n smallest card PSDs at the pin (written out): a fast parse."""
-    import subprocess
-    listing = subprocess.run(["git", "-C", str(clone), "ls-tree", "-r", "-l", "-z", CARDS_REV, "--", folder],
-                             capture_output=True, check=True, env=no_lazy()).stdout.decode().split("\0")
-    sized = sorted((int(line.split()[3]), line.split("\t", 1)[1]) for line in listing if line.endswith(".psd"))
-    return [clone / rel for _, rel in sized[:n]]
 
 
 def card_blob(clone, spec: str) -> bytes:

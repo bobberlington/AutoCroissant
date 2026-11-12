@@ -15,7 +15,7 @@ from requests import HTTPError
 
 import commands.font_check as fc
 import commands.github_api as ga
-from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha, smallest
+from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha
 from helpers import ChecksGitHub as FakeGitHub, build_font, commit, git, put, sharing  # noqa: F401
 
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
@@ -352,22 +352,6 @@ def test_real_card_psd(clone, tmp_path):
     assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker 92b5ae6b)
     assert all(index.supplies(font) for font in fonts)
     assert index.supplies("Papyrus-Regular")                    # Papyrus.ttf (the Windows face), no alias since 2026-10-23
-
-
-def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
-    """--all from POOL_MIN PSDs parses in a process pool: the same report as the sequential path, in path order."""
-    n = fc.POOL_MIN
-    psds = smallest(clone, "Creatures/Other", n)
-    root = tmp_path / "repo"
-    for path in psds:
-        link = root / path.relative_to(clone)
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(path)
-    index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
-    pooled = fc.check_checkout(str(root), index)
-    monkeypatch.setattr(fc, "POOL_MIN", n + 1)
-    sequential = fc.check_checkout(str(root), index)
-    assert pooled.as_dict() == sequential.as_dict() and pooled.checked + len(pooled.errors) - len(index.errors) == n
 
 
 @pytest.mark.parametrize("module", ["commands.font_check", "commands.psd_edit"])

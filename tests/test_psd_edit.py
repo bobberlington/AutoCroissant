@@ -324,10 +324,6 @@ def test_merge_png_is_a_pixel_delta():
     assert changed.shape == (4, 4) and changed.sum() == 2 and merged.mode == "RGBA" and merged.size == (10, 10)
     assert merged.getpixel((3, 3)) == (200, 0, 0, 255) and merged.getpixel((5, 4)) == (0, 200, 0, 255)
     assert merged.getpixel((2, 2)) == (10, 20, 30, 255)
-    assert pe.gate_region(png, merged, (2, 2, 6, 6)) == 2
-    with pytest.raises(pe.Refused) as refused:
-        pe.gate_region(png, merged, (0, 0, 3, 3))
-    assert refused.value.code == "region"
     with pytest.raises(pe.Refused) as refused:
         pe.merge_png(png.convert("P"), base, render, (2, 2, 6, 6))
     assert refused.value.code == "shape"

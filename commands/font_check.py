@@ -6,7 +6,7 @@ card (its PSD before the push did not ask for them; owner 2026-11-11) in the sta
 card makers' role (standards_post); the bot's /fonts reads the report the card data build writes from psd_details.json
 into its manifest (fonts_report here, card_sync.fonts_text).
 
-    python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
+    python -m commands.font_check --fonts <dir> [--psd <path>...]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
                                    [--clone <dir>]]
                                   [--json <out>] [--discord <payload out>]
@@ -19,18 +19,16 @@ into its manifest (fonts_report here, card_sync.fonts_text).
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API, or --clone's diff-tree when GitHub can't list them; --whole-tree: every
-card PSD of the tree at after) by blob sha, each blob's sha1 verified. --all parses the checkout's PSDs in a process pool
-(the parse is the whole cost: 0.1 s a PSD).
+card PSD of the tree at after) by blob sha, each blob's sha1 verified.
 No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); stock psd-tools reads the
 engine data, fontTools the font names (psd-tools' text engine fork: composite/text/fonts.py).
 """
 from argparse import ArgumentParser
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from io import BytesIO
 from json import dump, load as json_load
-from os import cpu_count, environ, pathsep, walk
-from os.path import basename, expanduser, isdir, join, relpath
+from os import environ, pathsep, walk
+from os.path import basename, expanduser, isdir, join
 from re import sub
 from struct import error as StructError, pack_into, unpack_from
 from subprocess import run
@@ -56,8 +54,6 @@ INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop k
 API_TIMEOUT = 60
 FILES_PAGE = 300                            # the compare and commit APIs list at most this many files
 COMMITS_PAGE = 250                          # the compare API lists at most this many commits
-POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
-POOL_CHUNK = 4                              # PSDs per pool task
 NAMES_ENV = "CARD_FONT_NAMES"               # a save_names() file: the details' index without the fonts (card-sync's data job)
 SFNT_SUM = 0xB1B0AFBA                       # what head.checkSumAdjustment makes a whole font file sum to
 
@@ -357,7 +353,7 @@ def fonts_report(details: dict, cards: dict) -> dict:
 
 
 # ========================
-# Sources: files, a checkout, the GitHub API
+# Sources: files, the GitHub API
 # ========================
 def is_card_psd(path: str) -> bool:
     """A PSD under the card folders (not MDW/, not Markers/), by repo path."""
@@ -382,14 +378,6 @@ def _check_one(report: Report, index: FontIndex, path: str, author: str, psd) ->
     _record(report, index, path, author, fonts)
 
 
-def _fonts_of(path: str) -> tuple:
-    """psd_fonts(path) in a pool worker: (fonts, None), or (None, the error text)."""
-    try:
-        return psd_fonts(path), None
-    except Exception as e:                      # one bad PSD never stops the check
-        return None, str(e)
-
-
 def check_files(paths: list, index: FontIndex, author: str = NOBODY) -> Report:
     """
     PSD files given on the command line.
@@ -405,39 +393,6 @@ def check_files(paths: list, index: FontIndex, author: str = NOBODY) -> Report:
     report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
     for path in paths:
         _check_one(report, index, path, author, path)
-    return report
-
-
-def check_checkout(root: str, index: FontIndex) -> Report:
-    """
-    Every card PSD under a checkout (MDW/ and Markers/ excluded), in path order.
-
-    Args:
-        root: The checkout
-        index: The fonts folder's faces
-
-    Returns:
-        Report; from POOL_MIN PSDs the parses run in a process pool (half the cores), merged in path order
-    """
-    report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
-    found = []
-    for folder, subdirs, files in walk(root):
-        subdirs[:] = sorted(d for d in subdirs if d not in EXCLUDE_FOLDERS and d != ".git")
-        for name in sorted(files):
-            rel = relpath(join(folder, name), root).replace("\\", "/")
-            if is_card_psd(rel):
-                found.append((rel, join(folder, name)))
-    if len(found) < POOL_MIN:
-        for rel, path in found:
-            _check_one(report, index, rel, NOBODY, path)
-        return report
-    workers = max(1, min((cpu_count() or 2) // 2, -(-len(found) // POOL_CHUNK)))
-    with ProcessPoolExecutor(workers) as pool:
-        for (rel, _), (fonts, error) in zip(found, pool.map(_fonts_of, [path for _, path in found], chunksize=POOL_CHUNK)):
-            if error is not None:
-                report.errors.append(f"{rel}: {error}")
-            else:
-                _record(report, index, rel, NOBODY, fonts)
     return report
 
 
@@ -669,13 +624,12 @@ def local_fonts() -> str:
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """The command line: files, a checkout or the API; the markdown on stdout, --json and --discord files when asked."""
+    """The command line: files or the API; the markdown on stdout, --json and --discord files when asked."""
     parser = ArgumentParser(prog="python -m commands.font_check",
                             description="Which fonts card PSDs ask for that MDW/Fonts does not supply. Reports, never rejects: "
                                         "findings exit 0.")
     parser.add_argument("--fonts", required=True, metavar="DIR", help="the fonts folder (a checkout's MDW/Fonts)")
     parser.add_argument("--psd", nargs="*", default=[], metavar="PATH", help="PSD files to check")
-    parser.add_argument("--all", default="", metavar="ROOT", help="every card PSD under a checkout (MDW/ and Markers/ excluded)")
     parser.add_argument("--repo", default="", metavar="OWNER/NAME", help="read the pushed PSDs by blob sha through the GitHub API")
     parser.add_argument("--before", default="", metavar="SHA", help="the push's previous head (github.event.before); empty: --after's own files")
     parser.add_argument("--after", default="", metavar="SHA", help="the push's head (github.sha)")
@@ -699,8 +653,6 @@ def main(args: Optional[list] = None) -> int:
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, fonts_added, notes = Report(), [], [f"GitHub API: {e}"]
         report.fonts_added, report.errors = fonts_added, report.errors + notes
-    elif options.all:
-        report = check_checkout(options.all, index)
     else:
         report = check_files(options.psd, index, options.author)
     print(markdown(report), end="")
@@ -730,11 +682,8 @@ __all__ = [
     'FONT_DIRS_ENV',
     'FontIndex',
     'NAMES_ENV',
-    'POOL_CHUNK',
-    'POOL_MIN',
     'Report',
     'check_blobs',
-    'check_checkout',
     'check_files',
     'details_report',
     'dir_fonts',

@@ -3,11 +3,10 @@ Guard 1 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 5): a card PSD
 bake would make (owner, 2026-10-22). The fork renders the changed layers' box of the old and the new PSD
 (psd_edit.render_region, the card's ICC export mode by icc_vote, or with no stored image by the same vote over the
 renders) and the old PNG takes the new render's pixels where it differs from the old one (psd_edit.merge_png), gated as
-the bake is (the
-baseline's parity, shape, region). Photoshop's stored composite is never written: it is only a cross-check that can
+the bake is (the PNG's shape, the baseline's parity). Photoshop's stored composite is never written: it is only a cross-check that can
 refuse (the old PNG outside the change, the drawn change against Photoshop's own image). A PSD without one (Maximize
-Compatibility off: every card since the 11-07 pass, G2) gets its PNG under the bake's own gates alone: the baseline,
-every text the parser reads differently (its record changed) drawn with a change, the merge's shape and region; the
+Compatibility off: every card since the 11-07 pass, G2) gets its PNG under the bake's own gates alone: the baseline and
+every text the parser reads differently (its record changed) drawn with a change; the
 Export is `unchecked`, never told (owner 2026-11-07: soft notes are no issue). Its text blends and ICC vote come from
 the render record (psd_edit.use_record: open_psd's rel). Beside its PNG with at most KEPT_PX px past BESIDE_CUT it
 keeps the PNG. A refusal is data (an Export with outcome "refused" and the line card makers read).
@@ -59,7 +58,6 @@ from psd_tools.api.pil_io import post_process
 from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
-from commands.psd_edit import Refused
 from commands.psd_parser import TITLE_REGION_RATIO, hidden_tags, layer_tag, picture_numbers, variant_view
 from commands.psd_regions import fx_pad, stat_rows
 
@@ -974,11 +972,6 @@ def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image,
         if not _drawn(result, "baseline"):
             return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
     merged, _ = psd_edit.merge_png(old_png, base, render, region)
-    try:                                        # G7: the bake's shape and region gates
-        psd_edit.gate_shape(old_png, merged, new)
-        psd_edit.gate_region(old_png, merged, region)
-    except Refused:
-        return _refuse(result, G7, "G7")
     # G6: where the render or Photoshop's image moved, the new PNG shows Photoshop's image
     result.numbers["cross"] = _stats(_diff(merged, truth)[moved | composite_moved])
     if not _within(result.numbers["cross"]):
@@ -1132,7 +1125,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image,
     G2 rendered anyway (owner, 2026-10-24): a PSD saved without Maximize Compatibility has no stored image, so nothing is
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
     each text _rereads() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the old PNG:
-    past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
+    past the floor G6, a miss told), the delta merge. A new PSD beside its PNG:
     the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept up to KEPT_PX past it, else it
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
     its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render, or
@@ -1189,11 +1182,6 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image,
     if not _drawn(result, "baseline"):
         return _refuse(result, G6_BASE.format(bad=result.numbers["baseline"]["bad_pct"]), "G6")
     merged, _ = psd_edit.merge_png(old_png, base, render, region)
-    try:
-        psd_edit.gate_shape(old_png, merged, new)
-        psd_edit.gate_region(old_png, merged, region)
-    except Refused:
-        return _refuse(result, G7, "G7")
     result.outcome, result.image = "re-exported", merged
     return result
 

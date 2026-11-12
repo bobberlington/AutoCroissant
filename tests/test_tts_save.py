@@ -212,7 +212,7 @@ def _checkout(tmp_path, **layouts):
 def test_names_read_card_edits_from_site(repo, tmp_path):
     assert tts.EDITS_PATH == "site/Card Edits.json"
     repo.checkout = _checkout(tmp_path, site="Alpha on the site")
-    names = tts._Names(repo, [])                                      # offline: the website is unreachable
+    names = tts._Names(repo, [])                                      # no card data: Card Edits.json, file stems
     assert names.known(A) == "Alpha on the site" and names.of(B) == "B"
     repo.checkout = str(tmp_path / "empty")
     assert tts._Names(repo, []).known(A) is None

@@ -1,11 +1,10 @@
 """
-card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver
-against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
-sections 5 and 11: duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
-moved card left out, the schedule gate (pending), the SSH fallback for a token that can't write, --dry-run, --card; the
-verdicts on the data branch (CARD_SYNC_VERDICTS.md: the data_branch fixture merges each run's records as Card sync does). A
-real bake (a stat, and an ability with an FX layer) renders with the fork. card-sync.yml's Pending edits line runs as
-written (card_bake.pending):
+card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver on
+Card sync's local clone (helpers.LocalCards: card_bake --local, the blobs the clone lacks from a fake GitHub by REST) for
+the gates of EDIT_PIPELINE_DESIGN sections 5 and 11: duplicate, blob, classify, one commit B per run, the schedule gate
+(pending), --dry-run, --card; the verdicts on the data branch (CARD_SYNC_VERDICTS.md: the data_branch fixture merges each
+run's records as Card sync does). A real bake (a stat, and an ability with an FX layer) renders with the fork.
+card-sync.yml's Pending edits line runs as written (card_bake.pending):
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py tests/test_card_bake.py
 """
 import contextlib
@@ -26,7 +25,6 @@ from types import SimpleNamespace
 import pytest
 
 import commands.card_bake as cb
-import commands.git_commit as gc
 import commands.psd_edit as pe
 from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: F401 (fixtures)
@@ -44,16 +42,18 @@ DB: list = []                                   # the test's data branch db/ (da
 
 
 @pytest.fixture(autouse=True)
-def data_branch(tmp_path, monkeypatch):
+def data_branch(tmp_path, monkeypatch, request):
     """db/verdicts.json as Card sync keeps it: cb.run and cb.pending read it, and each run's records are merged after it
-    (card_db.merge_verdicts: the refusals always, the landed part once its commit lands; never on a dry run)."""
+    (card_db.merge_verdicts: the refusals always, the landed part once its commit lands; never on a dry run). With the
+    github fixture, --local is its clone."""
     from commands.card_db import merge_verdicts
     db = tmp_path / "db"
     DB[:] = [db]
     real_run, real_pending = cb.run, cb.pending
+    clone = str(request.getfixturevalue("github").clone) if "github" in request.fixturenames else ""
 
     def run(**kwargs):
-        text, commits = real_run(**{"verdicts": str(db / "verdicts.json"), **kwargs})
+        text, commits = real_run(**{"verdicts": str(db / "verdicts.json"), "local": clone, **kwargs})
         out = tmp_path / cb.WORK_NAME / cb.VERDICTS_OUT
         if out.exists() and not kwargs.get("dry_run"):
             doc = json.loads(out.read_text(encoding="utf-8"))
@@ -61,7 +61,7 @@ def data_branch(tmp_path, monkeypatch):
         return text, commits
     monkeypatch.setattr(cb, "run", run)
 
-    def pending(repository=cb.CARD_REPO, head="", local="", verdicts=str(db / "verdicts.json")):
+    def pending(repository=cb.CARD_REPO, head="", local=clone, verdicts=str(db / "verdicts.json")):
         return real_pending(repository, head, local, verdicts)
     monkeypatch.setattr(cb, "pending", pending)
 
@@ -148,15 +148,21 @@ def test_rewrite_entry_rules():
 
 
 # ========================
-# The driver against the fake GitHub
+# The driver on Card sync's clone
 # ========================
 def test_run_drops_redundant_and_writes_verdicts(github, tmp_path):
+    """Pending edits -> one commit B on the clone's head, the checkout on it; origin and GitHub untouched; the small files
+    from the clone, only the PSDs and PNGs by REST."""
     before = github.head
+    lacks = run_process(["git", "-C", str(github.clone), "cat-file", "-e", _sha(github.files_at(before)[DOOMER])],
+                        capture_output=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    assert lacks.returncode != 0                                                                # blobless: no PSD here
     text, commits = cb.run()
     assert len(commits) == 1 and github.head == commits[0]
     commit = github.commits[commits[0]]
     assert commit["message"] == "Card edits: 1 redundant" and commit["author"]["name"] == "AutoCroissant"
     assert [p["sha"] for p in commit["parents"]] == [before]                                     # one commit for the run
+    assert _git(github.origin, "rev-parse", "main").strip() == before and not [m for m, _ in github.calls if m != "GET"]
     data = _edits_at(github)
     assert data["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}          # hp dropped, no verdict
     assert data["cards"]["Beldam"] == EDITS["Beldam"]
@@ -179,9 +185,11 @@ def test_run_drops_redundant_and_writes_verdicts(github, tmp_path):
     assert github.files_at(github.head)[DOOMER] == github.files_at(before)[DOOMER]              # no pixels touched
     assert "## Redundant (dropped from the file) (1)" in text and "## Refused (4)" in text
     assert text.count(f"committed `{commits[0][:8]}`") == 1                                    # the report line per committed card
-    assert "**Nothing baked.**" in text and f"One commit: `{commits[0][:8]}` Card edits: 1 redundant." in text
-    blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
-    assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, A Snack's PSD
+    assert "**Nothing baked.**" in text and f"One local commit: `{commits[0]}` Card edits: 1 redundant (not pushed)." in text
+    assert f"- Local: `{github.clone}`" in text and "The checkout is on it." in text
+    rest = sorted(route for _, route in github.calls)
+    cards = [data for path, data in github.files_at(before).items() if path.startswith(("Auxiliary", "Field/1")) or path == SNACK]
+    assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards)    # only what the clone lacks: A Snack's PSD too
     assert cb.pending() == []                                               # every PSD-kind edit has its final verdict
 
     # a rerun on the pipeline's own commit: the redundant field is gone, the verdicts are unchanged: nothing to commit
@@ -202,7 +210,7 @@ def test_website_only_fields_never_bake(github, tmp_path):
     entry = {"name": "Tiny Doomer", "hp": 9, "def": 2, "note": "checked", "_site": ["name", "hp"], "_by": "web", "_at": AT}
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": entry})
     github.commit(files, "web", "Website edit: Mini Doomer")
-    assert [c.fields for c in cb.select(cb.CardEdits.parse(files[cb.EDITS_PATH].decode()), cb.snapshot_at(cb.CARD_REPO, github.head))] == [{"def": 2}]
+    assert [c.fields for c in cb.select(cb.CardEdits.parse(files[cb.EDITS_PATH].decode()), cb.local_snapshot(cb.CARD_REPO, str(github.clone)))] == [{"def": 2}]
     text, commits = cb.run()
     assert len(commits) == 1 and "Card edits: 1 redundant" in github.commits[commits[0]]["message"]      # def 2 is printed
     assert _edits_at(github)["cards"]["Mini Doomer"] == {k: v for k, v in entry.items() if k != "def"}
@@ -211,7 +219,7 @@ def test_website_only_fields_never_bake(github, tmp_path):
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {**entry, "_site": ["name"]}})        # hp unticked
     github.commit(files, "web", "Website edit: Mini Doomer")
-    assert cb.pending() == ["Mini Doomer"] and [c.fields for c in cb._pending(cb.CARD_REPO, "", "")[1]] == [{"hp": 9, "def": 2}]
+    assert cb.pending() == ["Mini Doomer"] and [c.fields for c in cb._pending(cb.CARD_REPO, "", str(github.clone))[1]] == [{"hp": 9, "def": 2}]
 
 
 def test_dry_run_commits_nothing(github, tmp_path):
@@ -273,30 +281,6 @@ def test_website_only_field_lands_beside_a_refusal(github, tmp_path):
     assert commits == [] and _records(tmp_path)[0]["cards"] == {} and _records(tmp_path)[1]["events"] == []
 
 
-def test_website_only_beside_a_refusal_left_out(github, tmp_path, monkeypatch):
-    """Its edit changed before the commit: the move stays out, the card keeps its refusal and verdict (it needs no
-    commit); the next run moves the field and tells nothing again."""
-    _freezer_site(github)
-    real = cb.land
-
-    def land(repository, shares, message, dry_run, out_path="", local=None):
-        current = github.files_at(github.head)
-        data = json.loads(current[cb.EDITS_PATH].decode("utf-8"))
-        data["cards"]["The Freezer"]["hp"] = 30
-        current[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
-        github.commit(current, "web", "Website edit: The Freezer again")
-        return real(repository, shares, message, dry_run, out_path, local)
-    monkeypatch.setattr(cb, "land", land)
-    text, commits = cb.run()
-    assert commits == [] and "website only not moved: edit-changed" in text
-    assert _verdict("The Freezer")["for"] == {"stars": 2} and [e["kind"] for e in _records(tmp_path)[1]["events"]] == ["bake-refused"]
-    assert cb.pending() == ["The Freezer"]                                      # hp 30 still to move
-    monkeypatch.setattr(cb, "land", real)
-    text, commits = cb.run()
-    assert len(commits) == 1 and _edits_at(github)["cards"]["The Freezer"]["_site"] == ["hp"]
-    assert _records(tmp_path)[1]["events"] == [] and cb.pending() == []
-
-
 def test_shared_bars_and_moved_titles_are_remembered():
     """A creature 1 bake that changed a bar it shares (Pix's HP) updates those creatures in the list too; a title an
     earlier bake moved on (R4) is moved back first while its PSD is the one that bake left (review 2026-10-26)."""
@@ -320,51 +304,6 @@ def test_blob_gate(github):
     text, commits = cb.run(card="Mini Doomer")
     assert "blob: blob %s hashes to" % psd[:8] in text
     assert commits == [] and _verdict("Mini Doomer")["reason"].startswith("blob: ")
-
-
-def test_head_moved_after_three_conflicts(github):
-    github.conflicts, github.conflict_status = 3, 422
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "head-moved: main kept moving: not committed after 3 tries" in text
-    assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 5
-    github.conflicts = 2
-    text, commits = cb.run(card="Mini Doomer")
-    assert len(commits) == 1 and _edits_at(github)["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
-
-
-def test_refused_ref_update_is_an_error_not_a_race(github):
-    """A 422 with the branch unmoved (a ruleset) is GitHub's refusal: one try, its message, no verdict."""
-    github.stuck = True
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "error: GitHub 422: Repository rule violations found (on PATCH git/refs/heads/main)" in text
-    assert [route for method, route in github.calls if method == "PATCH"] == ["git/refs/heads/main"]
-    assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 5
-
-
-def test_edit_changed_meanwhile(github):
-    snapshot = github.head
-    files = github.files_at(snapshot)
-    files[cb.EDITS_PATH] = _edits({**EDITS, "Mini Doomer": {"hp": 4, "note": "checked", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    text, commits = cb.run(head=snapshot, card="Mini Doomer")
-    assert commits == [] and "edit-changed: the edit changed on main meanwhile" in text
-    assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 4
-
-
-def test_moved_psd_leaves_only_its_card_out(github):
-    """A card whose PSD changed under the run stays out of the run's commit (a try-again refusal, no verdict); the rest lands."""
-    snapshot = github.head
-    files = github.files_at(snapshot)
-    files[DOOMER] = files[DOOMER] + b"\0"
-    github.commit(files, "artist", "Mini Doomer: new art")
-    text, commits = cb.run(head=snapshot)
-    assert commits == []                                                    # 4 refused: no main commit
-    data = _edits_at(github)
-    assert data["cards"]["Mini Doomer"] == {"hp": 5, "note": "checked", "_by": "web", "_at": AT}     # untouched, no verdict
-    assert _verdict("Mini Doomer") is None
-    assert _verdict("The Freezer")["state"] == "refused" and github.files_at(github.head)[DOOMER] == files[DOOMER]
-    assert f"**Mini Doomer** `{DOOMER}`: hp 5: head-moved: {DOOMER} changed on main" in text
-    assert cb.pending() == ["Mini Doomer"]                                  # the next scheduled run tries it again
 
 
 def test_pending_is_the_schedule_gate(github):
@@ -433,31 +372,35 @@ def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
 
 
 def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):
-    """The run's commit is fenced: head-moved after three tries is a note and the redundant card a try-again refusal; the
-    refusals' verdicts need no commit (the data branch takes them); the report survives."""
-    github.conflicts = 3
+    """The run's commit is fenced: a local change in B's way fails it (B left unreferenced, the checkout as it was), a note,
+    and the redundant card a try-again error; the refusals' verdicts need no commit (the data branch takes them); the
+    report survives."""
+    head, path = github.head, github.clone / cb.EDITS_PATH
+    path.write_bytes(path.read_bytes() + b" ")
     text, commits = cb.run()
-    assert commits == [] and "**Nothing committed: head-moved: main kept moving: not committed after 3 tries**" in text
+    assert commits == [] and "**Nothing committed: error: git merge in" in text and "left unreferenced)" in text
     data = _edits_at(github)
     assert data["cards"]["Mini Doomer"]["hp"] == 5 and _verdict("Mini Doomer") is None
-    assert "head-moved: main kept moving" in text.split("## Refused", 1)[1] and "committed `" not in text
+    assert "error: git merge in" in text.split("## Errors", 1)[1] and "committed `" not in text
     assert _verdict("The Freezer")["state"] == "refused" and _records(tmp_path)[0]["landed"] == {}
     assert (tmp_path / cb.WORK_NAME / "report.md").read_text(encoding="utf-8") == text
     assert cb.pending() == ["Mini Doomer"]                                  # the redundant card again next run
+    assert github.head == head and path.read_bytes().endswith(b"}\n ")
 
 
 def test_main_exits_1_when_the_commit_fails_or_a_card_errors(github, monkeypatch):
     """A failure needs a person: main exits 1 (card-sync.yml then tells Discord); refusals alone exit 0."""
-    err = StringIO()
+    err, local, path = StringIO(), ["--local", str(github.clone)], github.clone / cb.EDITS_PATH
     monkeypatch.setattr(cb, "stderr", err)
-    github.conflicts = 3
-    assert cb.main([]) == 1 and "card_bake: Nothing committed: head-moved" in err.getvalue()
-    github.conflicts = 0
+    kept = path.read_bytes()
+    path.write_bytes(kept + b" ")                                           # in B's way
+    assert cb.main(local) == 1 and "card_bake: Nothing committed: error: git merge in" in err.getvalue()
+    path.write_bytes(kept)
     github.down.add(_sha(github.files_at(github.head)[DOOMER]))
-    assert cb.main(["--card", "Mini Doomer"]) == 1 and err.getvalue().endswith("card_bake: 1 card with an error: Mini Doomer\n")
+    assert cb.main([*local, "--card", "Mini Doomer"]) == 1 and err.getvalue().endswith("card_bake: 1 card with an error: Mini Doomer\n")
     github.down.clear()
     err.truncate(0)
-    assert cb.main([]) == 0 and cb.main([]) == 0 and err.getvalue() == ""   # 1 redundant committed, 4 refused; then nothing to do
+    assert cb.main(local) == 0 and cb.main(local) == 0 and err.getvalue() == ""   # 1 redundant committed, 4 refused; then nothing to do
 
 
 class Inline:
@@ -505,7 +448,7 @@ def test_a_killed_worker_leaves_the_rest_for_the_next_run(github, monkeypatch):
     _on_a_runner(monkeypatch)
     assert _same_run(cb.run(dry_run=True)[0]) == _same_run(serial)
     monkeypatch.setattr(Inline, "broken", 3)
-    report = cb.run_report(dry_run=True)
+    report = cb.run_report(dry_run=True, local=str(github.clone))
     tried = [c.name for c in report.cards if c.refusal and c.refusal.code == "error"]
     assert tried == [c.name for c in report.cards[2:]] and len(tried) == 3 and all(c.transient for c in report.cards[2:])
     assert "its bake worker stopped (BrokenProcessPool)" in report.text and report.cards[0].refusal.code != "error"
@@ -559,7 +502,7 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: (_ for _ in ()).throw(pe.Refused("font", "no Some Face")))
     text, commits = cb.run()
     verdict = _verdict("Mini Doomer")
-    key = cb.snapshot_at(cb.CARD_REPO, github.head).fonts_key()
+    key = cb.local_snapshot(cb.CARD_REPO, str(github.clone)).fonts_key()
     assert commits == [] and verdict["reason"] == "font: no Some Face" and verdict["fonts"] == key and len(key) == 8
     assert cb.pending() == []
     files = github.files_at(github.head)
@@ -625,64 +568,14 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch, t
                      "pngs": [DOOMER[:len(DOOMER) - 4] + ".png"]}
 
 
-def test_transient_errors_write_no_verdict(github, monkeypatch):
-    """A 5xx on a blob, a rate-limited POST: reported under Errors, retried next run, never a verdict for the editor."""
+def test_transient_errors_write_no_verdict(github):
+    """A 5xx on a blob: reported under Errors, retried next run, never a verdict for the editor."""
     github.down.add(_sha(github.files_at(github.head)[DOOMER]))
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "## Errors (1)" in text and "HTTPError: 503" in text
     assert _verdict("Mini Doomer") is None
     github.down.clear()
-    github.rate_limited = True
-    monkeypatch.setattr(gc, "git_commit", lambda *a, **k: pytest.fail("the SSH path is not for a rate limit"))
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "error: GitHub 403: API rate limit exceeded: rate limited (on POST git/blobs)" in text
-    assert _verdict("Mini Doomer") is None and gc.cant_write is False
-    github.rate_limited = False
     assert len(cb.run(card="Mini Doomer")[1]) == 1
-
-
-def test_forbidden_token_falls_to_ssh(github, monkeypatch):
-    """A token that reads but can't write (403, no rate-limit header): the commit lands over SSH; the API is not asked to write again."""
-    github.forbidden = True
-    pushed = []
-
-    def ssh(repository, head, files, message):
-        pushed.append(message)
-        return github.commit({**github.files_at(head), **files}, "AutoCroissant", message)
-    monkeypatch.setattr(gc, "git_commit", ssh)
-    text, commits = cb.run(card="Mini Doomer")
-    assert len(commits) == 1 and pushed == ["Card edits: 1 redundant"] and gc.cant_write is True
-    assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # refused once, then SSH
-    assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT} and f"committed `{commits[0][:8]}`" in text
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 5, "_by": "web", "_at": AT}})            # printed already
-    github.commit(files, "web", "Website edit: more")
-    text, commits = cb.run(card="mini_doomer")
-    assert len(commits) == 1 and len(pushed) == 2 and pushed[1] == "Card edits: 1 redundant"
-    assert [route for method, route in github.calls if method == "POST"] == ["git/blobs"]        # no API write tried this run
-    assert cb.run(card="the_freezer")[1] == [] and len(pushed) == 2                             # a refusal: no commit
-
-
-def test_verdict_for_an_edit_changed_before_the_commit(github, monkeypatch):
-    """A refused card whose edit changed meanwhile keeps the new edit; its verdict names the values it was tried on, so
-    the new ones are pending; the others land."""
-    real = cb.land
-
-    def land(repository, shares, message, dry_run, out_path="", local=None):
-        current = github.files_at(github.head)                  # before the commit: The Freezer's edit changes
-        data = json.loads(current[cb.EDITS_PATH].decode("utf-8"))
-        data["cards"]["The Freezer"]["stars"] = 3
-        current[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
-        github.commit(current, "web", "Website edit: The Freezer again")
-        return real(repository, shares, message, dry_run, out_path, local)
-    monkeypatch.setattr(cb, "land", land)
-    text, commits = cb.run()
-    assert len(commits) == 1 and "**The Freezer**" in text
-    assert github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
-    data = _edits_at(github)
-    assert data["cards"]["The Freezer"]["stars"] == 3 and _verdict("The Freezer")["for"] == {"stars": 2}
-    assert _verdict("Nobody")["state"] == "refused" and _verdict("A Snack")["state"] == "refused"
-    assert cb.pending() == ["The Freezer"]
 
 
 def test_missing_runner_dependency_is_transient(github, monkeypatch):
@@ -701,8 +594,7 @@ def test_missing_runner_dependency_is_transient(github, monkeypatch):
 
 
 def test_select_and_snapshot(github):
-    info = github.commits[github.head]
-    snapshot = cb.Snapshot(cb.CARD_REPO, github.head, info, cb._tree(cb.CARD_REPO, info["tree"]["sha"]))
+    snapshot = cb.local_snapshot(cb.CARD_REPO, str(github.clone))
     assert "creature template" not in snapshot.psds and snapshot.psds["mini doomer"] == DOOMER
     assert snapshot.png_for(DOOMER) == (DOOMER[:len(DOOMER) - 4] + ".png", [])
     assert snapshot.png_for(SNACK) == (SNACK[:len(SNACK) - 4] + ".png", ["Items/Heal/2 Stars/A_Snack2.png"])
@@ -744,6 +636,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path, monkeypatch):
     parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
     assert parse["old"]["hp"] == 5 and parse["new"]["hp"] == 8 and parse["validator"] == []
     assert "## Baked (1)" in text and "2 flag bytes" in text and f"committed `{commits[0][:8]}`" in text
+    assert not (github.clone / DOOMER).exists() and not [m for m, _ in github.calls if m != "GET"]   # sparse: not checked out
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()                                 # the field is gone: nothing to look at
     assert commits == [] and "0 with PSD fields" in text
@@ -805,11 +698,8 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
 
 
 # ========================
-# --local: the card sync's bake (one local commit B, nothing pushed)
+# --local: the card sync's clone (one local commit B, nothing pushed)
 # ========================
-SPARSE = ("/site/Card Edits.json", "/" + cb.ICON_MANIFEST_PATH, "/TTS/")      # card-sync.yml's checkout
-
-
 def _git(where, *args, env=None) -> str:
     done = run_process(["git", "-C", str(where), *args], capture_output=True, text=True, timeout=60,
                        env={**environ, "GIT_CONFIG_GLOBAL": "/dev/null", **(env or {})})
@@ -839,92 +729,15 @@ def _files_in(repo, sha) -> dict:
     return out
 
 
-@pytest.fixture
-def local(github, files, tmp_path):
-    """The Action's shape: origin holds the card repo; the clone is blobless and sparse (PSDs and PNGs by REST)."""
-    origin = tmp_path / "origin"
-    origin.mkdir()
-    _git(origin, "init", "-q", "-b", "main")
-    _git(origin, "config", "uploadpack.allowFilter", "true")
-    _put(origin, files)
-    _commit_in(origin, "Website edit: test")
-    clone = tmp_path / "clone"
-    _git(tmp_path, "clone", "-q", "--filter=blob:none", "--sparse", f"file://{origin}", str(clone))
-    _git(clone, "sparse-checkout", "set", "--no-cone", *SPARSE)
-    return SimpleNamespace(origin=origin, clone=clone, head=_git(clone, "rev-parse", "HEAD").strip())
-
-
-def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
-    """Pending edits -> one commit B on the clone's head, the checkout on it; origin and GitHub untouched; the small files
-    from the clone, only the PSDs and PNGs by REST; the same files as the live run's commit."""
-    lacks = run_process(["git", "-C", str(local.clone), "cat-file", "-e", _sha((local.origin / DOOMER).read_bytes())],
-                        capture_output=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
-    assert lacks.returncode != 0                                                                # blobless: no PSD here
-    text, commits = cb.run(local=str(local.clone))
-    assert len(commits) == 1
-    b = commits[0]
-    assert _git(local.clone, "rev-parse", "HEAD").strip() == b and _git(local.clone, "rev-parse", f"{b}^").strip() == local.head
-    assert _git(local.clone, "rev-list", "--count", "origin/main..HEAD").strip() == "1"
-    assert _git(local.origin, "rev-parse", "main").strip() == local.head                       # nothing pushed
-    assert _git(local.clone, "log", "-1", "--format=%an|%s", b).strip() == "AutoCroissant|Card edits: 1 redundant"
-    assert not [m for m, _ in github.calls if m != "GET"]
-    assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
-    rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
-    cards = {path: data for path, data in github.files_at(github.head).items()
-             if path.startswith(("Auxiliary", "Field/1")) or path == SNACK}                     # A Snack's: the redundancy check
-    assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
-    assert f"One local commit: `{b}` Card edits: 1 redundant (not pushed)." in text and f"- Local: `{local.clone}`" in text
-    assert "The checkout is on it." in text
-    edits = (local.clone / cb.EDITS_PATH).read_bytes()
-    assert _sha(edits) == _files_in(local.clone, b)[cb.EDITS_PATH]                         # the checkout is on B
-
-    before = github.head                                                                        # the live run, for comparison
-    cb.run()
-    assert json.loads(edits) == _edits_at(github)
-    live = sorted(p for p, data in github.files_at(github.head).items() if github.files_at(before).get(p) != data)
-    ours = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
-    assert ours == live == [cb.EDITS_PATH]
-
-
-def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
-    """--dry-run makes no B; a local change in B's way fails the run (exit 1) and leaves the checkout as it was."""
-    text, commits = cb.run(dry_run=True, local=str(local.clone))
-    assert commits == [] and "Would commit: Card edits: 1 redundant." in text
-    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and not _git(local.clone, "status", "--porcelain")
-    path = local.clone / cb.EDITS_PATH
-    path.write_bytes(path.read_bytes() + b" ")
-    out = StringIO()
-    with contextlib.redirect_stdout(out):
-        assert cb.main(["--local", str(local.clone)]) == 1
-    assert "Nothing committed: error: git merge in" in out.getvalue() and "left unreferenced)" in out.getvalue()
-    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and path.read_bytes().endswith(b"}\n ")
-
-
-def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
+def test_local_head_the_clone_lacks_is_a_failed_run(github, monkeypatch):
     """--head main moved past the checkout: a report and exit 1, no B and no traceback (card-sync goes on from main)."""
-    out, err = StringIO(), StringIO()
+    out, err, head = StringIO(), StringIO(), github.head
     monkeypatch.setattr(cb, "stderr", err)
     with contextlib.redirect_stdout(out):
-        assert cb.main(["--local", str(local.clone), "--head", "f" * 40]) == 1
+        assert cb.main(["--local", str(github.clone), "--head", "f" * 40]) == 1
     out, err = out.getvalue(), err.getvalue()
     assert "**Nothing baked: git rev-parse in" in out and "card_bake: Nothing baked:" in err and "Traceback" not in out + err
-    assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
-
-
-def test_local_bake_lands_psd_png_and_file_in_b(github, local):
-    """A real bake with --local: B holds the PSD, the PNG and the file; the verdict names B's PSD blob."""
-    data = json.loads((local.clone / cb.EDITS_PATH).read_bytes())
-    data["cards"] = {"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}}
-    _put(local.clone, {cb.EDITS_PATH: cb.dump_edits(data).encode("utf-8")})
-    _commit_in(local.clone, "Website edit: Mini Doomer")
-    text, (b,) = cb.run(local=str(local.clone))
-    assert _git(local.clone, "log", "-1", "--format=%B", b).strip() == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
-    changed = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
-    assert changed == sorted([DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATH])
-    verdict = _verdict("Mini Doomer")
-    assert verdict["state"] == "baked" and verdict["psd"] == _files_in(local.clone, b)[DOOMER][:8]
-    assert not (local.clone / DOOMER).exists()                                                  # sparse: not checked out
-    assert not [m for m, _ in github.calls if m != "GET"]
+    assert github.head == head
 
 
 # ========================
@@ -937,11 +750,11 @@ def test_workflow_pending_edits_line_calls_pending(github, capsys, monkeypatch):
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     code = re.search(r"Pending edits.*?python\" -c '([^']+)'", text, re.S).group(1)
-    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, "", str(DB[0] / "verdicts.json")])
+    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, str(github.clone), str(DB[0] / "verdicts.json")])
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]
     left = re.search(r"name: Leftover edits.*?<<'PY'\n(.*?)\n *PY\n", text, re.S).group(1)
-    monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, "", str(DB[0]), str(DB[0] / "none.json")])
+    monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, str(github.clone), str(DB[0]), str(DB[0] / "none.json")])
     exec(textwrap.dedent(left), {})
     assert capsys.readouterr().out.split() == ["5"]
 
@@ -1119,7 +932,7 @@ def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(after[moved[FREEZER]])[:8]
 
 
-def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, local, clone, monkeypatch):
+def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, clone, monkeypatch):
     """A runner's pool in real processes on a full clone: an added ability and a first type icon fetch the template, the
     chart and Types/ side by side. A Ghost's rename is refused, so Mini Doomer takes the name and The Freezer can't."""
     name = {"name": "Mini Destroyer", "_rename": True, "_by": "web", "_at": AT}
@@ -1129,10 +942,10 @@ def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, loca
             cb.EDITS_PATH: _edits({"A Ghost": name, "Warrior Dee": {"parts": added, "_by": "web", "_at": AT},
                                    "Bulborb Larva": {"types": ["fire"], "_by": "web", "_at": AT},
                                    "Mini Doomer": name, "The Freezer": name})}
-    _put(local.origin, side)
-    _commit_in(local.origin, "Website edit: test")
+    _put(github.origin, side)
+    _commit_in(github.origin, "Website edit: test")
     _on_a_runner(monkeypatch, cb.ProcessPoolExecutor)
-    report = cb.run_report(local=str(local.origin), dry_run=True)
+    report = cb.run_report(local=str(github.origin), dry_run=True)
     assert [(c.name, bool(c.baked), c.refusal and c.refusal.code) for c in report.cards] == [
         ("A Ghost", False, "unsupported-card"), ("Bulborb Larva", True, None), ("Mini Doomer", True, None),
         ("The Freezer", False, "unsupported-card"), ("Warrior Dee", True, None)]
@@ -1145,7 +958,7 @@ def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, loca
     assert renamed == {str(work / "Types" / "water.png"): b"whole"} and not (work / "Types" / "water.png").exists()
 
 
-def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, local):
+def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github):
     """The editor's "Also rename the card's files" (owner 10-25) on a scratch repo: Mini Doomer's name edit with
     `_rename` bakes the title and renames its PSD and PNG in B, with the files keyed by the card (its edits entry, the
     old name an alias, its authors line, creation date, ratings, the decks' rules); the Renamed trailers let the history
@@ -1160,19 +973,19 @@ def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, loca
             cb.RATINGS_PATH: _edits({"Mini Doomer": [{"date": "2023-04-28", "scale": "power", "value": 5, "by": "group",
                                                       "source": "TTS session"}]}),
             cb.RULES_PATH: json.dumps({"decks": {"d1": {"rule": {"include": [png]}, "card_list": [png]}}}, indent=2).encode()}
-    _put(local.origin, side)
-    _commit_in(local.origin, "Website edit: Mini Doomer")
-    _git(local.clone, "pull", "-q", "--ff-only")
+    _put(github.origin, side)
+    _commit_in(github.origin, "Website edit: Mini Doomer")
+    _git(github.clone, "pull", "-q", "--ff-only")
     for data in side.values():
         github.blobs[blob_sha_bytes(data)] = data                                # REST for what the sparse clone lacks
-    text, (b,) = cb.run(local=str(local.clone))
-    message = _git(local.clone, "log", "-1", "--format=%B", b)
+    text, (b,) = cb.run(local=str(github.clone))
+    message = _git(github.clone, "log", "-1", "--format=%B", b)
     assert message.startswith("Card edits: 1 baked\n\n- Mini Doomer: name 'Mini Doomer' -> 'Mini Destroyer', renamed: Mini "
                               "Doomer -> Mini Destroyer"), message
     assert f"Renamed: {DOOMER} -> {new}.psd\nRenamed: {png} -> {new}.png" in message
-    tree = _files_in(local.clone, b)
+    tree = _files_in(github.clone, b)
     assert DOOMER not in tree and png not in tree and {f"{new}.psd", f"{new}.png"} <= set(tree)
-    show = lambda path: _git(local.clone, "show", f"{b}:{path}")
+    show = lambda path: _git(github.clone, "show", f"{b}:{path}")
     entry = json.loads(show(cb.EDITS_PATH))["cards"]
     assert "another card of this run takes the name" in _verdict("The Freezer")["reason"]    # one name, one card
     assert entry.pop("The Freezer")["_rename"] and list(entry) == ["Mini Destroyer"] and entry["Mini Destroyer"]["aliases"] == ["Mini Doomer"]   # name baked, _rename gone
@@ -1182,7 +995,7 @@ def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, loca
     assert json.loads(show(cb.RULES_PATH))["decks"]["d1"]["card_list"] == [f"{new}.png"]
     verdict = _verdict("Mini Destroyer")
     assert verdict["renamed"] == "Mini Destroyer" and verdict["psd"] == tree[f"{new}.psd"][:8] and _verdict("Mini Doomer") is None
-    index = GitIndex.from_git(str(local.clone), b)
+    index = GitIndex.from_git(str(github.clone), b)
     assert index.renamed_from[f"{new}.psd"] == DOOMER and index.origin(f"{new}.png") == png
 
 

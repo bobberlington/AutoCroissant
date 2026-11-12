@@ -4,7 +4,7 @@ bake would bake it (card_bake.bake_card: the duplicate and blob gates, classify,
 fonts, status chart and icon vocabulary) on a temp copy, the card repo never written. card_preview_branch publishes the
 result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job, standard library only).
 
-    python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>]
+    python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> --clone <checkout>
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
@@ -41,11 +41,10 @@ from requests import RequestException
 import commands.card_bake as card_bake
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, snapshot_at, vocabulary
+from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, vocabulary
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, SMALL, blank, clean, stamp
-from commands.git_commit import ref_head
 from commands.github_api import token_from_env
 from global_config import CARD_REPO, ICON_MANIFEST_PATH
 
@@ -368,7 +367,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
     return {"files": files, "size": size}
 
 
-def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, clone: str = "", request: str = "",
+def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, *, clone: str, request: str = "",
             head: str = "") -> dict:
     """
     One card's edit through the bake (bake_card) on a temp work dir; the card repo is only read.
@@ -378,16 +377,15 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         edit: The edit file's bytes (load_edit; None: unreadable)
         out: Where result.json and the images go (old ones removed first)
         repository: owner/name of the card repo
-        clone: A checkout of it (blobless is enough): the tree and blobs from it, a missing blob by REST; "" = the API
-            (Snapshot.fetch: the manifest, the PSD and PNG, the chart for an ability, a types edit's new icons)
+        clone: A checkout of it (blobless is enough): the tree and blobs from it, a missing blob by REST
         request: The client's id, echoed (REQUEST)
-        head: The commit to preview on ("" = the clone's HEAD, or the branch head)
+        head: The commit to preview on ("" = the clone's HEAD)
 
     Returns:
         result.json's dict (written); never raises for a card's or the runner's failure
     """
     started = perf_counter()
-    out, clone = expanduser(out), abspath(expanduser(clone)) if clone else ""
+    out, clone = expanduser(out), abspath(expanduser(clone))
     makedirs(out, exist_ok=True)
     for name in (RESULT, PNG, SMALL, BEFORE):
         if exists(join(out, name)):
@@ -403,7 +401,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         fields = load_edit(edit)
         result["edit"] = fields                 # as sent (no `_`-keys): the site's staleness check compares it
         token_from_env()                        # the Action has no config.py: blob fetches take GITHUB_TOKEN
-        snapshot = local_snapshot(repository, clone, head) if clone else snapshot_at(repository, head or ref_head(repository))
+        snapshot = local_snapshot(repository, clone, head)
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
         ready()                                 # the reads are in (the fonts: at the first font)
@@ -510,17 +508,18 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--card", required=True, help="the card's key (Card Edits.json's: the file name) or its PSD path")
     parser.add_argument("--edit", required=True, help="a file with the edit's JSON (Card Edits.json fields)")
     parser.add_argument("--out", required=True, help="where the result and images go")
-    parser.add_argument("--clone", default="", help="a checkout of the card repo (blobless is enough); default: the API")
+    parser.add_argument("--clone", required=True, help="a checkout of the card repo (blobless is enough)")
     parser.add_argument("--request", default="local-preview", help="the client's id (8-64 of A-Z a-z 0-9 -)")
     parser.add_argument("--repo", default=CARD_REPO, help=f"owner/name of the card repo (default {CARD_REPO})")
-    parser.add_argument("--head", default="", help="the commit to preview on (default: the clone's HEAD, or main's head)")
+    parser.add_argument("--head", default="", help="the commit to preview on (default: the clone's HEAD)")
     options = parser.parse_args(args)
     try:
         with open(options.edit, "rb") as fh:
             raw = fh.read(MAX_EDIT + 1)
     except OSError:
         raw = None                              # load_edit refuses it: the result says so
-    result = preview(options.card, raw, options.out, options.repo, options.clone, options.request, options.head)
+    result = preview(options.card, raw, options.out, options.repo, clone=options.clone, request=options.request,
+                     head=options.head)
     print(render(result), end="")
     if result["state"] == "error":
         print(f"card_preview: {clean(result['reason'], 2000)}", file=stderr)

@@ -197,8 +197,82 @@ def files(clone):
     return out
 
 
+CARD_SYNC_SPARSE = ("/site/Card Edits.json", "/" + cb.ICON_MANIFEST_PATH, "/TTS/")    # card-sync.yml's checkout
+
+
+class LocalCards:
+    """
+    The card repo as Card sync's runner holds it for card_bake --local: origin, its blobless sparse clone (the checkout
+    the bake reads and makes B in) and the fake GitHub serving by REST the blobs the clone lacks (calls, broken, down).
+    commit() is a push to main the clone has: its blobs on GitHub, the ones it changes in the clone too.
+    """
+
+    def __init__(self, fake: FakeGitHub, origin: Path, clone: Path):
+        self.fake, self.origin, self.clone = fake, origin, clone
+        self.calls, self.broken, self.down, self.blobs = fake.calls, fake.broken, fake.down, fake.blobs
+
+    def git(self, *args, data: bytes = None, env: dict = None) -> bytes:
+        return subprocess.run(["git", "-C", str(self.clone), *args], input=data, capture_output=True, check=True,
+                              env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", **(env or {})}).stdout
+
+    @property
+    def head(self) -> str:
+        return self.git("rev-parse", "HEAD").decode().strip()
+
+    def _tree(self, sha: str) -> dict:
+        out = {}
+        for line in self.git("ls-tree", "-r", "-z", sha).decode().split("\0"):
+            if line:
+                meta, path = line.split("\t", 1)
+                out[path] = meta.split()[2]
+        return out
+
+    def files_at(self, sha: str) -> dict:
+        """{path: bytes} at a commit."""
+        return {path: self.blobs[blob] if blob in self.blobs else self.git("cat-file", "blob", blob, env=gc.NO_LAZY)
+                for path, blob in self._tree(sha).items()}
+
+    @property
+    def commits(self) -> dict:
+        """sha -> {"tree", "parents", "message", "author"} as FakeGitHub keeps them (read on access)."""
+        return _Commits(self)
+
+    def commit(self, files: dict, author: str, message: str) -> str:
+        """A commit of exactly {path: bytes} on HEAD, the checkout moved to it; its sha."""
+        old, lines = self._tree(self.head), []
+        for path, data in files.items():
+            sha = blob_sha_bytes(data)
+            self.blobs[sha] = data
+            if old.get(path) != sha:
+                self.git("hash-object", "-w", "--stdin", data=data)
+            lines.append(f"100644 {sha}\t{path}")
+        index = self.clone.parent / "commit.index"
+        index.unlink(missing_ok=True)
+        env = {"GIT_INDEX_FILE": str(index), **gc.NO_LAZY}
+        self.git("update-index", "--add", "--index-info", data=("\n".join(lines) + "\n").encode(), env=env)
+        tree = self.git("write-tree", "--missing-ok", env=env).decode().strip()
+        who = {"GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": f"{author}@x", "GIT_COMMITTER_NAME": author,
+               "GIT_COMMITTER_EMAIL": f"{author}@x"}
+        sha = self.git("commit-tree", tree, "-p", "HEAD", "-m", message, env=who).decode().strip()
+        self.git("merge", "--ff-only", "-q", sha)
+        return sha
+
+
+class _Commits:
+    def __init__(self, repo: LocalCards):
+        self.repo = repo
+
+    def __getitem__(self, sha: str) -> dict:
+        head, _, message = self.repo.git("cat-file", "commit", sha).decode().partition("\n\n")
+        fields = [line.split(" ", 1) for line in head.splitlines()]
+        return {"sha": sha, "tree": {"sha": dict(fields)["tree"]}, "parents": [{"sha": v} for k, v in fields if k == "parent"],
+                "message": message[:len(message) - 1] if message.endswith("\n") else message,
+                "author": {"name": dict(fields)["author"].rsplit(" <", 1)[0]}}
+
+
 @pytest.fixture
 def github(monkeypatch, tmp_path, files, clone):
+    """LocalCards of files (helpers.files): the token's REST reads go to the fake GitHub."""
     fake = FakeGitHub(cb.CARD_REPO, files)
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(ga, "GIT_TOKEN", "")
@@ -209,7 +283,20 @@ def github(monkeypatch, tmp_path, files, clone):
     monkeypatch.setenv(cb.WORK_ENV, str(tmp_path))
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
     monkeypatch.setattr(gc, "cant_write", False)
-    return fake
+    origin, local = tmp_path / "origin", tmp_path / "clone"
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "web", "GIT_AUTHOR_EMAIL": "w@x",
+           "GIT_COMMITTER_NAME": "web", "GIT_COMMITTER_EMAIL": "w@x"}
+    origin.mkdir()
+    for path, data in files.items():
+        (origin / path).parent.mkdir(parents=True, exist_ok=True)
+        (origin / path).write_bytes(data)
+    for args in (("init", "-q", "-b", "main"), ("config", "uploadpack.allowFilter", "true"), ("add", "-A"),
+                 ("commit", "-q", "-m", "Website edit: test")):
+        subprocess.run(["git", "-C", str(origin), *args], capture_output=True, check=True, env=env)
+    for args in (("-C", str(tmp_path), "clone", "-q", "--filter=blob:none", "--sparse", f"file://{origin}", str(local)),
+                 ("-C", str(local), "sparse-checkout", "set", "--no-cone", *CARD_SYNC_SPARSE)):
+        subprocess.run(["git", *args], capture_output=True, check=True, env=env)
+    return LocalCards(fake, origin, local)
 
 CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
                  "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"}}

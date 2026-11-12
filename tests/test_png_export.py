@@ -173,18 +173,6 @@ def test_g2_draws_no_knockout_the_fork_cannot(tmp_path, monkeypatch):
     assert pe.export(old, new, card()).gate != "G2" and pe.png_check(new, card())["ok"] is not None
 
 
-def test_g2_shape_and_region_gates_refuse(tmp_path, monkeypatch):
-    """With no stored image the bake's shape and region gates (G7) still stand on the merged PNG."""
-    old = fixture_psd(tmp_path, card(), "old")
-    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
-    new.has_preview = lambda: False
-
-    def refuse(*args):
-        raise psd_edit.Refused("region", "outside the region")
-    monkeypatch.setattr(psd_edit, "gate_region", refuse)
-    assert (lambda f: (f.outcome, f.gate, f.why))(pe.export(old, new, card())) == ("refused", "G7", pe.G7)
-
-
 def test_g7_size_changed(tmp_path):
     new = fixture_psd(tmp_path, card(size=(60, 100)), "new")
     found = pe.export(fixture_psd(tmp_path, card(), "old"), new, card())

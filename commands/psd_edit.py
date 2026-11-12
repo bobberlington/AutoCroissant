@@ -9576,35 +9576,6 @@ def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
 # ========================
 # Gates (sections 5 and 10)
 # ========================
-def gate_shape(png: Image.Image, merged: Image.Image, psd: PSDImage) -> None:
-    """The PNG is the PSD's canvas and the merge kept its size and mode; else Refused("shape")."""
-    if png.size != (psd.width, psd.height):
-        raise Refused("shape", f"PNG {png.size} is not the PSD canvas {(psd.width, psd.height)}")
-    if merged.size != png.size or merged.mode != png.mode:
-        raise Refused("shape", "PNG size or mode changed")
-
-
-def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
-    """
-    Every pixel differing between the old and new PNG lies inside the region.
-
-    Args:
-        png: The official PNG
-        merged: The merged PNG
-        region: The union of the edits' regions
-
-    Returns:
-        How many pixels differ; raises Refused("region") for any outside
-    """
-    diff = _px_differ(np.asarray(png.convert("RGBA")), np.asarray(merged.convert("RGBA")))
-    inside = np.zeros_like(diff)
-    inside[region[1]:region[3], region[0]:region[2]] = True
-    outside = int((diff & ~inside).sum())
-    if outside:
-        raise Refused("region", f"{outside} pixels differ outside the region")
-    return int(diff.sum())
-
-
 def body_sizes(old_path: str, new_path: str) -> tuple:
     """(old, new) file sizes, both without their image data section when new stripped old's merged image (strip())."""
     old, new = getsize(old_path), getsize(new_path)
@@ -11066,8 +11037,6 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                           % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]),
                           edit.field if edit.field in PARTIAL_FIELDS else None)
         changed_pixels += int(replaced.sum())
-    gate_shape(png, merged, new)
-    gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
     saving = ON_MERGED(merged, new_png, png) if ON_MERGED is not None else None
@@ -11792,9 +11761,7 @@ __all__ = [
     'gate_untouched',
     'dirty_box',
     'drawable',
-    'gate_region',
     'gate_reparse',
-    'gate_shape',
     'body_sizes',
     'gate_size',
     'glyph_places',
