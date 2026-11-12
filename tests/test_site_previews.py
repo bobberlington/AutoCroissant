@@ -282,6 +282,59 @@ out([Array.from({ length: 10 }, (_, c) => [...at(12 + 10 * c), at(17 + 10 * c)[0
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "barCut"), reason="no bar pictures in mockup.js")
+def test_bar_pictures(tmp_path):
+    """The plate's stat pictures (card_plates.bar_sheet): a value's cut; none for a value or stat the bake refuses on a
+    pictured card; no say without bars or at another value (the cells then); pasted where its alpha is half or more."""
+    out = node(tmp_path, """
+const bars = { vw: 720, bars: { hp: { at: 4, to: { "6": 1, "0": 0 } } }, cuts: [[1, 1, 2, 1, 0, 0], [0, 0, 2, 2, 0, 1]] };
+const d = new Uint8ClampedArray(3 * 3 * 4).fill(9), px = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 127, 7, 8, 9, 200, 0, 0, 0, 0]);
+m.putBar(d, 3, 3, [1, 1, 2, 2, px]);
+out([m.barCut(bars, "hp", 4, 6), m.barCut(bars, "hp", 4, 7), m.barCut(bars, "def", 2, 3), m.barCut(bars, "hp", 5, 6),
+  m.barCut(null, "hp", 4, 6), Array.from(d.slice(16, 24)), Array.from(d.slice(28, 36))]);""")
+    assert out == [[0, 0, 2, 2, 0, 1], None, None, None, None, [1, 2, 3, 255, 9, 9, 9, 9], [7, 8, 9, 255, 9, 9, 9, 9]]
+
+
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "labelRow"), reason="no labelRow in mockup.js")
+def test_plates_port_of_the_rows(tmp_path):
+    """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one
+    at its label, art, a drawn bar showing another value), and with its margin at least that."""
+    from types import SimpleNamespace
+    import numpy as np
+    from PIL import Image
+    import commands.card_plates as cp
+    W, H = 360, 720
+    img = np.repeat(np.linspace(30, 220, W, dtype=np.uint8)[None, :, None], H, 0).repeat(3, 2)   # art: a smooth sweep
+    (b0, b1, b2, b3), step = cp.ROWS["tall"]
+    def bar(y0, y1, lit):
+        x0, cw = round(b0 * W), (b2 - b0) * W / 10
+        for x in range(x0, round(b2 * W)):
+            c = int((x - x0) // cw)
+            img[y0:y1, x] = 20 if (x - x0) % cw < 2 else (200 if c < lit else 90)
+    rows = [(round((b1 + n * step) * H), round((b3 + n * step) * H)) for n in range(4)]
+    bar(*rows[0], 4)                                        # hp on its row
+    bar(rows[1][0] + 15, rows[1][1] + 15, 2)                # def at its label, below its row
+    bar(*rows[3], 6)                                        # spd shows 6, not its 3; atk: art
+    raw = tmp_path / "img.raw"
+    raw.write_bytes(np.dstack([img, np.full((H, W), 255, np.uint8)]).tobytes())
+    label = SimpleNamespace(kind="type", text="Defense", bbox=(50, 2 * (rows[1][0] + 15), 300, 2 * (rows[1][1] + 15)),
+                            is_visible=lambda: True)
+    psd = SimpleNamespace(width=720, descendants=lambda: iter([label]))
+    card, kinds = {"hp": 4, "def": 2, "atk": 5, "spd": 3}, {"hp": "template", "def": "template", "atk": "template", "spd": "pixel"}
+    rec = {"canvas": {"w": 720}, "stats": kinds, "text": [{"text": "Defense", "visible": True, "box": list(label.bbox)}]}
+    js = node(tmp_path, f"""
+const fs = await import("node:fs"), W = {W}, H = {H}, d = new Uint8ClampedArray(fs.readFileSync({json.dumps(str(raw))})), L = m.luma(d);
+const rec = {json.dumps(rec)}, card = {json.dumps(card)};
+const bars = m.barRows("tall", W, H, card, rec).map(r => (m.isBar(L, W, H, r.box) ? r : m.labelRow(L, W, H, rec, r)))
+  .filter(r => r && !(rec.stats[r.k] === "pixel" && !m.rowShows(L, W, H, r, card[r.k])));
+out(["hp", "def", "atk", "spd"].filter(k => !bars.some(r => r.k === k)));""")
+    image = Image.fromarray(img)
+    assert js == ["atk", "spd"] and cp.mock_misses(image, psd, card, kinds, 1.0) == js
+    assert set(js) <= set(cp.mock_misses(image, psd, card, kinds))
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "wide: true"), reason="no wide-font titles in mockup.js")
 def test_wide_font_title(tmp_path):
     """A one-line title 2.3 times as wide as its height says (a wide font) is found on the second pass, not boxed; at 3.3

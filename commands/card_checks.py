@@ -69,7 +69,8 @@ SPARSE_FILES = ("commands/card_checks.py", "commands/card_bake.py", "commands/ca
                 "commands/psd_regions.py", "commands/repo_history.py", "commands/rulebook.py", "commands/text_align.py",
                 "commands/txt2_repair.py", "commands/ability_place.py", "commands/ability_index.json", "global_config.py",
                 "requirements-cards.txt",
-                "commands/psd_links.py", "commands/card_plates.py")         # card-checks.yml's bot checkout
+                "commands/psd_links.py", "commands/card_plates.py",
+                "commands/psd_details.py")              # card-checks.yml's bot checkout
 VERSION = 1                                 # the file's "version"
 SAVE_EVERY = 30                             # s between run()'s writes of its whole out file
 STAT_ORDER = tuple(STATS)                   # hp, def, atk, spd: the template's rows, top to bottom
@@ -687,21 +688,23 @@ def check_card(ctx: Context, rel: str) -> dict:
     """
     snapshot = ctx.snapshot
     png_rel = snapshot.png_for(rel)[0]
-    psd = PSDImage.open(BytesIO(snapshot.fetch(snapshot.sha(rel))))
+    raw = snapshot.fetch(snapshot.sha(rel))
+    psd = PSDImage.open(BytesIO(raw))
     image = Image.open(BytesIO(snapshot.fetch(snapshot.sha(png_rel)))) if png_rel else None
     if image is not None:
         image.load()
     parsed = psd_edit.parse_card(ctx.parser, rel, rel, psd)
+    creatures = parsed["card"].get("creatures")
+    style, why = bar_style(psd, creatures)
     plate = None
     if image is not None:
         try:
             import commands.card_plates as card_plates   # here: an older card-checks.yml's checkout lacks it
             plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser),
                                        ctx.fonts)
+            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
-    creatures = parsed["card"].get("creatures")
-    style, why = bar_style(psd, creatures)
     notes = [OLD_NOTE] if style == "old" else []
     wrong = swapped(psd) if style else []
     if wrong:

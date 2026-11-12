@@ -5,7 +5,9 @@ instead of guessing the backdrop from the PNG. One file per PSD blob, crops at t
 wide) in one AVIF; a crop whose backdrop differs from the PNG off the layer's ink is left out (the mock-up's old way).
 Card checks makes them (check_card's "plate") and publishes them on the `plates` branch as <PSD blob>.json, those of
 PSDs gone from main dropped; the website fetches the open card's in edit mode. With the fonts, a layer's crop also
-carries the fork's layout of it (its lines and letters, layout()) when that is the stored pixels'.
+carries the fork's layout of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows
+the mock-up's cells cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it
+takes, at that view, which the mock-up pastes instead.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] [--remote origin] <run results.json> ...
 """
@@ -13,8 +15,9 @@ from argparse import ArgumentParser
 from base64 import b64encode
 from io import BytesIO
 from json import dumps, loads
-from math import gcd
+from math import ceil, floor, gcd
 from random import uniform
+from re import IGNORECASE, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import argv, stderr
 from time import sleep
@@ -26,8 +29,9 @@ from psd_tools import PSDImage
 
 import commands.psd_edit as psd_edit
 from commands.png_export import FX_EXTRA, like_mode
+from commands.psd_details import _stats      # at the top: card-checks.yml's sparse list must hold it
 from commands.psd_parser import EFFECT_LAYER_TAG, variant_view, variants_of
-from commands.psd_regions import fx_pad
+from commands.psd_regions import comp_bars, fx_pad
 from commands.repo_history import batch_env
 
 # ========================
@@ -224,6 +228,262 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
 
 
 # ========================
+# Stat bars: the bake's picture of every value
+# ========================
+BAR_TOP = 20                                # values tried, 0 to this; the bake refuses what its bars cannot show
+BAR_MOVED = 2                               # view levels: a bar pixel moved less shows the site's own image
+BAR_BYTES = 192_000                         # a lossless bar sheet past this goes lossy (BAR_AVIF)
+BAR_AVIF = 55                               # AVIF quality (screen tuning): under the site's 720 px image's noise (q50)
+BAR_SIDE = 16383                            # WebP's largest side: the sheet's cuts stack in columns of this height
+
+
+def view(image: Image.Image) -> Image.Image:
+    """image as the site's VIEW_W card image before its encode (build_site.make_images: its mode, thumbnail, LANCZOS)."""
+    image = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
+    image.thumbnail((VIEW_W, VIEW_W * 3), Image.LANCZOS)
+    return image
+
+
+# The mock-up's own stat rows (TTSCardMaker site/assets/mockup.js TEMPLATES bars, barRows, isBar, labelRow, rowShows),
+# ported with a margin: a row it may miss gets the bake's pictures
+ROWS = {"tall": ((0.3, 0.5, 0.978, 0.535), 0.0525), "item": ((0.308, 0.624, 0.986, 0.671), 0.053)}
+STAT_NAME = {"hp": r"(hp|health)", "def": r"(def|defen[cs]e|defemse)", "atk": r"(atk|attack)", "spd": r"(spd|speed)"}
+SURE = 1.2                                  # the mock-up's thresholds this much past theirs, both ways (live thumbs: 1.15)
+
+
+def _round(v: float) -> int:
+    return floor(v + 0.5)                   # JavaScript's Math.round
+
+
+def _shape(w: int, h: int) -> str:
+    r = h / w
+    return "tall" if 1.9 < r < 2.1 else "item" if 1.4 < r < 1.6 else "square" if 0.9 < r < 1.1 else ""
+
+
+def _px(box, w: int, h: int) -> tuple:
+    return tuple(min(max(_round(v), 0), top) for v, top in zip(box, (w, h, w, h)))
+
+
+def _is_bar(L: np.ndarray, box, k: float = 1.0) -> bool:
+    """mockup.js isBar, its thresholds times k (k > 1: surely a bar; k < 1: maybe one)."""
+    h, w = L.shape
+    x0, y0, x1, y1 = _px(box, w, h)
+    cw, y = (x1 - x0) / 10, _round((y0 + y1) / 2)
+    if cw < 3 or y <= 0 or y >= h:
+        return False
+    at = lambda x: sum(int(L[min(max(y + d, 0), h - 1), min(max(_round(x), 0), w - 1)]) for d in (-1, 0, 1)) / 3
+    jump = lambda x: max(abs(at(x + 1) - at(x - 1)), abs(at(x + 2) - at(x - 2)))
+    border = sum(max(jump(x0 + j * cw - 1), jump(x0 + j * cw), jump(x0 + j * cw + 1)) for j in range(1, 10))
+    inside = sum(jump(x0 + (j - 0.5) * cw) for j in range(1, 10))
+    return border / 9 > 12 * k and border > 2 * k * inside
+
+
+def _shows(L: np.ndarray, box, v: int, k: float = 1.0) -> bool:
+    """mockup.js rowShows, its 8 levels times k."""
+    if not 0 < v < 10:
+        return True
+    h, w = L.shape
+    x0, y0, x1, y1 = _px(box, w, h)
+    cw, m = (x1 - x0) / 10, []
+    for c in range(10):
+        ys = range(_round(y0 + (y1 - y0) * 0.3), ceil(y0 + (y1 - y0) * 0.7))
+        xs = range(_round(x0 + (c + 0.25) * cw), ceil(x0 + (c + 0.75) * cw))
+        cell = L[ys.start:ys.stop, xs.start:xs.stop]
+        m.append(float(cell.mean()) if cell.size else 0.0)
+    return min(m[:v]) > max(m[v:]) + 8 * k or max(m[:v]) + 8 * k < min(m[v:])
+
+
+def mock_misses(image: Image.Image, psd: PSDImage, card: dict, kinds: dict, sure: float = SURE) -> list:
+    """The stats of card the mock-up may not find a row for on image (the card's PNG at the site's view, view()), or
+    whose drawn row may not show the card's value: its finder (ROWS) with SURE's margin."""
+    rgb = np.asarray(image.convert("RGB"), np.int32)
+    L = ((rgb[..., 0] * 77 + rgb[..., 1] * 150 + rgb[..., 2] * 29) >> 8).astype(np.uint8)
+    h, w = L.shape
+    stats = [stat for stat in psd_edit.STAT_FIELDS if card.get(stat) is not None]
+    rows = ROWS.get(_shape(w, h))
+    keys = [stat for stat in psd_edit.STAT_FIELDS if card.get(stat) is not None or kinds.get(stat) == "template"]
+    if rows is None or any(kinds.get(stat) not in ("template", "pixel") for stat in keys):
+        return stats
+    (b0, b1, b2, b3), step = rows
+    k = w / psd.width
+    labels = [layer for layer in psd.descendants() if layer.kind == "type" and layer.is_visible()]
+    out = []
+    for n, stat in enumerate(keys):
+        box = (b0 * w, (b1 + n * step) * h, b2 * w, (b3 + n * step) * h)
+        if not _is_bar(L, box, sure):
+            label = None
+            for layer in labels if not _is_bar(L, box, 1 / sure) else ():     # maybe the template's row: a miss
+                try:
+                    text = (layer.text or "").replace("\ufeff", "").strip()
+                except Exception:               # text psd-tools can't read: not a label
+                    continue
+                if fullmatch(STAT_NAME[stat], text, IGNORECASE):
+                    label = layer
+                    break
+            if label is None:
+                out.append(stat)
+                continue
+            mid, half, q = (label.bbox[1] + label.bbox[3]) / 2 * k, (box[3] - box[1]) / 2, (box[2] - box[0]) / 40
+            at = lambda d: (box[0] + d, mid - half, box[2] + d, mid + half)
+            if not _is_bar(L, at(0), sure) or _is_bar(L, at(-q), 1 / sure) or _is_bar(L, at(q), 1 / sure):
+                out.append(stat)
+                continue
+            box = at(0)
+        if kinds.get(stat) == "pixel" and not _shows(L, box, card.get(stat) or 0, sure):
+            out.append(stat)
+    return [stat for stat in out if stat in stats]
+
+
+def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, stat: str, value: int,
+              icc: bool) -> Optional[Image.Image]:
+    """
+    The card's PNG after a website edit of one stat, as the bake makes it (psd_edit._apply_jobs' steps for a stat job:
+    classify, set_stat on a copy, gate_dirty, baseline, the merge), or None when the bake refuses it or the re-parse
+    would not read the value. The saved file's gates (gate_bytes, stories, filters, fx, idempotence) are not run:
+    saving every value is too slow here, and no stat value only they refuse is known (Chef, Computer Virus HP 0-20).
+    """
+    found = psd_edit.classify(parsed, {stat: value}, psd, parser)
+    if stat not in found.jobs:
+        return None
+    try:
+        new = psd_edit.edit_copy(psd, raw)
+        edits = [edit for edit in [psd_edit.set_stat(new, parsed, stat, value)] if edit.layers or edit.removed]
+        if not edits:
+            return None
+        kept, merged, edited = {}, png, psd_edit.edited_ids(edits)
+        first = psd_edit.gate_dirty(psd, new, edits, kept)
+        for edit in edits:
+            base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
+            cut = psd_edit.crop_pair(new, kept.get("after"), edit.region, icc, kept.get("box")) \
+                if measured["text"] == "preview" and kept.get("edited") == edited else None
+            render = cut[0] if cut else psd_edit.render_region(new, edit.region, icc, measured["text"], edited)
+            merged, replaced = psd_edit.merge_png(merged, base, render, edit.region)
+            if not replaced.any() and not psd_edit._within_bar(measured):
+                return None
+    except psd_edit.Refused:
+        return None
+    if parser is not None and psd_edit.parse_card(parser, rel, rel, new)["card"].get(stat) != value:
+        return None                             # gate_reparse's
+    return merged
+
+
+def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str) -> dict:
+    """{stat: {value: (x, y, the view's pixels there after the edit, before it)}} over the view pixels a stat edit moves
+    (bar_value at the site's card view, view()); every stat the card has, every value the bake takes."""
+    card = parsed["card"]
+    stats = [stat for stat in psd_edit.STAT_FIELDS if isinstance(card.get(stat), int) and card[stat] >= 0]
+    if not stats or png.size != psd.size or psd_edit.story_style_drift(psd, kerning=False):
+        return {}                               # the bake refuses every edit of a card whose stories drift
+    psd_edit.use_record(psd, rel)
+    icc = psd_edit.export_icc(psd, png)
+    was = np.asarray(view(png).convert("RGBA"))
+    out = {}
+    with psd_edit.render_cache(shared=True):
+        for stat in stats:
+            for value in range(BAR_TOP + 1):
+                merged = None if value == card[stat] else bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc)
+                if merged is None:
+                    continue
+                now = np.asarray(view(merged).convert("RGBA"))
+                ys, xs = np.nonzero((now != was).any(-1))
+                if len(xs):
+                    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+                    out.setdefault(stat, {})[value] = (x0, y0, now[y0:y1, x0:x1].copy(), was[y0:y1, x0:x1].copy())
+    return out
+
+
+def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_SIDE, vw: int = VIEW_W) -> Optional[dict]:
+    """
+    bar_changes() as the plates file's "bars": {"vw": the view's width, "bars": {stat: {"at": the PSD's value, "to": {value:
+    cut index}}}, "cuts": [[x, y, w, h, sheet x, sheet y]] (view px), "img": a data URL}: per value the pixels moved past
+    `moved` levels (alpha 255, the rest 0), identical cuts once, stacked in columns at most `side` tall; lossless WebP,
+    or past BAR_BYTES AVIF 4:4:4 at BAR_AVIF, tuned for screen content (aom's palette and block copy: the values' repeats);
+    None for none.
+    """
+    bars, cuts, pieces, seen = {}, [], [], {}
+    for stat, values in changes.items():
+        for value, (x, y, now, was) in sorted(values.items()):
+            mask = np.abs(now.astype(np.int16) - was.astype(np.int16)).max(-1) > moved
+            if not mask.any():
+                continue
+            ys, xs = np.nonzero(mask)
+            a0, b0, a1, b1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+            piece = now[b0:b1, a0:a1].copy()
+            piece[..., 3] = np.where(mask[b0:b1, a0:a1], 255, 0)
+            piece[piece[..., 3] == 0] = 0
+            key = (x + a0, y + b0, piece.shape[1], piece.shape[0], piece.tobytes())
+            if key not in seen:
+                seen[key] = len(cuts)
+                cuts.append([x + a0, y + b0, piece.shape[1], piece.shape[0]])
+                pieces.append((piece, was[b0:b1, a0:a1]))
+            bars.setdefault(stat, {"at": at[stat], "to": {}})["to"][str(value)] = seen[key]
+    if not bars:
+        return None
+    spots, x, y, wide, high = [], 0, 0, 0, 0
+    for piece, _ in pieces:
+        if y and y + piece.shape[0] > side:     # the next column
+            x, y, wide = x + wide, 0, 0
+        spots.append((x, y))
+        wide, y = max(wide, piece.shape[1]), y + piece.shape[0]
+        high = max(high, y)
+    sheet, under = (np.zeros((high, x + wide, 4), np.uint8) for _ in range(2))
+    for cut, (piece, was), (sx, sy) in zip(cuts, pieces, spots):
+        sheet[sy:sy + piece.shape[0], sx:sx + piece.shape[1]] = piece
+        under[sy:sy + piece.shape[0], sx:sx + piece.shape[1], :3] = was[..., :3]
+        cut += [sx, sy]
+    buf = BytesIO()
+    Image.fromarray(sheet, "RGBA").save(buf, "WEBP", lossless=True, quality=100, method=6)
+    kind = "webp"
+    if buf.tell() > BAR_BYTES:                  # a big one: lossy, quieter than the site's own card image
+        lossy, opts = Image.fromarray(np.where(sheet[..., 3:] > 0, sheet, under), "RGBA"), {"subsampling": "4:4:4", "speed": 6}
+        buf = BytesIO()
+        try:                                    # aom's screen tools: the values' repeats cost little
+            lossy.save(buf, "AVIF", quality=BAR_AVIF, advanced={"tune-content": "screen"}, **opts)
+        except ValueError:                      # an encoder without that option: the plain one
+            buf = BytesIO()
+            lossy.save(buf, "AVIF", quality=BAR_AVIF, **opts)
+        kind = "avif"
+    return {"vw": vw, "bars": bars, "cuts": cuts, "img": f"data:image/{kind};base64," + b64encode(buf.getvalue()).decode()}
+
+
+def _own(layer) -> bool:
+    """A layer-comp bar of the card's own (psd_edit.comp_custom); False when its document can't be read."""
+    try:
+        return psd_edit.comp_custom(layer)
+    except Exception:                           # noqa: BLE001 - not embedded or unreadable: the template's way
+        return False
+
+
+def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
+    """
+    Whether with_bars pictures the card: custom or item bars (card_checks.bar_style "custom", "few"), layer-comp bars of
+    its own (psd_edit.comp_custom: the Isaac bars), a stat past 10 (the cells draw 0-10), else a stat mock_misses finds;
+    never a tagged PSD's (one picture only: the cells') or a card without stats.
+    """
+    if not any(isinstance(card.get(stat), int) for stat in psd_edit.STAT_FIELDS) or png.size != psd.size \
+            or len(variants_of(psd)) > 1:
+        return False
+    over = any(isinstance(card.get(stat), int) and card[stat] > 10 for stat in psd_edit.STAT_FIELDS)   # the cells: 0-10
+    if style in ("custom", "few") or over:
+        return True
+    if any(_own(layer) for bars in comp_bars(psd).values() for layer, _, _ in bars):
+        return True
+    return bool(mock_misses(view(png), psd, card, _stats(psd)))
+
+
+def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
+              style: str) -> Optional[dict]:
+    """The plates file with its "bars" (bar_sheet) on a card pictured() picks; plate as it was otherwise."""
+    card = parsed["card"]
+    if not pictured(psd, png, card, style):
+        return plate
+    sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel), card, vw=view(png).width)
+    if sheet is None:
+        return plate
+    return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "bars": sheet}
+
+
+# ========================
 # The plates branch
 # ========================
 class Unpublished(RuntimeError):
@@ -328,16 +588,25 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
+    'BAR_MOVED',
+    'BAR_TOP',
     'BRANCH',
     'Unpublished',
     'VERSION',
     'VIEW_W',
+    'bar_changes',
+    'bar_sheet',
+    'bar_value',
     'collected',
     'crop',
     'layer_ids',
     'layout',
     'main',
+    'mock_misses',
+    'pictured',
     'plates',
     'psd_blobs',
     'publish',
+    'view',
+    'with_bars',
 ]

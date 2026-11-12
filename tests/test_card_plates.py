@@ -13,9 +13,11 @@ from PIL import Image
 from psd_tools import PSDImage
 
 import commands.card_plates as cp
+import commands.psd_edit as psd_edit
 from commands.psd_edit import card_parts, _bare_parser
 
 DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Ability FX: Blazing"
+PUZZLED = "Creatures/Other/3 Stars/Puzzled_Cat.psd"    # her own pictures under the old template's digit rows
 
 
 def test_plates_of_a_card(clone):
@@ -46,6 +48,51 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+
+
+def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
+    """A stat's picture is the bake's PNG of that edit (apply_jobs); the sheet keeps per value the view pixels moving past
+    BAR_MOVED: pasted on the card's view, the bake's view there and within BAR_MOVED of it elsewhere; none for 11. A lossy
+    sheet has the same cuts and alpha. A stat past 10 is pictured (the cells draw 0-10)."""
+    raw = (clone / PUZZLED).read_bytes()
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / PUZZLED.replace(".psd", ".png"))
+    png.load()
+    parser = _bare_parser()
+    parsed = psd_edit.parse_card(parser, str(clone / PUZZLED), PUZZLED, psd)
+    psd_edit.use_record(psd, PUZZLED)
+    icc = psd_edit.export_icc(psd, png)
+    ours = cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 9, icc)
+    baked = psd_edit.apply_jobs(str(clone / PUZZLED), str(clone / PUZZLED.replace(".psd", ".png")), PUZZLED, {"def": 9},
+                                parsed, parser, str(tmp_path), str(clone / "MDW" / "Fonts"), psd=psd)
+    assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
+    assert cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 11, icc) is None
+    sheet = cp.bar_sheet({"def": {9: _moved(png, ours)}}, parsed["card"])
+    x, y, w, h, sx, sy = sheet["cuts"][sheet["bars"]["def"]["to"]["9"]]
+    cut = np.asarray(Image.open(io.BytesIO(base64.b64decode(sheet["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w]
+    shown, want = np.asarray(cp.view(png).convert("RGBA")).copy(), np.asarray(cp.view(ours).convert("RGBA"))
+    held = cut[..., 3] >= 128
+    shown[y:y + h, x:x + w][held] = cut[held]
+    assert sheet["bars"]["def"]["at"] == 4 and held.sum() > 1000
+    assert np.array_equal(shown[y:y + h, x:x + w][held], want[y:y + h, x:x + w][held])
+    assert np.abs(shown.astype(int) - want).max() <= cp.BAR_MOVED
+    assert cp.pictured(psd, png, {"atk": 12}, "new") and not cp.pictured(psd, png, {}, "custom")
+    tall = np.random.default_rng(1).integers(3, 256, (2, 300, 40, 4), np.uint8)      # past `side`: two columns
+    two = cp.bar_sheet({"def": {v: (0, 0, tall[v], np.zeros_like(tall[v])) for v in (0, 1)}}, {"def": 4}, side=400)
+    img = np.asarray(Image.open(io.BytesIO(base64.b64decode(two["img"].split(",", 1)[1]))).convert("RGBA"))
+    assert img.shape == (300, 80, 4) and [c[4:] for c in two["cuts"]] == [[0, 0], [40, 0]]
+    assert all(np.array_equal(img[:, 40 * v:40 * v + 40, :3], tall[v][..., :3]) for v in (0, 1))
+    monkeypatch.setattr(cp, "BAR_BYTES", 0)
+    lossy = cp.bar_sheet({"def": {9: _moved(png, ours)}}, parsed["card"])
+    alpha = np.asarray(Image.open(io.BytesIO(base64.b64decode(lossy["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w, 3]
+    assert lossy["img"].startswith("data:image/avif") and lossy["cuts"] == sheet["cuts"] and np.array_equal(alpha >= 128, held)
+
+
+def _moved(png, merged):
+    """bar_changes' entry of one value."""
+    was, now = (np.asarray(cp.view(image).convert("RGBA")) for image in (png, merged))
+    ys, xs = np.nonzero((now != was).any(-1))
+    x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+    return int(x0), int(y0), now[y0:y1, x0:x1], was[y0:y1, x0:x1]
 
 
 def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):

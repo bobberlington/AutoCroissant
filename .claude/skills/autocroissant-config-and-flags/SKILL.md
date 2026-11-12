@@ -531,9 +531,19 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `BRANCH` | `plates` | TTSCardMaker branch of `<PSD blob>.json` plates (the card drawn without its text layers, plus each layer's layout); one commit per Card checks run that made plates, a PSD gone from main dropped |
 | `VIEW_W`, `QUALITY` | 720, AVIF q60 | the crops: the card view's width |
 | `TRIES` | 5 | publish pushes, each from the branch head |
+| `BAR_TOP`, `BAR_MOVED` | 20, 2 | stat pictures (`with_bars`, 2026-11-11): each value 0-20 the bake takes, its view pixels moved past 2 levels |
+| `BAR_BYTES`, `BAR_AVIF` | 192000, 50 | a lossless WebP bar sheet past this goes AVIF at the site's 720 px image quality |
+| `BAR_SIDE` | 16383 | the bar sheet's cuts stack in columns of at most this height (WebP's largest side) |
+| `SURE` | 1.2 | `mock_misses`' margin on the mock-up's own row finder (mockup.js; the live thumbs needed 1.15) |
 
 The `plates` branch is data like `previews`: never merged, never deleted (a deleted one comes back, but only with the PSDs
 read since; a Card checks dispatch with `all` makes every plate again). No plate: the mock-up erases the old text itself.
+A plate's `bars` (`card_plates.pictured`: custom and item bars, own layer-comp bars, a stat past 10, and template bars the
+mock-up may not find): the bake's own picture of every stat value (classify, set_stat, gate_dirty, the merge, at the
+site's 720 px view), pasted by the mock-up instead of
+shifting cells; a value with none (the bake refuses it) shows nothing, silently (owner 11-11). Knockout cards get none
+until the fork draws knockout (`psd_links.fork_draws_knockout()`); then a Card checks dispatch (`cards` or `all`) makes
+them (`to_check` re-reads only a PSD with no result or a changed PNG).
 
 ### psd_edit parity and card_bake limits (the bake and the guards)
 
