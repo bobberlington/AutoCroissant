@@ -162,20 +162,27 @@ def report() -> fc.Report:
 
 
 def test_discord_payload_wording():
-    payload = fc.discord_payload(report())
-    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"roles": [ROLE]}
+    """The role once on the first line, a line per card in the standards post's form (owner 2026-11-11), the owner's
+    "bite this user" kept; a card's fonts its PSD before the push asked for too are not told."""
+    payload = fc.discord_payload(report(), "o/r", "f" * 40)
+    assert set(payload) == {"content", "allowed_mentions", "flags"} and payload["allowed_mentions"] == {"roles": [ROLE]}
+    link = " [ffffffff](https://github.com/o/r/commit/ffffffffffff)"
     assert payload["content"] == (
         f"<@&{ROLE}>\n"
-        "bobber has pushed a card without adding the BabaUI font to MDW/Fonts, bite this user.\n"
-        "    Baba (6, 6, 6, 6)\n"
-        "bobber has pushed a card without adding the OCRAExtended font to MDW/Fonts, bite this user.\n"
-        "    Termination Shock (Ability, Name)\n"
-        "michael has pushed a card without adding the BabaUI font to MDW/Fonts, bite this user.\n"
-        "    The Gates of Ahn'Qiraj (Ability)\n"
-        "michael has pushed a card without adding the Pristina-Regular font to MDW/Fonts, bite this user.\n"
-        "    The Gates of Ahn'Qiraj (Name)")
+        "bobber pushed Baba: the BabaUI font is not in MDW/Fonts (6, 6, 6, 6), bite this user." + link + "\n"
+        "michael pushed The Gates of Ahn'Qiraj: the Pristina-Regular font is not in MDW/Fonts (Name), bite this user; "
+        "the BabaUI font is not in MDW/Fonts (Ability), bite this user." + link + "\n"
+        "bobber pushed Termination Shock: the OCRAExtended font is not in MDW/Fonts (Ability, Name), bite this user." + link)
     assert "<@" not in payload["content"].replace(f"<@&{ROLE}>", "", 1)         # the role once, no user mentions
     assert fc.discord_payload(fc.Report(checked=2)) == {}
+    old = report()
+    for card in old.cards:
+        card.new = []
+    old.cards[1].new = ["BabaUI"]
+    assert fc.discord_payload(old, "o/r", "f" * 40)["content"] == (
+        f"<@&{ROLE}>\nmichael pushed The Gates of Ahn'Qiraj: the BabaUI font is not in MDW/Fonts (Ability), bite this user." + link)
+    old.cards[1].new = []
+    assert fc.discord_payload(old, "o/r", "f" * 40) == {}                         # nothing new: no ping
 
 
 # ========================
@@ -209,7 +216,7 @@ def test_cli_psd_mode(fonts_dir, tmp_path, fake_psds, capsys):
     assert data["checked"] == 2 and data["missing"] == {"JavaneseText": {"Items/A.psd": ["Ability"]}} and data["fonts"] == {"files": 3, "faces": 4}
     assert data["cards"] == [{"path": "Items/A.psd", "author": "bobber", "missing": {"JavaneseText": ["Ability"]}}]
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines()[1] == "bobber has pushed a card without adding the JavaneseText font to MDW/Fonts, bite this user."
+    assert payload["content"].splitlines()[1] == "bobber pushed A: the JavaneseText font is not in MDW/Fonts (Ability), bite this user."
     assert fc.main(["--fonts", str(fonts_dir), "--psd", "Items/B.psd", "--discord", str(disc)]) == 0
     assert json.loads(disc.read_text(encoding="utf-8")) == {}
 
@@ -244,7 +251,11 @@ def test_repo_mode_push(fonts_dir, fake_psds, monkeypatch, tmp_path, capsys):
              {"filename": "MDW/Fonts/Old.ttf", "status": "modified", "sha": _sha(font)}]
     commits = {"c1": {"sha": "c1", "author": {"login": "alice"}, "files": [files[0], files[7]]},
                "c2": {"sha": "c2", "author": None, "files": [files[1], files[2], files[0]]}}   # no GitHub account on the email
-    fake = FakeGitHub({_sha(a): a, _sha(b): b, _sha(c): c}, {"commits": [commits["c1"], commits["c2"]], "files": files}, commits)
+    a0 = b"psd-a0"                                                              # A before the push asked for it too
+    fake_psds[a0] = {"JavaneseText": ["Ability"]}
+    before = {"tree": [{"path": "Creatures/Other/5 Stars/A.psd", "type": "blob", "sha": _sha(a0)}]}
+    fake = FakeGitHub({_sha(a): a, _sha(b): b, _sha(c): c, _sha(a0): a0}, {"commits": [commits["c1"], commits["c2"]], "files": files},
+                      commits, None, {"b" * 40: before})
     fake.broken.add(_sha(c))
     monkeypatch.setattr(ga, "get", fake.get)
     out = tmp_path / "r.json"
@@ -252,9 +263,10 @@ def test_repo_mode_push(fonts_dir, fake_psds, monkeypatch, tmp_path, capsys):
                     "--json", str(out)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["fonts_added"] == ["Pristina.ttf"]
-    assert data["cards"] == [{"path": "Creatures/Other/5 Stars/A.psd", "author": "pusher", "missing": {"JavaneseText": ["Name"]}}]
+    assert data["cards"] == [{"path": "Creatures/Other/5 Stars/A.psd", "author": "pusher", "missing": {"JavaneseText": ["Name"]},
+                              "new": []}]
     assert data["checked"] == 2 and data["errors"] == [f"N.M.E/C.psd: blob {_sha(c)[:8]} hashes to {_sha(b'garbage')[:8]}"]
-    assert fake.blob_calls() == 3                                               # the three card PSDs, once each
+    assert fake.blob_calls() == 4                                               # the three card PSDs, once each; A's old one
     assert "**Fonts added to MDW/Fonts:** `Pristina.ttf`" in capsys.readouterr().out
 
 
@@ -316,12 +328,14 @@ def test_big_push_read_from_the_clone(fonts_dir, fake_psds, monkeypatch, tmp_pat
     with pytest.raises(HTTPError):
         fc.pushed_files("o/r", first, after, "pusher")
     fake_psds[b"a2"], fake_psds[b"b"] = {"JavaneseText": ["Name"]}, {"PsdToolsFixture-TT": ["Ability"]}
+    fake_psds[b"a1"] = {}
     out = tmp_path / "r.json"
     assert fc.main(["--fonts", str(fonts_dir), "--repo", "o/r", "--before", first, "--after", after, "--author", "pusher",
                     "--clone", str(repo), "--json", str(out)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert (data["checked"], data["fonts_added"], data["errors"]) == (2, ["New.ttf"], [note])
-    assert data["cards"] == [{"path": "Items/A.psd", "author": "pusher", "missing": {"JavaneseText": ["Name"]}}]
+    assert data["cards"] == [{"path": "Items/A.psd", "author": "pusher", "missing": {"JavaneseText": ["Name"]},
+                              "new": ["JavaneseText"]}]                         # its old blob (the clone's) asked for none
     assert fake.blob_calls() == 0                                               # read from the clone, not the API
 
 

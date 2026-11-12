@@ -13,10 +13,10 @@ words in the chart's colours and effects and status cards in Krabby Patty: no ch
 the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
 only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
 (owner 2026-11-04: OLD_FONT; a re-lay a font explains lands instead, owner 2026-11-10: card_standards.font_cause).
-One report per push: the job summary and commit comment (report.md), one Discord post for the standards channel
-(discord.json: no mentions, no previews), and a plan of the writes (plan.json) that `land` commits once, right after
-the check. Each card pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing",
-"Name text: 'a' -> 'b'").
+One report per push: the job summary and commit comment (report.md), the guards' part of the standards channel's one
+post (discord.json; standards_post merges it with the card and font checks': the issues new on a card only, owner
+2026-11-11), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
+over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
 the same pixels, banded) when that saves more than 3% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
 pushed one in a process of its own, beside the rest of the check (_overlap).
@@ -96,6 +96,7 @@ from commands.github_api import blob_sha, token_from_env
 from commands.png_changes import changed_area
 from commands.psd_edit import Refused
 from commands.psd_parser import picture_numbers
+from commands.standards_post import payload
 from global_config import CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
@@ -107,7 +108,8 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py", "commands/psd_remote.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json",
-                "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py", "commands/png_changes.py")
+                "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py", "commands/png_changes.py",
+                "commands/standards_post.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
@@ -116,12 +118,8 @@ BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besi
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
 MODES = ("dry", "report", "on")
-LINE = "{login} pushed {card}: {issues}. [{short}]({url})"           # what to do, as short as it goes (owner 2026-11-06)
-CHANGES_COMMENT = 600                           # and in the commit comment
+CHANGES_COMMENT = 600                           # the changes in the commit comment
 MARKDOWN = r"([\\`*_~|<\[\]])"                   # escaped in card text and layer names (GitHub and Discord markdown)
-DISCORD_LIMIT = 2000
-SUPPRESS_EMBEDS = 4                             # Discord message flag: no link previews
-URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
 NOBODY = "Someone"
 NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub noreply email names its login
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
@@ -255,18 +253,23 @@ class Result:
 
     def told(self, mode: str = "on") -> list:
         """The lines the author is told on Discord; in report mode the PNGs the bot would make and the fixable issues
-        too (nothing is made or fixed there)."""
+        too (nothing is made or fixed there). Of a card pushed over an older PSD only the issues new on it (owner
+        2026-11-11: the old ones stay in the commit comment), worded without "(new)"."""
+        fresh = not self.job.psd_old                # a new card: every issue is new
+        issues = {issue["line"]: issue for issue in self.issues}
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         if mode == "report":
             out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png" and not w.get("silent")]
-        out += [f"{line} (the bot could not fix it: {why})" for line, why in self.fix_refused]
+        out += [f"{issues[line]['text'] if line in issues else line} (the bot could not fix it: {why})"
+                for line, why in self.fix_refused if fresh or issues.get(line, {}).get("new", True)]
         if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
             out.append(self.r10["line"])
-        out += [issue["line"] for issue in self.issues
-                if issue["discord"] and (issue["told"] or (mode == "report" and issue["fix"] and not issue["waived"]))]
+        out += [issue["text"] for issue in self.issues
+                if issue["discord"] and (issue["told"] or (mode == "report" and issue["fix"] and not issue["waived"]))
+                and (fresh or issue["new"])]
         out += [text for text, discord in self.notes if discord]
         if self.error:
             out.append(self.error_line())
@@ -1191,7 +1194,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
                      "composer": bool(fixed.composer), "folders": bool(fixed.folders),
                      "pixels": sorted(result.redrawn) + (["clean"] if cleaned else [])}
             if "tags" in result.redrawn:        # R1 is told only if this write doesn't land with its tags (after_window)
-                write["settles"] = [issue["line"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
+                write["settles"] = [issue["text"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
                                   "line": "; ".join(fixed.applied + composer),
@@ -2188,28 +2191,9 @@ def _changes_line(entry: dict, limit: int) -> str:
 
 
 def discord_payload(data: dict, repository: str) -> dict:
-    """
-    The webhook body: one LINE per card with something to tell (a refusal or a remaining issue); whole lines go from the
-    end to fit DISCORD_LIMIT; {} when nothing. Nobody is pinged and links get no preview.
-    """
-    url = f"https://github.com/{repository}/commit/"
-    lines = [LINE.format(login=entry["login"], card=entry["card"], issues="; ".join(entry["told"]).rstrip("."),
-                         short=(entry["commit"] or data["after"])[:8], url=url + (entry["commit"] or data["after"])[:URL_SHA])
-             for entry in data["cards"] if entry["told"]]
-    if not lines:
-        return {}
-
-    def assemble(kept: int) -> str:
-        rest = len(lines) - kept
-        more = [f"... and {plural(rest, 'more card')}: [details]({url}{data['after']})"] if rest else []
-        return "\n".join(lines[:kept] + more)
-
-    kept = len(lines)
-    content = assemble(kept)
-    while len(content) > DISCORD_LIMIT and kept > 0:
-        kept -= 1
-        content = assemble(kept)
-    return {"content": content, "allowed_mentions": {"parse": []}, "flags": SUPPRESS_EMBEDS}
+    """The guards' part of the standards post (standards_post.payload): a line per card with something to tell (a refusal,
+    a new issue, an error, a write that did not land); {} when nothing. Nobody is pinged and links get no preview."""
+    return payload(repository, data["after"], plan=data)
 
 
 # ========================
@@ -2933,7 +2917,6 @@ __all__ = [
     'ICON_FONT_FILE',
     'Head',
     'Job',
-    'LINE',
     'OLD_FONT',
     'RECOMPRESSED',
     'Result',

@@ -1,16 +1,18 @@
 """
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
 the card repo does not supply. TTSCardMaker's card-guards.yml runs it in its check job on every push to main that touches a
-PSD or MDW/Fonts (font-check.yml until 2026-10-25): job summary, commit comment and a Discord message in the standards
-channel pinging the card makers' role, at once; the bot's /fonts reads the report the card data build writes from
-psd_details.json into its manifest (fonts_report here, card_sync.fonts_text).
+PSD or MDW/Fonts (font-check.yml until 2026-10-25): job summary, commit comment, and the fonts the push made missing on a
+card (its PSD before the push did not ask for them; owner 2026-11-11) in the standards channel's one post, pinging the
+card makers' role (standards_post); the bot's /fonts reads the report the card data build writes from psd_details.json
+into its manifest (fonts_report here, card_sync.fonts_text).
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
                                    [--clone <dir>]]
                                   [--json <out>] [--discord <payload out>]
     FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}
-    markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
+    markdown(report), discord_payload(report) -> the job summary / commit comment and this check's part of the post
+    old_blobs(repo, before, psds) -> each pushed PSD's blob before the push (the checks' "new" notes)
     local_fonts() -> the fonts dir: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
     save_names(dir, path), load_names(path) -> a fonts dir's index as a small JSON file (NAMES_ENV)
     shared_tables(data), split_tables(data) -> a font's records on the same bytes, the font with each its own copy
@@ -28,7 +30,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from json import dump, load as json_load
 from os import cpu_count, environ, pathsep, walk
-from os.path import basename, expanduser, isdir, join, relpath, splitext
+from os.path import basename, expanduser, isdir, join, relpath
 from re import sub
 from struct import error as StructError, pack_into, unpack_from
 from subprocess import run
@@ -49,9 +51,6 @@ from global_config import FONT_DIRS_ENV, LOCAL_DIR_LOC
 FONTS_DIR = "MDW/Fonts"                     # the card repo's fonts folder; top level only (stoogedings-src/ is the icon font's source)
 FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".otc")
 EXCLUDE_FOLDERS = ("MDW", "Markers")        # card_data.EXCLUDE_FOLDERS: PSDs there are not cards
-ROLE_ID = "546427268751294475"              # the card makers' role the Discord message pings
-BITE = "{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."   # the user's wording
-DISCORD_LIMIT = 2000                        # characters per Discord message
 NOBODY = "Someone"                          # the author when no login is known
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop keeps in a run but never draws
 API_TIMEOUT = 60
@@ -259,6 +258,7 @@ class Card:
     path: str
     author: str
     missing: dict                               # font -> [layer names]
+    new: Optional[list] = None                  # of those, the fonts its PSD before the push did not ask for (None: all)
 
 
 @dataclass
@@ -283,13 +283,8 @@ class Report:
         """The --json report."""
         return {"checked": self.checked, "fonts": {"files": self.fonts_files, "faces": self.fonts_faces},
                 "fonts_added": self.fonts_added, "missing": self.by_font(),
-                "cards": [{"path": c.path, "author": c.author, "missing": c.missing} for c in self.cards], "errors": self.errors}
-
-
-def _card_name(path: str) -> str:
-    """The card's name from its PSD path (stem, underscores as spaces): card_models.card_name, copied so font_check's
-    own closure stays free of StatsDatabase."""
-    return splitext(basename(path))[0].replace("_", " ")
+                "cards": [{"path": c.path, "author": c.author, "missing": c.missing, **({"new": c.new} if c.new is not None else {})}
+                          for c in self.cards], "errors": self.errors}
 
 
 def markdown(report: Report) -> str:
@@ -311,26 +306,12 @@ def markdown(report: Report) -> str:
     return "\n".join(out) + "\n"
 
 
-def discord_payload(report: Report) -> dict:
-    """
-    The webhook body: the role mention once, then one BITE line per (author, font) with the cards and layers indented
-    below it; {} when nothing is missing. Only the role may be pinged.
-    """
-    pairs: dict = {}
-    for card in report.cards:
-        for font, layers in card.missing.items():
-            pairs.setdefault((card.author, font), []).append(f"    {_card_name(card.path)} ({', '.join(layers)})")
-    if not pairs:
-        return {}
-    lines = [f"<@&{ROLE_ID}>"]
-    for (author, font), cards in sorted(pairs.items()):
-        lines.append(BITE.format(name=author, font=font))
-        lines += cards
-    content = "\n".join(lines)
-    if len(content) > DISCORD_LIMIT:
-        tail = "\n... (the rest is in the commit comment)"
-        content = content[:DISCORD_LIMIT - len(tail)].rsplit("\n", 1)[0] + tail
-    return {"content": content, "allowed_mentions": {"roles": [ROLE_ID]}}
+def discord_payload(report: Report, repository: str = "", after: str = "") -> dict:
+    """This check's part of the standards post (standards_post.payload): a line per card with a missing font told (its
+    new ones when compared), the card makers' role pinged once; {} when nothing to tell. Imported here: Card sync and
+    Card checks check font_check out without it."""
+    from commands.standards_post import payload
+    return payload(repository, after, font_check=report.as_dict())
 
 
 def details_report(details: dict, cards: dict) -> Report:
@@ -564,7 +545,42 @@ def tree_blobs(repository: str, ref: str = "") -> dict:
     return {e["path"]: e["sha"] for e in data.get("tree", []) if e.get("type") == "blob"}
 
 
-def check_blobs(repository: str, psds: dict, index: FontIndex, clone: str = "") -> Report:
+def old_blobs(repository: str, before: str, psds: dict, clone: str = "", notes: Optional[list] = None) -> Optional[dict]:
+    """
+    Each pushed card PSD's blob before the push, for the checks' new notes: the path's at before, else its own blob
+    anywhere there (an exact rename or copy: nothing new); "" for a new card. Before's tree from the clone (a blobless
+    one holds it), else the API.
+
+    Args:
+        repository: owner/name
+        before: The push's previous head; empty or all zeros (a dispatch, a new branch): None
+        psds: {path: (blob sha at after, author)} (pushed_files)
+        clone: A clone holding before (blobless is fine); "" for none
+        notes: Gains a line when before's tree can't be read
+
+    Returns:
+        {path: blob or ""}, or None (every note told)
+    """
+    if not before or set(before) == {"0"} or not psds:
+        return None
+    tree = None
+    if clone:
+        listed = run(["git", "-C", clone, "ls-tree", "-r", "-z", before], capture_output=True, text=True,
+                     env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+        if listed.returncode == 0:
+            tree = {line.split("\t", 1)[1]: line.split(" ")[2].split("\t")[0]
+                    for line in listed.stdout.split("\0") if line and line.split(" ")[1] == "blob"}
+    try:
+        tree = tree if tree is not None else tree_blobs(repository, before)
+    except Exception as e:                      # a force push's gone head, the API down: every note told
+        if notes is not None:
+            notes.append(f"the PSDs before the push could not be read ({e}); every note is told")
+        return None
+    shas = set(tree.values())
+    return {path: tree.get(path) or (sha if sha in shas else "") for path, (sha, _) in psds.items()}
+
+
+def check_blobs(repository: str, psds: dict, index: FontIndex, clone: str = "", olds: Optional[dict] = None) -> Report:
     """
     PSDs read by blob sha through the API, in path order.
 
@@ -573,6 +589,7 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, clone: str = "") 
         psds: {path: (blob sha, author)}
         index: The fonts folder's faces
         clone: A clone read first and kept filled (github_api.fetch_verified)
+        olds: {path: its blob before the push, "" for a new card} (old_blobs): each card's new fonts
 
     Returns:
         Report
@@ -590,7 +607,16 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, clone: str = "") 
         except Exception as e:
             report.errors.append(f"{path}: {e}")
             continue
+        cards = len(report.cards)
         _record(report, index, path, author, fonts)
+        if olds is not None and len(report.cards) > cards:
+            card, old = report.cards[-1], olds.get(path, "")
+            try:
+                asked = set() if not old else set(card.missing) if old == sha else set(
+                    psd_fonts(fetch_verified(repository, old, timeout=API_TIMEOUT, clone=clone)))
+            except Exception:                   # the old blob unread: every font is told
+                asked = set()
+            card.new = [font for font in card.missing if font not in asked]
     return report
 
 
@@ -657,7 +683,7 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--whole-tree", action="store_true", help="with --repo: every card PSD of the tree at --after (~813 blob downloads, 16 GB)")
     parser.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first; fetched ones are kept in it")
     parser.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
-    parser.add_argument("--discord", default="", metavar="OUT", help="write the Discord webhook payload here ({} when nothing is missing)")
+    parser.add_argument("--discord", default="", metavar="OUT", help="write this check's part of the standards post here ({} when nothing to tell)")
     options = parser.parse_args(args)
     token_from_env()
     index = FontIndex(options.fonts)
@@ -668,7 +694,8 @@ def main(args: Optional[list] = None) -> int:
                 fonts_added, notes = [], []
             else:
                 psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author, options.clone)
-            report = check_blobs(options.repo, psds, index, options.clone)
+            olds = None if options.whole_tree else old_blobs(options.repo, options.before, psds, options.clone, notes)
+            report = check_blobs(options.repo, psds, index, options.clone, olds)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, fonts_added, notes = Report(), [], [f"GitHub API: {e}"]
         report.fonts_added, report.errors = fonts_added, report.errors + notes
@@ -682,7 +709,7 @@ def main(args: Optional[list] = None) -> int:
             dump(report.as_dict(), fh, indent=1)
     if options.discord:
         with open(options.discord, "w", encoding="utf-8") as fh:
-            dump(discord_payload(report), fh)
+            dump(discord_payload(report, options.repo, options.after if options.repo else ""), fh)
     return 0
 
 
@@ -695,7 +722,6 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'API_TIMEOUT',
-    'BITE',
     'COMMITS_PAGE',
     'Card',
     'EXCLUDE_FOLDERS',
@@ -706,7 +732,6 @@ __all__ = [
     'NAMES_ENV',
     'POOL_CHUNK',
     'POOL_MIN',
-    'ROLE_ID',
     'Report',
     'check_blobs',
     'check_checkout',
@@ -721,6 +746,7 @@ __all__ = [
     'load_names',
     'local_fonts',
     'main',
+    'old_blobs',
     'markdown',
     'ps_name',
     'psd_fonts',

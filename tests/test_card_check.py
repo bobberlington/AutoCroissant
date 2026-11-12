@@ -247,12 +247,37 @@ def report() -> cc.Report:
 
 def test_discord_payload_wording():
     payload = cc.discord_payload(report())
-    assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"parse": []}
+    assert set(payload) == {"content", "allowed_mentions", "flags"} and payload["allowed_mentions"] == {"parse": []}
     assert payload["content"] == ('bobber pushed God Tamer: no stars (group them in "Stars").\n'
                                   "michael pushed Computer Virus: no HP bar; no DEF bar.")      # what to do, short (owner 2026-11-06)
     assert "website shows these" not in payload["content"]        # the validator's notes never reach the website's Parser notes
     assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert cc.discord_payload(cc.Report(checked=2, errors=["x.psd: could not be read (boom)"])) == {}
+
+
+def test_one_standards_post_per_push():
+    """standards_post (owner 2026-11-11): the guards' lines, the card check's new notes and the font check's new fonts in
+    one post, a line per card in path order with its commit (the head's when the guards name none), a note both checks
+    tell once (layer ids: the guards' wording, stars: the card check's), the role pinged only for a missing font and kept
+    when lines are cut."""
+    from commands.standards_post import payload
+    ids = "layers share an id (7): Photoshop's Duplicate Layer gives a new one"
+    plan = {"cards": [{"card": "A", "psd": "X/A.psd", "login": "netverk", "commit": "1" * 40, "told": [ids, "the stars are not in a group named Stars"],
+                       "issues": [{"code": "R13", "text": ids}, {"code": "R6", "text": "the stars are not in a group named Stars"}]}]}
+    checks = {"cards": [{"path": "X/A.psd", "author": "netverk", "notes": ["DUPLICATE LAYER IDS", NO_STARS], "new": ["DUPLICATE LAYER IDS", NO_STARS]},
+                        {"path": "X/B.psd", "author": "bob", "notes": [NO_STATS], "new": []}]}
+    fonts = {"cards": [{"path": "X/C.psd", "author": "bob", "missing": {"Futura": ["Name"]}, "new": ["Futura"]}]}
+    post = payload("o/r", "f" * 40, plan=plan, card_check=checks)
+    assert post == {"content": f'netverk pushed A: {ids}; no stars (group them in "Stars"). [11111111](https://github.com/o/r/commit/{"1" * 12})',
+                    "allowed_mentions": {"parse": []}, "flags": 4}
+    post = payload("o/r", "f" * 40, plan=plan, card_check=checks, font_check=fonts)
+    assert post["content"].splitlines()[0] == "<@&546427268751294475>" and post["allowed_mentions"] == {"roles": ["546427268751294475"]}
+    assert post["content"].splitlines()[2] == ("bob pushed C: the Futura font is not in MDW/Fonts (Name), bite this user. "
+                                               f"[ffffffff](https://github.com/o/r/commit/{'f' * 12})")
+    many = {"cards": [{"path": f"X/{i:03}.psd", "author": "bob", "missing": {"Futura": ["Name"]}} for i in range(40)]}
+    cut = payload("o/r", "f" * 40, font_check=many)["content"].splitlines()
+    assert cut[0] == "<@&546427268751294475>" and cut[-1] == f"... and {42 - len(cut)} more cards: [details](https://github.com/o/r/commit/{'f' * 40})"
+    assert payload("o/r", "f" * 40, plan={"cards": [dict(plan["cards"][0], told=[])]}, card_check={"cards": [checks["cards"][1]]}) == {}
 
 
 # ========================
@@ -272,35 +297,46 @@ def tree_and_blobs(edits_text: str, psds: dict) -> tuple:
 
 
 def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
-    a, b, c = b"psd-a", b"psd-b", b"psd-c"
+    """The pushed PSDs by blob; a card's notes its PSD before the push lacked are its new ones (owner 2026-11-11: only
+    those reach the post), every note for a new card."""
+    a, b, c, d, d0 = b"psd-a", b"psd-b", b"psd-c", b"psd-d", b"psd-d0"
     fake_cards[a] = lambda r: creature(r, defense=4, attack=5, speed=6)             # HP NOT FOUND, answered by the edits
     fake_cards[b] = lambda r: creature(r, card_type="item", problems=[NO_STARS])
-    psds = {"a": a, "Creatures/Kirby/3 Stars/A.psd": a, "Items/Heal/1 Stars/B.psd": b, "N.M.E/C.psd": c}
+    fake_cards[d] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS", "MISSPELT TYPE: fier"])
+    fake_cards[d0] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS"])
+    psds = {"a": a, "Creatures/Kirby/3 Stars/A.psd": a, "Items/Heal/1 Stars/B.psd": b, "N.M.E/C.psd": c, "Creatures/D.psd": d}
     tree, blobs = tree_and_blobs(edits({"A": {"hp": 5}}), psds)
-    files = [{"filename": "Creatures/Kirby/3 Stars/A.psd", "status": "modified", "sha": _sha(a)},
+    before, _ = tree_and_blobs(edits({}), {"a": a, "Creatures/Kirby/3 Stars/A.psd": b"psd-a0", "Creatures/D.psd": d0})
+    blobs[_sha(d0)] = d0
+    files = [{"filename": "Creatures/D.psd", "status": "modified", "sha": _sha(d)},
+             {"filename": "Creatures/Kirby/3 Stars/A.psd", "status": "modified", "sha": _sha(a)},
              {"filename": "Items/Heal/1 Stars/B.psd", "status": "added", "sha": _sha(b)},
              {"filename": "N.M.E/C.psd", "status": "renamed", "sha": _sha(c)},
              {"filename": "MDW/Templates/T.psd", "status": "modified", "sha": _sha(a)},
              {"filename": "Auxiliary/Markers/M.psd", "status": "modified", "sha": _sha(a)},
              {"filename": "Items/Gone.psd", "status": "removed", "sha": "0" * 40},
              {"filename": "site/Card Edits.json", "status": "modified", "sha": "4" * 40}]
-    commits = {"c1": {"sha": "c1", "author": {"login": "alice"}, "files": [files[0]]},
-               "c2": {"sha": "c2", "author": None, "files": [files[1], files[2], files[6]]}}   # no GitHub account on the email
-    fake = FakeGitHub(blobs, {"commits": [commits["c1"], commits["c2"]], "files": files}, commits, tree)
+    commits = {"c1": {"sha": "c1", "author": {"login": "alice"}, "files": [files[0], files[1]]},
+               "c2": {"sha": "c2", "author": None, "files": [files[2], files[3], files[7]]}}   # no GitHub account on the email
+    fake = FakeGitHub(blobs, {"commits": [commits["c1"], commits["c2"]], "files": files}, commits, tree, {"b" * 40: before})
     fake.broken.add(_sha(c))
     monkeypatch.setattr(ga, "get", fake.get)
     out, disc = tmp_path / "r.json", tmp_path / "d.json"
     assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--author", "pusher", "--json", str(out), "--discord", str(disc)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["cards"] == [{"path": "Items/Heal/1 Stars/B.psd", "author": "pusher", "notes": [NO_STARS]}]
-    assert data["checked"] == 2 and data["errors"] == [f"N.M.E/C.psd: blob {_sha(c)[:8]} hashes to {_sha(b'garbage')[:8]}"]
-    assert fake.blob_calls() == 5                                                   # the manifest, the edits file, three card PSDs
-    assert any(u.endswith("/git/trees/c2?recursive=1") for u in fake.calls)
+    assert data["cards"] == [
+        {"path": "Creatures/D.psd", "author": "alice", "notes": ["DUPLICATE LAYER IDS", "MISSPELT TYPE: fier"], "new": ["MISSPELT TYPE: fier"]},
+        {"path": "Items/Heal/1 Stars/B.psd", "author": "pusher", "notes": [NO_STARS], "new": [NO_STARS]}]
+    assert data["checked"] == 3 and data["errors"] == [f"N.M.E/C.psd: blob {_sha(c)[:8]} hashes to {_sha(b'garbage')[:8]}"]
+    assert fake.blob_calls() == 7                                   # the manifest, the edits file, four card PSDs, D's old one
+    assert any(u.endswith("/git/trees/c2?recursive=1") for u in fake.calls) and any(f"/git/trees/{'b' * 40}?" in u for u in fake.calls)
     text = capsys.readouterr().out
     assert '- `Items/Heal/1 Stars/B.psd` (pusher): no stars (group them in "Stars")\n' in text and "A.psd" not in text
+    assert "- `Creatures/D.psd` (alice): duplicate layer IDs; misspelt type fier\n" in text         # the comment: every note
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines()[0] == 'pusher pushed B: no stars (group them in "Stars").'
-    assert "http" not in payload["content"] and "token" not in payload["content"].lower()
+    assert payload["content"].splitlines() == ["alice pushed D: misspelt type fier. [c2](https://github.com/o/r/commit/c2)",
+                                               'pusher pushed B: no stars (group them in "Stars"). [c2](https://github.com/o/r/commit/c2)']
+    assert "token" not in payload["content"].lower()
 
 
 def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, capsys):

@@ -353,9 +353,10 @@ def fork_install(path) -> str:
 # From test_font_check
 # ========================
 class ChecksGitHub:
-    """blobs: sha -> bytes; compare: the compare API's body; commits: sha -> the commit API's body; tree: a trees body."""
-    def __init__(self, blobs: dict, compare: dict, commits: dict, tree: dict = None):
-        self.blobs, self.compare, self.commits, self.tree = blobs, compare, commits, tree
+    """blobs: sha -> bytes; compare: the compare API's body; commits: sha -> the commit API's body; tree: a trees body
+    (trees: ref -> another's, the push's before)."""
+    def __init__(self, blobs: dict, compare: dict, commits: dict, tree: dict = None, trees: dict = None):
+        self.blobs, self.compare, self.commits, self.tree, self.trees = blobs, compare, commits, tree, trees or {}
         self.broken: set = set()                 # blobs served with other bytes
         self.calls: list = []
 
@@ -368,7 +369,7 @@ class ChecksGitHub:
             sha = path.split("/")[1]
             return Reply(body=self.commits[sha]) if sha in self.commits else Reply(404)
         if path.startswith("git/trees/"):
-            return Reply(body=self.tree)
+            return Reply(body=self.trees.get(path.split("/")[2].split("?")[0], self.tree))
         if path.startswith("git/blobs/"):
             sha = path.rsplit("/", 1)[1]
             if sha in self.broken:

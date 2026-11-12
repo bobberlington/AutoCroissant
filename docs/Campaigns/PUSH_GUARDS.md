@@ -1600,3 +1600,25 @@ checksums and head's checkSumAdjustment computed again; names untouched): plan.j
 resting on the pushed blob, silent (no comment, Discord or changelog event; the commit says "N fonts repaired"). Left as
 pushed: a collection (.ttc: faces may share tables there) and a record over only part of another's bytes (Goudy-Bold's
 glyf, too long: Photoshop sets it, and its split copy draws 3 pixels up to 17 levels apart, so it stays).
+
+
+## 22. One standards post per push (2026-11-11)
+
+Owner, 2026-11-11 (catalogue s1110/discord-msgs/CATALOGUE.txt, rulings 1, 2 and 7): the standards channel gets ONE post per
+push, telling only what the push made new on a card, and one failure alert per broken push.
+- The post: card-guards.yml's `tell` job (after check, checks and post; whatever `CARD_GUARDS` says) runs
+  `commands/standards_post.py` on the runner's own python3 (stdlib only, in `SPARSE_FILES`) over the guards' plan.json and
+  landed.json and the two checks' report.json: "<login> pushed <card>: <notes>. [sha8](commit)" a line per card in path
+  order; a note two checks tell once (stars group: the card check's words over R6; layer ids: R13's over the card check's);
+  the role pinged on the first line only when a font is missing; no previews. Once per push: the told mark on any of the
+  bot's commit comments (the guards' comment, else the first check comment the tell job posts).
+- New only, whoever pushed: a guards issue is told when `mark_new` marks it (or the card is new), worded without "(new)";
+  a fix the bot could not make as its issue; a card check note or a missing font when the PSD before the push lacked it
+  (`font_check.old_blobs`: the path's blob at before, else the same blob anywhere there, so an exact rename tells nothing).
+  The comments and job summaries keep every note.
+- Failures: finish's "Tell Discord the run failed": "Card guards failed on <login>'s push <sha8>: <failed steps> <run>"
+  (the attempt's job list; a timed-out step so marked), no ping, flags 4; the failure streak and its artifact are gone. The
+  shared marker: a commit comment holding `<!-- discord-failure-told -->` on the push's head; Card sync's alert reads and
+  leaves the same, so a push broken in both is told once.
+- Landing order: TTSCardMaker's BOT_FILES gains `/commands/standards_post.py` before AutoCroissant lands (card_guards and
+  card_check import it; font_check only inside `discord_payload`, as Card sync and Card checks check font_check out alone).

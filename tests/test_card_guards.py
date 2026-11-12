@@ -532,6 +532,28 @@ def test_a_card_error_is_told_and_counted(cards, tmp_path, monkeypatch):
     monkeypatch.setattr(cg.png_export, "export_new", real)
 
 
+def test_only_new_issues_are_told():
+    """Owner 2026-11-11: of a card pushed over an older PSD only the issues new on it reach Discord (no "(new)": all are),
+    whoever pushed; a new card's all; the old ones stay told in the comment. A fix the bot could not make, as its issue."""
+    old = {"code": "R11", "text": "parts are not named so", "line": "parts are not named so", "new": False, "told": True,
+           "discord": True, "fix": False, "waived": ""}
+    new = {"code": "R14", "text": "card names typed in another letter case: 'x' should be 'X'", "new": True, "told": True,
+           "discord": True, "fix": False, "waived": ""}
+    new["line"] = new["text"] + " (new)"
+    story = dict(old, code="R9", text="Photoshop would show old text in Ability", line="Photoshop would show old text in Ability",
+                 fix=True, told=False)                                         # the bot's to fix: told only if it could not
+    result = cg.Result(cg.Job("X/A.psd", "stale", psd_old="s0"), issues=[old, new, story],
+                       fix_refused=[(story["line"], "no Txt2"), (new["line"], "x")])
+    assert result.told() == ["card names typed in another letter case: 'x' should be 'X' (the bot could not fix it: x)", new["text"]]
+    result.job.psd_old = ""                                                    # a new card
+    assert result.told() == [f"{story['text']} (the bot could not fix it: no Txt2)",
+                             "card names typed in another letter case: 'x' should be 'X' (the bot could not fix it: x)",
+                             old["text"], new["text"]]
+    entry = _entry("A", issues=[old, new], told=[new["text"]])
+    assert "Issues: parts are not named so; card names typed in another letter case: 'x' should be 'X' (new)" in cg.markdown(
+        {"mode": "on", "after": "f" * 40, "before": "e" * 40, "cards": [entry]}, [], [], [])
+
+
 def test_check_fails_when_it_cannot_check(cards, tmp_path, capsys):
     """Not checked (the clone lacks the commit, the API is down): exit 1, so card-guards.yml's failure alert runs."""
     root, base, alice, bot = cards
@@ -543,7 +565,7 @@ def test_discord_fits_and_says_nothing_without_issues():
     entry = {"login": "Zomoroko", "card": "Skullord", "told": ["timing tag (1GCD) not set in the stoogedings badge font"], "commit": "7" * 40}
     data = {"after": "a" * 40, "cards": [dict(entry, card=f"Card {i}") for i in range(80)]}
     payload = cg.discord_payload(data, "MichaelJSr/TTSCardMaker")
-    assert len(payload["content"]) <= cg.DISCORD_LIMIT and payload["flags"] == 4
+    assert len(payload["content"]) <= 2000 and payload["flags"] == 4
     last = payload["content"].splitlines()[-1]
     assert re.fullmatch(r"\.\.\. and \d+ more cards: \[details\]\(https://github\.com/MichaelJSr/TTSCardMaker/commit/a{40}\)", last)
     one = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "MichaelJSr/TTSCardMaker")["content"]
@@ -1380,6 +1402,9 @@ def test_action_shaped_copy(tmp_path):
     from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
+    done = subprocess.run([executable, "-S", "-m", "commands.standards_post", "--help"], cwd=bot, capture_output=True,
+                          text=True, timeout=120)                               # the tell job's: the runner's python3, no venv
+    assert done.returncode == 0 and done.stdout.startswith("usage: python3 -m commands.standards_post"), done.stderr
     for module in ("card_check", "font_check"):
         done = subprocess.run([executable, "-m", f"commands.{module}", "--help"], cwd=bot, capture_output=True, text=True,
                               timeout=120)
@@ -1415,7 +1440,8 @@ def test_workflow_shape(clone):
     install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
     secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). The jobs: check (lands,
     then ends after the comment), checks (a push's two checks beside it, 2026-11-07), post (at once since 2026-11-03: no
-    environment, no quiet window, no setup; only with something to land or tell), finish (card errors, the alert)."""
+    environment, no quiet window, no setup; only with something to land or tell), tell (the one standards post,
+    2026-11-11: after all three, whatever MODE says, on the runner's python3), finish (card errors, the alert)."""
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
@@ -1426,28 +1452,32 @@ def test_workflow_shape(clone):
     assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
     assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
                                            "format('card-guards-{0}', github.run_id) }}") and doc["concurrency"]["cancel-in-progress"] is False
-    assert list(doc["jobs"]) == ["check", "checks", "post", "finish", "caches"]  # caches: prunes old wheel and font entries
-    job, checks, post, finish = (doc["jobs"][name] for name in ("check", "checks", "post", "finish"))
+    assert list(doc["jobs"]) == ["check", "checks", "post", "tell", "finish", "caches"]  # caches: prunes old wheel and font entries
+    job, checks, post, tell_job, finish = (doc["jobs"][name] for name in ("check", "checks", "post", "tell", "finish"))
     assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
     # no quiet window (owner 2026-11-03): the post job takes no environment and Land (the check job's) waits for nothing
-    assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post"]
+    assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post", "tell"]
+    assert tell_job["needs"] == ["check", "checks", "post"] and tell_job["if"] == "${{ !cancelled() && github.event_name == 'push' }}"
     # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
     assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and checks["env"] == {"BOT_FILES": job["env"]["BOT_FILES"]}
     here = "github.event_name != 'push'"                                      # a dispatch's, in check; a push's in checks
     assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
     assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
     named = [s.get("name") for s in checks["steps"] if s.get("name")]
-    assert named == ["Bot start", "Pushed blobs start", "Bot", "Card and font checks", "Pushed blobs", "Tell the checks"]
-    assert "Tell the checks" not in [s.get("name") for s in job["steps"]]
+    assert named == ["Bot start", "Pushed blobs start", "Bot", "Card and font checks", "Pushed blobs"]
+    assert "Tell the checks" not in steps_by_name                             # the tell job tells (2026-11-11)
+    reports = checks["steps"][-1]
+    assert reports["uses"].startswith("actions/upload-artifact") and reports["with"]["name"] == "card-checks" and reports["if"] == "always()"
+    assert "--discord" not in steps_by_name["Card and font checks"]["run"]
     fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
     assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
     assert "environment" not in post
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
                           "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
-    assert finish["if"] == "always() && needs.check.outputs.mode != 'off'"       # nothing when the guards are off
-    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 60 }}" and post["timeout-minutes"] == 10
+    assert finish["if"] == "always() && (github.event_name == 'push' || needs.check.outputs.mode != 'off')"   # a push whatever MODE
+    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 60 }}" and post["timeout-minutes"] == tell_job["timeout-minutes"] == 10
     assert job["permissions"] == {"contents": "write", "actions": "write"}           # Land's commit, Start Card sync
     assert "environment" not in job and "environment" not in finish
     assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}",
@@ -1458,17 +1488,24 @@ def test_workflow_shape(clone):
                               "early_run": "${{ steps.early.outputs.run }}",
                               "land_ran": "${{ steps.land.outputs.ran }}", "land_sha": "${{ steps.land.outputs.sha }}",
                               "land_already": "${{ steps.land.outputs.already }}"}
-    assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
+    assert "outputs" not in post and tell_job["outputs"] == {"told": "${{ steps.tell.outputs.told || steps.told.outputs.told }}"}
     assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
-    assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
+    assert post["env"]["TOLD"] == job["env"]["TOLD"] == tell_job["env"]["TOLD"]
+    assert finish["env"] == {"FAILURE_TOLD": "<!-- discord-failure-told -->"}         # Card sync's marker too
+    assert finish["permissions"] == tell_job["permissions"] == {"contents": "write", "actions": "read"}
+    assert checks["permissions"] == {"contents": "read"}                      # its reports go to the tell job
     for one in (job, checks):                                                  # cloned beside the card checkout, else checked out
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
         assert bot_files(one, bot) == ["/" + f for f in cg.SPARSE_FILES] and "ref" not in bot["with"]
         at = [s.get("name") or s.get("uses") for s in one["steps"]]
         assert at.index("Bot start") < at.index("actions/checkout@v7") < at.index("Bot") == one["steps"].index(bot) - 1
         assert bot["if"] == "steps.bot.outputs.ok != 'true'"
+    bot = next(s for s in tell_job["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
+    assert bot_files(tell_job, bot) == ["/" + f for f in cg.SPARSE_FILES] and tell_job["env"]["BOT_FILES"] == job["env"]["BOT_FILES"]
+    assert not [s for s in tell_job["steps"] if "uses" in s and "artifact" not in s["uses"] and s is not bot]   # no setup: python3
+    assert [s["with"]["name"] for s in tell_job["steps"] if "artifact" in s.get("uses", "")] == ["card-guards", "card-checks"]
     assert not [s for s in post["steps"] if "uses" in s and "artifact" not in s["uses"]]     # no checkout, no setup
-    for one in (job, checks, post, finish):                                    # a copied step runs twice unseen
+    for one in (job, checks, post, tell_job, finish):                          # a copied step runs twice unseen
         named = [s["name"] for s in one["steps"] if s.get("name")]
         assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
@@ -1502,7 +1539,8 @@ def test_workflow_shape(clone):
     post_names = [s.get("name") for s in post["steps"]]
     take = post["steps"][1]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
-    assert post_names == ["Work dir", None, "Told before", "Follow up", "Tell Discord"]
+    assert post_names == ["Work dir", None, "Told before", "Follow up"]
+    assert [s.get("name") for s in tell_job["steps"]][-2:] == ["Told already", "Tell Discord"]
     early = steps_by_name["Start Card sync"]    # with fixes and 25 PSDs or fewer to convert, Card sync sets up while the guards land (its lanes wait for Landed)
     assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' && steps.plan.outputs.normalise <= 25 }}"
     assert early["continue-on-error"] is True and early["env"]["GH_REPO"] and "-F return_run_details=true" in early["run"]
@@ -1513,29 +1551,31 @@ def test_workflow_shape(clone):
     assert [s.get("name") for s in finish["steps"] if s.get("name")] == ["Fail on card errors", "Tell Discord the run failed"]
     steps = steps_by_name
     tell = steps["Tell Discord"]
-    assert tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "discord-final.json" in tell["run"]
-    assert tell["if"] == "always() && steps.told.outputs.told != 'true'"
-    assert steps["Told before"]["env"]["CHECK_TOLD"] == "${{ needs.check.outputs.told }}" and "if" not in steps["Told before"]
+    assert tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "python3 -m commands.standards_post" in tell["run"]
+    assert tell["if"] == "steps.told.outputs.told != 'true'" and tell["working-directory"] == "bot"
+    for name in ("Told before", "Told already"):
+        assert steps[name]["env"]["CHECK_TOLD"] == "${{ needs.check.outputs.told }}" and "if" not in steps[name]
     assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in text and "set -x" not in text
     land = steps["Land"]
     # Land goes before the Comment step (a failed comment cannot drop the writes), only with something to land or tell
     assert land["if"] == "${{ !cancelled() && steps.plan.outputs.land == 'true' && (env.MODE == 'report' || env.MODE == 'on') }}"
     assert "--dry-run" in land["run"] and "steps.check.outcome == 'success'" in steps["Comment on the commit"]["if"]
-    assert "discord.json" not in tell["run"].replace("discord-final.json", "")      # never check's early post
+    assert "discord" not in tell["run"]                                        # never check's early post, nor Land's own
     assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
     alert = steps["Tell Discord the run failed"]
-    # a re-run of a push already told (the comment's mark) never alerts: "one post per push"
+    # a push whose post told it all (told: whole, or an earlier attempt's) alerts only for the checks job, Follow up or
+    # the tell job itself; one alert per broken push (2026-11-11): the failure marker, no streak
     assert alert["if"] == ("(failure() || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && "
-                           "github.event_name == 'push' && (needs.checks.result != 'success' || "
-                           "(needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'))")
-    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
-    assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.checks.result }} ${{ needs.post.result }}"
-    assert '{"check": 60, "checks": %d, "post": %d}' % (checks["timeout-minutes"], post["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
+                           "github.event_name == 'push' && (needs.checks.result != 'success' || needs.post.result == 'failure' || "
+                           "needs.post.result == 'cancelled' || needs.tell.outputs.told != 'true')")
+    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}, flags: 4" in alert["run"]
+    assert alert["env"]["RESULTS"] == ("check=${{ needs.check.result }} checks=${{ needs.checks.result }} "
+                                       "post=${{ needs.post.result }} tell=${{ needs.tell.result }}")
+    assert '{"check": 60, "checks": %d, "post": %d, "tell": %d}' % (
+        checks["timeout-minutes"], post["timeout-minutes"], tell_job["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
     assert ">= %d ))" % (60 * 60 - 120) in alert["run"]                       # no job list: the check's own
-    # the streak's mark: an artifact left only when the alert told (or stayed quiet in a told streak)
-    streak = finish["steps"][-1]
-    assert streak["uses"].startswith("actions/upload-artifact") and streak["if"] == "always() && steps.alert.outputs.streak == 'true'"
-    assert streak["with"]["name"] == "${{ env.STREAK }}" and env["STREAK"] and alert["id"] == "alert"
+    assert "STREAK" not in text and "stay quiet" not in text and alert["id"] == "alert"
+    assert steps["Fail on card errors"]["id"] == "errors" and finish["steps"][-1] is alert
     refuse = steps["No push run in its window"]
     assert refuse["if"] == "github.event_name == 'workflow_dispatch' && env.MODE == 'on'"
     assert "<@&" not in text and "ROLE" not in text and "DISCORD_FONT_WEBHOOK" not in text
@@ -1545,15 +1585,16 @@ def test_workflow_shape(clone):
         assert flag in check["run"]
     assert check["env"]["AUTHOR"] == "${{ github.event_name == 'push' && github.actor || '' }}"   # never the dispatcher
     # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
-    assert not any("runner." in str(value) for one in (job, post, finish) for value in one["env"].values())
+    assert not any("runner." in str(value) for one in (job, post, tell_job, finish) for value in one["env"].values())
     assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
+    assert 'OUT=$RUNNER_TEMP/guards' in tell_job["steps"][1]["run"]
     follow = steps["Follow up"]
     assert "report-landed.md" in follow["run"] \
         and follow["if"] == "always() && (needs.check.outputs.land_ran == 'true' || needs.check.outputs.fixes == 'true')"
-    assert follow["id"] == "follow" and tell["env"]["REFRESH"] == "${{ steps.follow.outputs.refresh }}"
+    assert follow["id"] == "follow" and "REFRESH" not in tell["env"]          # a card sync not started: the alert
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
-    uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
+    uploads = [s for s in job["steps"] + checks["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
     assert len(uploads) == 5 and all(s["with"]["overwrite"] is True for s in uploads)
     landed = job["steps"].index(steps["Landed"])                               # a follow-up's wait reads both before it
     events = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-events")       # Card sync reads it
@@ -1713,7 +1754,8 @@ elif args[0] == "api":
     path = next(a for a in args[1:] if a.startswith("repos/"))
     if path.endswith("/jobs"):                  # the attempt's jobs: FAKE_JOBS, the API's {"jobs": [...]}; FAKE_JOBS_LATER from look FAKE_LOOKS on
         late = sum("/jobs --jq" in line for line in db["log"]) > int(os.environ.get("FAKE_LOOKS", "1000"))
-        out = jq(json.loads(os.environ["FAKE_JOBS_LATER"] if late else os.environ.get("FAKE_JOBS", '{"jobs": []}')))
+        jobs = json.loads(os.environ["FAKE_JOBS_LATER"] if late else os.environ.get("FAKE_JOBS", '{"jobs": []}'))
+        out = jq(jobs) if "--jq" in args else json.dumps(jobs)
     elif "/runs?" in path:                      # a workflow's runs: FAKE_GUARD_RUNS
         out = jq(json.loads(os.environ["FAKE_GUARD_RUNS"]))
     elif "/git/trees/" in path:                 # the PSD sizes: FAKE_TREE
@@ -1768,88 +1810,136 @@ def _run_steps(steps, names, env, outputs, jobs=None):
     return outputs
 
 
+def _tell(steps, env, bot) -> dict:
+    """The tell job's Told already and Tell Discord (the real standards_post on this python3, from bot/); their outputs."""
+    out = _run_steps(steps, ["Told already"], env, {})
+    if out["told"].get("told") == "true":
+        return out
+    done, said = _shell(steps["Tell Discord"], {**env, **{k: v for k, v in steps["Tell Discord"]["env"].items() if "${{" not in v},
+                                                "GITHUB_OUTPUT": str(Path(env["OUT"]) / "tell.output")}, cwd=bot)
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    return {**out, "tell": said}
+
+
 def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
-    """The Comment, Told before, Follow up and Tell Discord steps' shell against a fake gh and curl: the first run comments,
-    posts the settled post (discord-final.json) and marks the comment; a re-run edits that comment, keeps the mark and
-    does not post again, and so does a re-run of the post job alone (its Told before looks the mark up itself: the
-    check job's outputs are its first attempt's)."""
+    """The Comment, Told before, Follow up, Told already and Tell Discord steps' shell against a fake gh and curl
+    (standards_post real, on this python3): the first run comments, Follow up rewrites it, the tell job posts ONE message
+    (the guards' lines as Land settled them, the card check's new notes, a note both tell once, owner 2026-11-11), marks
+    the guards' comment and comments the card check's report; a re-run edits that comment, keeps the mark and posts
+    nothing, and so does a re-run of the tell job alone (its Told already looks the mark up). With CARD_GUARDS off the
+    card check alone posts, its comment carrying the mark."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
+    if not shutil.which("jq") or not shutil.which("python3"):
+        pytest.skip("no jq or python3")
     doc, steps, jenv = _guard_steps(clone)
     bin_dir = _fake_tools(tmp_path)
-    out = tmp_path / "guards"
+    bot = tmp_path / "bot"
+    (bot / "commands").mkdir(parents=True)
+    shutil.copy(REPO / "commands" / "standards_post.py", bot / "commands")
+    out, checks = tmp_path / "guards", tmp_path / "checks"
     out.mkdir()
+    (checks / "card-check").mkdir(parents=True)
+    stars = "the stars are not in a group named Stars"
+    lines = [stars, "PNG not made: G6; export it in Photoshop"]
     (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 1, "comment": 1, "writes": 0,
                                                   "errors": 0, "card_errors": 0}))
-    (out / "plan.json").write_text(json.dumps({"after": "f" * 40}))
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40, "cards": [
+        {"card": "Alice", "psd": "X/Alice.psd", "login": "Alice", "commit": "a" * 40, "told": lines + ["withdrawn"],
+         "issues": [{"code": "R6", "text": stars}]}]}))
+    (out / "landed.json").write_text(json.dumps({"told": {"X/Alice.psd": lines}}))
     (out / "report.md").write_text("## Card guards\n\nAlice's card.\n")
     (out / "report-landed.md").write_text("## Card guards\n\nAfter the window.\n")
-    (out / "discord.json").write_text(json.dumps({"content": "early"}))
-    (out / "discord-final.json").write_text(json.dumps({"content": "settled"}))
+    (checks / "card-check" / "report.md").write_text("## Card check\n\n- `X/Alice.psd`: no stars\n")
+    (checks / "card-check" / "report.json").write_text(json.dumps({"cards": [
+        {"path": "X/Alice.psd", "author": "Alice", "notes": ['NO STARS FOUND (x)', "STATS TOO HIGH"], "new": ['NO STARS FOUND (x)', "STATS TOO HIGH"]},
+        {"path": "X/Bob.psd", "author": "Bob", "notes": ["STATS TOO HIGH"], "new": []}]}))     # Bob's old note: not told
     env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "OUT": str(out), "TOLD": jenv["TOLD"], "MODE": "on",
            "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"),
-           "FAKE_POSTS": str(tmp_path / "posts.txt"), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md")}
-    order = ["Comment on the commit", "Told before", "Follow up", "Tell Discord"]
-    first = _run_steps(steps, order, env, {"land": {"ran": "true"}}, doc["jobs"])
+           "FAKE_POSTS": str(tmp_path / "posts.txt"), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+           "RUNNER_TEMP": str(tmp_path), "GITHUB_SHA": "f" * 40, "CHECKED": "success", "LAND": "true", "CHECKS": "success"}
+    first = _run_steps(steps, ["Comment on the commit", "Told before", "Follow up"], env, {"land": {"ran": "true"}}, doc["jobs"])
+    (comment_id, body), = json.loads((tmp_path / "gh.json").read_text())["comments"].items()
+    first.update(_tell(steps, {**env, "COMMENT": comment_id}, bot))
     state = json.loads((tmp_path / "gh.json").read_text())
-    (comment_id, body), = state["comments"].items()
-    assert first["comment"] == {"id": comment_id} and first["tell"] == {"posted": "true"} and first["told"] == {}
-    assert body.startswith("## Card guards\n\nAfter the window.") and body.rstrip().endswith(jenv["TOLD"])
-    assert json.loads((tmp_path / "posts.txt").read_text().strip()) == {"content": "settled"}
-    again = _run_steps(steps, order[:3], env, {"land": {"ran": "true"}}, doc["jobs"])   # a re-run of every job
+    assert first["comment"] == {"id": comment_id} and first["tell"] == {"told": "true"} and first["told"] == {}
+    guards, card_check = state["comments"].values()
+    assert guards.startswith("## Card guards\n\nAfter the window.") and guards.rstrip().endswith(jenv["TOLD"])
+    assert card_check.startswith("## Card check") and jenv["TOLD"] not in card_check
+    link = " [aaaaaaaa](https://github.com/o/cards/commit/aaaaaaaaaaaa)"
+    assert json.loads((tmp_path / "posts.txt").read_text().strip()) == {
+        "content": 'Alice pushed Alice: PNG not made: G6; export it in Photoshop; no stars (group them in "Stars"); a stat over 20.' + link,
+        "allowed_mentions": {"parse": []}, "flags": 4}
+    again = _run_steps(steps, ["Comment on the commit", "Told before"], env, {"land": {"ran": "true"}}, doc["jobs"])   # every job
     assert again["comment"] == {"told": "true", "id": comment_id} and again["told"] == {"told": "true"}
-    assert "steps.told.outputs.told != 'true'" in steps["Tell Discord"]["if"]       # so Tell Discord is skipped
-    alone = _run_steps(steps, ["Told before"], {**env, "GITHUB_RUN_ATTEMPT": "2"}, {}, doc["jobs"])   # the post job alone
-    assert alone["told"] == {"told": "true"}
-    fresh = _run_steps(steps, ["Told before"], {**env, "GITHUB_RUN_ATTEMPT": "1"}, {}, doc["jobs"])   # a first attempt: no look
-    assert fresh["told"] == {}
+    assert _tell(steps, {**env, "CHECK_TOLD": "true"}, bot)["told"] == {"told": "true"}       # so Tell Discord is skipped
+    alone = _tell(steps, {**env, "GITHUB_RUN_ATTEMPT": "2"}, bot)                             # the tell job alone
+    assert alone["told"] == {"told": "true"} and "tell" not in alone
     state = json.loads((tmp_path / "gh.json").read_text())
-    assert list(state["comments"]) == [comment_id] and state["comments"][comment_id].rstrip().endswith(jenv["TOLD"])
-    assert (tmp_path / "posts.txt").read_text().count("settled") == 1
-    assert "WEBHOOK" in steps["Tell Discord the run failed"]["env"]
+    assert len(state["comments"]) == 2 and (tmp_path / "posts.txt").read_text().count("Alice pushed") == 1
+    # CARD_GUARDS off: no guards' files; the card check's comment takes the mark, which a re-run finds
+    shutil.rmtree(out)
+    out.mkdir()
+    (tmp_path / "gh.json").unlink()
+    off = {**env, "MODE": "off", "CHECKED": "skipped", "LAND": "", "COMMENT": ""}
+    assert _tell(steps, off, bot)["tell"] == {"told": "true"}
+    (only,) = json.loads((tmp_path / "gh.json").read_text())["comments"].values()
+    assert only.startswith("## Card check") and only.rstrip().endswith(jenv["TOLD"])
+    assert _tell(steps, {**off, "GITHUB_RUN_ATTEMPT": "2"}, bot)["told"] == {"told": "true"}
+    # a Land that settled nothing: the checks' part goes out, not told whole (the alert names the step)
+    shutil.rmtree(out)
+    out.mkdir()
+    assert _tell(steps, {**env, "COMMENT": ""}, bot)["tell"] == {}
+    assert "Alice pushed Alice: no stars" in (tmp_path / "posts.txt").read_text().splitlines()[-1]
 
 
-def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
-    """The failure alert's streak is the STREAK artifact, not a red run: quiet only when the last finished push run told
-    Discord it failed (or stayed quiet in a told streak); a red run that posted its own lines (a card error, a failed
-    comment) leaves no mark, so the next failure is told. A re-run is quiet after an attempt that told. The wording
-    says whether the push was checked; a failed webhook call leaves no mark."""
+def test_workflow_failure_alert_once_per_push(clone, tmp_path):
+    """The failure alert (owner 2026-11-11): "Card guards failed on <login>'s push <sha8>: <failed steps> <run>", no ping,
+    no preview, then the failure marker on the pushed commit; quiet when the marker is there (an earlier attempt, or
+    Card sync, told it). The steps from the attempt's job list (a timed-out one so marked, this job's own card errors
+    last), else the jobs; a failed webhook call leaves no marker."""
     pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
-    posts, runner = tmp_path / "posts.txt", tmp_path / "runner"
+    posts, state = tmp_path / "posts.txt", tmp_path / "gh.json"
+    marker = doc["jobs"]["finish"]["env"]["FAILURE_TOLD"]
+    jobs = json.dumps({"jobs": [
+        {"name": "check", "conclusion": "failure", "steps": [{"name": "Run ./.github/actions/cards-venv", "conclusion": "failure"},
+                                                             {"name": "Check", "conclusion": "success"},
+                                                             {"name": "Land", "conclusion": "failure"},
+                                                             {"name": "Normalise", "conclusion": "failure"}]},
+        {"name": "checks", "conclusion": "success", "steps": [{"name": "Card and font checks", "conclusion": "failure"}]},
+        {"name": "post", "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z", "completed_at": "2026-11-07T10:10:00Z",
+         "steps": [{"name": "Follow up", "conclusion": "cancelled"}]},
+        {"name": "finish", "conclusion": None, "steps": [{"name": "Fail on card errors", "conclusion": "failure"}]}]})
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
-           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": jenv["STREAK"], "RUNNER_TEMP": str(runner),
-           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "CHECKED": "failure",
-           "RUN": "https://github.com/o/cards/actions/runs/7", "TOLD": jenv["TOLD"], "GITHUB_SHA": "f" * 40}
-    def runs(*pairs):
-        return json.dumps([{"databaseId": run, "conclusion": conclusion} for run, conclusion in pairs])
-    red = runs((5, "failure"))
-    cases = (({"FAKE_RUNS": red, "FAKE_MARKED": "5"}, 0, "true"),     # the last push run told the streak
-             ({"FAKE_RUNS": runs((7, "failure"), (6, "skipped"), (5, "timed_out")), "FAKE_MARKED": "5"}, 0, "true"),
-             ({"FAKE_RUNS": red}, 1, "true"),                          # red after its own post: nobody was told it failed
-             ({"FAKE_RUNS": runs((5, "success")), "FAKE_MARKED": "5"}, 1, "true"),   # re-run green: attempt 1's mark is stale
-             ({"FAKE_RUNS": runs((5, "cancelled")), "FAKE_MARKED": "5"}, 0, "true"),
-             ({"FAKE_RUNS": "[]"}, 1, "true"),                         # the first push run
-             ({"FAKE_RUNS": red, "FAKE_MARKED": "7", "GITHUB_RUN_ATTEMPT": "2"}, 0, "true"),   # a re-run: attempt 1 told
-             ({"FAKE_RUNS": "[]", "FAKE_CURL_STATUS": "22"}, 1, ""))   # the webhook failed: no mark, the next run tells
-    for extra, sent, streak in cases:
+           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state), "FAKE_POSTS": str(posts),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(tmp_path), "GITHUB_RUN_ID": "7",
+           "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "RUN": "https://github.com/o/cards/actions/runs/7",
+           "GITHUB_SHA": "f" * 40, "FAILURE_TOLD": marker, "FAKE_JOBS": jobs,
+           "RESULTS": "check=failure checks=success post=cancelled tell=success", "OWN": "Fail on card errors"}
+    run = "https://github.com/o/cards/actions/runs/7"
+    _run_steps(steps, ["Tell Discord the run failed"], env, {})
+    assert json.loads(posts.read_text()) == {
+        "content": f"Card guards failed on Alice's push ffffffff: Python environment, Land, Normalise, Follow up (timed out), "
+                   f"Fail on card errors {run}",
+        "allowed_mentions": {"parse": []}, "flags": 4}
+    (body,) = json.loads(state.read_text())["comments"].values()
+    assert body == f"Failure told in Discord: {run}\n{marker}\n"
+    _run_steps(steps, ["Tell Discord the run failed"], {**env, "GITHUB_RUN_ATTEMPT": "2"}, {})     # told: quiet
+    assert len(posts.read_text().splitlines()) == 1
+    state.write_text(json.dumps({"comments": {"5": f"Card sync failed ...\n{marker}"}, "next": 5, "log": []}))   # Card sync's
+    _run_steps(steps, ["Tell Discord the run failed"], env, {})
+    assert len(posts.read_text().splitlines()) == 1
+    for extra, said in (({"FAKE_FAIL": "/jobs", "OWN": "", "STARTED": "1"}, "the check job, the post job"),   # no job list
+                        ({"FAKE_CURL_STATUS": "22"}, None)):                        # the webhook failed: no marker
+        state.unlink()
         posts.write_text("")
-        shutil.rmtree(runner, ignore_errors=True)
-        out = _run_steps(steps, ["Tell Discord the run failed"], {**env, **extra}, {})["tell"]
-        lines = [json.loads(l) for l in posts.read_text().splitlines() if l.strip()]
-        assert len(lines) == sent and out.get("streak", "") == streak, (extra, lines, out)
-        assert not streak or (runner / "streak" / "told.txt").read_text().strip() == env["RUN"]      # what STREAK uploads
-    for checked, what in (("failure", "was not guarded"), ("success", "was checked, but its run failed")):
-        posts.write_text("")
-        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_RUNS": "[]", "CHECKED": checked}, {})
-        assert json.loads(posts.read_text()) == {
-            "content": f"Card guards: the push by Alice {what} (the next failures stay quiet until a push run succeeds or "
-                       "posts its issues). "
-                       "https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
+        _run_steps(steps, ["Tell Discord the run failed"], {**env, **extra}, {})
+        if said:
+            assert json.loads(posts.read_text())["content"] == f"Card guards failed on Alice's push ffffffff: {said} {run}"
+        else:
+            assert not json.loads(state.read_text())["comments"]
 
 
 def test_workflow_alert_tells_a_timeout_from_a_cancel(clone, tmp_path):
@@ -1861,17 +1951,18 @@ def test_workflow_alert_tells_a_timeout_from_a_cancel(clone, tmp_path):
     posts = tmp_path / "posts.txt"
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
            "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": jenv["STREAK"], "RUNNER_TEMP": str(tmp_path / "runner"),
-           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "CHECKED": "failure", "FAKE_RUNS": "[]",
-           "RUN": "https://github.com/o/cards/actions/runs/7", "TOLD": jenv["TOLD"], "GITHUB_SHA": "f" * 40,
-           "RESULTS": "success cancelled skipped"}
-    def cancelled(minutes):
-        return json.dumps({"jobs": [{"name": "checks", "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z",
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(tmp_path),
+           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice",
+           "RUN": "https://github.com/o/cards/actions/runs/7", "GITHUB_SHA": "f" * 40,
+           "FAILURE_TOLD": doc["jobs"]["finish"]["env"]["FAILURE_TOLD"], "RESULTS": "check=success checks=cancelled post=skipped tell=success"}
+    def cancelled(name, minutes):
+        return json.dumps({"jobs": [{"name": name, "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z",
                                      "completed_at": f"2026-11-07T10:{minutes:02}:00Z"}]})
-    for minutes, sent in ((1, 0), (39, 1)):
+    for name, minutes, sent in (("checks", 1, 0), ("checks", 39, 1), ("tell", 9, 1)):
         posts.write_text("")
-        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_JOBS": cancelled(minutes)}, {})
-        assert len(posts.read_text().splitlines()) == sent, minutes
+        (tmp_path / "gh.json").unlink(missing_ok=True)
+        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_JOBS": cancelled(name, minutes)}, {})
+        assert len(posts.read_text().splitlines()) == sent, (name, minutes)
 
 
 def _fake_tools(tmp_path) -> Path:

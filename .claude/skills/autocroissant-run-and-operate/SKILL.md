@@ -293,11 +293,10 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   the fonts folder (cached by its tree sha) and the guards' bot checkout (`card_guards.SPARSE_FILES`, the card packages from
   the shared wheel cache), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
-  missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
-  `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
-  546427268751294475 once (the only role ping of any check's post, owner 2026-10-23), then one line per author and font: "<name> has pushed a card without
-  adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
-  card PSD by blob (~813 downloads).
+  missing, comments on the commit and puts the fonts the push made missing on a card (its PSD before the push did not ask
+  for them) in the standards channel's one post per push (the tell job, `commands/standards_post.py`, owner 2026-11-11:
+  "<login> pushed <card>: the <font> font is not in MDW/Fonts (<layers>), bite this user. [sha8](commit)", role
+  546427268751294475 pinged once on the first line, only then). A dispatch with `all` scans every card PSD by blob (~813 downloads).
 - **By hand: `/fonts`** (anyone) reads the fonts report in the card data's manifest (`fonts`: written by the data build
   from psd_details.json, `font_check.fonts_report`; `card_sync.fonts_text`, section 12; since 2026-11-11, so the bot needs
   no psd-tools or fontTools): no PSD or font is downloaded. Reply: `**font**: card (layers)` per missing font, errors;
@@ -307,7 +306,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
   ttscardmaker-companion §3 on 15 cards, 29 visible layers; on 2026-10-23, TTSCardMaker 92b5ae6b with Kung-Fu-Panda's rename:
 812 PSDs, 274 files / 282 faces, nothing missing, 7 s), `--psd <files>`, `--json <out>`,
-  `--discord <payload out>`; `--help` lists the --repo options the Action uses.
+  `--discord <payload out>` (this check's part of the standards post alone); `--help` lists the --repo options the Action uses.
 
 ### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, card-check.yml before)
 
@@ -324,8 +323,8 @@ network, a truncated tree) is one error line.
   also ran on `Types/` and `site/Card Edits.json` pushes and so checked nothing there). On a push to main that changes a PSD,
   whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared wheel cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
-  notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
-  on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
+  notes it comments on the commit and its notes the push made new (the PSD before the push lacked them; owner 2026-11-11) go
+  in the standards channel's one post per push (`commands/standards_post.py`, posted by the tell job), no ping. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, misspelt type, several creatures) also show
   on the website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
   lists no PSD, so it reports nothing.
@@ -477,7 +476,8 @@ card standards (fonts, R7, until 2026-10-24: since then the font check's alone, 
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
-(`DISCORD_STANDARDS_WEBHOOK`, no ping; the card check posts there too at once, no ping, and the font check, with its role ping: both steps of the same check job since 2026-10-25) and at most one bot commit,
+(`DISCORD_STANDARDS_WEBHOOK`; since 2026-11-11 ONE post per push with the card check's and the font check's notes, by the
+tell job: only issues and notes new on a card, a note two checks tell once, the role pinged only for a missing font) and at most one bot commit,
 both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
 the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
 Land sleeps out the rest; no runner sleeps; a PSD saved without
@@ -517,12 +517,11 @@ told (`png_export.KEPT_PX`; owner 2026-11-07: soft notes are no issue), past tha
   its blobs on the branch ("already on the branch"), writes nothing and starts the card sync again with `bake=pending`
   (the first attempt's may not have started; the card sync's data commit starts the site build). A re-run (or a dispatch) that cannot read the branch tells no write as
   "not made" (an earlier run may have landed it); its comment says this run committed nothing.
-- **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
-  or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
-  run failed" once Check passed. Once per streak: a run that sent it, or stayed quiet inside a told streak, leaves the
-  `card-guards-failure-told` artifact, and the next failing run is quiet only when the last finished push run left it
-  and is not green. A red run that posted its own lines (a card error, a failed comment) leaves none, so the next
-  failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
+- **Failures (2026-11-11):** a broken push run sends one message to the standards channel, "Card guards failed on <login>'s
+  push <sha8>: <failed steps> <run link>" (no ping, no preview), unless its post went out whole and told it (a card error,
+  a write that did not land) with the checks job, Follow up and the tell job sound. Once per push, across Card guards and
+  Card sync: the alert leaves a commit comment holding `<!-- discord-failure-told -->` and posts nothing when one is there
+  (no failure streak any more). A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the card sync does not start after the
   bot's commit, the comment and the post say so and the run is red (its cron catches up; a re-run starts it
   again). Cancelling a run by hand (before the check job's 40-minute timeout, 150 for `all`, or the post job's 75) sends
@@ -826,7 +825,7 @@ re-find volatile facts with these before trusting them:
 | Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp` |
 | TTS save wiring (none in the bot since 2026-10-25) | `grep -c "tts_save" main.py` (0) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
-| Font check wiring (/fonts from the card data; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
+| Font check wiring (/fonts from the card data; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^FONT_NOTE" commands/standards_post.py` |
 | Card check (CLI only; no main.py or help.py wiring; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -c "card_check" main.py commands/help.py` (0, 0); `grep -n "^LINE\|^CLOSING" commands/card_check.py` |
 | Card bake wiring (none in the bot since 2026-10-25) | `grep -c "bake_cards" main.py` (0); `ls commands/card_runner.py` (absent) |
 | Data branch, card_data/ / timezone | `cat global_config.py` |

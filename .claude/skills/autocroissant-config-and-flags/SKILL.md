@@ -369,9 +369,7 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns t
 |---|---|---|
 | `FONTS_DIR` | `"MDW/Fonts"` | the card repo's fonts folder; top level only (`stoogedings-src/` is the icon font's source) |
 | `EXCLUDE_FOLDERS` | `("MDW", "Markers")` | PSDs under these path parts are not cards (card_data's list) |
-| `ROLE_ID` | `"546427268751294475"` | the card makers' role the Discord message pings (`<@&id>`; `allowed_mentions` names that role only); the only role ping (card_check, card_guards and changelog post with `{"parse": []}`, owner 2026-10-23) |
-| `BITE` | `"{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."` | the user's wording, one line per (author, font) |
-| `DISCORD_LIMIT` | `2000` | the webhook payload is cut to one message; the rest is in the commit comment |
+| (`ROLE_ID`, `FONT_NOTE`) | in `commands/standards_post.py` since 2026-11-11 | the card makers' role (`546427268751294475`, the only role ping of the standards post, pinged only when a font is missing) and the per-card note "the {font} font is not in MDW/Fonts ({layers}), bite this user" of the one standards post per push |
 | `NOBODY` | `"Someone"` | the author when no login is known (a checkout scan, the bot) |
 | `API_TIMEOUT` | `60` s | per GitHub API call |
 | `FILES_PAGE` | `300` | the compare and commit APIs list at most this many files; a bigger push, or a commit listing that many, is noted in the report |
@@ -384,8 +382,7 @@ The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied 
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `LINE` | `"{name} pushed {card}: {notes}."` | the Discord line per card (card = `card_name(path)`, notes through `short()` joined by "; ") |
-| `SHORT` | (note start, what to do) pairs | each note as the action, as short as it goes (owner 2026-11-06); the job summary and comment use them too |
+| (`LINE`, `SHORT`) | in `commands/standards_post.py` since 2026-11-11 | the standards post's line per card and each note as the action (owner 2026-11-06); the card check's job summary and comment use `short()` too |
 | `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
 
 Shared with font_check (imported): `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
@@ -477,7 +474,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | Constant | Value | Meaning |
 |---|---|---|
 | `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset or off = the guards' steps skip; the card and font checks still run) |
-| `card_guards.LINE` | `"{login} pushed {card}: {issues}. [{short}]({url})"` | the standards-channel line (no ping), what to do and the commit link (owner 2026-11-06: no "what changed", as short as it goes) |
+| `standards_post.LINE` | `"{login} pushed {card}: {notes}. [{short}]({url})"` | the standards post's line per card (the guards' lines and the two checks' notes, owner 2026-11-11), what to do and the commit link (owner 2026-11-06: no "what changed", as short as it goes); `TWINS`: a note two checks tell, said once |
 | `CHANGES_COMMENT` | `600` | characters of a card's changes in the commit comment (the Discord line has none since 2026-11-06) |
 | `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
@@ -558,7 +555,7 @@ read since; a Card checks dispatch with `all` makes every plate again). No plate
 |---|---|---|
 | `CARD_GUARDS` | repository variable | the push guards' mode (`dry`, `report`, `on`); unset = off (2026-10-23) |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (the changelog posts only; never pings). Card sync's failure alerts moved to the standards channel on 2026-11-11 (owner) |
-| `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
+| `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: ONE post per push (the push guards, card check and font check together, new notes only; pings the card makers' role only when a font is missing) and the failure alerts of Card guards and Card sync (one per broken push, marker `<!-- discord-failure-told -->` in the head commit's comments), 2026-11-11 |
 | `card-guards-quiet` | environment, UNUSED since 2026-11-03 (no job names it: owner, no 30-minute wait; deletable in Settings > Environments) (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 | `card-sync-quiet` | environment, UNUSED since 2026-11-03 (no job names it; deletable) (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |
 

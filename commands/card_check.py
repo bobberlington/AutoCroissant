@@ -1,14 +1,15 @@
 """
 Card check for the card PSDs: what the bot's parser and validator note about a card, the lines /update_stats prints (the
 parser's own notes among them are also the website's Parser notes; the validator's are printed only). TTSCardMaker's
-card-guards.yml runs it in its check job on every push to main that touches a PSD (card-check.yml until 2026-10-25): job
-summary, commit comment and a Discord message in the standards channel at once, no ping.
+card-guards.yml runs it on every push to main that touches a PSD (card-check.yml until 2026-10-25): job summary, commit
+comment, and its notes the push made new (a pushed PSD's before the push lacked; owner 2026-11-11) in the standards
+channel's one post (standards_post), no ping.
 
     python -m commands.card_check [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
                                    [--clone <dir>]] [--json <out>] [--discord <payload out>]
     card_notes(parser, edits, psd, rel) -> one card's notes; check_files / check_checkout / check_blobs -> Report
-    markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
+    markdown(report), discord_payload(report) -> the job summary / commit comment and this check's part of the post
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
 NO STATS FOUND, MISSPELT TYPE ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
@@ -17,7 +18,8 @@ the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD w
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
 --psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
 parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
-from the tree at --after; --clone: the guards' clone first, so each PSD is fetched once for the three checks). No Discord
+from the tree at --after; --clone: the guards' clone first, so each PSD is fetched once for the three checks; with
+--before, each card's notes its PSD before the push lacked are its "new" ones, font_check.old_blobs). No Discord
 or config imports (the token: config through github_api, else GITHUB_TOKEN); the guards' checkout
 (card_guards.SPARSE_FILES) holds its import closure.
 """
@@ -34,28 +36,18 @@ from typing import Optional
 from psd_tools import PSDImage
 
 from commands.card_edits import CardEdits
-from commands.card_models import StatsDatabase, card_name
-from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, \
+from commands.card_models import StatsDatabase
+from commands.font_check import API_TIMEOUT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, old_blobs, \
     pushed_files, tree_blobs
 from commands.github_api import blob_text, fetch_verified, range_reads, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
 from commands.psd_remote import RemotePSD
+from commands.standards_post import payload, short
 from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
 # ========================
-LINE = "{name} pushed {card}: {notes}."                                          # the Discord line per card
-SHORT = (                                   # a note's start -> what to do, as short as it goes (owner 2026-11-06)
-    ("NO STATS FOUND", "no stat bars"), ("NO STARS FOUND", 'no stars (group them in "Stars")'),
-    ("NO ABILITY LAYER", "no Ability layer"), ("ABILITY TEXT NOT FOUND", "no ability text"),
-    ("UNKNOWN TYPE", "unknown card kind (check its folder)"), ("STATS TOO HIGH", "a stat over 20"),
-    ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),
-    ("SPD NOT FOUND", "no SPD bar"), ("MISSPELT TYPE: ", "misspelt type "), ("UNKNOWN ICON TOKEN: ", "unknown icon "),
-    ("UNKNOWN ICON CHARACTER: ", "unknown icon character "), ("ICON TOKEN NOT IN STOOGEDINGS FONT: ", "not in stoogedings: "),
-    ("ICON TOKEN PARTLY IN STOOGEDINGS FONT: ", "partly in stoogedings: "), ("DUPLICATE LAYER IDS", "duplicate layer IDs"),
-    ("EFFECT LAYER WITHOUT TEXT LAYER: ", "FX layer without its text: "), ("EFFECT LAYER WORDS NOT IN TEXT: ", "FX words not in the text: "),
-    ("EFFECT LAYER OUT OF DATE: ", "FX layer out of date: "))
 UNREADABLE = "could not be read"
 _worker: tuple = ()                         # (parser, edits) of a pool worker, built once by _init_worker
 
@@ -198,6 +190,7 @@ class Card:
     path: str
     author: str
     notes: list
+    new: Optional[list] = None                  # the notes its PSD before the push lacked (None: not compared, all)
 
 
 @dataclass
@@ -209,7 +202,8 @@ class Report:
 
     def as_dict(self) -> dict:
         """The --json report."""
-        return {"checked": self.checked, "cards": [{"path": c.path, "author": c.author, "notes": c.notes} for c in self.cards],
+        return {"checked": self.checked, "cards": [{"path": c.path, "author": c.author, "notes": c.notes,
+                                                    **({"new": c.new} if c.new is not None else {})} for c in self.cards],
                 "errors": self.errors}
 
 
@@ -225,38 +219,10 @@ def markdown(report: Report) -> str:
     return "\n".join(out) + "\n"
 
 
-def short(note: str) -> str:
-    """A note as what to do (SHORT); a variant's "A Snack2: " before it kept, a named one's name after it."""
-    split = note.find(": ")
-    for prefix, rest in (("", note), *([(note[:split + 2], note[split + 2:])] if split > 0 else [])):
-        for start, phrase in SHORT:
-            if rest.startswith(start):
-                tail = rest[len(start):].removesuffix(" (run Effect Layers > Update all)") if start.endswith(": ") else ""
-                return prefix + phrase + tail
-    return note
-
-
-def discord_payload(report: Report) -> dict:
-    """
-    The webhook body (standards channel): one LINE per card, its notes as what to do (short); {} when nothing to
-    report. Whole lines are dropped from the end to fit DISCORD_LIMIT ("... and N more cards"). Nobody is pinged
-    (owner, 2026-10-23).
-    """
-    if not report.cards:
-        return {}
-    lines = [LINE.format(name=c.author, card=card_name(c.path), notes="; ".join(map(short, c.notes))) for c in report.cards]
-
-    def assemble(kept: int) -> str:
-        rest = len(lines) - kept
-        more = [f"... and {rest} more card{'s' if rest != 1 else ''}"] if rest else []
-        return "\n".join(lines[:kept] + more)
-
-    kept = len(lines)
-    content = assemble(kept)
-    while len(content) > DISCORD_LIMIT and kept > 0:
-        kept -= 1
-        content = assemble(kept)
-    return {"content": content, "allowed_mentions": {"parse": []}}
+def discord_payload(report: Report, repository: str = "", after: str = "") -> dict:
+    """This check's part of the standards post (standards_post.payload): a line per card with notes told (its new ones
+    when compared), a commit link with after; {} when nothing to tell. Nobody is pinged (owner, 2026-10-23)."""
+    return payload(repository, after, card_check=report.as_dict())
 
 
 # ========================
@@ -375,7 +341,7 @@ def check_checkout(root: str) -> Report:
 
 
 def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], ref: str = "",
-                clone: str = "") -> Report:
+                clone: str = "", olds: Optional[dict] = None) -> Report:
     """
     PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser). With ref (the
     pushed commit) and a psd-tools that reads lazily, a PSD is read by range requests at ref instead: only what the
@@ -389,6 +355,7 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
         edits: The tree's edits file, or None
         ref: The commit the PSDs are at ("": whole blobs)
         clone: A clone read first and kept filled (github_api.fetch_verified)
+        olds: {path: its blob before the push, "" for a new card} (font_check.old_blobs): each card's new notes
 
     Returns:
         Report
@@ -397,10 +364,12 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
     ranges = bool(ref) and not clone and range_reads()
     for path in sorted(psds):
         sha, author = psds[path]
+        cards = len(report.cards)
         if ranges:
             notes = _ranged_notes(repository, ref, path, parser, edits)
             if notes is not None:
                 _record(report, path, author, notes)
+                _mark_new(report, cards, repository, parser, edits, sha, olds, clone)
                 continue
         try:
             data = fetch_verified(repository, sha, timeout=API_TIMEOUT, clone=clone)
@@ -414,7 +383,33 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
             _check_one(report, parser, edits, path, author, temp)
         finally:
             remove(temp)
+        _mark_new(report, cards, repository, parser, edits, sha, olds, clone)
     return report
+
+
+def _mark_new(report: Report, cards: int, repository: str, parser: PSDParser, edits: Optional[CardEdits], sha: str,
+              olds: Optional[dict], clone: str) -> None:
+    """The card just recorded (past cards): its notes the PSD before the push lacked (the same blob: none; a new card or
+    an unreadable old blob: all)."""
+    if olds is None or len(report.cards) == cards:
+        return
+    card = report.cards[-1]
+    old = olds.get(card.path, "")
+    if old == sha:
+        card.new = []
+        return
+    before = []
+    if old:
+        handle, temp = mkstemp(suffix=".psd")
+        try:
+            with open(handle, "wb") as fh:
+                fh.write(fetch_verified(repository, old, timeout=API_TIMEOUT, clone=clone))
+            before = card_notes(parser, edits, temp, card.path)
+        except Exception:                       # the old blob unread: every note is told
+            before = []
+        finally:
+            remove(temp)
+    card.new = [note for note in card.notes if note not in before]
 
 
 def _ranged_notes(repository: str, ref: str, path: str, parser: PSDParser, edits: Optional[CardEdits]) -> Optional[list]:
@@ -449,7 +444,7 @@ def main(args: Optional[list] = None) -> int:
     cli.add_argument("--whole-tree", action="store_true", help="with --repo: every card PSD of the tree at --after (~813 blob downloads, 16 GB)")
     cli.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first (no range reads); fetched ones are kept in it")
     cli.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
-    cli.add_argument("--discord", default="", metavar="OUT", help="write the Discord webhook payload here ({} when nothing to report)")
+    cli.add_argument("--discord", default="", metavar="OUT", help="write this check's part of the standards post here ({} when nothing to tell)")
     options = cli.parse_args(args)
     token_from_env()
     if options.repo:
@@ -457,11 +452,13 @@ def main(args: Optional[list] = None) -> int:
         try:
             blobs = tree_blobs(options.repo, options.after)
             parser, edits = repo_context(options.repo, blobs, errors)
+            olds = None
             if options.whole_tree:
                 psds, notes = {p: (s, options.author) for p, s in blobs.items() if is_card_psd(p)}, []
             else:
                 psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author, options.clone)
-            report = check_blobs(options.repo, psds, parser, edits, options.after, options.clone)
+                olds = old_blobs(options.repo, options.before, psds, options.clone, notes)
+            report = check_blobs(options.repo, psds, parser, edits, options.after, options.clone, olds)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, notes = Report(), [f"GitHub API: {e}"]
         report.errors = errors + report.errors + notes
@@ -475,7 +472,7 @@ def main(args: Optional[list] = None) -> int:
             dump(report.as_dict(), fh, indent=1)
     if options.discord:
         with open(options.discord, "w", encoding="utf-8") as fh:
-            dump(discord_payload(report), fh)
+            dump(discord_payload(report, options.repo, options.after if options.repo else ""), fh)
     return 0
 
 
@@ -488,12 +485,10 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'Card',
-    'LINE',
     'Report',
     'UNREADABLE',
     'Vocabulary',
     'card_notes',
-    'short',
     'card_psds',
     'check_blobs',
     'check_checkout',
