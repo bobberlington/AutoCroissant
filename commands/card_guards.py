@@ -1310,8 +1310,9 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     """
     R10, a PSD pushed with a PNG that skips its change (11-10, stored image or not): guard 1's export of the PSD's
     change onto the PNG before shows where the change moves it (png_changes' rule); a pushed PNG that did not change
-    there and is past the bar of the export there (and of the PSD's stored image, when it has one) skipped it. Changed
-    nowhere else (SKIP_REACH px past the export's change), the export missing no bar (Export.misses) and the PNG's own
+    there and has pixels past the bar of the export there (a mean alone is the fork's drawing, 11-11; and past the
+    PSD's stored image's bar, when it has one) skipped it. Changed nowhere else past PARITY_THRESH (SKIP_REACH px past
+    the export's change; 11-11, Tainted Jacob's shading), the export missing no bar (Export.misses) and the PNG's own
     change not past PARITY_FLOOR of the export (11-11, Tomato: a PNG showing another picture there), it is made again
     as the export, silent; else, or no export made, it stays as pushed (the comment says it).
     """
@@ -1331,7 +1332,7 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     if not area.any():
         return
     diff = png_export._diff(png, found.image)
-    if psd_edit._within_bar(png_export._stats(diff[area])):
+    if png_export._stats(diff[area])["bad_pct"] <= psd_edit.PARITY_BAD_MAX:     # a mean alone: the fork's drawing
         return
     truth = png_export.composite(new)           # Photoshop's image: never skipped on the fork's word alone
     if truth is not None:
@@ -1340,7 +1341,8 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
             return
     px, name = int(area.sum()), basename(job.png)
     result.r10.update(ok=False, skipped={"px": px, "box": list(png_export._bbox(area))})
-    if (changed & ~png_export.dilate(png_export._diff(found.image, prev) > png_export.TOL, SKIP_REACH)).any():
+    if (changed & ~png_export.dilate(png_export._diff(found.image, prev) > png_export.TOL, SKIP_REACH)
+            & (diff > psd_edit.PARITY_THRESH)).any():
         result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px) and changed elsewhere: kept as pushed"
         return
     if found.misses:                            # the export itself missed the bar

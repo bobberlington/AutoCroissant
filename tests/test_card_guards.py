@@ -413,6 +413,30 @@ def test_a_png_whose_own_change_contradicts_its_psd_is_kept(cards, tmp_path, mon
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == [] and data["discord"] == {}
 
 
+def test_a_skip_needs_pixels_past_the_bar(cards, tmp_path, monkeypatch):
+    """R10's skip (11-11, Tainted Jacob): Bread's square recoloured, its PNG pushed as the PNG before with 8 levels of
+    shading elsewhere (under PARITY_THRESH: no change elsewhere): made again as the export. A 15-level tint its PNG
+    skips (a mean, no pixel past the bar: the fork's drawing) matches."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+    teal = card(colour=(0, 128, 128))
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", teal)
+    shaded = card(colour=(0, 255, 0))
+    ImageDraw.Draw(shaded).rectangle((40, 60, 55, 85), fill=(208, 30, 30))
+    _png(root, f"{FOLDER}/Bread.png", shaded)
+    after = _commit(root, "square recoloured, PNG shaded", author="Alice")
+    (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / "out"), workers=1)["cards"]
+    (write,) = [w for w in entry["writes"] if w["kind"] == "png"]
+    assert write["skipped"] and "made again" in entry["r10"]["line"] and entry["told"] == []
+    assert int(pe._diff(Image.open(tmp_path / "out" / write["file"]), teal).max()) == 0
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", card(colour=(0, 240, 0)))
+    card(colour=(0, 255, 0)).save(root / FOLDER / "Bread.png", compress_level=1)
+    after = _commit(root, "square tinted, PNG before", author="Alice")
+    (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / "tint"), workers=1)["cards"]
+    assert entry["r10"]["ok"] and "skipped" not in entry["r10"] and entry["told"] == []
+    assert not [w for w in entry["writes"] if w["kind"] == "png"]
+
+
 def test_a_png_over_a_broken_one_is_checked(cards, tmp_path, monkeypatch):
     """R10's reads of the PNG before are best effort: a good PNG pushed over a broken one (a git-lfs pointer), alone with
     no stored image or with its PSD, passes, nothing told."""
