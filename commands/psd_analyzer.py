@@ -28,7 +28,7 @@ EXPORTED_STATS_NAME = "stats"
 EXPORTED_RULES_NAME = "rules"
 
 COLUMN_ORDER = [
-    'aliases', 'type', 'ability', 'hp', 'def', 'atk', 'spd',
+    'aliases', 'type', 'ability', 'hp', 'def', 'atk', 'spd', 'stats',
     'types', 'path', 'timestamp', 'created', 'author', 'stars',
     'problem', 'series', 'subseries', 'subtype'
 ]
@@ -84,6 +84,12 @@ def _format_metadata(card: CardInfo, name: str) -> str:
         if key == "types" and getattr(card, "parser_version", None) is None:
             why = BEFORE_PARSER_2
         metadata[key] = f"unknown ({why})"
+    if "stats" in unknown(card):                      # a misread's numbers: none of them
+        for key in ("hp", "def", "atk", "spd"):
+            metadata.pop(key, None)
+        problems = [str(p) for p in getattr(card, "problems", None) or []]
+        why = [prefix.lower() for prefix, field in UNKNOWN_IF if field == "stats" and any(p.startswith(prefix) for p in problems)]
+        metadata["stats"] = f"unknown ({why[0] if why else 'misread'})"
     lines = [f"{key}: {metadata[key]}" for key in COLUMN_ORDER if key in metadata]
     lines += [f"{key}: {value}" for key, value in metadata.items() if key not in COLUMN_ORDER]
     return '\n'.join(lines)

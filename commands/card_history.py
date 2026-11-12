@@ -27,7 +27,9 @@ DATA_FIELDS = ("card_type", "display_name", "ability", "stars", "subtype", "seri
 LOG_FORMAT = f"C%x09%H%x09%ct%x09%aN%x09%(trailers:key={RENAMED},valueonly,separator=%x1f)"
 NO_BLOB = "0" * 40
 # a parse problem -> the field that reading could not know (compared as unknown)
-UNKNOWN_IF = (("NO STARS FOUND", "stars"), ("MISSPELT TYPE", "types"), ("NO ABILITY LAYER", "ability"))
+UNKNOWN_IF = (("NO STARS FOUND", "stars"), ("MISSPELT TYPE", "types"), ("NO ABILITY LAYER", "ability"),
+              ("NO STATS FOUND", "stats"), ("OUT OF RANGE: stats", "stats"))
+STAT_KINDS = ("creature", "minion", "creatures")       # psd_parser.STAT_KINDS: the kinds with stat bars
 SERIES = ("series", "subseries")
 RETIRED = ("MDW", "Markers")                          # no card folders (card_data.EXCLUDE_FOLDERS): a PSD there retired
 STAT_MAX, STAT_CAP, STARS_MAX = 20, 99, 7             # a stat above 20 needs an allowance (allows_high); 3 digits: none
@@ -252,7 +254,7 @@ def data_of(card: CardInfo) -> dict:
 
 def unknown(card: CardInfo) -> set:
     """Fields a reading could not know: the title before parser 2 (it read none) and its types (it missed and mistook
-    icons), a field its parse failed on."""
+    icons), a field its parse failed on, stats it misread (misread_stats)."""
     found = set()
     if getattr(card, "parser_version", None) is None:
         found.add("types")
@@ -260,7 +262,24 @@ def unknown(card: CardInfo) -> set:
             found.add("display_name")
     for problem in getattr(card, "problems", None) or []:
         found.update(key for prefix, key in UNKNOWN_IF if str(problem).startswith(prefix))
+    if misread_stats(card):
+        found.add("stats")
     return found
+
+
+def misread_stats(card: CardInfo) -> bool:
+    """Whether a reading from parser 2 on has a stat note of CardValidator's (never stored): a stat above STAT_MAX not
+    allowed (STATS TOO HIGH), a bar of a kind with bars not read (HP or DEF; ATK or SPD unless active). Chris & Jordi's
+    four bars all named Health read HP 26 = 7+6+7+6."""
+    if unchecked(card):
+        return False                                  # unknown_values' OUT OF RANGE says it
+    if "stats" in out_of_range(card):
+        return True
+    if getattr(card, "card_type", None) not in STAT_KINDS:
+        return False
+    stats = getattr(card, "stats", None)
+    need = STAT_KEYS[:2] if "active" in (getattr(card, "types", None) or []) else STAT_KEYS
+    return any(getattr(stats, key, -1) == -1 for key in need)
 
 
 def same_series(x: dict, y: dict) -> bool:
@@ -616,6 +635,7 @@ __all__ = [
     'kept_values',
     'knows',
     'meta',
+    'misread_stats',
     'out_of_range',
     'psd_changed',
     'record_versions',
