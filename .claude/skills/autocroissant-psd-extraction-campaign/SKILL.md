@@ -1,6 +1,6 @@
 ---
 name: autocroissant-psd-extraction-campaign
-description: The gated campaign to make PSD ability/type/stat extraction perfect, with scoreboard commands and fenced-off wrong paths. Use for improving the parser in commands/psd_analyzer.py, [type] landing in the wrong place, gaps vs icons, ABILITY_EXCLUSIONS burn-down, problem cards, fixing STATS TOO HIGH / MISSPELT TYPE. What the data means is impossibility-cards-reference.
+description: The gated campaign to make PSD ability/type/stat extraction perfect, with scoreboard commands and fenced-off wrong paths. Use for improving the parser in commands/psd_analyzer.py, [type] landing in the wrong place, gaps vs icons, ABILITY_EXCLUSIONS burn-down, problem cards, fixing STATS TOO HIGH. What the data means is impossibility-cards-reference.
 ---
 
 # The PSD Extraction Campaign
@@ -92,7 +92,7 @@ Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 - **Re-validation problems**: cards that fail `CardValidator.validate` when run over today's stored
   data. Today 1 (Computer Virus: all four stats NOT FOUND, since 2026-10-26 one parse-time `NO STATS FOUND` stored at its next
   re-parse; the owner adds its stat bars); 5 on 2026-07-11 — the stored count undercounts because the pickle stores only parse-time problems
-  (`NO ABILITY LAYER`, `MISSPELT TYPE`, `NO STATS FOUND` since 2026-10-26); validator-computed problems
+  (`NO ABILITY LAYER`, `MISSPELT TYPE` until 2026-11-12, `NO STATS FOUND` since 2026-10-26); validator-computed problems
   (`HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`) are reported to Discord during a sweep but never
   stored. The 2026-07-11 five: `20 Creature Types`, `Computer Virus` (all four stats NOT FOUND),
   `Anubisath Guardian`, `Qiraji Soldier`, `Silithid` (ABILITY TEXT NOT FOUND — blank minions then not in

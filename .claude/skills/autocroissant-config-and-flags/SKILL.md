@@ -215,8 +215,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 |---|---|---|
 | `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs the build fetches and parses at a time (parse in the workers since 2026-11-08) |
 | `AHEAD` (2026-10-23) | `8` | PSDs read and not yet kept by the main thread, at most |
-| `RANGE_READS` (2026-10-23, github_api.py) | `True` | read a PSD by range requests at the tree's commit when psd-tools can (lazy open, fork feat/lazy-records), in the build and `card_check --after`; whole download otherwise and on any failure |
-| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on) |
+| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on); the build and `card_check --after` always try range reads (the `RANGE_READS` off switch went 2026-11-12) |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (the `alt_names` field dropped on 2026-11-10) |
 | `UPDATE_RATE` | `25` | progress cadence of the build: a line every 25 processed cards (`num_updated % UPDATE_RATE == 0`) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
@@ -224,7 +223,6 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `EXPORTED_STATS_NAME` | `"stats"` | `/export_cards` writes `stats.csv` / `stats.txt` in the REPO ROOT (psd_analyzer.py:246, 253) — gitignored via `*.csv` / `*.txt` |
 | `EXPORTED_RULES_NAME` | `"rules"` | `/export_rulebook` writes `rules.txt` in the repo root (psd_analyzer.py:307) |
 | `COLUMN_ORDER` | field names, `'aliases'`…`'subtype'` (`'subseries'` after `'series'` since 2026-10-20) | display/export field ordering for card text output and the CSV columns (used psd_analyzer.py:115-116, 237) |
-| `MISSPELT_CARD_TYPES` | `['undread', 'tornado', 'error']` | layer names that trigger the MISSPELT TYPE validation problem (from 2026-07-11 one live card tripped it, the "20 Creature Types" rulebook page; none since TTSCardMaker 100511d3 renamed its layer to wind, 2026-10-22) |
 | `ICON_FONT_PREFIX` (2026-10-19) | `"stoogedings"` | a text-layer style run whose font PostScript name starts with this (case-insensitive) is read as icon tokens; the font's full name is `stoogedings-Regular`. Changing it without renaming the font in TTSCardMaker silently turns token parsing off |
 | `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read by `_repo_text`: fetched by blob sha through the GitHub API and cached in `_file_cache` (a local clone's is read by `card_check.clone_vocabulary`: the card checks and the diagnostics scripts). Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
 | `ICON_VARIANTS` (2026-10-19; glow and darkglow 2026-10-23) | `("", "tint", "sticker", "no", "glow", "darkglow")` (psd_parser.py:32) | the `:variant` suffixes the parser accepts (all but `no` read as the plain icon); any other suffix is an `UNKNOWN ICON TOKEN` problem |
@@ -726,7 +724,7 @@ table with its command before quoting it in the future.
 | config.py mode 0700 + gitignored | `ls -l config.py` and `git check-ignore -v config.py` |
 | lacks_admin gate list + the ungated /restart_bot | `grep -n "lacks_admin" main.py` then read each hit's enclosing `@tree.command`; `grep -n -A2 'name="restart_bot"' main.py` |
 | lacks_admin polarity | `grep -n -A2 "def lacks_admin" commands/utils.py` |
-| card-module constants (psd_analyzer split 2026-10-20; moved 2026-10-22) | `grep -n "^UPDATE_RATE\|^EXCLUDE_FOLDERS\|_WORKERS =" commands/card_data.py`; build constants: `grep -n "^BUDGET\|^RATE_FLOOR\|^MIN_CARDS\|^ARCHIVE_\|^REPARSE_MAX\|^QUALITY_\|^DETAILS_SHARE" commands/card_data.py`; `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
+| card-module constants (psd_analyzer split 2026-10-20; moved 2026-10-22) | `grep -n "^UPDATE_RATE\|^EXCLUDE_FOLDERS\|_WORKERS =" commands/card_data.py`; build constants: `grep -n "^BUDGET\|^RATE_FLOOR\|^MIN_CARDS\|^ARCHIVE_\|^REPARSE_MAX\|^QUALITY_\|^DETAILS_SHARE" commands/card_data.py`; `grep -n "TYPE_REGION_RATIO\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
 | PARSER_VERSION | `grep -n "^PARSER_VERSION" commands/psd_parser.py` |
 | UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/card_data.py` |
 | query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |

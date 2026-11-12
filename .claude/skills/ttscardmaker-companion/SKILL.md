@@ -925,7 +925,7 @@ is branch work/site-round-2 (TTSCardMaker `site/NOTES.md` §22 there). The same 
 | Image | when `result.image` is set: `https://raw.githubusercontent.com/MichaelJSr/TTSCardMaker/previews/previews/<request>/preview.avif` (720 px AVIF as the card view's: q50 4:4:4, 8x4 tiles; `.webp` q75 before 2026-11-10; the path is new per request) or the contents URL with `Accept: application/vnd.github.raw` as a blob; beside it `before.avif` (`files.before`): the card's official PNG made the same way, which the Diff compares with. The full-size PNG is not published. |
 | Show | `state`: `baked` (image, `reason` "hp 5 -> 8", `notes`), `redundant` (no image: already on the card), `refused` (`reason`; an image only when `image` is `refused`: what the render got), `error`: `transient` true = try again (link `run`); `reason` "input: ..." = a site bug; any other = the preview can't run on this card or repo as it is (show `reason` and `run`). `fields` per field, `changes`, `region` (the edited box), `took_s`, `at`. `esc()` every string. |
 | Stale | current while `base.psd_blob` / `base.png_blob` are the card's blobs on main (cheap: `base.png_blob.startsWith(c.img)`; exact: `GET .../contents/<folder>?ref=main` lists both shas) and the fields the site would send now equal the edit it stored at dispatch (or `result.edit`), both as canonical JSON (keys sorted). A stale one stays shown, marked, until a new press. |
-| Come back | keep `{card id: {request, edit, at}}` in localStorage; a preview stays at least 6 days unless 150 newer ones came; `index.json` on the branch lists all `{request: {at, card, path, state, psd_blob, png_blob}}`. |
+| Come back | keep `{card id: {request, edit, at}}` in localStorage; a preview stays at least 6 days unless 150 newer ones came; `index.json` on the branch lists every preview's date, `{request: {at}}` (card, path, state and blobs until 2026-11-12). |
 | Latency | about 1-2 min for a stat, 1.5-3 for an ability or name (pip 27 s, checkouts 4 s, bake 6-26 s, the publish job's start about 10-20 s, estimated). |
 
 What it never does: write main (PSD, PNG, edits file), post to Discord, start another workflow (every push trigger is
@@ -1082,7 +1082,7 @@ or `Types/` (and by hand with `all`): the pushed PSDs by blob sha, Types/, the i
 no card-repo checkout at all; the bot files are `card_check.SPARSE_FILES` (card_check, font_check, github_api, psd_parser,
 card_models, card_edits, global_config; pip `psd-tools fonttools requests`; since 2026-10-24, branch work/py314:
 requirements-cards.txt in the list and the fork from the card workflows' wheel cache on Python 3.14). It reports what `/update_stats` prints for each card
-(the parser's own notes such as NO STARS FOUND, NO STATS FOUND, MISSPELT TYPE are also the website's Parser notes; the
+(the parser's own notes such as NO STARS FOUND, NO STATS FOUND are also the website's Parser notes; the
 validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, UNKNOWN TYPE are printed only), after the card's
 edits entry. Same three outputs and the same secret, but no ping; the Discord line is plain: "<login> has pushed <card>
 with: <note>; <note>." An unreadable PSD or a failed API call is one error line, exit 0 (both checkers since 2026-10-21).

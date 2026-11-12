@@ -486,9 +486,8 @@ is skipped.
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the card data (the website's Parser notes):
-  `NO ABILITY LAYER` (rule pages only since 2026-10-25; not recorded since the rule-page parsing was removed 2026-11-04), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
-  fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
-  line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
+  `NO ABILITY LAYER` (rule pages only since 2026-10-25; not recorded since the rule-page parsing was removed 2026-11-04), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (a visible
+  pixel layer named undread, tornado or error; deleted 2026-11-12, owner: old records keep it), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
   and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`, with the "creatures" kind):
   the validator then skips its four `... NOT FOUND` lines (not STATS TOO HIGH); a `creatures` edit, or edits giving all four
   stats a value, answer it (`FIXED_BY`, `FIXED_BY_ALL`, build_site's alike), so one stat edit leaves it on the website too.
@@ -508,7 +507,7 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 | `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1344-1350 |
 | `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1353-1354 |
 | `NO ABILITY LAYER` | not recorded since 2026-11-04 (a rule page with no text at parse time) | — |
-| `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :756-757 |
+| `MISSPELT TYPE: <t>` | parse-time; not recorded since 2026-11-12 (a visible layer named undread/tornado/error) | — |
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
@@ -824,7 +823,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 
 | Fact | Re-verify with |
 |---|---|
-| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/card_data.py` |
+| Constants (ratio, gaps, folders) | `grep -n "TYPE_REGION_RATIO\|re_compile(r'\\\\s{3,}')" commands/psd_parser.py; grep -n "EXCLUDE_FOLDERS\|UPDATE_RATE" commands/card_data.py` |
 | Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
 | Exclusion list (21 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
 | Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |

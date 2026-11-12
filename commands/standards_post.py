@@ -22,7 +22,7 @@ SHORT = (                                   # a card check note's start -> what 
     ("NO STATS FOUND", "no stat bars"), ("NO STARS FOUND", 'no stars (group them in "Stars")'),
     ("UNKNOWN TYPE", "unknown card kind (check its folder)"), ("STATS TOO HIGH", "a stat over 20"),
     ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),
-    ("SPD NOT FOUND", "no SPD bar"), ("MISSPELT TYPE: ", "misspelt type "), ("UNKNOWN ICON TOKEN: ", "unknown icon "),
+    ("SPD NOT FOUND", "no SPD bar"), ("UNKNOWN ICON TOKEN: ", "unknown icon "),
     ("UNKNOWN ICON CHARACTER: ", "unknown icon character "), ("ICON TOKEN NOT IN STOOGEDINGS FONT: ", "not in stoogedings: "),
     ("ICON TOKEN PARTLY IN STOOGEDINGS FONT: ", "partly in stoogedings: "), ("DUPLICATE LAYER IDS", "duplicate layer IDs"),
     ("EFFECT LAYER WITHOUT TEXT LAYER: ", "FX layer without its text: "), ("EFFECT LAYER WORDS NOT IN TEXT: ", "FX words not in the text: "),

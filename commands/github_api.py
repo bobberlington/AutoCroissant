@@ -25,8 +25,6 @@ GIT_TOKEN: str = getattr(config, "GIT_TOKEN", "")
 HEADERS: dict = {"Authorization": f"token {GIT_TOKEN}"} if GIT_TOKEN else {}
 RAW_MEDIA = "application/vnd.github.raw"            # Accept: a blob's bytes instead of its JSON envelope
 RETRY_WAITS = (1, 2)                                # seconds between the 3 tries of get_with_retry
-RANGE_READS = True                                  # read card PSDs by range requests when psd-tools can (the data build,
-                                                    # card_check --after); False: whole downloads
 PENDING_ENV = "CARD_BLOBS_PENDING"                  # card-guards.yml's fetch list while it fetches (<list>.done: it ended)
 PENDING_POLL, PENDING_CAP = 0.2, 300                # s: a listed blob looked for; the fetch's cap from the list's write
 
@@ -215,11 +213,6 @@ def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
     return reply.text
 
 
-def range_reads() -> bool:
-    """Whether range reads are on (RANGE_READS): the fork opens a PSD lazily over a RangeReader."""
-    return RANGE_READS
-
-
 def raw_url(repository: str, ref: str, path: str) -> str:
     """raw.githubusercontent's URL of a file at a commit (a commit sha never lags behind, a branch name can)."""
     return f"{RAW_BASE}{repository}/{ref}/{quote(path)}"
@@ -231,7 +224,6 @@ def raw_url(repository: str, ref: str, path: str) -> str:
 __all__ = [
     'GIT_TOKEN',
     'HEADERS',
-    'RANGE_READS',
     'api_url',
     'blob_sha',
     'blob_text',
@@ -242,7 +234,6 @@ __all__ = [
     'get_with_retry',
     'pending_blob',
     'print_token_status',
-    'range_reads',
     'raw_url',
     'session',
     'token_from_env',

@@ -148,11 +148,11 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     assert result["image"] == "baked" and result["files"] == {"png": cp.PNG, "webp": cp.SMALL, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
     assert len(result["region"]) == 4 and result["runner"]["psd_tools"] and result["at"].endswith("Z")
     webp = Image.open(out / cp.SMALL)
-    assert webp.format == "AVIF" and webp.width == cp.SMALL_WIDTH and list(webp.size) == result["webp_size"]
+    assert webp.format == "AVIF" and webp.width == cp.SMALL_WIDTH
     cp._small((out / cp.PNG).read_bytes(), str(tmp_path / "again.avif"))   # as made from preview.png
     assert (tmp_path / "again.avif").read_bytes() == (out / cp.SMALL).read_bytes()
     with Image.open(out / cp.BEFORE) as before:                                # the official PNG, made the same way (the Diff's)
-        assert before.format == "AVIF" and before.size == webp.size and result["bytes"]["before"] == (out / cp.BEFORE).stat().st_size
+        assert before.format == "AVIF" and before.size == webp.size
         cp._small(cards.files[DOOMER_PNG], str(tmp_path / "official.avif"))
         assert (tmp_path / "official.avif").read_bytes() == (out / cp.BEFORE).read_bytes()
 
@@ -165,8 +165,6 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     bake = Image.open(report.cards[0].baked.png_path)
     ours = Image.open(out / cp.PNG)
     assert ours.mode == bake.mode and ours.tobytes() == bake.tobytes()
-    if result["recompressed"]:
-        assert (out / cp.PNG).stat().st_size < Path(report.cards[0].baked.png_path).stat().st_size
 
 
 def test_a_refused_edit_writes_its_reason_and_no_image(cards, tmp_path):
@@ -394,7 +392,7 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     assert json.loads(files[f"previews/{a}/{br.RESULT}"])["request"] == a and files[f"previews/{a}/{br.SMALL}"] == b"webp of " + a.encode()
     second = br.publish(str(_out(tmp_path, b, state="refused", image=False)), b, str(remote.work))
     assert second["parent"] == first["commit"] and _git(remote.bare, "rev-parse", "previews").strip() == second["commit"]
-    assert sorted(_index(remote.bare)) == [a, b] and _index(remote.bare)[b]["state"] == "refused"
+    assert sorted(_index(remote.bare)) == [a, b] and list(_index(remote.bare)[b]) == ["at"]            # its date alone
     assert f"previews/{b}/{br.SMALL}" not in _branch(remote.bare)
     assert _git(remote.bare, "log", "-1", "--format=%an|%s", "previews").strip() == f"AutoCroissant|Preview {b}: Mini Doomer (refused)"
     assert _git(remote.bare, "rev-parse", "main").strip() == _git(remote.work, "rev-parse", "HEAD").strip()   # main untouched

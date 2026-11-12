@@ -12,7 +12,7 @@ channel's one post (standards_post), no ping.
     markdown(report), discord_payload(report) -> the job summary / commit comment and this check's part of the post
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
-NO STATS FOUND, MISSPELT TYPE ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
+NO STATS FOUND ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
 the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD with variant tags: each picture's ("A Snack2:
 ..."). A notification, never a
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
@@ -39,7 +39,7 @@ from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
 from commands.font_check import API_TIMEOUT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, old_blobs, \
     pushed_files, tree_blobs
-from commands.github_api import blob_text, fetch_verified, range_reads, token_from_env
+from commands.github_api import blob_text, fetch_verified, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
 from commands.psd_remote import RemotePSD
 from commands.standards_post import payload, short
@@ -361,7 +361,7 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
         Report
     """
     report = Report()
-    ranges = bool(ref) and not clone and range_reads()
+    ranges = bool(ref) and not clone
     for path in sorted(psds):
         sha, author = psds[path]
         cards = len(report.cards)

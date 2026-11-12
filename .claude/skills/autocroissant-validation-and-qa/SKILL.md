@@ -82,8 +82,7 @@ Problems travel through two distinct channels, and they have different baselines
 **Channel A — parse-time problems, PERSISTED in the card data.**
 `CardInfo.problems` is a dataclass field (card_models.py:94). During parsing these problem
 kinds are appended to it (line numbers as of 2026-10-19):
-- `MISSPELT TYPE: <name>` (psd_parser.py:549), for visible pixel layers named in
-  `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']` (psd_parser.py:24).
+- `MISSPELT TYPE: <name>`, for visible pixel layers named undread, tornado or error, until 2026-11-12 (deleted, owner).
 - Since 2026-10-19, four icon-font problems, added once each through `_add_problem`
   (psd_parser.py:623): `UNKNOWN ICON TOKEN: [x]`, `UNKNOWN ICON CHARACTER: U+XXXX`,
   `ICON TOKEN NOT IN STOOGEDINGS FONT: [x]` and `ICON TOKEN PARTLY IN STOOGEDINGS FONT: [x]`
@@ -374,14 +373,13 @@ pickles (HEAD vs working, before every /push).
 creature/minion stat rules, `CardValidator._validate_stats` (psd_parser.py:1014). This is
 the DEFAULT home for new checks: return-value-only, visible in sweeps and `parse_one.py`,
 zero database footprint, trivially removable. Parse-time checks
-(`card.problems.append(...)` inside `PSDParser`, like MISSPELT TYPE at
-psd_parser.py:549) PERSIST into stats.pkl — every firing is written into the committed
+(`card.problems.append(...)` inside `PSDParser`, like NO STARS FOUND) PERSIST into stats.pkl — every firing is written into the committed
 database and needs a sweep to add AND to scrub. Only make a check parse-time if it needs
 information that exists solely during layer traversal, and expect a higher precision bar.
 
 **Problem-string convention.** SCREAMING short phrases, stable and grep-able, optional
 lowercase detail after a colon — existing vocabulary: `UNKNOWN TYPE`,
-`HP NOT FOUND`, `STATS TOO HIGH`, `MISSPELT TYPE: tornado`. Match it.
+`HP NOT FOUND`, `STATS TOO HIGH`, `UNKNOWN ICON TOKEN: [x]`. Match it.
 
 **Exclusion-set etiquette.** No per-card list is left (`ABILITY_EXCLUSIONS`, 21 names, went on 2026-11-09). Such a list
 only ever silenced TRUE positives — cards that legitimately have no ability text (`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 20 (10 until 2026-11-06) is allowed per card

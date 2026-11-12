@@ -296,7 +296,7 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     a, b, c, d, d0 = b"psd-a", b"psd-b", b"psd-c", b"psd-d", b"psd-d0"
     fake_cards[a] = lambda r: creature(r, defense=4, attack=5, speed=6)             # HP NOT FOUND, answered by the edits
     fake_cards[b] = lambda r: creature(r, card_type="item", problems=[NO_STARS])
-    fake_cards[d] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS", "MISSPELT TYPE: fier"])
+    fake_cards[d] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS", "UNKNOWN ICON TOKEN: fier"])
     fake_cards[d0] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS"])
     psds = {"a": a, "Creatures/Kirby/3 Stars/A.psd": a, "Items/Heal/1 Stars/B.psd": b, "N.M.E/C.psd": c, "Creatures/D.psd": d}
     tree, blobs = tree_and_blobs(edits({"A": {"hp": 5}}), psds)
@@ -319,16 +319,16 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--author", "pusher", "--json", str(out), "--discord", str(disc)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["cards"] == [
-        {"path": "Creatures/D.psd", "author": "alice", "notes": ["DUPLICATE LAYER IDS", "MISSPELT TYPE: fier"], "new": ["MISSPELT TYPE: fier"]},
+        {"path": "Creatures/D.psd", "author": "alice", "notes": ["DUPLICATE LAYER IDS", "UNKNOWN ICON TOKEN: fier"], "new": ["UNKNOWN ICON TOKEN: fier"]},
         {"path": "Items/Heal/1 Stars/B.psd", "author": "pusher", "notes": [NO_STARS], "new": [NO_STARS]}]
     assert data["checked"] == 3 and data["errors"] == [f"N.M.E/C.psd: blob {_sha(c)[:8]} hashes to {_sha(b'garbage')[:8]}"]
     assert fake.blob_calls() == 7                                   # the manifest, the edits file, four card PSDs, D's old one
     assert any(u.endswith("/git/trees/c2?recursive=1") for u in fake.calls) and any(f"/git/trees/{'b' * 40}?" in u for u in fake.calls)
     text = capsys.readouterr().out
     assert '- `Items/Heal/1 Stars/B.psd` (pusher): no stars (group them in "Stars")\n' in text and "A.psd" not in text
-    assert "- `Creatures/D.psd` (alice): duplicate layer IDs; misspelt type fier\n" in text         # the comment: every note
+    assert "- `Creatures/D.psd` (alice): duplicate layer IDs; unknown icon fier\n" in text         # the comment: every note
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines() == ["alice pushed D: misspelt type fier. [c2](https://github.com/o/r/commit/c2)",
+    assert payload["content"].splitlines() == ["alice pushed D: unknown icon fier. [c2](https://github.com/o/r/commit/c2)",
                                                'pusher pushed B: no stars (group them in "Stars"). [c2](https://github.com/o/r/commit/c2)']
     assert "token" not in payload["content"].lower()
 

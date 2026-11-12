@@ -17,7 +17,7 @@ else the first of CHROMES on PATH) over its DevTools pipe, the page past the CDN
 Each page is screenshot and hashed: the PDF is printed again only when a hash
 changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
-Chrome too when the website, the fonts and Chrome are as at the last kept key (PRE_SKIP; --full: Chrome looks in any case).
+Chrome too when the website, the fonts and Chrome are as at the last kept key (--full: Chrome looks in any case).
 Other files in the folder are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 --out DIR: the PDF and pages.json go to DIR instead (the checkout's copied in first), and DIR/inputs lists HEAD's sha and
 INPUTS (Card sync's look in the background: kept unless main's head moved one since).
@@ -106,7 +106,7 @@ SITE_POLL = 20                                 # seconds between looks at the we
 SITE_POLL_FIRST, SITE_FAST = 2, 120            # a wait's first SITE_FAST s: build.txt read every SITE_POLL_FIRST s
 CALL_SECONDS = 60                              # one DevTools call
 # the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
-PRE_SKIP = True                                # held: no Chrome (shadow 11-09 to 11-11: no misses); --full looks and warns on a miss
+# (held: no Chrome; --full looks and warns on a miss)
 PAGE_STAMP = regex(r'<meta name="page" content="([^"]*)"')   # build_site: index.html's stamp (build.txt's 2nd line)
 ASSET_URL = regex(r"assets/[\w.-]+(?:\?v=\w+)?")              # the page's code: bundle, chunks, style sheet (stamped URLs)
 INLINE_CSS = regex(r"<style\b[^>]*>(.*?)</style>", DOTALL)     # style.css, inlined
@@ -507,7 +507,7 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
     and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
     again); else nothing changes and the report says LAGS. Chrome is not started when pages.json's pre is the website's
-    pre_key() and the PDF is there (PRE_SKIP; full: Chrome looks in any case). out: the PDF and pages.json go there
+    pre_key() and the PDF is there (full: Chrome looks in any case). out: the PDF and pages.json go there
     (_out_start(): the checkout's copied in first, LOOK_FILE written), the checkout left alone.
 
     Returns:
@@ -536,7 +536,7 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
                     f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
         pre = pre_key(seen, trees, fonts, exe)
         held = has_pdf and pre == old.get("pre")
-        if held and PRE_SKIP and not full:
+        if held and not full:
             return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
         theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
         try:

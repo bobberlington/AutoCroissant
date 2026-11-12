@@ -152,7 +152,7 @@ class CardEdits:
              "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
-                "stars": ("NO STARS FOUND",), "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",),
+                "stars": ("NO STARS FOUND",), "type": ("UNKNOWN TYPE",),
                 "allow_high_stats": ("STATS TOO HIGH",), "creatures": ("NO STATS FOUND",)}    # build_site.FIXED_BY alike
     FIXED_BY_ALL = {("hp", "def", "atk", "spd"): ("NO STATS FOUND",)}   # answered once every one has a value (build_site's)
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone

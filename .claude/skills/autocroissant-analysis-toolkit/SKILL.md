@@ -349,8 +349,8 @@ autocroissant-run-and-operate.)
      :237) — **no request per unchanged card**. The PyGithub repo is lazy (`_repo()`, :136): 0 requests.
    - Per CHANGED card: one commit page (`_commit_page`, :145-148; per_page=100, run in a 2-thread pool beside the
      reads) that holds the newest commit and, for a new or authorless card, the first; a file with 100+ commits adds
-     one (`.reversed[0]`, :222). The PSD itself, **since 2026-10-23 with range reads on** (`RANGE_READS`,
-     github_api.py:31, and a psd-tools with `range_reader`: the Actions and `~/.venvs/ac-py314-fork`; RemotePSD in psd_remote.py): HTTP range
+     one (`.reversed[0]`, :222). The PSD itself, **since 2026-10-23 with range reads** (always tried since
+     2026-11-12, when the `RANGE_READS` switch went; a psd-tools with `range_reader`: the Actions and `~/.venvs/ac-py314-fork`; RemotePSD in psd_remote.py): HTTP range
      requests to raw.githubusercontent at the tree's commit, which are **not REST API requests**; a run with changed
      cards adds one `branches/<CARD_BRANCH>` request to find that commit (`_tree_commit`, :702). With range reads off,
      or as the fallback (3 refusals turn them off for the run), the whole blob from api.github.com git/blobs
@@ -559,7 +559,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
 | `num_changed` gates at HEAD | `grep -n 'can_prune(\|num_changed + num_moved' commands/card_data.py` (649, 1221, 1721) |
-| Range reads and the branch-head request | `grep -n '^RANGE_READS' commands/github_api.py` (31); `grep -n 'def _tree_commit\|def _fetch_psd' commands/card_data.py` (702, 716) |
+| Range reads and the branch-head request | `grep -n '^RANGE_REFUSALS\|def _raw_ref' commands/card_data.py`; `grep -n 'def _tree_commit\|def _fetch_psd' commands/card_data.py` (702, 716) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/card_data.py; grep -n 'requests/hour' commands/github_api.py` (card_data.py since 2026-10-22, github_api.py since the 2026-10-20 split) |
 | Queue loops drain the whole deque on each wake (1 s fallback); reminders on a 1 s loop | `grep -n 'tasks.loop\|while command_queue\|while dispatch_queue\|while edit_queue\|_wake.wait()' main.py` (806 at 1 s; 823/847/884 at `seconds=0`, paced by the waits, on 2026-10-25) |

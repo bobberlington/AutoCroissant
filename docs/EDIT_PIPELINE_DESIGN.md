@@ -1270,13 +1270,13 @@ result.json (`v` 1):
 | `changes` | `[{field, old, new}]` of a bake |
 | `notes` | the bake's notes but the soft ones (`psd_edit.real_notes`): FX notes, icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
 | `parity`, `region` | `{field: {bad_pct, mean, max}}`; the edited box `[x0, y0, x1, y1]` on the full-size card |
-| `image`, `files`, `size`, `webp_size`, `bytes`, `recompressed` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir; the keys kept, the files AVIF); pixel sizes; file sizes |
+| `image`, `files`, `size` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir; the keys kept, the files AVIF); the card's pixel size (`webp_size`, `bytes`, `recompressed` and `traceback` until 2026-11-12) |
 | `runner`, `run`, `took_s`, `at` | psd-tools version, text engine, story sync, fonts present; the Actions run URL; seconds; UTC time |
 
 Exit 0 for a verdict (baked, redundant, refused), 2 for an input error, 1 for any other error (all write result.json).
 
 **The previews branch.** An orphan branch `previews`: `previews/<request>/{result.json, preview.avif, before.avif}` (`.webp` before 2026-11-10), `index.json`
-(`{"v": 1, "previews": {request: {at, card, path, state, psd_blob, png_blob}}}`) and a README. `card_preview_branch` (a
+(`{"v": 1, "previews": {request: {at}}}`: the rewrite's dates; `card`, `path`, `state` and the blobs until 2026-11-12) and a README. `card_preview_branch` (a
 missing or foreign result.json is published as `error`, `transient`: the preview never finished) makes one commit per
 run on the branch head, from the publish job's blobless depth-1 checkout and its credentials:
 `git fetch --depth 1 --filter=blob:none` of the head into `refs/card-preview/previews` (index.json by a lazy fetch),

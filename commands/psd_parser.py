@@ -25,7 +25,6 @@ getLogger("psd_tools").setLevel(CRITICAL)
 PARSER_VERSION = 7                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 ICON_SPAN_PAD = 80                # px: a type icon this near an Ability layer's box is in its text (a line)
-MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value, "creatures")  # with stat bars ("creatures": Auxiliary/Creatures)
 NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY_ALL)
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
@@ -1098,14 +1097,6 @@ class PSDParser:
             else:
                 type_bboxes.append((base_name(layer).lower(), bbox))
 
-        # Star layers: counted per star by _count_stars once the walk is done
-        elif get_stars_from_psd and self._is_star_layer(layer):
-            pass
-
-        # Problematic type layer
-        elif (base_name(layer).lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
-            card.problems.append(f"MISSPELT TYPE: {base_name(layer).lower()}")
-
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
                             get_stars_from_psd: bool, card_mid_y: int,
                             title: bool = False, header: Optional[list] = None) -> None:
@@ -1508,18 +1499,6 @@ class PSDParser:
         after one (11-11: Tomato's 'Food'); a card-sized box can hold a small icon (Godskin Apostle's)."""
         limit = FRAME_SHARE * psd.width * psd.height
         return _area(layer.bbox) > limit and _area(PSDParser._core_box(layer)) > limit
-
-    def _is_star_layer(self, layer) -> bool:
-        """Check if layer is a star layer."""
-        parent_names = []
-        current = layer.parent
-        depth = 0
-        while current and depth < 3:
-            parent_names.append(current.name.lower())
-            current = getattr(current, 'parent', None)
-            depth += 1
-
-        return any("stars" in name for name in parent_names)
 
     def _process_abilities(self, abilities: list[tuple[str, BoundingBox]],
                            type_bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> Optional[str]:

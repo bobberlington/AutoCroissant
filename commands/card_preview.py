@@ -26,13 +26,12 @@ from importlib import import_module
 from io import BytesIO
 from json import dumps, loads
 from os import _exit, environ, makedirs, pathsep, remove, replace
-from os.path import abspath, basename, exists, expanduser, getsize, isfile, join
+from os.path import abspath, basename, exists, expanduser, isfile, join
 from re import fullmatch
 from shutil import move, rmtree
 from sys import argv, stderr, stdout
 from tempfile import mkdtemp
 from time import perf_counter, sleep
-from traceback import format_exc
 from typing import Optional
 
 from PIL import Image
@@ -337,7 +336,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
     _before()'s and `small` _beside()'s, taken when they made one.
 
     Returns:
-        result.json's files, size and webp_size
+        result.json's files and size
     """
     with open(png_path, "rb") as fh:
         data = fh.read()
@@ -346,7 +345,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
         fh.write(smaller or data)
     with Image.open(BytesIO(data)) as image:
         size = list(image.size)
-    files, sizes = {"png": PNG, "webp": SMALL}, {"png": len(smaller or data)}   # "webp": the site's key for SMALL
+    files = {"png": PNG, "webp": SMALL}         # "webp": the site's key for SMALL
     try:
         small_size = small.result() if small is not None else None
     except Exception:                           # noqa: BLE001 - made here instead
@@ -354,8 +353,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
     if small_size:
         move(png_path + ".small", join(out, SMALL))
     else:
-        small_size = _small(data, join(out, SMALL))
-    sizes["webp"] = getsize(join(out, SMALL))
+        _small(data, join(out, SMALL))
     if before and isfile(before):
         try:
             made = early.result() if early is not None else ""
@@ -366,8 +364,8 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
         else:
             with open(before, "rb") as fh:
                 _small(fh.read(), join(out, BEFORE))
-        files["before"], sizes["before"] = BEFORE, getsize(join(out, BEFORE))
-    return {"files": files, "size": size, "webp_size": small_size, "bytes": sizes, "recompressed": smaller is not None}
+        files["before"] = BEFORE
+    return {"files": files, "size": size}
 
 
 def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, clone: str = "", request: str = "",
@@ -438,8 +436,6 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result["runner"]["fonts"] = exists(fonts)
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
-        if one.traceback:
-            result["traceback"] = one.traceback.strip().splitlines()[-1]
         result["parts"] = dict((one.verdict or {}).get("parts") or {})     # per layer: baked, deleted, skipped...
         if one.baked is not None:
             result["changes"] = changes_of(one.baked.edits)
@@ -464,7 +460,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result.update(state="error", transient=refused.code in RETRY, reason=f"{refused.code}: {refused.why}")
     except Exception as error:                  # noqa: BLE001 - result.json is always written
         result.update(state="error", transient=isinstance(error, (RequestException, ImportError, OSError)),
-                      reason=f"error: {type(error).__name__}: {error}", traceback=format_exc().strip().splitlines()[-1])
+                      reason=f"error: {type(error).__name__}: {error}")
     finally:
         wait([f for pair in made.values() for f in pair] + ([early] if early is not None else []))
         psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE, psd_edit.FONTS_WAIT = level, None, False, None

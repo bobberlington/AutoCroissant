@@ -35,7 +35,7 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, 
 from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
-from commands.github_api import HEADERS, api_url, blob_text, fetch_blob, get_with_retry, range_reads
+from commands.github_api import HEADERS, api_url, blob_text, fetch_blob, get_with_retry
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
 from commands.psd_remote import RangeError, RemotePSD
 
@@ -49,8 +49,7 @@ RANGED_WORKERS = 8                                                # by range rea
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs read and not yet kept, at most (memory)
 RANGED_AHEAD = 2 * RANGED_WORKERS
 FORK_WAIT = 300                                                   # s for a forked worker's PSD: past it, threads
-RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
-                                                                  # trying them (github_api.RANGE_READS: the off switch)
+RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off trying them
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
 LINKS_JSON = "links.json"                                         # db/: every PSD's links (Card sync's redraw, the guards' files,
@@ -498,7 +497,7 @@ class CardBuild:
         num_updated = num_changed = num_moved = 0
         todo, num_old = self._todo(force_update)
 
-        self.raw_ref = self._raw_ref() if todo and range_reads() else ""
+        self.raw_ref = self._raw_ref() if todo else ""
         if todo:
             self._shared()
         global _BUILD
@@ -1065,7 +1064,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
             psds[path] = kept
         elif path not in cards:
             unread.append(path)
-    if unread and range_reads() and not build.raw_ref:
+    if unread and not build.raw_ref:
         build.raw_ref = build._raw_ref()
     todo = []
     for path in unread:                             # the budget in path order, before the workers

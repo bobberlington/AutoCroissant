@@ -15,7 +15,7 @@ def _edits(cards: dict) -> CardEdits:
 
 def _card(**kw) -> CardInfo:
     base = dict(name="Foo Bar", card_type="creature", ability="", types=["fire"],
-                stats=CardStats(hp=-1, defense=2, attack=3, speed=4), problems=["MISSPELT TYPE: tornado"])
+                stats=CardStats(hp=-1, defense=2, attack=3, speed=4), problems=["DUPLICATE LAYER IDS"])
     base.update(kw)
     return CardInfo(**base)
 
@@ -65,17 +65,17 @@ def test_apply_then_restore():
     assert e.apply("Foo Bar", card) is True
     assert (card.stats.hp, card.ability, card.display_name, card.note) == (5, "Fixed.", "Foo Prime", "checked")
     assert card.parsed_values == {"hp": None, "ability": "", "name": None, "note": None,
-                                  "problems": ["MISSPELT TYPE: tornado"]}
-    assert card.problems == ["MISSPELT TYPE: tornado"]       # not answered by hp/ability
+                                  "problems": ["DUPLICATE LAYER IDS"]}
+    assert card.problems == ["DUPLICATE LAYER IDS"]       # not answered by hp/ability
     assert e.apply("Foo Bar", card) is False                 # idempotent
     assert CardEdits().apply("Foo Bar", card) is True        # edit gone: PSD values back
     assert repr(card) == original
 
 
 def test_apply_clears_answered_problems():
-    card = _card(problems=["MISSPELT TYPE: tornado", "HP NOT FOUND", "NO STARS FOUND"])
+    card = _card(problems=["HP NOT FOUND", "NO STARS FOUND"])
     _edits({"Foo Bar": {"types": ["wind"]}}).apply("Foo Bar", card)
-    assert card.types == ["wind"] and card.problems == ["HP NOT FOUND", "NO STARS FOUND"]
+    assert card.types == ["wind"] and card.problems == ["HP NOT FOUND", "NO STARS FOUND"]     # types answers none
     _edits({"Foo Bar": {"types": ["wind"], "stars": 3}}).apply("Foo Bar", card)
     assert card.types == ["wind"] and card.problems == ["HP NOT FOUND"]
     assert card.parsed_values["types"] == ["fire"]           # still the PSD's, not the first edit's
@@ -172,7 +172,7 @@ def test_psd_meta_rides_beside_by_and_at():
     assert e.meta["foo bar"] == {"_by": "web", "_at": "2026-10-20T00:00:00Z", "_psd": verdict}
     card = _card()
     assert e.apply("Foo Bar", card) is True
-    assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["MISSPELT TYPE: tornado"]}
+    assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["DUPLICATE LAYER IDS"]}
     # _site: website-only image fields, applied like any edit; one naming no value (or no image field) is dropped
     e = _edits({"Mini Doomer": {"name": "Tiny Doomer", "hp": 9, "def": None, "note": "n", "_site": ["hp", "name", "def", "atk", "note"]},
                 "Baz": {"hp": 1, "_site": ["spd"]}, "Qux": {"hp": 1, "_site": "hp"}})

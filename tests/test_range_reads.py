@@ -223,8 +223,9 @@ def test_forked_range_reads_take_RANGED_WORKERS_whole_downloads_DOWNLOAD_WORKERS
     monkeypatch.setattr(cd, "_forks", lambda: True)
     monkeypatch.setattr(cd, "RANGED_WORKERS", 2)
     monkeypatch.setattr(cd, "DOWNLOAD_WORKERS", 1)
+    real = cd.GitBuild._raw_ref
     for ranged in (True, False):
-        monkeypatch.setattr(ga, "RANGE_READS", ranged)
+        monkeypatch.setattr(cd.GitBuild, "_raw_ref", real if ranged else (lambda self: ""))
         cards.db = cards.tmp / f"data{ranged}" / "db"
         cards.db.mkdir(parents=True)
         assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK

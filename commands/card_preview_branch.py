@@ -56,7 +56,7 @@ BREAKS = ("Cc", "Zl", "Zp")                     # control characters and line or
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
                  "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.avif` and "
                  "`before.avif` (the card before the edit, for the Diff); "
-                 "`index.json` lists them. One commit per preview; rewritten as one fresh commit when it holds more "
+                 "`index.json` lists their dates. One commit per preview; rewritten as one fresh commit when it holds more "
                  f"than {KEEP} previews or one older than {DAYS.days} days. Never merged into main.\n")
 
 
@@ -238,8 +238,7 @@ def publish(out: str, request: str, where: str = ".", now: Optional[datetime] = 
     result["files"] = {kind: name for kind, name in (result.get("files") or {}).items() if name in files}   # what is published
     files[RESULT] = (dumps(result, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
     card = clean(result.get("card") or "", MAX_CARD)
-    row = {"at": result.get("at"), "card": card, "path": clean(result.get("path") or ""), "state": result.get("state"),
-           "psd_blob": (result.get("base") or {}).get("psd_blob", ""), "png_blob": (result.get("base") or {}).get("png_blob", "")}
+    row = {"at": result.get("at")}            # kept()'s
     entry = _tree(where, [("100644", "blob", _blob(where, data), name) for name, data in files.items()])
     readme = _blob(where, BRANCH_README.encode("utf-8"))
     why = ""

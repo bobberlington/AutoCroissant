@@ -312,8 +312,8 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 commands/card_check.py (imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
 Discord or config; the guards' `card_guards.SPARSE_FILES` holds that closure) tells what the bot's parser and validator note about a card
-PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
-FOUND`, `STATS TOO HIGH`, `UNKNOWN TYPE`; the parser's own, the first three, are also the website's Parser
+PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
+FOUND`, `STATS TOO HIGH`, `UNKNOWN TYPE`; the parser's own, the first two, are also the website's Parser
 notes, the validator's are printed only), after the card's `site/Card Edits.json` entry (`problems_ok`, `allow_high_stats`, `creatures` ...).
 The second push-guard rule (docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5). It reports and never
 rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
@@ -325,7 +325,7 @@ network, a truncated tree) is one error line.
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it comments on the commit and its notes the push made new (the PSD before the push lacked them; owner 2026-11-11) go
   in the standards channel's one post per push (`commands/standards_post.py`, posted by the tell job), no ping. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
-  "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, misspelt type, several creatures) also show
+  "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, several creatures) also show
   on the website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
   lists no PSD, so it reports nothing.
 - **Dispatch:** Actions > Card guards > Run workflow with `all` reads every card PSD of the tree (~813 blob downloads, 16 GB, 25-30 min) into
