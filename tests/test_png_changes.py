@@ -48,6 +48,40 @@ def test_the_rule_counts_patches_not_noise_or_strokes():
     assert pc.changed_share(_png(base), _png(base[:90])) == 1.0
 
 
+def _box_sum_area(a, b):
+    """changed_area as it was before 11-11: premultiplied always, the opening by cumsum box sums."""
+    def squares(mask, k=pc.PATCH):
+        c = np.pad(np.pad(mask.astype(np.int32), k // 2).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+        h, w = mask.shape
+        return c[k:k + h, k:k + w] - c[:h, k:k + w] - c[k:k + h, :w] + c[:h, :w]
+    ca, cb = (a[..., :3] * a[..., 3:] // 255).astype(np.int16), (b[..., :3] * b[..., 3:] // 255).astype(np.int16)
+    alpha = np.abs(a[..., 3].astype(np.int16) - b[..., 3].astype(np.int16))
+    moved = (np.abs(ca - cb).max(axis=2) > pc.TOLERANCE) | (alpha > pc.TOLERANCE)
+    return squares(squares(moved) == pc.PATCH ** 2) > 0
+
+
+def test_changed_area_is_the_box_sum_opening():
+    """Opaque pairs (no premultiply), one or both see-through: blocks (some at the edge) of one channel moved near the
+    tolerance, noise."""
+    rng, partial = np.random.default_rng(7), set()
+    for i in range(36):
+        h, w = rng.integers(5, 90, 2)
+        a = rng.integers(0, 256, (h, w, 4)).astype(np.uint16)
+        if i % 3 < 2:
+            a[..., 3] = 255
+        b = a.copy()
+        for _ in range(rng.integers(0, 6)):
+            y, x, c = rng.integers(0, h), rng.integers(0, w), rng.integers(0, 3 if i % 3 == 0 else 4)
+            block = b[y:y + rng.integers(1, 30), x:x + rng.integers(1, 30), c]
+            block[:] = np.clip(block.astype(int) + rng.choice([-4, -3, -2, 2, 3, 4]), 0, 255)
+        noise = rng.random((h, w)) < rng.random() / 2
+        b[noise, :3] = np.clip(b[noise, :3].astype(int) + rng.integers(-5, 6, (int(noise.sum()), 3)), 0, 255)
+        area = pc.changed_area(a, b)
+        assert area.dtype == bool and (area == _box_sum_area(a, b)).all()
+        partial.add(0 < area.sum() < area.size)
+    assert partial == {True, False}
+
+
 def _commit(repo, message, env=None):
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True,
                                     env={**environ, "GIT_AUTHOR_NAME": "Maker", "GIT_AUTHOR_EMAIL": "m@x",

@@ -114,22 +114,31 @@ def _pixels(data: bytes):
         return asarray(im.convert("RGBA"), dtype=uint16)
 
 
-def _squares(mask, k: int):
-    """For each pixel, how many of the k x k square centred on it are set (outside the picture: unset)."""
-    from numpy import int32, pad
-    r = k // 2
-    c = pad(pad(mask.astype(int32), r).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
-    h, w = mask.shape
-    return c[k:k + h, k:k + w] - c[:h, k:k + w] - c[k:k + h, :w] + c[:h, :w]
+def _runs(mask, op):
+    """op (logical_and or logical_or) of the PATCH pixels centred on each along axis 1 (outside: unset), transposed:
+    twice is the PATCH x PATCH square."""
+    from numpy import pad
+    out, span = pad(mask, ((0, 0), (PATCH // 2, PATCH // 2))), 1
+    while span < PATCH:                         # out[:, i]: op of the span pixels from i
+        step = min(span, PATCH - span)
+        out, span = op(out[:, :-step], out[:, step:]), span + step
+    return out.T
 
 
 def changed_area(a, b):
     """The visibly changed pixels of two RGBA uint16 pictures of one size (bool): colour over black or alpha moved by
     more than TOLERANCE in a channel, inside a PATCH x PATCH square of such pixels (a morphological opening)."""
-    from numpy import abs as np_abs, int16
-    ca, cb = (a[..., :3] * a[..., 3:] // 255).astype(int16), (b[..., :3] * b[..., 3:] // 255).astype(int16)
-    moved = (np_abs(ca - cb).max(axis=2) > TOLERANCE) | (np_abs(a[..., 3].astype(int16) - b[..., 3].astype(int16)) > TOLERANCE)
-    return _squares(_squares(moved, PATCH) == PATCH * PATCH, PATCH) > 0
+    from numpy import abs as np_abs, int16, logical_and, logical_or, zeros
+    if a[..., 3].min() == 255 and b[..., 3].min() == 255:      # opaque: colour over black is the colour
+        moved = zeros(a.shape[:2], bool)
+        for c in range(3):
+            d = a[..., c].view(int16) - b[..., c].view(int16)
+            moved |= (d > TOLERANCE) | (d < -TOLERANCE)
+    else:
+        ca, cb = (a[..., :3] * a[..., 3:] // 255).astype(int16), (b[..., :3] * b[..., 3:] // 255).astype(int16)
+        moved = (np_abs(ca - cb).max(axis=2) > TOLERANCE) | (np_abs(a[..., 3].astype(int16) - b[..., 3].astype(int16)) > TOLERANCE)
+    eroded = _runs(_runs(moved, logical_and), logical_and)
+    return _runs(_runs(eroded, logical_or), logical_or)
 
 
 def changed_share(old: bytes, new: bytes) -> float:
