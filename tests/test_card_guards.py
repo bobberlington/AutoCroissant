@@ -2645,8 +2645,8 @@ def test_site_data_wait(clone, tmp_path):
         naps.write_text("")
         done, _ = _shell(wait, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {}),
                                 **more}, cwd=work)
-        for _ in range(100):                                              # the PSD sizes' read, in the background
-            if (temp / "setup" / "sizes.code").exists():
+        for _ in range(200):                                              # the PSD sizes' read, in the background
+            if (temp / "setup" / "sizes.code").exists() and (temp / "setup" / "sizes.code").read_text().strip():
                 break
             subprocess.run(["/bin/sleep", "0.05"])
         assert done.returncode == 0 and naps.read_text().split() == ["0.5"] * 4 * looks, (answer, done.stderr)
