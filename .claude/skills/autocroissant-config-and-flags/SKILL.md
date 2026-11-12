@@ -557,7 +557,7 @@ read since; a Card checks dispatch with `all` makes every plate again). No plate
 | Setting | Kind | Meaning |
 |---|---|---|
 | `CARD_GUARDS` | repository variable | the push guards' mode (`dry`, `report`, `on`); unset = off (2026-10-23) |
-| `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
+| `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (the changelog posts only; never pings). Card sync's failure alerts moved to the standards channel on 2026-11-11 (owner) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
 | `card-guards-quiet` | environment, UNUSED since 2026-11-03 (no job names it: owner, no 30-minute wait; deletable in Settings > Environments) (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 | `card-sync-quiet` | environment, UNUSED since 2026-11-03 (no job names it; deletable) (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |

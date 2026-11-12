@@ -6,12 +6,14 @@ the push that brought each (the activity list, else consecutive commits by one a
 Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1. The bake's
 events (baked, bake-refused) ride their push's post; the guards' (guard-png, guard-fix) and every event of a guards
 commit's push are the Changes page's alone (owner, 2026-10-25): docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md.
+Re-reads too (owner, 2026-11-11).
 
 CLI: python -m commands.changelog post --db <db dir> --site <url> --out <file>
      |  advance --db <db dir> --seq <n> --push <sha>  (after Discord accepted that message)
 """
 from argparse import ArgumentParser
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from itertools import groupby
 from glob import glob
 from json import dumps, loads
@@ -40,7 +42,7 @@ COOLDOWN = re_compile(r"\((\d+)(G?CD)\)")              # one number: shorter is 
 USES = re_compile(r"\((\d+)U\)")                         # more is stronger
 KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore",
          "baked", "bake-refused", "guard-png", "guard-fix")
-SILENT = ("guard-png", "guard-fix")                      # never in a Discord post: the Changes page and the commit say them
+SILENT = ("reparse", "guard-png", "guard-fix")           # never in a Discord post: the Changes page (and the commit) say them
 PLAIN = re_compile(r"\boverflow: |: bad [\d.]+%, mean [\d.]+, max \d+| \([+-]?\d+ px(?:, '(?:[^'\\]|\\.)*'|, \"[^\"]*\")?\)")   # Discord: no codes, no pixel counts (nor the layer they name)
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
@@ -48,10 +50,10 @@ KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "mi
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
             (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
             (("baked",), "Baked into the PSDs"), (("bake-refused",), "Bake refused"),
-            (("restore",), "Rollback"))                  # re-reads: one line
+            (("restore",), "Rollback"))
 COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("moved", "moved"), ("renamed", "renamed"),
                ("archived", "archived"), ("restored", "restored"), ("edited", "edited"), ("authors", "edited"),
-               ("reparse", "re-read"), ("restore", "data rollback"), ("baked", "baked"), ("bake-refused", "bake refused"),
+               ("restore", "data rollback"), ("baked", "baked"), ("bake-refused", "bake refused"),
                ("guard-png", "PNG"), ("guard-fix", "fixed"))   # the title's counts: "1 new, 2 changed"
 CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
 GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
@@ -73,6 +75,8 @@ EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> it
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 OWN_FIELDS = ("art",)                                    # a duplicate's own fields (the rest is its original's)
 FIELD_WORD = {"name": "title", "art": "artwork sources", "ability_art": "ability artwork source"}   # changes.js FIELD
+TEXT_SHORT = 60                                          # an ability side this short shows whole; longer ones are cut
+TEXT_HUNKS = 2                                           # changed spots shown per ability; the rest "(+N more)"
 
 
 # ========================
@@ -460,20 +464,74 @@ def _value(value) -> str:
     return ", ".join(map(str, value)) if isinstance(value, list) else str(value)
 
 
+def _clip(text: str, size: int = TEXT_SHORT) -> str:
+    """Cut at a word, "\u2026" after."""
+    if len(text) <= size:
+        return text
+    cut = text[:size + 1].rsplit(" ", 1)[0] if " " in text[:size + 1] else text[:size]
+    return cut.rstrip(" ,;:") + "\u2026"
+
+
+def _quote(words: list) -> str:
+    return "'" + _md(_clip(" ".join(words))).replace("*", "\\*").replace("_", "\\_").replace("~", "\\~").replace("`", "'") + "'"
+
+
+def text_change(old: Optional[str], new: Optional[str]) -> str:
+    """
+    "'have +1 DEF.' \u2192 'have +0.5 DEF.'": the words an edit changed with one word around them (at most TEXT_HUNKS
+    spots), each side cut at a word; a short text whole; "rewritten: 'the new text\u2026'" when most words changed.
+    """
+    a, b = (str(t or "").split() for t in (old, new))
+    if not b:
+        return "removed"
+    if not a:
+        return f"\u2192 {_quote(b)}"
+    if a == b:                                            # whitespace alone
+        return "line breaks only" if str(old).count("\n") != str(new).count("\n") else "spacing only"
+    if len(" ".join(a)) <= TEXT_SHORT and len(" ".join(b)) <= TEXT_SHORT:
+        return f"{_quote(a)} \u2192 {_quote(b)}"
+    hunks = [op for op in SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if op[0] != "equal"]
+    if not hunks:
+        return f"{_quote(a)} \u2192 {_quote(b)}"
+    if sum(max(i2 - i1, j2 - j1) for _, i1, i2, j1, j2 in hunks) > max(len(a), len(b)) // 2:
+        return f"rewritten: {_quote(b)}"
+    spots = [f"{_quote(a[max(0, i1 - 1):i2 + 1])} \u2192 {_quote(b[max(0, j1 - 1):j2 + 1])}"
+             for _, i1, i2, j1, j2 in hunks[:TEXT_HUNKS]]
+    more = f" (+{len(hunks) - TEXT_HUNKS} more)" if len(hunks) > TEXT_HUNKS else ""
+    return ", ".join(spots) + more
+
+
+def _creatures_change(a, b) -> str:
+    """"creature 2 HP 5 \u2192 6", else the new stats (HP/DEF/ATK/SPD) when creatures came, went or changed in number."""
+    if not b:
+        return "creature stats removed"
+    if a and len(a) == len(b):
+        steps = [f"creature {i} {label} {_value(p)} \u2192 {_value(q)}"
+                 for i, (x, y) in enumerate(zip(a, b), 1) for (_, _, label), p, q in zip(STATS, x, y) if p != q]
+        if steps:
+            return ", ".join(steps)
+    return "creature stats \u2192 " + ", ".join("/".join(_value(v) for v in c) for c in b) + " (HP/DEF/ATK/SPD)"
+
+
 def _changes(fields: dict) -> str:
-    """"HP 5 \u2192 6; ability changed; subseries \u2192 Kirby"; timing tags show through the ability and the verdict."""
+    """"HP 5 \u2192 6; ability 'heal 2' \u2192 'heal 3'; title 'kirby' \u2192 'Kirby'; author A \u2192 B; subseries \u2192 Kirby" (an old value
+    shown, sources aside); timing tags show through the ability and the verdict."""
     parts = []
     for key, (a, b) in fields.items():
         if key in ("hp", "def", "atk", "spd", "stars"):
             parts.append(f"{key.upper() if key != 'stars' else 'stars'} {_value(a)} \u2192 {_value(b)}")
         elif key == "ability":
-            parts.append("ability changed")
+            parts.append(f"ability {text_change(a, b)}")
         elif key == "creatures":
-            parts.append("creature stats changed")
+            parts.append(_creatures_change(a, b))
         elif key == "hidden":
             parts.append("hidden" if b else "shown again")
+        elif key == "name":                               # old and new: most differ in case alone
+            parts.append(f"title {text_change(a, b)}")
         elif key != "tags":
-            parts.append(f"{FIELD_WORD.get(key, key.replace('_', ' '))} \u2192 {_md(_value(b))}")
+            word, was = FIELD_WORD.get(key, key.replace("_", " ")), _value(a)
+            old = "" if key in ("art", "ability_art") or was == "-" else f" {_md(was)}"   # sources: long
+            parts.append(f"{word}{old} \u2192 {_md(_value(b))}")
     return "; ".join(parts)
 
 
@@ -546,13 +604,16 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     """
     One push's Discord message: titled title_of(), linked link_of(), one embed per section (SECTIONS order), the
     website's kind words, within Discord's limits (EMBEDS_MAX embeds, DESCRIPTION_MAX each, MESSAGE_MAX in all); what
-    doesn't fit becomes "N more on the website", and parser re-reads are one closing line.
+    doesn't fit becomes "N more on the website". A baked card's new art is its bake line's "(PNG re-made)": no New art
+    line (owner, 2026-11-11).
 
     Returns:
         The webhook body, or None when there is nothing to post
     """
     if not group:
         return None
+    baked = {e["card"] for e in group if e["kind"] == "baked"}
+    group = [e for e in group if not (e["kind"] == "art" and e["card"] in baked)]
     title, url = title_of(group), link_of(group, repository)
     embeds, total, hidden = [], len(title), 0
     for kinds, heading in SECTIONS:
@@ -570,14 +631,8 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
         if shown:
             embeds.append({"description": text})
             total += len(text)
-    tail = []
-    rereads = sum(1 for e in group if e["kind"] == "reparse")
-    if rereads:
-        tail.append(f"The parser re-read {rereads} card{'' if rereads == 1 else 's'}.")
     if hidden:
-        tail.append(f"{hidden} more on the website: {site}/#/changes/changelog")
-    if tail:
-        embeds.append({"description": " ".join(tail)})
+        embeds.append({"description": f"{hidden} more on the website: {site}/#/changes/changelog"})
     if not embeds:                                        # a kind with no section: the title alone
         embeds.append({})
     embeds[0] = {"title": title, **({"url": url} if url else {}), **embeds[0]}
@@ -586,7 +641,8 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
 
 def silent(event: dict) -> bool:
     """An event no Discord post shows: a guard event, any event of a guards commit's push (owner, 2026-10-25), a
-    sweep's own art or text change or rename (its "sweep", card_data.mark_sweeps), or a minor one (card_data.mark_minor)."""
+    re-read (owner, 2026-11-11), a sweep's own art or text change or rename (its "sweep", card_data.mark_sweeps), or a
+    minor one (card_data.mark_minor)."""
     return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS \
         or (event["kind"] in (*SWEPT, "renamed") and bool(event.get("sweep"))) or bool(event.get(MINOR))
 
@@ -595,8 +651,8 @@ def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, re
              limit: int = MESSAGES_MAX) -> list:
     """
     The posts for the events past the cursor: one per push (per build: a push whose cards wait for a later run posts
-    again then), oldest first, at most `limit`; the rest wait for the next run. A group of silent() events alone is a
-    message without a body: the cursor moves past it, nothing is sent.
+    again then), oldest first, at most `limit`; the rest wait for the next run. A group of silent() events alone (a
+    build's re-reads) is a message without a body: the cursor moves past it, nothing is sent.
 
     Returns:
         [{"body": webhook body or None, "cursor": {"seq": its last event, "push": its after sha or None}}]
@@ -698,6 +754,7 @@ __all__ = [
     'size',
     'split_changes',
     'tags_of',
+    'text_change',
     'text_key',
 ]
 

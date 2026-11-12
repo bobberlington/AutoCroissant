@@ -86,9 +86,10 @@ second commit on M (the save above saw main before M; this replaces `pending.rep
 cards, seed, restore, allow_archive are the `data` job's). Every data job passes `card_data --own` the main lane's
 `Card sync:` commits since the last build, so M's push posts as the card sync's whichever data job reads it first. Posts
 cannot repeat: the data writers run one at a time from the data head, the posted cursor rides in each data commit, and
-`after` never re-applies a restore or seed. The failure alert is once per failing streak of each lane (the lane's
-outcome in the newest other live run where its job ended; runs that skipped the lane, and dry runs, pass over), once a
-lane per run; the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
+`after` never re-applies a restore or seed. The failure alert is once per broken push, Card guards' included (the
+marker comment on the push's head commit, §6.3 step 9); a run without a push also keeps the once per failing streak of
+each lane (the lane's outcome in the newest other live run where its job ended; runs that skipped the lane, and dry
+runs, pass over); the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
 by its Card data job (replaced before it started: dispatched again). `--baked` and `--rewrite` are unused by the workflow. §6.3 below describes the single `sync` job before this.
 
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
@@ -425,10 +426,15 @@ One job (ubuntu-latest; timeout 90 min). Each stage after the gate runs only whe
    `db/` (a G3 refusal found after writing is the exception); that needs a builder change.
 8. **Dispatch the site build** (`if: !cancelled()`): `gh workflow run site.yml` after M was pushed, or after a data commit
    with `MAIN_COMMIT` on (in the shadow the site does not read the data yet).
-9. **Failure alert** (`if: failure()`, `POSTS` on, not a dry run): one Discord message to `DISCORD_CHANGELOG_WEBHOOK`, for
-   example "Card sync failed (build): <run>; the website and the bot keep the last good data". It names the stages that
-   failed. Any failed live run alerts (scheduled, a retry, the bot's or the owner's dispatch). It is sent only when the
-   previous completed live run did not fail; dry runs, cancelled and skipped runs are left out of that streak (by run name).
+9. **Failure alert** (`if: failure()`, not a dry run; owner 2026-11-11): one message to the standards channel
+   (`DISCORD_STANDARDS_WEBHOOK`), plain, no preview card (flags 4), no ping: "Card sync failed on Croissant2's push
+   647aa0d1: Build <run>" and a second line "The website and the bot keep the last good data." (Bake and save: "Website
+   edits wait for the next bake."). It names the failed steps (the job's own in the run's job list, else its step
+   outcomes). One alert per broken push across Card sync and Card guards: before posting it looks for a commit comment
+   holding the line `<!-- discord-failure-told -->` on the push's head commit (a guards follow-up: its guards run's push)
+   and stays quiet when one exists; after posting it adds one ("Failure told in Discord: <run>" and that line). A run
+   without a push ("on main <sha8>": the schedule, the chain, a retry, a dispatch) also stays quiet when its lane failed
+   in the newest other live run where it ended, or earlier in the same run.
 
 ### 6.4 The builder ref
 
@@ -1002,19 +1008,22 @@ A duplicate's change is listed under its original.
 **One post per push.**
 - **Which pushes.** Each push in the run's batch that brought at least one event gets one message, oldest first. A push with
   no card events (site code, the save alone, `Types/` art with no data change) gets none. The run's own commit M is a push:
-  baked edits post as "Website edits baked into the PSDs". A reparse posts as one message of its own.
+  baked edits post as "Website edits baked into the PSDs" (a baked card is not listed under New art too). Parser
+  re-reads never post (owner 2026-11-11: the website keeps them).
 - **The message.** Titled with who pushed and when, for example "Zomoroko, Oct 22 14:05: 1 new, 2 changed", linked to the
   push's compare view (`before...after`). It uses the website's card-kind words (`KIND_LABEL` in `site/assets/app.js`: Creature,
   Minion, Item, Field card, N.M.E. item, Debuff, Buff…), never invented ones (memory `game-terminology`).
 - **Its parts:**
   - New cards: "Name (Creature, 3★) by <author>".
-  - Changed: "Name: HP 5 → 6; ability changed".
+  - Changed: "Name: HP 5 → 6; ability 'heal 2' → 'heal 3'" (the changed words, one around each, cut at a word;
+    "creature 2 HP 5 → 6").
   - New art.
   - Moved and renamed: "Old is now New".
   - Archived: "Name (PSD deleted)".
   - Restored.
-  - Database edits: "Name: subseries → … (by …, on the website / via Discord)".
-  - One line for parser re-reads.
+  - Database edits: "Name: title 'adrenaline' → 'Adrenaline'; author A → B; subseries → … (by …, on the website / via
+    Discord)": old and new (a field that was empty, and artwork sources, show the new value only); an ability as under
+    Changed; whitespace alone reads "line breaks only" / "spacing only".
 - **Links.** Each card links to `SITE_URL/c/<slug>/`, the slug found by the site's `key` (the database name; `name` is the
   shown title); when the card has no slug yet (a new card the site has not built), the link falls back to `#/cards?q=`.
   A rulebook page (not in `cards.json`) links the rulebook searched for it, `#/rules?q=` (2026-10-23).
@@ -1022,7 +1031,7 @@ A duplicate's change is listed under its original.
   Anything past that in one push becomes "N more on the website" (`#/changes/changelog`). At most 20 messages per run, about
   one a second (webhooks allow roughly 5 per 2 s); the rest wait for the next run, through the cursor.
 - `allowed_mentions: {"parse": []}`.
-- **Failure alerts** go to the same channel (§6.3, step 9).
+- **Failure alerts** go to the standards channel (§6.3, step 9).
 
 **Website, the Changes page tabs:**
 - **Overview:** today's panels.

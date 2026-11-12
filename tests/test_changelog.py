@@ -198,14 +198,14 @@ def test_payload_words_links_and_order():
     body = cl.payload(events, "https://site", {"Kirby": "kirby"}, "MichaelJSr/TTSCardMaker")
     assert body["allowed_mentions"] == {"parse": []} and "content" not in body
     first = body["embeds"][0]
-    assert first["title"] == "Zomoroko, Oct 22 14:13: 2 new, 2 changed, 1 renamed, 1 archived, 1 edited, 2 re-read"
+    assert first["title"] == "Zomoroko, Oct 22 14:13: 2 new, 2 changed, 1 renamed, 1 archived, 1 edited"   # no re-reads
     assert first["url"] == "https://github.com/MichaelJSr/TTSCardMaker/compare/a1a1a1a1a1a1...a2a2a2a2a2a2"
     assert [e["description"].split("\n")[0] for e in body["embeds"]] == \
-        ["**New cards**", "**Changed**", "**Moved and renamed**", "**Archived**", "**Database edits**", "The parser re-read 2 cards."]
+        ["**New cards**", "**Changed**", "**Moved and renamed**", "**Archived**", "**Database edits**"]
     text = "\n".join(e["description"] for e in body["embeds"])
     assert "[Kirby](https://site/c/kirby/) (Creature, 3★) by Bob" in text
     assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
-    assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
+    assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability 'a' → 'b' (buff)" in text
     assert ") (renamed from ZOEY!!!!!)" in text and "[Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, on the website)" in text
     assert cl.payload([], "https://site") is None
@@ -228,13 +228,14 @@ def test_links_by_the_sites_key_and_rulebook_pages_to_the_rulebook(tmp_path):
     assert cl.main(["post", "--db", db, "--out", str(out), "--ids", str(tmp_path / "cards.json"), "--site", "https://site"]) == 0
     text = "\n".join(e.get("description") or "" for e in json.loads(out.read_text(encoding="utf-8"))["messages"][0]["body"]["embeds"])
     assert "[MEtal General](https://site/c/metal-general/): HP 1 → 2" in text
-    assert "[11 Abilities2](https://site/#/rules?q=11%20Abilities2): ability changed" in text
+    assert "[11 Abilities2](https://site/#/rules?q=11%20Abilities2): ability 'a' → 'b'" in text
     assert "[Page](https://site/#/rules?q=Page) (Rulebook page)" in text and "#/cards?q=" not in text
 
 
 def test_every_kind_posts_alone():
     """A group of any one kind (a rollback's lone restore event included) makes a titled message with a count; the
-    guards' kinds make none."""
+    guards' kinds and re-reads make none."""
+    assert "reparse" in cl.SILENT
     for kind in (k for k in cl.KINDS if k not in cl.SILENT):
         event = {"kind": kind, "card": "A", "renamed_to": "B", "restored_from": "f00dfeed" * 5, "fields": {"hp": [1, 2]}}
         group = cl.number([event], 0, at=T, build="https://x/runs/1")
@@ -284,6 +285,38 @@ def test_bake_and_guard_events():
                                                                      {"body": None, "cursor": {"seq": 5, "push": "b2" * 20}}]
 
 
+def test_lines_show_the_real_change():
+    """Owner 11-11: an ability, creature stats or title change shows what changed (words cut at a word, one around each
+    spot), not "ability changed"."""
+    assert cl.text_change("have +1 DEF.", "have +0.5 DEF.") == "'have +1 DEF.' → 'have +0.5 DEF.'"
+    long = "After 6 points worth of enemy prime creatures have died while this is equipped, draw two random 3 star items."
+    assert cl.text_change(long, long.replace("died", "been defeated")) == "'have died while' → 'have been defeated while'"
+    assert cl.text_change(long, "Deal 2 [fire] damage to every enemy creature at the start of each of your turns for good.") \
+        == "rewritten: 'Deal 2 (fire) damage to every enemy creature at the start of…'"
+    many = long.replace("6", "7").replace("two", "three").replace("3 star", "4 star")
+    assert cl.text_change(long, many) == "'After 6 points' → 'After 7 points', 'draw two random' → 'draw three random' (+1 more)"
+    assert (cl.text_change(None, "Hit."), cl.text_change("Hit.", "")) == ("→ 'Hit.'", "removed")
+    assert cl._changes({"creatures": [[[5, 2, 3, 4], [1, 1, 1, 1]], [[6, 2, 3, 4], [1, 1, 1, 1]]]}) == "creature 1 HP 5 → 6"
+    assert cl._changes({"creatures": [None, [[2, 2, 3, 5], [3, 2, 5, 5]]]}) == "creature stats → 2/2/3/5, 3/2/5/5 (HP/DEF/ATK/SPD)"
+    assert cl._changes({"name": ["adrenaline", "Adrenaline"], "author": ["Croissant", "Chestnut"], "series": [None, "Kirby"]}) \
+        == "title 'adrenaline' → 'Adrenaline'; author Croissant → Chestnut; series → Kirby"
+    assert (cl.text_change("Hit\n2.", "Hit 2."), cl.text_change("Hit  2.", "Hit 2.")) == ("line breaks only", "spacing only")
+
+
+def test_a_baked_card_is_not_new_art_too():
+    """Owner 11-11: a bake post lists a baked card once (its "(PNG re-made)"); other new art stays, and the title counts
+    what is listed."""
+    sync = dict(PUSH, by=cl.CARD_SYNC)
+    events = cl.number([dict(e, push=sync) for e in (
+        {"kind": "art", "card": "Earth Totem"}, {"kind": "art", "card": "Breakfast"},
+        {"kind": "baked", "card": "Earth Totem", "reason": "ability 'have +1 DEF.' -> 'have +0.5 DEF.'", "pngs": ["a.png"]})], 0, at=T)
+    body = cl.messages(events, "https://site")[0]["body"]
+    assert body["embeds"][0]["title"] == "Website edits baked into the PSDs, Oct 22 14:13: 1 new art, 1 baked"
+    assert [e["description"] for e in body["embeds"]] == [
+        "**New art**\n[Breakfast](https://site/#/cards?q=Breakfast)",
+        "**Baked into the PSDs**\n[Earth Totem](https://site/#/cards?q=Earth%20Totem): ability 'have +1 DEF.' -> 'have +0.5 DEF.' (PNG re-made)"]
+
+
 def test_payload_stays_within_discord_limits():
     events = [dict(e, push=PUSH) for e in cl.number(
         [{"kind": k, "card": f"{k} card {i} " + "x" * 60, "card_type": "item", "fields": {"ability": ["a", "b"]}}
@@ -297,7 +330,7 @@ def test_payload_stays_within_discord_limits():
 
 
 def test_one_message_per_push_at_most_twenty(tmp_path):
-    """Pushes post oldest first, one message each (a re-read on its own); 25 pushes: 20 now, 5 on the next run."""
+    """Pushes post oldest first, one message each (a re-read on its own, silent); 25 pushes: 20 now, 5 on the next run."""
     def push(i):
         return {"after": f"{i:040x}", "before": f"{i + 100:040x}", "by": f"maker{i}", "at": T + i}
     events = [{"kind": "new", "card": f"Card {i}", "push": push(i), "build": "1"} for i in range(25)]
@@ -309,7 +342,7 @@ def test_one_message_per_push_at_most_twenty(tmp_path):
     assert out[0]["body"]["embeds"][0]["title"].startswith("maker0, ") and out[1]["cursor"]["seq"] == 3
     rest = cl.messages([e for e in numbered if e["seq"] > out[19]["cursor"]["seq"]], "https://site", repository="o/r")
     assert len(rest) == 6 and rest[5]["cursor"] == {"seq": 27, "push": None}
-    assert rest[5]["body"]["embeds"][0]["description"] == "The parser re-read 1 card."
+    assert rest[5]["body"] is None                                                # owner 11-11: re-reads only on the website
 
 
 def test_cursor_moves_only_after_each_message(tmp_path):
