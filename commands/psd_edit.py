@@ -609,7 +609,7 @@ def _shows(psd: PSDImage, layer) -> bool:
     return bool((np.abs(_flat(shown).astype(np.int16) - _flat(left_out).astype(np.int16)) > COPY_SEEN).any())
 
 
-def _copies(psd: PSDImage, layer, skip=()) -> list:
+def _copies(psd: PSDImage, layer) -> list:
     """The other visible text layers printing the layer's words where they show (a copy for an effect, a watermark)."""
     def words(text):
         return " ".join((text or "").replace("\x03", " ").split()).casefold()
@@ -617,8 +617,7 @@ def _copies(psd: PSDImage, layer, skip=()) -> list:
     if not own:
         return []
     return [other for other in psd.descendants() if _is_text_layer(other) and other is not layer
-            and all(other is not s for s in skip) and other.is_visible() and words(other.text) == own
-            and _shows(psd, other)]
+            and other.is_visible() and words(other.text) == own and _shows(psd, other)]
 
 
 def _copy(psd: PSDImage, layer) -> Optional[str]:
@@ -3815,7 +3814,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     if value < 0:
         raise ValueError(f"{stat} {value}: not a stat")
     if value > STAT_MAX:
-        raise Refused("stat>10", f"{stat} {value}: one bar row; a second row is standardization work (ledger L3)")
+        raise Refused("stat>10", f"{stat} {value}: the bar's one row prints up to {STAT_MAX}")
     targets = _targets(rows, value)
     for row, target in zip(rows, targets):
         if target is not None and str(target) not in row.digits:
@@ -3892,7 +3891,7 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused, cr
     if value < 0:
         raise ValueError(f"{stat} {value}: not a stat")
     if value > STAT_MAX:
-        raise Refused("stat>10", f"{stat} {value}: one bar row; a second row is standardization work (ledger L3)")
+        raise Refused("stat>10", f"{stat} {value}: the bar's one row prints up to {STAT_MAX}")
     pair = _cell_groups(psd, stat, rows) if picked or len(rows) == 1 else None
     if len(rows) != 1:                          # a stat's cells split over a lit and a dark row (R2)
         if pair is None or pair[0] is pair[1]:
@@ -6074,8 +6073,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         One Edit ("colors", over every layer it set: gate_bytes reads it as a text edit, gate_stories lets their stories
         change). Told: an overlay on a layer that paints over its colours (one_colour), the layer's own turned off for a
         whole field's colour or a whole layer's (_whole_span), or a phrase's under a lone Color Overlay (_overlay_off;
-        that one's colour then goes to the rest, its one-colour badges too), a copy printing it again, words an effect
-        layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
+        that one's colour then goes to the rest, its one-colour badges too), words an effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
     jobs, notes, hidden = {}, [], []
     for one in color_order(value):
@@ -6112,9 +6110,6 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         recolour(layer, paint, fonts)
         if one_colour(layer):
             notes.append(f"colors: {what}: {_tinted(layer) or 'an overlay'} paints over its colours")
-        copies = _copies(psd, layer, [other for other, _, _ in jobs.values()])
-        if copies:
-            notes.append(f"colors: {what}: also printed by {copies[0].name!r}, which keeps its colours")
         layers.append(layer)
         records.append(_record_index(layer))
         stories.append(story_index(layer))

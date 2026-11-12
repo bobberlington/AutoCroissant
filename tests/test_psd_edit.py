@@ -1201,7 +1201,7 @@ def test_a_styled_digit_replaces_an_unstyled_block(clone, parser, tmp_path):
     records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
     assert (flag_bytes, block_bytes) == (2, 6360) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
     assert sorted(pe._enabled_effects(pe.template_rows(PSDImage.open(saved), "hp")[0].digits["2"])) == ["BevelEmboss", "ColorOverlay"]
-    with pytest.raises(pe.Refused, match="ledger L3") as refused:
+    with pytest.raises(pe.Refused, match="hp 11: the bar's one row prints up to 10") as refused:
         pe.set_stat(PSDImage.open(path), parsed, "hp", 11)
     assert refused.value.code == "stat>10"
 

@@ -215,7 +215,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 |---|---|---|
 | `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs the build fetches and parses at a time (parse in the workers since 2026-11-08) |
 | `AHEAD` (2026-10-23) | `8` | PSDs read and not yet kept by the main thread, at most |
-| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on); the build and `card_check --after` always try range reads (the `RANGE_READS` off switch went 2026-11-12) |
+| `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on); the build always tries range reads (the `RANGE_READS` off switch went 2026-11-12; card_check's range reads and `--all` too, it reads whole blobs from the guards' clone) |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (the `alt_names` field dropped on 2026-11-10) |
 | `UPDATE_RATE` | `25` | progress cadence of the build: a line every 25 processed cards (`num_updated % UPDATE_RATE == 0`) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
@@ -469,14 +469,14 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset or off = the guards' steps skip; the card and font checks still run) |
-| `standards_post.LINE` | `"{login} pushed {card}: {notes}. [{short}]({url})"` | the standards post's line per card (the guards' lines and the two checks' notes, owner 2026-11-11), what to do and the commit link (owner 2026-11-06: no "what changed", as short as it goes); `TWINS`: a note two checks tell, said once |
+| `card_guards.MODES` | `("dry", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset, off or any other value = the guards' steps skip; the card and font checks still run; `report` deleted 2026-11-12, owner) |
+| `standards_post.LINE` | `"{login} pushed {card}: {notes}. [{short}]({url})"` | the standards post's line per card (the guards' lines and the two checks' notes, owner 2026-11-11), what to do and the commit link (owner 2026-11-06: no "what changed", as short as it goes); `TWINS` deleted 2026-11-12 (both its pairs went: R6, the parser's DUPLICATE LAYER IDS) |
 | `CHANGES_COMMENT` | `600` | characters of a card's changes in the commit comment (the Discord line has none since 2026-11-06) |
 | `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
 | `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool, locally; on a GitHub runner (`GITHUB_ACTIONS`) from 2 cards (`least = 2` in `check`, efc7808, 2026-11-04). The pool: every core on a runner (K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
 | `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
-| `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
+| `card_standards.AUTO_FIX` | deleted 2026-11-12 | was `("R9",)`, the Txt2 story fix; R9 and its fix went (owner), so every standards issue is told (the silent fixes are `PIXEL_FIXES`, R8 and the folders) |
 | `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
 | `EARLIER_WALK` | `40` | badge widths (2026-11-04; eras 2026-11-05; every era, drawings too, 2026-11-10): the icon font's newest versions read, every era of them kept (each era's newest version: an icon added keeps the era, an advance or a drawing changed ends it, SVG glyph ids read as names; none laid out and drawn as the current font; 5 eras of 10 versions on 11-10), read once a push, only with `--repo` (ttscardmaker-companion §1.2) |
 | `OLDER_PNGS`, `OLDER_MATCH`, `PUT_BACK_REACH` | `5`, `0.1`, `32` | R10 with no stored image (2026-11-10): a pushed PNG that went back to an earlier picture (png_changes' rule against the fork's render and the PNG before it) is put back when one of the PNG's last 5 versions shows it there (differs over at most 10% of the area); the put-back follows the change 32 px past the rule's area |

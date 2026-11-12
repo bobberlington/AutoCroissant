@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 import commands.card_checks as cc
-import commands.card_plates as card_plates
 from commands.card_edits import CardEdits
 from commands.psd_edit import SOFT_NOTE, real_notes
 from conftest import SITE_SRC
@@ -214,7 +213,7 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
     files = {stem + ".png": (clone / (stem + ".png")).read_bytes(), stem + "3.png": (clone / (stem + "3.png")).read_bytes(),
              rel.rsplit("/", 1)[0] + "/Breakfast.png": (clone / (stem + "2.png")).read_bytes(),
              cc.EDITS_PATH: json.dumps({"cards": {"Breakfast": {"dup_of": "A Snack"}}}).encode()}
-    monkeypatch.setattr(cc, "edit_notes", lambda *args: [])     # the edits' bakes: test_card_bake's
+    monkeypatch.setattr(cc, "_stat_notes", lambda *args: [])    # the stat bakes: test_card_bake's
     monkeypatch.setattr(cc.png_export, "drawn_apart", lambda *args: True)  # a drawn picture is never measured
     sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
     for data, flagged in (((clone / rel).read_bytes(), True), (tagged.getvalue(), False)):
@@ -223,27 +222,6 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
         snapshot.fetch = {sha(blob): blob for blob in found.values()}.get
         record = cc.check_card(cc.Context(snapshot, _bare_parser(), ""), rel)
         assert (cc.DUP_NOTE.format(name="Breakfast.png") in record["notes"]) is flagged, record["notes"]
-
-
-def test_lost_bars_read_at_the_earlier_boxes(clone, monkeypatch):
-    """11-11 push bfdc80ef took Hive Knight's bar layers off, its picture kept them: the note reads them at the earlier
-    PSD's boxes; a parse with its stats fetches nothing earlier."""
-    from hashlib import sha1
-    from commands.card_bake import Snapshot
-    from commands.psd_edit import _bare_parser
-    from conftest import at_rev
-    rel = "Creatures/Hollow Knight/3 Stars/Hive_Knight.psd"
-    before, after, png = (at_rev(clone, rev, path) for rev, path in (("b293ca6f", rel), ("bfdc80ef", rel),
-                                                                      ("bfdc80ef", rel[:-4] + ".png")))
-    monkeypatch.setattr(cc, "edit_notes", lambda *args: [])
-    monkeypatch.setattr(card_plates, "with_stars", lambda plate, *args: plate)
-    sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
-    for psd, notes in ((after, [cc.LOST_NOTE.format(stats="HP, DEF, ATK and SPD", layers="Stats Bars/Darks",
-                                                     shown="HP 5, DEF 5, ATK 6, SPD 7")]), (before, [])):
-        snapshot = Snapshot("", "", {}, {rel: ("100644", sha(psd)), rel[:-4] + ".png": ("100644", sha(png))})
-        snapshot.fetch = {sha(blob): blob for blob in (psd, png, *([before] if psd is after else []))}.__getitem__
-        earlier = {rel: [sha(before), "0" * 40]}      # the second never fetched
-        assert cc.check_card(cc.Context(snapshot, _bare_parser(), "", earlier=earlier), rel)["notes"] == notes
 
 
 def test_sweeps_keep_flags(tmp_path):
@@ -340,14 +318,15 @@ def test_to_check_and_file():
 
 
 def test_blobs_of_in_reading_order():
-    """The chart, manifest and templates first, then each card's PSD, PNG and duplicates together."""
+    """The chart and manifest first, then each card's PSD, PNG and duplicates together."""
     paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd", "Types/Fire.png", "Types/Dark.png",
              cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
     tree = {path: ("", path) for path in paths}
     snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A2.png"]},
                                png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
-    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"], {}) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
-                                                            "MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd"]
+    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"]) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
+                                                        "A.psd", "A.png", "A2.png", "B.psd"]
+    assert cc.blobs_of(snapshot, []) == []
 
 
 def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
@@ -451,23 +430,6 @@ def test_workflow_site_build_on_shown_flags(tmp_path):
     assert commit(lambda c: c["cards"]["b" * 40].update(name='The card prints "b" but its file is B.psd.')) == ["site=true"]
     head = git("-C", str(data), "rev-parse", "HEAD")
     assert commit(lambda c: None) == [] and git("-C", str(data), "rev-parse", "HEAD") == head    # nothing to commit
-
-
-def test_blobs_of_templates():
-    """A template only where first_type_spot can open one: a record with no types, its kind's; no record, every kind's."""
-    shared = ["MDW/Croissant's Special Folder/Satus Effect Colors.psd", "MDW/Fonts/stoogedings-src/stoogedings.json"]
-    stems = ("Creature", "2_Creature", "Item", "ActiveItem", "Status_Effect", "Raid_Boss")
-    cards = ["C/A.psd", "C/B.psd", "Items/Active/D.psd", "C/E.psd"]
-    tree = {path: ("", path) for path in shared + [f"MDW/Templates/{s}_Template.psd" for s in stems] + cards + ["Types/x.png", "Types/Fire.png"]}
-    snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, png_for=lambda rel: ("", []), dup_pictures=dict)
-    stats = {"A": {"path": "C/A.psd", "card_type": "creature", "types": ["fire"]},
-             "B": {"path": "C/B.psd", "card_type": "minion", "types": []},
-             "D": {"path": "Items/Active/D.psd", "card_type": "item", "types": None}}
-    templates = lambda rels: {p[14:-13] for p in cc.blobs_of(snapshot, rels, stats) if p.startswith("MDW/Templates/")}
-    assert set(cc.blobs_of(snapshot, ["C/A.psd"], stats)) == {"C/A.psd", *shared}
-    assert templates(["C/A.psd", "C/B.psd", "Items/Active/D.psd"]) == {"Creature", "ActiveItem"}
-    assert templates(["C/E.psd"]) == {"Creature", "Item", "ActiveItem", "Status_Effect"}
-    assert cc.blobs_of(snapshot, [], stats) == []
 
 
 def test_soft_notes():

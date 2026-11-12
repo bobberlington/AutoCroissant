@@ -1,13 +1,13 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, old-style bars, bar layers gone that the picture still shows (read at an
-earlier PSD's boxes, db/changelog's), a website edit that cannot bake, a linked picture the repo lacks, one that looks the
-same as another file, or one Card sync could not draw again (db/links.json, worded at each save). bars: special bars that
-do not read like the template. name: the website's name and the printed title disagree (exact), or the title's file
-form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM (R) (C) aside); none once a
-person marked the names intended (Card Edits names_ok) until one changes; second pictures left out; worded at each save
-(owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
+hand: the picture says other than the data, old-style bars, a stat edit that cannot bake, a linked picture the repo
+lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
+save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
+(exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM
+(R) (C) aside); none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures
+left out; worded at each save (owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here
+blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -19,12 +19,10 @@ the results in db/, drops PSDs gone from the tree, words every record's notes ag
 without a push) and marks the people's flags that went (a sweep's change keeps them: db/changelog). Exit 0, also for what
 it flags. No Discord or config imports.
 
-Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
-tree): the plans alone for titles, stars and taking off a type, a made icon on a copy (adding a type is not tried: the
-website tells when someone tries it, owner 2026-11-08); a real bake only where a plan cannot tell:
-stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows (an item's too) or
-new bars under art (their pixels too; every creature's), a type on a very small PSD. A bake that breaks leaves no record:
-the next run tries again.
+Only stat edits are tried (a real bake is 25 s): on digit rows (an item's too) or on new bars under art (their pixels
+too; every creature's). Any other edit that cannot bake is told when someone tries it on the website (owner 2026-11-08;
+the title, star, type and ability trials were deleted 2026-11-12). A bake that breaks leaves no record: the next run
+tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -34,7 +32,7 @@ from io import BytesIO
 from json import dumps, load as json_load, loads
 from os import environ
 from os.path import basename, exists, join, splitext
-from re import IGNORECASE, finditer, fullmatch, search, sub
+from re import IGNORECASE, fullmatch, sub
 from shutil import rmtree
 from sys import argv
 from tempfile import mkdtemp
@@ -49,14 +47,14 @@ import commands.card_bake as card_bake
 import commands.card_plates as card_plates
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_bake import Card, Snapshot, local_snapshot, vocabulary
+from commands.card_bake import Snapshot, local_snapshot, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
 from commands.card_edits import NAMES_OK, CardAuthors, CardEdits
 from commands.card_models import RAID_STARS, card_name, file_stem, small_case
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
-from commands.psd_parser import EFFECT_LAYER_TAG, STAT_KINDS, picture_numbers, variant_view, variants_of
+from commands.psd_parser import picture_numbers, variant_view
 from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
@@ -92,11 +90,6 @@ CELL_TRIM = 0.2                             # a busy row's cell is read on its m
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
-SMALL_PSD = 3_000_000                       # bytes: under this a type edit bakes for real (3 cards)
-ANY_KIND = [(kind, "") for kind in psd_edit.TEMPLATES] + [("item", "Items/Active/")]  # template_for's every file
-WHOLE_FIELD = r"edit each box on the website|title is printed again by"     # a box per layer takes the edit
-WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a star": "Taking off a star",
-        "removing a type": "Taking off a type", "stats": "Stat edits"}
 # the notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
@@ -108,10 +101,6 @@ DUP_NOTE = "{name} is drawn apart from this PSD: when the card changes, export i
 LINK_MISSING = "Links {name}, which is not in the repo: push that file."
 LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
 LINK_STUCK = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
-FX_NOTE = "Photoshop 2023 cannot read the effects of {layers} and drops them on opening: set them again in Photoshop."
-LOST_NOTE = ("Its {stats} bar layers are gone ({layers}) and the data with them, but the picture still shows bars ({shown}): "
-             "put the template's bars back in Photoshop.")
-LOOK_BACK = 3                               # earlier PSDs (db/changelog's) a creature's lost bars are looked for in
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
                 "pictures": "Its stat bars are pictures, not the template's cells.",
                 "shape": "Its stat bars have their own shape, not the template's cells.",
@@ -257,18 +246,12 @@ def _tell_busy(rows: list) -> None:
                 read.update(best=0, could=[0])
 
 
-def bar_layers(psd: PSDImage) -> dict:
-    """{stat: [(layer, box) of each bar]}: the layer-comp bars, else the digit rows (their groups)."""
-    found = {stat: [(layer, tuple(box)) for layer, _, box in bars] for stat, bars in comp_bars(psd).items()}
-    if not any(found.values()):
-        found = {stat: [(group, bar_box(psd, stat, box)) for group, _, box in rows if box]
-                 for stat, rows in stat_rows(psd).items()}
-    return found
-
-
 def bar_boxes(psd: PSDImage) -> dict:
-    """{stat: [each bar's box, top to bottom]}: bar_layers'."""
-    return {stat: sorted((box for _, box in bars), key=lambda box: box[1]) for stat, bars in bar_layers(psd).items()}
+    """{stat: [each bar's box, top to bottom]}: the layer-comp bars, else the digit rows."""
+    found = {stat: [tuple(box) for _, _, box in bars] for stat, bars in comp_bars(psd).items()}
+    if not any(found.values()):
+        found = {stat: [bar_box(psd, stat, box) for _, _, box in rows if box] for stat, rows in stat_rows(psd).items()}
+    return {stat: sorted(boxes, key=lambda box: box[1]) for stat, boxes in found.items()}
 
 
 def by_label(psd: PSDImage, boxes: dict) -> dict:
@@ -374,64 +357,6 @@ def mismatches(record: dict, data: dict, site=()) -> list:
     return out
 
 
-def _has(value) -> bool:
-    """A stat the parse read."""
-    return isinstance(value, int) and value >= 0
-
-
-def _path(layer) -> str:
-    """A layer's group path: "Stats Bars/Darks/Hp Dark"."""
-    names = []
-    while layer is not None and not isinstance(layer, PSDImage):
-        names.append(layer.name.strip())
-        layer = layer.parent
-    return "/".join(reversed(names))
-
-
-def lost_bars(before: PSDImage, psd: PSDImage, card: dict, image: Image.Image) -> Optional[list]:
-    """
-    Stats psd's parse (card) lacks whose bars an earlier PSD (before) had and psd's layers lost, read off psd's picture at
-    before's boxes: [LOST_NOTE] when one still reads (Hive Knight, omori 11-11), [] when none does, None when before
-    lacked those bars too.
-    """
-    boxes, old = bar_boxes(psd), bar_layers(before)
-    gone = [stat for stat in STAT_ORDER if not _has(card.get(stat)) and not boxes.get(stat) and old.get(stat)]
-    if not gone:
-        return None
-    with variant_view(before, 1):
-        reads = read_picture(before, image, cells=True)
-    shown = [f"{STAT_NAMES[stat]} {rows[0]['best']}" for stat in gone
-             if len(rows := reads.get(stat) or []) == 1 and rows[0]["best"] is not None]
-    if not shown:
-        return []
-    have = {_path(layer) for layer in psd.descendants()}
-    layers = []
-    for stat in gone:                           # each bar's outermost group psd lacks
-        for layer, _ in old[stat]:
-            chain = [layer]
-            while chain[-1].parent is not None and not isinstance(chain[-1].parent, PSDImage):
-                chain.append(chain[-1].parent)
-            missing = [one for one in chain if _path(one) not in have]
-            layers.append(_path(missing[-1] if missing else layer))
-    names = [STAT_NAMES[stat] for stat in gone]
-    stats = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-    return [LOST_NOTE.format(stats=stats, layers=", ".join(dict.fromkeys(layers)), shown=", ".join(shown))]
-
-
-def earlier_bars(ctx: "Context", rel: str, psd: PSDImage, card: dict, image: Optional[Image.Image]) -> list:
-    """lost_bars against a creature's or minion's earlier PSDs (ctx.earlier, newest first, LOOK_BACK at most) when its
-    parse lacks a stat; the first that had those bars says."""
-    if image is None or card.get("type") not in STAT_KINDS or card.get("creatures") \
-            or all(_has(card.get(stat)) for stat in STAT_ORDER):
-        return []
-    now = ctx.snapshot.sha(rel)
-    for blob in [blob for blob in ctx.earlier.get(rel, ()) if blob != now][:LOOK_BACK]:
-        found = lost_bars(PSDImage.open(BytesIO(ctx.snapshot.fetch(blob))), psd, card, image)
-        if found is not None:
-            return found
-    return []
-
-
 # ========================
 # The bars' style
 # ========================
@@ -480,7 +405,6 @@ class Context:
     parser: object
     fonts: str
     colors: list = field(default_factory=list)
-    earlier: dict = field(default_factory=dict)     # {PSD path: its earlier blobs, newest first}: earlier_blobs
 
     def chart(self) -> Optional[dict]:
         """status_fills() of the status chart, once."""
@@ -491,10 +415,10 @@ class Context:
         return self.colors[0]
 
 
-def context(repository: str, clone: str, head: str = "", earlier: Optional[dict] = None) -> Context:
+def context(repository: str, clone: str, head: str = "") -> Context:
     """A Context on a checkout (blobless is enough)."""
     snapshot = local_snapshot(repository, clone, head)
-    return Context(snapshot, vocabulary(snapshot), card_bake._fonts_dir(snapshot), earlier=earlier or {})
+    return Context(snapshot, vocabulary(snapshot), card_bake._fonts_dir(snapshot))
 
 
 def _why(reason: str) -> str:
@@ -510,11 +434,9 @@ def _why(reason: str) -> str:
     return sub(r":? ?((edit|set) (it|them) in Photoshop|a (change|toggle) would).*$", "", text).strip().rstrip(".,:")
 
 
-def _note(what: str, reason: str) -> str:
-    """What cannot bake, as a sentence."""
-    if what == "ability":
-        return f"Some ability edits fail: {_why(reason)}: recut it in Photoshop."
-    return f"{WHAT[what]} {'need' if what == 'stats' else 'needs'} Photoshop: {_why(reason)}."
+def _note(reason: str) -> str:
+    """A stat edit that cannot bake, as a sentence."""
+    return f"Stat edits need Photoshop: {_why(reason)}."
 
 
 def _real_bake(ctx: Context, rel: str, fields: dict, png: Optional[np.ndarray] = None) -> tuple:
@@ -534,15 +456,6 @@ def _real_bake(ctx: Context, rel: str, fields: dict, png: Optional[np.ndarray] =
         return state, reason, moved
     finally:
         rmtree(work, ignore_errors=True)
-
-
-def _ability_edit(text: str) -> Optional[str]:
-    """An ability with its last long word changed (the census's edit)."""
-    words = list(finditer(r"\b[a-z]{4,}\b", text or ""))
-    if not words:
-        return None
-    word = words[len(words) - 1]
-    return text[:word.start()] + ("test" if word.group() != "test" else "card") + text[word.end():]
 
 
 def _art_over_darks(psd: PSDImage) -> bool:
@@ -581,7 +494,7 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
     if style == "new":
         for stat, bars in comp_bars(psd).items():
             if len(bars) == 1 and (bars[0][1] is None or not bars[0][0].is_visible()):
-                return [_note("stats", f"{stat}: its bar shows no layer comp")]
+                return [_note(f"{stat}: its bar shows no layer comp")]
         if not _art_over_darks(psd):
             return []
     exposures = [layer for layer in _digits(stat_rows(psd)) if layer.kind == "exposure"]
@@ -600,79 +513,12 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
                                         for stat in STAT_ORDER} for n, one in enumerate(creatures, 1)]
             state, reason, moved = _real_bake(ctx, rel, fields, png)
             if state == "refused":
-                return [_note("stats", reason)]
+                return [_note(reason)]
             still = _still(psd, moved, style) if state == "baked" and moved is not None else []
             if still:
                 names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
                 return [NO_CHANGE_NOTE.format(names, what)]
     return []
-
-
-def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
-    """The website edits a card cannot take, a sentence each (the module's docstring: which are tried)."""
-    card = parsed["card"]
-    one = Card(card_name(rel), CardAuthors.key(card_name(rel)), {}, rel, ctx.snapshot.sha(rel))
-    work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
-    pictures = len(variants_of(psd)) > 1
-    notes = []
-
-    def refused(what: str, refusal) -> None:
-        if not search(WHOLE_FIELD, refusal.why, IGNORECASE):
-            notes.append(_note(what, f"{refusal.code}: {refusal.why}"))
-
-    def plan(what: str, fields: dict, template=None) -> bool:
-        found = psd_edit.classify(parsed, fields, psd, ctx.parser, template)
-        for refusal in found.refusals:
-            refused(what, refusal)
-        return bool(found.jobs)
-
-    def types(what: str, value: list, template) -> None:
-        if not plan(what, {"types": value}, template):
-            return
-        raw = ctx.snapshot.fetch(ctx.snapshot.sha(rel))
-        if len(raw) < SMALL_PSD:                # a made icon can pass gate_size's share: only the bake's save tells
-            state, reason, _ = _real_bake(ctx, rel, {"types": value})
-            if state == "refused":
-                notes.append(_note(what, reason))
-            return
-        try:                                    # a made icon's ink shows once it is made: on a copy, no render
-            icons = card_bake.types_icons(ctx.snapshot, work, ctx.parser, value, card.get("types"))
-            copy = psd_edit.edit_copy(psd, raw)
-            psd_edit.set_icons(copy, psd_edit.plan_types(copy, parsed, value, ctx.parser, template, icons), icons)
-        except psd_edit.Refused as refusal:
-            refused(what, refusal.refusal)
-
-    def stars(what: str, value: int) -> None:
-        if pictures:                            # each picture bakes: their layers must match
-            state, reason, _ = _real_bake(ctx, rel, {"stars": value})
-            if state == "refused":
-                notes.append(_note(what, sub(r"picture \d+'s bake made other layers than picture \d+'s",
-                                             "its pictures bake different layers", reason)))
-        elif plan(what, {"stars": value}):
-            try:
-                psd_edit.plan_stars(psd, parsed, value, ctx.parser)
-            except psd_edit.Refused as refusal:     # in a star folder it moves, its printed stars kept: by hand too
-                refused(what, refusal.refusal)
-    try:
-        plan("name", {"name": (psd_edit.shown_name(parsed) or one.name) + " II"})
-        count, printed = card.get("stars"), list(card.get("types") or [])
-        if isinstance(count, int):
-            if count < MAX_STARS:
-                stars("adding a star", count + 1)
-            if count > 1:
-                stars("removing a star", count - 1)
-        template = card_bake.first_type_spot(ctx.snapshot, work, one, parsed, psd, ctx.parser)
-        if printed:
-            types("removing a type", printed[1:], template)
-        if any(EFFECT_LAYER_TAG in layer.name for layer in psd.descendants()):
-            edited = _ability_edit(card.get("ability"))
-            state, reason, _ = _real_bake(ctx, rel, {"ability": edited}) if edited else ("", "", None)
-            if state == "refused" and not search(WHOLE_FIELD, reason, IGNORECASE):
-                notes.append(_note("ability", reason))
-        notes += _stat_notes(ctx, rel, psd, parsed, style, image)
-    finally:
-        rmtree(work, ignore_errors=True)
-    return list(dict.fromkeys(notes))
 
 
 # ========================
@@ -710,16 +556,12 @@ def check_card(ctx: Context, rel: str) -> dict:
     wrong = swapped(psd) if style else []
     if wrong:
         notes.append(SWAP_NOTE.format(" and ".join(STAT_NAMES[stat] for stat in wrong)))
-    unread = list(dict.fromkeys(layer.name.strip() for layer in psd_edit.unreadable_effects(psd)))
-    if unread:
-        notes.append(FX_NOTE.format(layers=", ".join(unread)))
     rows = [group for found in stat_rows(psd).values() for group, _, _ in found]
     counted = bool(rows) and all(psd_edit.counted_row(group) for group in rows)     # the picture is the data
     with variant_view(psd, 1):                  # a tagged PSD: Name.png is picture 1
         reads = read_picture(psd, image, cells=style in ("new", "few")) \
             if style and image is not None and not counted else {}
-    notes += earlier_bars(ctx, rel, psd, parsed["card"], image)
-    notes += edit_notes(ctx, rel, psd, parsed, style, image)
+    notes += _stat_notes(ctx, rel, psd, parsed, style, image)
     dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
     for path in dups:                           # nothing redraws the others (owner 11-07)
@@ -849,11 +691,6 @@ def psd_steps(db: str) -> dict:
     return steps
 
 
-def earlier_blobs(steps: dict) -> dict:
-    """{PSD path: its earlier blobs, newest first} of psd_steps'."""
-    return {path: list(dict.fromkeys(old for old, _, _ in reversed(found))) for path, found in steps.items()}
-
-
 def by_person(steps: list, mark: str) -> bool:
     """A change no sweep made since the PSD blob mark (psd_steps' for its path): after the last step onto the mark, else
     from the first off it; none known: False (unknown never clears)."""
@@ -895,25 +732,12 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
     return out
 
 
-def _templates(rel: str, records: Optional[list]) -> set:
-    """The templates check_card can open for a card (first_type_spot): its kind's when its record lists no types, none
-    when it does, every kind's with no record."""
-    kinds = ANY_KIND if records is None else [(card.get("card_type"), rel) for card in records if not card.get("types")]
-    return {psd_edit.template_for(kind, path) for kind, path in kinds} - {None}
-
-
-def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
-    """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart, manifest and the templates it
-    can open (a card read as it lands waits for none at the end), then each card's PSD, PNG and duplicates (stats:
-    stats.json's cards)."""
+def blobs_of(snapshot: Snapshot, rels: list) -> list:
+    """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart and manifest (a card read as
+    it lands waits for none at the end), then each card's PSD, PNG and duplicates."""
     if not rels:
         return []
-    records: dict = {}
-    for card in stats.values():
-        records.setdefault(card.get("path"), []).append(card)
-    templates = set().union(*(_templates(rel, records.get(rel)) for rel in rels))
     first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
-    first += [path for path in snapshot.tree if path in templates]
     cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
     return list(dict.fromkeys(snapshot.sha(path) for path in first + cards))
 
@@ -956,9 +780,9 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
 _worker: list = []
 
 
-def _start(repository: str, clone: str, head: str, earlier: dict) -> None:
+def _start(repository: str, clone: str, head: str) -> None:
     token_from_env()                            # a blob the clone lacks comes by REST
-    _worker[:] = [context(repository, clone, head, earlier)]
+    _worker[:] = [context(repository, clone, head)]
 
 
 def _one(rel: str) -> tuple:
@@ -970,13 +794,11 @@ def _one(rel: str) -> tuple:
         return rel, f"{type(error).__name__}: {error}", perf_counter() - started
 
 
-def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str,
-        earlier: Optional[dict] = None) -> dict:
+def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str) -> dict:
     """check_card over rels in worker processes, for at most this long; {blob: record}, written to out as it grows
-    (every SAVE_EVERY s and at the end: a record's plate is ~18 KB) (earlier: Context's)."""
+    (every SAVE_EVERY s and at the end: a record's plate is ~18 KB)."""
     snapshot = local_snapshot(repository, clone, head)
     found, started, saved = {}, perf_counter(), perf_counter()
-    earlier = {rel: earlier[rel] for rel in rels if rel in earlier} if earlier else {}
 
     def save() -> None:
         nonlocal saved
@@ -986,7 +808,7 @@ def run(rels: list, repository: str, clone: str, head: str, workers: int, minute
         saved = perf_counter()
 
     try:
-        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, earlier)) as pool:
+        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head)) as pool:
             jobs = [pool.submit(_one, rel) for rel in rels]
             for n, job in enumerate(as_completed(jobs), 1):
                 rel, record, seconds = job.result()
@@ -1050,10 +872,9 @@ def main(args: Optional[list] = None) -> int:
         return 0
     rels = to_check(snapshot, checks, options.all, only, shard)
     if options.action == "list":
-        print("\n".join(blobs_of(snapshot, rels, stats_of(options.db))))
+        print("\n".join(blobs_of(snapshot, rels)))
     else:
-        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out,
-            earlier_blobs(psd_steps(options.db)))
+        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out)
     return 0
 
 
@@ -1067,19 +888,14 @@ if __name__ == "__main__":
 __all__ = [
     'SPARSE_FILES',
     'VERSION',
-    'bar_layers',
     'blobs_of',
     'by_person',
     'check_card',
     'context',
-    'earlier_bars',
-    'earlier_blobs',
-    'edit_notes',
     'flags',
     'link_notes',
     'load',
     'look_alikes',
-    'lost_bars',
     'main',
     'mismatches',
     'name_note',

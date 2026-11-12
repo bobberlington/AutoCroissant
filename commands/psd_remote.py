@@ -1,4 +1,4 @@
-"""A card PSD at a commit read by HTTP range requests (RemotePSD): the data build's and card_check's. Not the bot's:
+"""A card PSD at a commit read by HTTP range requests (RemotePSD): the data build's. Not the bot's:
 it needs psd-tools (imported where used)."""
 from re import compile as re_compile
 

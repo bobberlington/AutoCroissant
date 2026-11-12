@@ -740,9 +740,6 @@ class PSDParser:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
         else:
             card.ability = ""                   # no Ability printed (none, hidden or empty)
-        ids = [layer.layer_id for layer in psd.descendants() if layer.layer_id >= 0]     # -1: none stored
-        if len(set(ids)) < len(ids):
-            card.problems.append("DUPLICATE LAYER IDS")
         self._process_stats(card, stat_trackers)
         stats = card.stats
         if card.card_type in STAT_KINDS and (stats.hp, stats.defense, stats.attack, stats.speed) == (-1, -1, -1, -1):

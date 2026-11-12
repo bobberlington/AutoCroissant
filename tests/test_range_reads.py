@@ -1,6 +1,6 @@
 """Range reads: a card PSD opened by HTTP range requests (psd-tools' lazy open) parses as the whole file does; a broken
-range read marks the PSD failed, so the caller reads it whole. card_check reads ranges at the push, the build at its head
-(or a bake commit's parent). Also the parse from an open PSD and the download workers' parse (AHEAD)."""
+range read marks the PSD failed, so the caller reads it whole. The build reads ranges at its head (or a bake commit's
+parent). Also card_check's clone-first blob reads, the parse from an open PSD and the download workers' parse (AHEAD)."""
 import os
 import threading
 import time
@@ -66,33 +66,18 @@ def _ranges(github) -> set:
 
 
 # ========================
-# card_check --repo
+# card_check --repo --clone
 # ========================
-def test_card_check_reads_ranges_at_the_push(github):
-    pushed = {DOOMER: (_sha(github.files[DOOMER]), "bob"), FREEZER: (_sha(github.files[FREEZER]), "ann")}
-    parser = cc.Vocabulary().parser()
-    whole = cc.check_blobs("o/r", pushed, parser, None)
-    assert {DOOMER, FREEZER} <= set(_blobs(github)) and not _ranges(github)
-    github.calls.clear()
-    ranges = cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT)
-    assert ranges.as_dict() == whole.as_dict() and ranges.checked == 2
-    assert _ranges(github) == {DOOMER, FREEZER} and not _blobs(github)
-    github.calls.clear()
-    github.whole = {FREEZER}
-    assert cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT).as_dict() == whole.as_dict()
-    assert _blobs(github) == [FREEZER]
-
-
 def test_a_clone_is_read_first_and_kept_filled(github, tmp_path):
-    """--clone (the guards' check job): whole blobs, no ranges; each fetched once into the clone, then read from it."""
+    """--clone (the guards' check job): each blob fetched once into the clone, then read from it."""
     import subprocess
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     pushed = {DOOMER: (_sha(github.files[DOOMER]), "bob")}
     parser = cc.Vocabulary().parser()
-    first = cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT, clone=str(tmp_path))
+    first = cc.check_blobs("o/r", pushed, parser, None, clone=str(tmp_path))
     assert _blobs(github) == [DOOMER] and not _ranges(github)
     github.calls.clear()
-    assert cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT, clone=str(tmp_path)).as_dict() == first.as_dict()
+    assert cc.check_blobs("o/r", pushed, parser, None, clone=str(tmp_path)).as_dict() == first.as_dict()
     assert ga.fetch_verified("o/r", pushed[DOOMER][0], clone=str(tmp_path)) == github.files[DOOMER] and not github.calls
 
 

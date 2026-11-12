@@ -486,7 +486,7 @@ is skipped.
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the card data (the website's Parser notes):
-  `NO ABILITY LAYER` (rule pages only since 2026-10-25; not recorded since the rule-page parsing was removed 2026-11-04), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (a visible
+  `NO ABILITY LAYER` (rule pages only since 2026-10-25; not recorded since the rule-page parsing was removed 2026-11-04), `DUPLICATE LAYER IDS` (deleted 2026-11-12, owner: the guards' R13 tells it), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (a visible
   pixel layer named undread, tornado or error; deleted 2026-11-12, owner: old records keep it), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
   and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`, with the "creatures" kind):
   the validator then skips its four `... NOT FOUND` lines (not STATS TOO HIGH); a `creatures` edit, or edits giving all four

@@ -651,7 +651,7 @@ def normalised(clone, rel: str, tmp_path) -> tuple:
         pytest.fail("no MDW/Fonts at the pin")
     fonts = lambda names: str(fonts_dir)
     data = Path(path).read_bytes()
-    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), fonts, only="normalise")
+    fixed = cs.fix(data, rel, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), fonts, only="normalise")
     assert fixed.pixel_left == [] and fixed.normalised and not fixed.redrawn, fixed.pixel_left
     image = Image.open(png)
     image.load()

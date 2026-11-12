@@ -94,7 +94,7 @@ def sweep_card(job) -> dict:
         pushed = png_export.open_psd(data)
         if not standards.pixel_kinds(pushed, (kind,), job.psd, _worker["context"].chart):
             return out
-        fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=kind)
+        fixed = standards.fix(data, job.psd, _worker["work"], _worker["parser"], _worker["fonts"], only=kind)
         if not fixed.redrawn:
             return {**out, "state": "refused" if fixed.pixel_left else "skip",
                     "why": "; ".join(why for _, why in fixed.pixel_left)}

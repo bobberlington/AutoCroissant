@@ -332,9 +332,8 @@ network, a truncated tree) is one error line.
   the job summary only (no Discord message or comment on a dispatch); without `all`, the head commit's PSDs.
 - **By hand:** `python -m commands.card_check --psd <files>` (each file in the checkout of its nearest ancestor holding `Types/`: its path
   from there classifies it and that checkout's `Types/` and edits file apply; a file outside any checkout is `UNKNOWN TYPE`),
-  `--all <checkout>` (every card PSD, a process pool of half the cores from 8 PSDs up, like the font check; 0.1-0.4 s a PSD sequential,
-  the 813 PSDs of the clone in 14.6 s wall on the Mac on 2026-10-21, 0 errors, exactly the seven cards below),
-  `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree]`, `--json <out>`, `--discord <out>`. On the clone at e4e0a58 the notes
+  `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree] [--clone <dir>]`, `--json <out>`, `--discord <out>` (`--all <checkout>`
+  and the range reads without `--clone` deleted 2026-11-12, owner: the `all` dispatch checks the whole tree). On the clone at e4e0a58 the notes
   are Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors
   `SEVERAL CREATURES` (gone 2026-11-08: every creature bakes), Computer Virus `HP/DEF/ATK/SPD NOT FOUND` (since 2026-10-26 one parse-time `NO STATS FOUND` instead, stored at its
   next re-parse; all four stats or a `creatures` edit answer it); Anubisath Guardian, Qiraji Soldier, Silithid, Mini Doomer and Royal
@@ -467,12 +466,12 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11 is told,
-`card_standards.AUTO_FIX` (its exact-name rename was deleted 2026-11-12); R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
+card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes: R9's Txt2 sync until 2026-11-12, when R9 and its fix were deleted, owner; since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11 is told
+(its exact-name rename was deleted 2026-11-12); R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`; since 2026-11-11 ONE post per push with the card check's and the font check's notes, by the
-tell job: only issues and notes new on a card, a note two checks tell once, the role pinged only for a missing font) and at most one bot commit,
+tell job: only issues and notes new on a card, the role pinged only for a missing font) and at most one bot commit,
 both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
 the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
 Land sleeps out the rest; no runner sleeps; a PSD saved without
@@ -486,18 +485,17 @@ within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 30
 told (`png_export.KEPT_PX`; owner 2026-11-07: soft notes are no issue), past that redrawn.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
-  `off`: the guards' own steps skip (the card and font checks in the same job still run and post at once). `report`: check, comment and post (after the window), never commit: the PNG the bot
-  would make is told ("PNG not exported with the PSD: export it in Photoshop") and the comment says it "would be
-  re-exported (CARD_GUARDS=on)". `on`: also land the PNGs and fixes. Rollout (owner, 2026-10-22): no variable, then dry dispatches, then `report` for about 3 days, then `on`
-  (owner's call; the items to confirm first are at the top of PUSH_GUARDS.md section 15).
+  `off` (or any other value): the guards' own steps skip (the card and font checks in the same job still run and post at
+  once). `on`: check, comment, post and land the PNGs and fixes. Rollout (owner, 2026-10-22): no variable, then dry
+  dispatches, then `report` for about 3 days, then `on`; `report` mode was deleted 2026-11-12 (owner: only off/on, plus
+  dry dispatches).
 - **Dispatch (Actions > Card guards > Run workflow):** `dry_run` defaults to true (job summary and the `card-guards`
   artifact only: plan.json, report.md, discord.json, the planned PNGs and fixed PSDs, crops); `sha` checks one commit
   against its first parent; `cards` limits it; `all` audits every card PSD (about 40 minutes, always dry). `dry_run` off
   comments, posts and lands at once on the blob check alone (no quiet window), so it refuses ("still in its quiet
   window") while a push run of that commit, or of a later one, is unfinished: dispatch again once it has finished.
-  `CARD_GUARDS` does not bind a dispatch: unset or `report`, a dispatch with `dry_run` off still comments, posts and
-  lands, so dispatch dry while testing in the `report` phase. An author with no GitHub account is named by the git author
-  name there, never the dispatcher.
+  `CARD_GUARDS` does not bind a dispatch: unset or off, a dispatch with `dry_run` off still comments, posts and lands. An
+  author with no GitHub account is named by the git author name there, never the dispatcher.
 - **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
   --repo MichaelJSr/TTSCardMaker --out <dir>` (any clone with the history; blobs it lacks come by API; without `--repo`
   it reads none of the icon font's earlier versions, so badge widths judge otherwise than the Action:

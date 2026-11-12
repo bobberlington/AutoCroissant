@@ -204,7 +204,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
     monkeypatch.setattr(cg, "token", lambda: "")       # a local run: logins from git, never the API (config.py's token)
     out = tmp_path / "out"
-    data = cg.check(str(root), bot, base, "o/cards", "actor", mode="report", out=str(out), workers=1)
+    data = cg.check(str(root), bot, base, "o/cards", "actor", mode="dry", out=str(out), workers=1)
     by = {Path(c["psd"]).stem: c for c in data["cards"]}
     snack = by["Snack"]
     assert snack["export"]["outcome"] == "re-exported" and snack["export"]["writer"] == "tool"
@@ -219,12 +219,10 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Bread"]["r10"]["ok"] is True and not by["Bread"]["writes"]
     assert by["Lonely"]["r10"]["ok"] is False and by["Lonely"]["told"] == []          # R10: the comment only (TELL_PNG_MISMATCH)
     assert by["Gone"]["told"] == [] and by["Gone"]["notes"] == ["Gone.png is left without its PSD"]     # comment only
-    # report mode makes nothing, so the PNGs the bot would make are told (with CARD_GUARDS=on they land instead)
-    assert by["New_Name"]["told"] == ["PNG not renamed with the PSD: rename it too"]
-    assert by["New_Name"]["notes"] == ["Old_Name.png is left at the PSD's old name"]
-    assert snack["told"][:2] == ["Snack2.png not updated: tag its picture in the PSD",
-                                 "PNG not exported with the PSD: export it in Photoshop"]
-    assert by["New_Card"]["told"][0] == "no PNG pushed with the new PSD: export it in Photoshop"
+    # the PNGs the bot makes are never told (a dry run shows what on would do)
+    assert by["New_Name"]["told"] == [] and by["New_Name"]["notes"] == ["Old_Name.png is left at the PSD's old name"]
+    assert snack["told"][0] == "Snack2.png not updated: tag its picture in the PSD"
+    assert not any("export it in Photoshop" in line for line in snack["told"] + by["New_Card"]["told"])
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
@@ -233,7 +231,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
-    assert report.startswith("## Card guards") and "Report only (CARD_GUARDS=report)" in report and "Bot_Card" in report
+    assert report.startswith("## Card guards") and "Dry run: nothing is posted or committed." in report and "Bot_Card" in report
     payload = json.loads((out / "discord.json").read_text())
     assert payload["allowed_mentions"] == {"parse": []} and payload["flags"] == 4 and "<@" not in payload["content"]
     lines = payload["content"].splitlines()
@@ -243,12 +241,12 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
     assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
-    assert "Alice pushed Snack: Snack2.png not updated: tag its picture in the PSD; PNG not exported with the PSD" in payload["content"]
+    assert "Alice pushed Snack: Snack2.png not updated: tag its picture in the PSD" in payload["content"]
     # what changed inside each PSD pushed over an older one (psd_diff): a new PSD or a PNG alone has none
     assert snack["changes"] == by["Bread"]["changes"] == by["Dropped"]["changes"] == ["Square pixels changed"]
     assert by["New_Card"]["changes"] == by["Lonely"]["changes"] == by["New_Name"]["changes"] == []
     assert "**Snack** (`Items/Heal/2 Stars/Snack.psd`, Alice, `" in report and "- Changed: Square pixels changed" in report
-    assert "Alice pushed New Card: " in payload["content"]
+    assert "New Card" not in payload["content"]                                 # the PNG it makes is never told
 
 
 def test_a_new_psd_beside_its_pushed_png_tells_nothing(cards, tmp_path):
@@ -554,21 +552,16 @@ def test_a_card_error_is_told_and_counted(cards, tmp_path, monkeypatch):
 
 def test_only_new_issues_are_told():
     """Owner 2026-11-11: of a card pushed over an older PSD only the issues new on it reach Discord (no "(new)": all are),
-    whoever pushed; a new card's all; the old ones stay told in the comment. A fix the bot could not make, as its issue."""
+    whoever pushed; a new card's all; the old ones stay told in the comment."""
     old = {"code": "R11", "text": "parts are not named so", "line": "parts are not named so", "new": False, "told": True,
-           "discord": True, "fix": False, "waived": ""}
+           "discord": True, "waived": ""}
     new = {"code": "R14", "text": "card names typed in another letter case: 'x' should be 'X'", "new": True, "told": True,
-           "discord": True, "fix": False, "waived": ""}
+           "discord": True, "waived": ""}
     new["line"] = new["text"] + " (new)"
-    story = dict(old, code="R9", text="Photoshop would show old text in Ability", line="Photoshop would show old text in Ability",
-                 fix=True, told=False)                                         # the bot's to fix: told only if it could not
-    result = cg.Result(cg.Job("X/A.psd", "stale", psd_old="s0"), issues=[old, new, story],
-                       fix_refused=[(story["line"], "no Txt2"), (new["line"], "x")])
-    assert result.told() == ["card names typed in another letter case: 'x' should be 'X' (the bot could not fix it: x)", new["text"]]
+    result = cg.Result(cg.Job("X/A.psd", "stale", psd_old="s0"), issues=[old, new])
+    assert result.told() == [new["text"]]
     result.job.psd_old = ""                                                    # a new card
-    assert result.told() == [f"{story['text']} (the bot could not fix it: no Txt2)",
-                             "card names typed in another letter case: 'x' should be 'X' (the bot could not fix it: x)",
-                             old["text"], new["text"]]
+    assert result.told() == [old["text"], new["text"]]
     entry = _entry("A", issues=[old, new], told=[new["text"]])
     assert "Issues: parts are not named so; card names typed in another letter case: 'x' should be 'X' (new)" in cg.markdown(
         {"mode": "on", "after": "f" * 40, "before": "e" * 40, "cards": [entry]}, [], [], [])
@@ -692,10 +685,10 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     fixture_psd(tmp_path / "psds", card(colour=(0, 200, 0)), "Redrawn")   # Snack's picture drawn again (class 3)
     redrawn = (tmp_path / "psds" / "Redrawn.psd").read_bytes()
 
-    def fix(data, rel, issues, work, parser=None, fonts=None, only=None, skip=()):
+    def fix(data, rel, work, parser=None, fonts=None, only=None, skip=()):
         if only != cg.NORMALISE:
             assert cg.NORMALISE in skip            # never in the check itself
-            return real(data, rel, issues, work, parser, fonts, only, skip)
+            return real(data, rel, work, parser, fonts, only, skip)
         assert isinstance(fonts.links, cg.LinkContext) and fonts.links.tree[rel]
         converted.append(rel)
         if rel.endswith("Snack.psd"):           # card_standards' shape: the redrawn layers' names
@@ -924,7 +917,7 @@ def test_land_by_git_past_the_bytes(tmp_path, monkeypatch):
 def _entry(name, **extra):
     """A plan card with every key markdown reads (no writes)."""
     entry = {"card": name, "psd": f"X/{name}.psd", "case": "stale", "png": f"X/{name}.png", "login": "Alice",
-             "commit": "a" * 40, "export": {}, "r10": {}, "issues": [], "fixed": [], "fix_refused": [], "notes": [],
+             "commit": "a" * 40, "export": {}, "r10": {}, "issues": [], "notes": [],
              "told": [], "error": "", "writes": [], "expect": {f"X/{name}.psd": "s1", f"X/{name}.png": "p1"}}
     entry.update(extra)
     return entry
@@ -948,7 +941,7 @@ def test_a_psd_fix_survives_a_later_png_push(tmp_path, monkeypatch):
     """A PSD fix rests on its PSD alone (0 pixels): the author's later PNG push leaves it to land; the card's PNG write is
     dropped silently there (the author replaced it). Partial landings are named in the comment."""
     out = tmp_path / "plan"
-    snack = _entry("Snack", fixed=["the Name layer is named 'NAME'"], export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
+    snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
     plan = _full_plan(tmp_path, [snack])
@@ -959,7 +952,7 @@ def test_a_psd_fix_survives_a_later_png_push(tmp_path, monkeypatch):
     assert report["dropped"] == [["Snack", "superseded: X/Snack.png changed on the branch", "X/Snack.png"]]
     assert report["told"] == {"X/Snack.psd": []}
     comment = cg.landed_markdown(json.loads(Path(plan).read_text()), report)
-    assert "- Fixed by the bot: the Name layer" in comment and "- Not landed (superseded: X/Snack.png changed on the branch): `X/Snack.png`" in comment
+    assert "- Not landed (superseded: X/Snack.png changed on the branch): `X/Snack.png`" in comment
     assert "- The rest landed in `cccccccc`" in comment
 
 
@@ -989,7 +982,7 @@ def test_land_never_raises_and_still_settles_the_post(tmp_path, monkeypatch):
     out = tmp_path / "plan"
     snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
-    bread = _entry("Bread", fixed=["the Name layer is named 'NAME'"])
+    bread = _entry("Bread")
     _write(out, bread, "X/Bread.psd", "psd", b"psd", "the Name layer is named 'NAME'")
     plan = _full_plan(tmp_path, [snack, bread])
     for where in ("ref_head", "commit_files"):
@@ -1013,7 +1006,7 @@ def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatc
     """The first attempt landed (the branch holds the bot's PNG and fixed PSD): the re-run writes nothing, drops nothing,
     tells nothing, and the comment keeps saying the writes are on the branch."""
     out = tmp_path / "plan"
-    snack = _entry("Snack", fixed=["the Name layer is named 'NAME'"], export={"outcome": "re-exported", "changed_px": 5, "numbers": {}},
+    snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}},
                    told=["timing tag (1GCD) not set in the stoogedings badge font"])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     _write(out, snack, "X/Snack.psd", "psd", b"psd", "the Name layer is named 'NAME'")
@@ -1025,49 +1018,31 @@ def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatc
     assert sorted(report["already"]) == [["Snack", "X/Snack.png"], ["Snack", "X/Snack.psd"]]
     assert report["told"] == {"X/Snack.psd": ["timing tag (1GCD) not set in the stoogedings badge font"]}      # the PSD did not "change again"
     comment = cg.landed_markdown(json.loads(Path(plan).read_text()), report)
-    assert "Nothing new to land: 1 card already on the branch" in comment and "Fixed by the bot" in comment
+    assert "Nothing new to land: 1 card already on the branch" in comment
     assert "Every write is already on the branch" in comment and "Not landed" not in comment and "Not fixed" not in comment
 
 
-def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
-    """Report mode commits nothing, so a PSD pushed without its PNG is told ("PNG not exported with the PSD"), once, after
-    the window, and the comment says the PNG would be re-exported (CARD_GUARDS=on), never that it was. A PNG the author
-    pushed in the window withdraws the line. In on mode the PNG lands instead: nothing told."""
+def test_a_dry_run_says_what_on_would_make(tmp_path, monkeypatch):
+    """A PSD pushed without its PNG: in on mode the PNG lands, nothing told; a dry run tells nothing either and its comment
+    says the PNG would be re-exported (CARD_GUARDS=on), never that it was."""
     job = cg.Job("X/Snack.psd", "stale", "s0", "s1", "X/Snack.png", "p1", login="Alice", commit="a" * 40)
     export = {"outcome": "re-exported", "why": "", "gate": "", "changed_px": 1234, "box": [0, 0, 10, 10], "icc": "converted",
               "writer": "photoshop", "vote": None, "numbered_refused": [],
               "numbers": {"baseline": {"bad_pct": 0.0}, "cross": {"bad_pct": 0.01, "mean": 0.3}}}
     result = cg.Result(job, export=export, writes=[{"path": "X/Snack.png", "file": "files/Snack.png", "sha": blob_sha(b"png"),
                                                     "kind": "png", "line": "re-exported"}])
-    report = cg.plan([result], "o/r", "e" * 40, "f" * 40, "report")
-    (entry,) = report["cards"]
-    assert entry["told"] == ["PNG not exported with the PSD: export it in Photoshop"]
-    assert cg.discord_payload(report, "o/r")["content"].startswith(
-        "Alice pushed Snack: PNG not exported with the PSD: export it in Photoshop.")
-    text = cg.markdown(report, [], [], [])
-    assert "Report only (CARD_GUARDS=report): nothing is committed." in text
+    dry = cg.plan([result], "o/r", "e" * 40, "f" * 40, "dry")
+    (entry,) = dry["cards"]
+    assert entry["told"] == [] and cg.discord_payload(dry, "o/r") == {}
+    text = cg.markdown(dry, [], [], [])
+    assert "Dry run: nothing is posted or committed." in text
     assert ("- PNG would be re-exported by the bot's render of the PSD (1,234 px changed in 10x10 at (0, 0); ICC converted; "
             "the old PSD drawn against the old PNG: bad 0.00%; against the PSD's own image: bad 0.01%, mean 0.30; saved by "
             "Photoshop) with CARD_GUARDS=on") in text and "- PNG re-exported" not in text
-    assert cg.summary(report, [])["told"] == 1
     on = cg.plan([result], "o/r", "e" * 40, "f" * 40, "on")
     assert on["cards"][0]["told"] == [] and "- PNG re-exported by the bot's render of the PSD (1,234 px" in cg.markdown(on, [], [], [])
-    assert cg.plan([result], "o/r", "e" * 40, "f" * 40, "dry")["cards"][0]["told"] == []    # a dry run shows what on would do
-    out = tmp_path / "plan"
-    (out / "files").mkdir(parents=True)
-    (out / "files" / "Snack.png").write_bytes(b"png")
-    (out / "plan.json").write_text(json.dumps(report))
-    for png, told in (("p1", ["PNG not exported with the PSD: export it in Photoshop"]), ("author's", [])):
-        FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", png)}).install(monkeypatch)
-        landed = cg.land(str(out / "plan.json"), dry_run=True)
-        assert landed["told"] == {"X/Snack.psd": told} and landed["sha"] == "", png
-        post = cg.finish(str(out / "plan.json"), landed)
-        assert (post.get("content", "").startswith("Alice pushed Snack: PNG not exported")) is bool(told)
-        comment = (out / "report-landed.md").read_text()
-        assert ("- After the quiet window: Snack.png was pushed since: not told" in comment) is not told
-        assert "would be re-exported" in comment and "Landed" not in comment
     ahead = dict(entry, export={"outcome": "current", "numbers": {"png_ahead": {}}})              # png_export's verdict
-    assert cg._guard1_line(ahead, "report") == "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
+    assert cg._guard1_line(ahead, "dry") == "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
 
 
 def test_a_png_pushed_in_another_case_counts(tmp_path, monkeypatch):
@@ -1098,14 +1073,13 @@ def test_nothing_is_told_for_a_png_made_or_kept_without_a_stored_image(tmp_path,
     assert exported["unchecked"] is True
     job = cg.Job("X/Snack.psd", "stale", png="X/Snack.png")
     result = cg.Result(job, export=exported, writes=[{"path": "X/Snack.png", "kind": "png"}])
-    assert result.told("on") == []
-    assert result.told("report") == ["PNG not exported with the PSD: export it in Photoshop"]
+    assert result.told() == []
     assert cg._drawn_as(found) == "its picture 1"
     line = cg._guard1_line({"export": {**exported, "numbers": {}, "icc": "as stored"}, "case": "stale"})
     assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "stored image" not in line
     for numbers in ({"kept": 33}, {"restyled": ["the Header text"]}):
         kept = cg._export_dict(pe.Export("current", unchecked=True, numbers=numbers))
-        assert cg.Result(cg.Job("X/Snack.psd", "beside", png="X/Snack.png"), export=kept).told("on") == []
+        assert cg.Result(cg.Job("X/Snack.psd", "beside", png="X/Snack.png"), export=kept).told() == []
         assert cg._guard1_line({"export": kept, "case": "beside"}) == "PNG still current (the push moved no pixel of the card)"
     out = tmp_path / "plan"
     snack = _entry("Snack", export=dict(exported, numbers={}), told=[])
@@ -1192,9 +1166,9 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
                                check=True).stdout
     assert len(committed) * 3 < len(heavy) and pe.same_png(heavy, committed)
     assert cg.check(str(root), landed["sha"], push, mode="on", out=str(tmp_path / "again"), workers=1)["cards"] == []
-    told = cg.check(str(root), push, bot, mode="report", out=str(tmp_path / "report"), workers=1)
+    told = cg.check(str(root), push, bot, mode="dry", out=str(tmp_path / "dry"), workers=1)
     assert [c["told"] for c in told["cards"] if c["card"] in ("Fat", "Snack")] == [[], []]
-    assert "- Fat.png would be recompressed losslessly (" in (tmp_path / "report" / "report.md").read_text()
+    assert "- Fat.png would be recompressed losslessly (" in (tmp_path / "dry" / "report.md").read_text()
 
 
 @pytest.mark.oxipng
@@ -1224,15 +1198,15 @@ def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeyp
 
 def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatch):
     """A recompressed PNG rests on that PNG alone (a later push of the PSD does not drop it) and is never told on
-    Discord: not in report mode ("export it in Photoshop" is for a PNG not made), not when it did not land."""
+    Discord: not in a dry run, not when it did not land."""
     line = "recompressed losslessly (9.0 MB -> 2.0 MB, the same pixels)"
     job = cg.Job("X/Fat.psd", "pair", "", "s1", "X/Fat.png", png_new="p1", login="Alice", commit="a" * 40)
     result = cg.Result(job, writes=[{"path": "X/Fat.png", "file": "files/Fat.png", "sha": blob_sha(b"small"),
                                      "kind": "recompress", "line": line}])
-    for mode in ("report", "on"):
+    for mode in ("dry", "on"):
         planned = cg.plan([result], "o/r", "e" * 40, "f" * 40, mode)
         assert planned["cards"][0]["told"] == [] and cg.discord_payload(planned, "o/r") == {} and cg.summary(planned, [])["writes"] == 1
-    assert f"- Fat.png would be {line} with CARD_GUARDS=on" in cg.markdown(cg.plan([result], "o/r", "e" * 40, "f" * 40, "report"), [], [], [])
+    assert f"- Fat.png would be {line} with CARD_GUARDS=on" in cg.markdown(cg.plan([result], "o/r", "e" * 40, "f" * 40, "dry"), [], [], [])
     assert f"- Fat.png {line}\n" in cg.markdown(cg.plan([result], "o/r", "e" * 40, "f" * 40, "on"), [], [], [])
     out = tmp_path / "plan"
     fat = _entry("Fat", case="pair")
@@ -1263,7 +1237,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     fixed = b"the fixed PSD"                                                # land only moves bytes
     (out / "fixed.psd").write_bytes(fixed)
     bread["writes"] = [{"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd",
-                        "line": "R9 fixed; Single-line Composer (Ability)", "shown": "R9 fixed", "composer": True, "pixels": ["apostrophes"]}]
+                        "line": "Single-line Composer (Ability)", "silent": True, "composer": True, "pixels": ["apostrophes"]}]
     bread["expect"] = cg._expect(cg.Job(bread["psd"], "pair", "", tree[bread["psd"]][1], f"{FOLDER}/Bread.png",
                                         png_new=tree[f"{FOLDER}/Bread.png"][1]))
     assert bread["expect"][f"{FOLDER}/Bread.png"] == tree[f"{FOLDER}/Bread.png"][1]
@@ -1273,7 +1247,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     assert report["landed"] == ["Bread"] and report["dropped"] == [] and report["sha"]
     assert _git(root, "show", "--name-only", "--format=", report["sha"]).splitlines() == [f"{FOLDER}/Bread.psd"]
     assert report["events"] == [{"kind": "guard-fix", "card": "Bread", "path": f"{FOLDER}/Bread.psd",    # never the composer
-                                 "line": "R9 fixed; straight apostrophes"}]
+                                 "line": "straight apostrophes"}]
 
 
 def test_a_duplicate_follows_its_psd_silently_and_records_land(cards, tmp_path):
@@ -1302,7 +1276,7 @@ def test_a_duplicate_follows_its_psd_silently_and_records_land(cards, tmp_path):
     fixed = b"the converted PSD"                                            # land only moves bytes
     (out / "fixed.psd").write_bytes(fixed)
     bread["writes"].append({"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd", "line": "",
-                            "shown": "", "silent": True, "pixels": ["normalise"]})
+                            "silent": True, "pixels": ["normalise"]})
     bread["records"] = {"render": {bread["psd"]: {"icc": [0.0, 0]}}}
     (out / "plan.json").write_text(json.dumps(plan))
     landed = cg.land(str(out / "plan.json"), local=str(root))
@@ -1494,7 +1468,7 @@ def test_workflow_shape(clone):
     assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
     assert "environment" not in post
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
-                          "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
+                          "needs.check.outputs.mode == 'on'")
     assert finish["if"] == "always() && (github.event_name == 'push' || needs.check.outputs.mode != 'off')"   # a push whatever MODE
     assert job["timeout-minutes"] == "${{ inputs.all && 150 || 60 }}" and post["timeout-minutes"] == tell_job["timeout-minutes"] == 10
     assert job["permissions"] == {"contents": "write", "actions": "write"}           # Land's commit, Start Card sync
@@ -1577,8 +1551,8 @@ def test_workflow_shape(clone):
     assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in text and "set -x" not in text
     land = steps["Land"]
     # Land goes before the Comment step (a failed comment cannot drop the writes), only with something to land or tell
-    assert land["if"] == "${{ !cancelled() && steps.plan.outputs.land == 'true' && (env.MODE == 'report' || env.MODE == 'on') }}"
-    assert "--dry-run" in land["run"] and "steps.check.outcome == 'success'" in steps["Comment on the commit"]["if"]
+    assert land["if"] == "${{ !cancelled() && steps.plan.outputs.land == 'true' && env.MODE == 'on' }}"
+    assert "--dry-run" not in land["run"] and "steps.check.outcome == 'success'" in steps["Comment on the commit"]["if"]
     assert "discord" not in tell["run"]                                        # never check's early post, nor Land's own
     assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
     alert = steps["Tell Discord the run failed"]
@@ -1840,7 +1814,7 @@ def _tell(steps, env, bot) -> dict:
 def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     """The Comment, Told before, Follow up, Told already and Tell Discord steps' shell against a fake gh and curl
     (standards_post real, on this python3): the first run comments, Follow up rewrites it, the tell job posts ONE message
-    (the guards' lines as Land settled them, the card check's new notes, a note both tell once, owner 2026-11-11), marks
+    (the guards' lines as Land settled them, the card check's new notes, owner 2026-11-11), marks
     the guards' comment and comments the card check's report; a re-run edits that comment, keeps the mark and posts
     nothing, and so does a re-run of the tell job alone (its Told already looks the mark up). With CARD_GUARDS off the
     card check alone posts, its comment carrying the mark."""
@@ -1853,13 +1827,12 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     out, checks = tmp_path / "guards", tmp_path / "checks"
     out.mkdir()
     (checks / "card-check").mkdir(parents=True)
-    stars = "the stars are not in a group named Stars"
-    lines = [stars, "PNG not made: G6; export it in Photoshop"]
+    lines = ["PNG not made: G6; export it in Photoshop"]
     (out / "summary.json").write_text(json.dumps({"after": "f" * 40, "cards": 1, "told": 1, "comment": 1, "writes": 0,
                                                   "errors": 0, "card_errors": 0}))
     (out / "plan.json").write_text(json.dumps({"after": "f" * 40, "cards": [
         {"card": "Alice", "psd": "X/Alice.psd", "login": "Alice", "commit": "a" * 40, "told": lines + ["withdrawn"],
-         "issues": [{"code": "R6", "text": stars}]}]}))
+         "issues": []}]}))
     (out / "landed.json").write_text(json.dumps({"told": {"X/Alice.psd": lines}}))
     (out / "report.md").write_text("## Card guards\n\nAlice's card.\n")
     (out / "report-landed.md").write_text("## Card guards\n\nAfter the window.\n")
@@ -2003,12 +1976,12 @@ exit 0
 
 
 def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
-    """Land (the check job's) runs only with something to tell in report mode, as its writes are told, never made; on
-    mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
+    """Land (the check job's) runs only in on mode with something to tell or write: the check job's plan says land=true.
+    A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
     step hands on the sha and the count already on the branch; with fixes History clone start makes the history clone,
     reading the checkout's objects (git_commit's delta push), and Land waits for it. Follow up starts the card sync after a
-    commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
-    mode and not on a first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
+    commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not on a
+    first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
     always, landed or not."""
     pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
@@ -2026,9 +1999,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     hist = tmp_path / "TTSCardMaker-history.git"
     clones = {"RUNNER_TEMP": str(tmp_path), "GITHUB_SERVER_URL": f"file://{tmp_path}", "GITHUB_WORKSPACE": str(tmp_path)}
     assert steps["History clone start"]["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' }}"
-    for mode, told, writes, attempt, event, ran, rerun in (("report", 0, 2, "1", "push", False, False),
-                                                           ("report", 1, 2, "1", "push", True, False),
-                                                           ("on", 0, 2, "1", "push", True, False),
+    for mode, told, writes, attempt, event, ran, rerun in (("on", 0, 2, "1", "push", True, False),
                                                            ("on", 0, 2, "2", "push", True, True),
                                                            ("on", 0, 1, "1", "workflow_dispatch", True, True),
                                                            ("on", 0, 0, "1", "push", False, False)):
@@ -2050,13 +2021,13 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
             outputs = {}
         called = args.read_text()
         assert bool(called) is ran and outputs.get("ran") == ("true" if ran else None), (mode, told, writes)
-        assert ("--rerun" in called) is rerun and ("--dry-run" in called) is (mode == "report" and ran), called
+        assert ("--rerun" in called) is rerun and "--dry-run" not in called, called
         if ran:
             assert outputs["sha"] == "" and outputs["already"] == "1"
     assert (hist / "objects" / "info" / "alternates").read_text() == f"{tmp_path}/.git/objects\n"
     (out / "report-landed.md").write_text("## Card guards\n\nNothing new to land.\n")
     for mode, attempt, sha, already, fixes, started in (("on", "2", "", "1", "", True), ("on", "1", "", "1", "", False),
-                                                        ("report", "2", "", "1", "", False), ("on", "2", "", "0", "", False),
+                                                        ("on", "2", "", "0", "", False),
                                                         ("on", "1", "c" * 40, "", "", True), ("on", "2", "", "", "", False),
                                                         ("on", "1", "", "", "true", True)):   # fixes, nothing landed
         state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))
@@ -2083,7 +2054,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
     """`check` defaults to --mode dry and `land` to a real commit (on the Mac the token comes from config.py): a plan not
     checked with --mode on is refused once its mode is read, before anything is written, unless --dry-run or --local."""
-    for mode in ("dry", "report"):
+    for mode in ("dry",):
         plan = _full_plan(tmp_path, [_entry("Quiet")], mode=mode)
         for name in ("landed.json", "report-landed.md", "discord-final.json"):
             (Path(plan).parent / name).unlink(missing_ok=True)
@@ -2446,19 +2417,19 @@ def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypa
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
-    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
+    step; a push's MODE other than on is off (a dispatch keeps dry)."""
     pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
-    for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
-        github_env = tmp_path / f"env-{typed}"
+    for typed, mode, event in (("On", "on", "push"), ("REPORT", "off", "push"), ("dry", "off", "push"),
+                               ("dry", "dry", "workflow_dispatch")):
+        github_env = tmp_path / f"env-{typed}-{event}"
         github_env.write_text("")
         done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path),
-                                  "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "push",
+                                  "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": event,
                                   "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
         assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
-    land = steps["Land"]
-    assert '[ "$MODE" = report ] && args+=(--dry-run)' in land["run"]
+    assert "--dry-run" not in steps["Land"]["run"]
 
 
 def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
@@ -3055,32 +3026,22 @@ def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
     assert landed["told"]["X/A.psd"] == []
 
 
-def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
-    """R8's box text without a clone's MDW/Fonts: only the files its faces look to be in, a request each, capped; the
-    pool's workers get the checked tree (review 2026-10-25)."""
+def test_box_text_fonts_only_from_the_clone(tmp_path, monkeypatch):
+    """R8's box text and the pixel fixes without a clone's MDW/Fonts: none (owner 11-12: no per-file download, the
+    redraws are left out); the pool's workers get the checked tree (review 2026-10-25)."""
     monkeypatch.delenv(cg.FONT_DIRS_ENV, raising=False)
-    names = ["Cambria.ttc", "cambriab.ttf", "Arial.ttf", "ANDYB.TTF", "3367-font.ttf"]
-    tree = {f"MDW/Fonts/{name}": ("100644", f"sha-{name}") for name in names}
-    assert cg.font_files("Cambria-Bold", cg.tree_fonts({p: sha for p, (_, sha) in tree.items()}))[0] == "cambriab.ttf"
-    fetched = []
-    faces = {"cambriab.ttf": ["Cambria-Bold"], "Cambria.ttc": ["Cambria", "CambriaMath"], "Arial.ttf": ["ArialMT"]}
-    monkeypatch.setattr(cg.Source, "blob", lambda self, sha: fetched.append(sha) or sha.encode())
-    monkeypatch.setattr(cg, "face_names", lambda data: faces.get(data.decode()[4:], []))
-    (tmp_path / "fonts").mkdir()
-    source = cg.Source(str(tmp_path / "clone"), "o/r", str(tmp_path / "fonts"))
-    assert source.fonts_for(["Cambria-Bold"]) == ""                 # no checked tree: nothing fetched
+    tree = {"MDW/Fonts/cambriab.ttf": ("100644", "sha-cambriab")}
+    source = cg.Source(str(tmp_path / "clone"), "o/r")
     source.checked = tree
-    assert source.fonts_for(["Cambria-Bold"]) == str(tmp_path / "fonts") and fetched == ["sha-cambriab.ttf"]
-    assert source.fonts_for(["Cambria-Bold", "Wingdings"]) == "" and len(fetched) == 1     # no file looks like it
-    assert sorted(os.listdir(tmp_path / "fonts")) == ["cambriab.ttf"]
-    monkeypatch.setattr(cg, "FONT_FETCH_MAX", 1)
-    assert source.fonts_for(["ArialMT"]) == "" and len(fetched) == 1
+    assert source.fonts_for(["Cambria-Bold"]) == ""
+    (tmp_path / "clone" / cg.psd_edit.FONTS_DIR).mkdir(parents=True)
+    (tmp_path / "clone" / cg.psd_edit.FONTS_DIR / "cambriab.ttf").write_bytes(b"font")
+    assert source.fonts_for(["Cambria-Bold"]) == str(tmp_path / "clone" / cg.psd_edit.FONTS_DIR)
     monkeypatch.setattr(cg, "_worker", {})
     monkeypatch.setattr(cg, "token_from_env", lambda: None)
     vocab = type("V", (), {"parser": lambda self: None})()
-    cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"), ("old.earlier",))
-    assert cg._worker["source"].checked == tree and cg._worker["source"].fonts == str(tmp_path / "fonts")
-    assert cg._worker["earlier"] == ("old.earlier",)
+    cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, ("old.earlier",))
+    assert cg._worker["source"].checked == tree and cg._worker["earlier"] == ("old.earlier",)
 
 
 def test_pool_size(monkeypatch):
@@ -3098,6 +3059,6 @@ def test_pool_size(monkeypatch):
 def test_status_words_make_no_changelog_event():
     """Owner 11-07, 11-09: the status words and status font fixes land in the guards' commit silently, no guard-event
     for them or their PNG."""
-    psd = {"kind": "psd", "path": "a.psd", "pixels": ["status font", "status words"], "shown": ""}
+    psd = {"kind": "psd", "path": "a.psd", "pixels": ["status font", "status words"]}
     png = {"kind": "png", "path": "a.png", "silent": True, "line": "re-exported"}
     assert cg.events_of({"card": "A"}, psd, [psd, png]) == cg.events_of({"card": "A"}, png, [psd, png]) == []

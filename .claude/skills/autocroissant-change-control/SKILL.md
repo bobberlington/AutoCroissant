@@ -162,7 +162,7 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    otherwise carry gets its own module (2026-11-11: `RemotePSD` left github_api for `psd_remote`; /fonts reads the data
    build's report instead of psd_details). TTSCardMaker's Actions
    sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 27 entries on 2026-11-11 including `psd_edit`,
-   `card_bake`, `txt2_repair`, `png_export`, `psd_diff`, `psd_remote` and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
+   `card_bake`, `txt2_repair`, `png_export`, `psd_diff`, `psd_remote` (until 2026-11-12, when card_check's range reads went) and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
    2026-10-24, checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
    exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_card_guards.py, which also runs the

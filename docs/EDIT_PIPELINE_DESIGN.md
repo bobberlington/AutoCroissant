@@ -551,7 +551,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   reads 2 (measured on a /tmp copy with the marker hidden); with it, Top none + Bottom 0 reads 10, Top 7 + Bottom 0 reads 7, Top
   none + Bottom 5 reads 15. Writing: value <= 10 shows Top = value (10: none) and Bottom = 0; 11-19 Top none and Bottom = value - 10;
   20 needs a Bottom marker too (none on the Cannon: refused `stat>10`); `classify` refuses > 20, and 11-20 on a one-row card
-  (`stat>10`, "a second row is standardization work (ledger L3)"); gate `reparse` accepted `STATS TOO HIGH` only for a stat above
+  (`stat>10`, "the bar's one row prints up to 10" since 2026-11-12, the L3 citation dropped); gate `reparse` accepted `STATS TOO HIGH` only for a stat above
   10 on two rows (also when the raise from <= 10 adds it: 7 -> 15 passes, review fix 2026-10-21; since 11-06 STATS TOO HIGH
   is above 20 and the gate treats it like any new problem). Measured on the Cannon (12 -> 7, 15, 10; hp 9 -> 2 as the replace case): 3/2/2/2 flag bytes, 6360 block bytes
   (Bottom 2's ColorOverlay + BevelEmboss follows the shown digit), the parser reads each value back; the render gates refuse it

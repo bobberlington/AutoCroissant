@@ -301,8 +301,8 @@ main.py  (registration + queue loops; imports every commands module)
  |                            changelog LAZILY: CardBuild (the parse and REST blobs), GitBuild (the clone), build (the Card sync
  |                            Action's db/ JSON, its manifest's fonts report: font_check.fonts_report)  [2026-10-22; no discord,
  |                            pandas, config or utils: card-sync.yml checks out card_data.SPARSE_FILES alone]
- |- commands.psd_remote    -> github_api; psd_tools LAZILY: RemotePSD (a PSD at a commit by range requests) for card_data,
- |                            card_check  [2026-11-11, out of github_api: the bot's closure stays toolchain-free]
+ |- commands.psd_remote    -> github_api; psd_tools LAZILY: RemotePSD (a PSD at a commit by range requests) for card_data
+ |                            [2026-11-11, out of github_api: the bot's closure stays toolchain-free; card_check's use gone 2026-11-12]
  |- commands.card_sync     -> card_db, github_api, psd_analyzer (stats_db, the facade's), utils, global_config, config (optional);
  |                            query_card, type_emojis, repo_history, analytics LAZILY: the bot's card data (sync, /update_stats,
  |                            admins' Card sync runs, /fonts from the manifest's fonts report: no psd_details or font_check since

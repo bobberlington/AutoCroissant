@@ -22,7 +22,7 @@ the same pixels, banded) when that saves more than 3% and 64 KiB (our thresholds
 pushed one in a process of its own, beside the rest of the check (_overlap).
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
-                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] [--convert now|later|off]
+                                         [--cards <names>] [--whole-tree] [--mode dry|on] [--convert now|later|off]
                                          --out <dir>
     python -m commands.card_guards normalise --out <dir> --clone <dir> [--repo <owner/name>] [--deadline <epoch>]
     python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
@@ -61,7 +61,7 @@ from gzip import decompress as gzip_decompress
 from hashlib import blake2b
 from io import BytesIO
 from json import dump, load, loads
-from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
+from os import cpu_count, environ, listdir, makedirs, pathsep
 from os.path import basename, dirname, exists, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch, sub
 from struct import unpack
@@ -89,7 +89,7 @@ from commands.card_bake import (PREFETCH_WORKERS, RENAME_SIDES, Snapshot, fetch_
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors, dup_pictures
 from commands.card_models import NOT_IN_FILE_NAMES, card_name, file_stem
-from commands.font_check import face_names, is_card_psd, shared_tables, split_tables, tree_fonts
+from commands.font_check import is_card_psd, shared_tables, split_tables, tree_fonts
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, has_blobs,
                                  local_commit, plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
@@ -105,7 +105,7 @@ from global_config import CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PA
 SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/card_standards.py", "commands/txt2_repair.py",
                 "commands/psd_diff.py", "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
                 "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
-                "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py", "commands/psd_remote.py",
+                "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json",
                 "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py", "commands/png_changes.py",
@@ -117,7 +117,7 @@ DATA_STATS = "db/stats.json"                    # the card data on the data bran
 BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besides git_commit.AUTHOR: never guarded
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
-MODES = ("dry", "report", "on")
+MODES = ("dry", "on")
 CHANGES_COMMENT = 600                           # the changes in the commit comment
 MARKDOWN = r"([\\`*_~|<\[\]])"                   # escaped in card text and layer names (GitHub and Discord markdown)
 NOBODY = "Someone"
@@ -125,8 +125,6 @@ NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub 
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # checks of this many cards or more run in a process pool (2 on a runner)
 POOL_MAX = 4                                    # local pools at most this many (each runs git); runners use every core (K-2)
-FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
-FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
 EARLIER_WALK = 40                               # badge widths: versions of the icon font's history earlier_fonts reads at
@@ -228,8 +226,6 @@ class Result:
     job: Job
     export: dict = field(default_factory=dict)  # guard 1: outcome, why, numbers...
     issues: list = field(default_factory=list)  # card_standards.Issue as dicts
-    fixed: list = field(default_factory=list)   # the fix lines
-    fix_refused: list = field(default_factory=list)   # (code, why)
     r10: dict = field(default_factory=dict)     # png_check of a pushed PNG
     notes: list = field(default_factory=list)   # (text, told on Discord)
     writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind" (png, psd, recompress), "line"; a redraw: "plain"}
@@ -249,25 +245,17 @@ class Result:
     def name(self) -> str:
         return card_name(self.job.psd)
 
-    def told(self, mode: str = "on") -> list:
-        """The lines the author is told on Discord; in report mode the PNGs the bot would make and the fixable issues
-        too (nothing is made or fixed there). Of a card pushed over an older PSD only the issues new on it (owner
+    def told(self) -> list:
+        """The lines the author is told on Discord. Of a card pushed over an older PSD only the issues new on it (owner
         2026-11-11: the old ones stay in the commit comment), worded without "(new)"."""
         fresh = not self.job.psd_old                # a new card: every issue is new
-        issues = {issue["line"]: issue for issue in self.issues}
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
-        if mode == "report":
-            out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png" and not w.get("silent")]
-        out += [f"{issues[line]['text'] if line in issues else line} (the bot could not fix it: {why})"
-                for line, why in self.fix_refused if fresh or issues.get(line, {}).get("new", True)]
         if self.r10.get("ok") is False and TELL_PNG_MISMATCH:
             out.append(self.r10["line"])
-        out += [issue["text"] for issue in self.issues
-                if issue["discord"] and (issue["told"] or (mode == "report" and issue["fix"] and not issue["waived"]))
-                and (fresh or issue["new"])]
+        out += [issue["text"] for issue in self.issues if issue["discord"] and issue["told"] and (fresh or issue["new"])]
         out += [text for text, discord in self.notes if discord]
         if self.error:
             out.append(self.error_line())
@@ -288,21 +276,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def would_make(case: str, png: str, write: dict) -> str:
-    """Report mode's line for a PNG write the bot would make with CARD_GUARDS=on (nothing is committed there)."""
-    if write["path"] != png:
-        return f"{basename(write['path'])} not updated with the PSD: re-export it in Photoshop"
-    if case == "new":
-        return "no PNG pushed with the new PSD: export it in Photoshop"
-    if case == "rename":
-        return "PNG not renamed with the PSD: rename it too"
-    if write.get("back"):
-        return "the PNG shows an earlier picture of the card: export it again in Photoshop"
-    if write.get("skipped"):
-        return "the PNG does not show the PSD's change: export it again in Photoshop"
-    return "PNG not exported with the PSD: export it in Photoshop"
-
-
 def _key(path: str) -> tuple:
     return dirname(path), splitext(basename(path))[0].lower()
 
@@ -319,19 +292,6 @@ def card_png(path: str) -> bool:
 # ========================
 # The card repo: a local clone, blobs by sha (local first, else the API)
 # ========================
-def font_files(name: str, files: dict) -> list:
-    """The font files (of {file name: sha}) a face's PostScript name looks to be in, likeliest first (FONT_FILES_EACH)."""
-    def norm(text: str) -> str:
-        return sub(r"[^a-z0-9]", "", text.lower())
-    full, family = norm(name), norm(name.split("-")[0])
-    stems = {file: norm(splitext(file)[0]) for file in files}
-    found = [file for file, stem in stems.items()
-             if len(stem) >= 3 and (stem.startswith(family) or family.startswith(stem) or full.startswith(stem))]
-    found.sort(key=lambda file: (stems[file].replace("regular", "") != full.replace("regular", ""),
-                                 abs(len(stems[file]) - len(full)), file))
-    return found[:FONT_FILES_EACH]
-
-
 def fonts_ready() -> None:
     """Returns once FONTS_READY_ENV's mark exists (unset: at once); Transient past FONTS_READY_S."""
     mark, end = environ.get(FONTS_READY_ENV, ""), time() + FONTS_READY_S
@@ -350,46 +310,19 @@ def wait_fonts() -> None:
 class Source:
     """Trees and history from a local clone (never a lazy fetch), blobs from it or the API."""
 
-    def __init__(self, clone: str, repository: str = "", fonts: str = ""):
+    def __init__(self, clone: str, repository: str = ""):
         self.clone, self.repository = clone, repository
         self.logins: dict = {}
-        self.checked: dict = {}                 # the checked tree (fonts_for)
-        self.fonts = fonts                      # where fonts_for puts the font files it fetches ("" fetches none)
-        self._faces: set = set()
-        self._tried: set = set()
+        self.checked: dict = {}                 # the checked tree
 
     def fonts_for(self, names: list) -> str:
-        """MDW/Fonts for R8's box text in the faces names (PostScript): FONT_DIRS_ENV's, the clone's, else self.fonts
-        with only the files those names look to be in (font_files; FONT_FETCH_MAX a run), from the checked tree; "" when
-        a face can't be had (the layer stays Every-line). The clone's once in (fonts_ready)."""
+        """MDW/Fonts for R8's box text and the pixel fixes: FONT_DIRS_ENV's, else the clone's once in (fonts_ready); ""
+        without them (the redraws are left out: the cards stay as pushed until their next push)."""
         checkout = join(self.clone, psd_edit.FONTS_DIR)
         if environ.get(FONT_DIRS_ENV):
             return environ[FONT_DIRS_ENV].split(pathsep)[0]
         fonts_ready()
-        if isdir(checkout) and listdir(checkout):
-            return checkout
-        if not (self.fonts and self.checked):
-            return ""
-        files = tree_fonts({path: sha for path, (_, sha) in self.checked.items()})
-        for name in names:
-            for file in font_files(name, files):
-                if name in self._faces or len(self._tried) >= FONT_FETCH_MAX:
-                    break
-                if file in self._tried:
-                    continue
-                self._tried.add(file)
-                try:
-                    data = self.blob(files[file])
-                    faces = face_names(data)
-                    temp = join(self.fonts, f".{file}.{getpid()}.tmp")     # workers share the folder
-                    with open(temp, "wb") as fh:
-                        fh.write(data)
-                    replace(temp, join(self.fonts, file))
-                except Exception:               # that file left out
-                    print(format_exc(), file=stderr)
-                    continue
-                self._faces.update(faces)
-        return self.fonts if all(name in self._faces for name in names) else ""
+        return checkout if isdir(checkout) and listdir(checkout) else ""
 
     def git(self, *args: str) -> str:
         try:
@@ -1167,25 +1100,21 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
-    if (any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels
-            or standards.folder_issues(new, job.psd, parser)):
+    if standards.composer_layers(new) or pixels or standards.folder_issues(new, job.psd, parser):
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
         fonts.chart = context.chart             # status words
         fonts.hidden = hidden                   # clean's leftovers
-        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=skip)
-        result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
+        fixed = standards.fix(new_bytes, job.psd, join(out, "work"), parser, fonts, skip=skip)
+        result.composer, result.composer_left = fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)
-        lines = {issue.code: issue.line() for issue in issues if issue.fix}
-        result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
         redraws = bool(fixed.rewrapped or fixed.redrawn)
         _collect()                              # before the redraw drops a re-exported PNG's recompression
         redrawn = bool(fixed.data) and redraws and _rewrapped_pngs(out, result, new, fixed, shown, faces)
         data = fixed.plain if redraws and not redrawn else fixed.data
         if data and data != new_bytes:
             file = _save(out, job.psd, data)
-            said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
             composer += [FOLDERS] if fixed.folders else []
             result.redrawn = dict(fixed.redrawn) if redrawn else {}
@@ -1194,14 +1123,14 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             cleaned = fixed.cleaned                 # clean (owner 11-09): silent, no PNG; in plain too (first)
             composer = ([f"{standards.PIXEL_LINES['clean']} ({', '.join(cleaned)})"] if cleaned else []) + composer
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
-                     "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
+                     "line": "; ".join(composer + silent), "silent": True,
                      "composer": bool(fixed.composer), "folders": bool(fixed.folders),
                      "pixels": sorted(result.redrawn) + (["clean"] if cleaned else [])}
             if "tags" in result.redrawn:        # R1 is told only if this write doesn't land with its tags (after_window)
                 write["settles"] = [issue["text"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
-                                  "line": "; ".join(fixed.applied + composer),
+                                  "line": "; ".join(composer),
                                   "pixels": ["clean"] if cleaned else []}   # no redraw: no pixel fix but clean
             result.writes.append(write)
             result.links = _links(source, data, job.psd, write["sha"])
@@ -1467,7 +1396,7 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict, faces=
         write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
         result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]
         if write is None:
-            write = {"path": path, "kind": "png", "line": line, "shown": "", "silent": True}
+            write = {"path": path, "kind": "png", "line": line, "silent": True}
             result.writes.append(write)
         else:
             write["line"] += f"; {line}"
@@ -1486,13 +1415,12 @@ def changes(old, new, parser, fonts=None) -> list:
         return []
 
 
-def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str, earlier: tuple = (),
-                 cores: int = 0) -> None:
+def _init_worker(clone: str, repository: str, context, vocab, tree: dict, earlier: tuple = (), cores: int = 0) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
     wait_fonts()
-    source = Source(clone, repository, fonts)
+    source = Source(clone, repository)
     source.checked = tree
     _worker.update(source=source, context=context, parser=vocab.parser(), earlier=tuple(earlier))
 
@@ -1682,7 +1610,7 @@ def _convert_one(source: Source, entry: dict, ctx: LinkContext, parser, out: str
     fonts.links = ctx
     for redraw in (True, False):
         ctx.redraw = redraw
-        fixed = standards.fix(base, rel, [], join(out, "work"), parser, fonts, only=NORMALISE)
+        fixed = standards.fix(base, rel, join(out, "work"), parser, fonts, only=NORMALISE)
         if not fixed.data:
             return done({"left": "; ".join(why for _, why in fixed.pixel_left) or "nothing to convert"})
         redraws = list(fixed.redrawn.get(NORMALISE) or ())     # card_standards: the layers drawn again
@@ -1717,7 +1645,7 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
     line = standards.PIXEL_LINES.get(NORMALISE, NORMALISE)
     write = next((w for w in entry["writes"] if w["kind"] == "psd" and w["path"] == entry["psd"]), None)
     if write is None:
-        write = {"path": entry["psd"], "kind": "psd", "line": line, "shown": "", "silent": True, "composer": False,
+        write = {"path": entry["psd"], "kind": "psd", "line": line, "silent": True, "composer": False,
                  "pixels": []}
         entry["writes"].append(write)
     else:
@@ -1739,17 +1667,17 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
         entry["writes"] = [w for w in entry["writes"] if not (w["path"] == path and w["kind"] == "recompress")]
         old = next((w for w in entry["writes"] if w["path"] == path and w["kind"] == "png"), None)
         if old is None:
-            old = {"path": path, "kind": "png", "line": f"re-exported for {line}", "shown": "", "silent": True}
+            old = {"path": path, "kind": "png", "line": f"re-exported for {line}", "silent": True}
             entry["writes"].append(old)
         old.update(file=_save(out, path, data), sha=blob_sha(data), composer=True)
 
 
-def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, fonts: str, cores: int = 0) -> None:
+def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, cores: int = 0) -> None:
     token_from_env()
     if cores:
         png_export.use_cores(cores)
     wait_fonts()
-    source = Source(clone, repository, fonts)
+    source = Source(clone, repository)
     source.checked = tree
     ctx.read_blob = source.blob
     _worker.update(source=source, ctx=ctx, parser=vocab.parser())
@@ -1851,7 +1779,7 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
         owner = cards.get(rel, entry)           # a pushed card: its own write carries the relink
         write = next((w for w in owner["writes"] if w["kind"] == "psd" and w["path"] == rel), None)
         if write is None:
-            write = {"path": rel, "kind": "psd", "line": "", "shown": "", "silent": True, "composer": False, "pixels": []}
+            write = {"path": rel, "kind": "psd", "line": "", "silent": True, "composer": False, "pixels": []}
             owner["writes"].append(write)
             owner["expect"].setdefault(rel, tree[rel])
         write["line"] = "; ".join(filter(None, [write.get("line"), f"relinked to {', '.join(kept)}"]))
@@ -1927,7 +1855,7 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
         if len(entries) >= POOL_MIN and workers != 1:
             count = workers or pool_size(len(entries))
             with ProcessPoolExecutor(count, initializer=_init_convert, initargs=(source.clone, source.repository, ctx,
-                                     vocab, source.checked, source.fonts, png_export.share(count))) as pool:
+                                     vocab, source.checked, png_export.share(count))) as pool:
                 done = list(pool.map(_pooled_convert, [(e, out, deadline) for e in entries], chunksize=1))
         else:
             parser = vocab.parser()
@@ -2017,8 +1945,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
     for result in results:
         entry = {"card": result.name, "psd": result.job.psd, "case": result.job.case, "login": result.job.login,
                  "commit": result.job.commit, "export": result.export, "r10": result.r10, "issues": result.issues,
-                 "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
-                 "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
+                 "notes": [t for t, _ in result.notes],
+                 "told": result.told(), "error": result.error, "writes": result.writes, "png": result.job.png,
                  "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed),
                  "composer": result.composer, "composer_left": result.composer_left,
                  "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes,
@@ -2131,8 +2059,7 @@ def _landing(entry: dict, landed: dict) -> list:
 def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[dict] = None) -> str:
     """The job summary and commit comment; with land's report (landed.json), the comment as edited after the quiet window."""
     mode = data["mode"]
-    head = {"dry": "Dry run: nothing is posted or committed.", "report": "Report only (CARD_GUARDS=report): nothing is committed.",
-            "on": "Writes land right after the check, in one bot commit."}[mode]
+    head = {"dry": "Dry run: nothing is posted or committed.", "on": "Writes land right after the check, in one bot commit."}[mode]
     final = landed is not None and not landed.get("dry")
     if final:
         landed = _unsaid(data, landed)
@@ -2168,15 +2095,6 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
         told = [i["line"] for i in entry["issues"] if i["told"]]
         if told:
             out.append("- Issues: " + "; ".join(told))
-        if entry["fixed"]:
-            psd_landed = final and (entry["psd"] in _already(landed, entry["card"]) or (
-                landed.get("sha") and not landed.get("error") and not any(
-                    card == entry["card"] and path == entry["psd"] for card, _, path in landed.get("dropped", []))))
-            verb = ("The bot would fix (CARD_GUARDS=on)" if mode != "on" else "The bot will fix" if not final else
-                    "Fixed by the bot" if psd_landed else "Not fixed by this run" if landed.get("unread") else "Not fixed")
-            out.append(f"- {verb}: " + "; ".join(entry["fixed"]))
-        for line, why in entry["fix_refused"]:
-            out.append(f"- Not fixed: {line} ({why})")
         waived = [f"{i['code']} {i['line']}" for i in entry["issues"] if i["waived"]]
         if waived:
             out.append("- Waived (owner decisions): " + "; ".join(waived))
@@ -2186,7 +2104,7 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
             out += _landing(entry, landed)
         for note in (landed or {}).get("after", {}).get(entry["psd"], []):
             out.append(f"- After the quiet window: {note}")
-        if not (line or told or entry["fixed"] or entry["fix_refused"] or entry["notes"] or entry["r10"] or _shown(entry)):
+        if not (line or told or entry["notes"] or entry["r10"] or _shown(entry)):
             out.append("- Nothing to recompress." if entry.get("case") == "numbered" else "- Meets the standards.")
         out.append("")
     if errors:
@@ -2352,7 +2270,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     early = workers != 1 and len(jobs) < (cpu_count() or 1)       # a core to spare: the pushed PNGs beside (_overlap)
     with _overlap(source, jobs if early and not pooled else ()), TemporaryDirectory(prefix="guard-fonts-") as fonts:
         context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
-        source.fonts, earlier = fonts, ()       # R8's fetched font files, the earlier icon fonts
+        earlier = ()                            # the earlier icon fonts (in fonts)
         if jobs and repository:                 # badge widths: read once for every worker
             try:
                 earlier = tuple(earlier_fonts(source, head, tree, fonts))
@@ -2361,7 +2279,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         if pooled:
             count = workers or pool_size(len(jobs))
             with ProcessPoolExecutor(count, initializer=_init_worker,
-                                     initargs=(clone, repository, context, vocab, tree, fonts, earlier,
+                                     initargs=(clone, repository, context, vocab, tree, earlier,
                                                png_export.share(count))) as pool:
                 results = list(pool.map(_pooled, [(job, out, early) for job in jobs], chunksize=1))
         else:
@@ -2420,18 +2338,16 @@ def convert(plan_path: str, clone: str, repository: str = "", minutes: float = C
     if not head:
         raise Transient(f"the clone has no commit {data['after'][:8]}")
     source.checked = source.tree(head)
-    with TemporaryDirectory(prefix="guard-fonts-") as fonts:
-        source.fonts = fonts
-        convert_plan(data, source, out, minutes, workers, deadline)
+    convert_plan(data, source, out, minutes, workers, deadline)
     _write_plan(data, out)
     return data
 
 
 def _for_comment(entry: dict) -> bool:
     """A card the commit comment has something on: told, written, an error, or comment-only lines (R10, a non-Discord
-    note, a told issue, a fix or a refused one); never a composer fix alone."""
+    note, a told issue); never a composer fix alone."""
     return bool(entry["told"] or _shown(entry) or entry["error"] or entry["notes"] or entry["r10"].get("ok") is False
-                or entry["fixed"] or entry["fix_refused"] or any(issue["told"] for issue in entry["issues"]))
+                or any(issue["told"] for issue in entry["issues"]))
 
 
 def summary(data: dict, errors: list) -> dict:
@@ -2571,7 +2487,7 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     """
     What the one Discord post says after the quiet window (section 7.3), per card PSD: the check's lines, less a card whose
     PSD a person changed again (the later push's own check tells; a bot's change starts no run, so the lines stay) and a
-    PNG refusal, or in report mode a PNG the bot would make, whose PNG was pushed since; plus the writes that did not land
+    PNG refusal whose PNG was pushed since; plus the writes that did not land
     and were not replaced by the author (the bot's commit failed, a later push touched the card). A write the branch
     already holds (a re-run) is not told, nor any write when a re-run could not read the branch (an earlier attempt may
     have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
@@ -2599,11 +2515,6 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
             if here and here(path) != expect.get(path, ""):
                 lines = [line for line in lines if line != why]
                 notes.append(f"{basename(path)} was pushed since: the refusal is withdrawn")
-        if data.get("mode") == "report":
-            for write in entry.get("writes", []):
-                if write["kind"] == "png" and here and not _holds(entry, write["path"], here(write["path"])):
-                    lines = [line for line in lines if line != would_make(entry["case"], png, write)]
-                    notes.append(f"{basename(write['path'])} was pushed since: not told")
         already = _already(landed, entry["card"])
         for write in [] if landed.get("dry") or landed.get("unread") else entry.get("writes", []):
             why = "the bot's commit failed" if landed.get("error") else dropped.get(write["path"], "")
@@ -2613,7 +2524,7 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
                 continue                        # the author replaced that file: nothing to tell
             why = why.replace("superseded: ", "")
             if write["kind"] == "psd":
-                lines.append(f"{write.get('shown', write['line'])} (the bot could not fix it: {why})")
+                lines.append(f"{write['line']} (the bot could not fix it: {why})")
             elif write["path"] == png:
                 lines.append(f"PNG not made: {why}; export it in Photoshop")
             else:
@@ -2652,9 +2563,9 @@ def _read_files(out_dir: str, entries: list) -> dict:
 
 def events_of(entry: dict, write: dict, drawn: list) -> list:
     """
-    A landed write's changelog events: guard-png for a PNG made, re-exported or recompressed, guard-fix for a PSD fix the
-    comment may say or a pixel fix (card_standards.PIXEL_LINES); the Single-line Composer and its rewrap alone, none
-    (owner, 2026-10-25). drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
+    A landed write's changelog events: guard-png for a PNG made, re-exported or recompressed, guard-fix for a PSD's
+    pixel fixes (card_standards.PIXEL_LINES); the Single-line Composer and its rewrap alone, none (owner, 2026-10-25).
+    drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
     """
     base = {"card": entry["card"], "path": write["path"]}
     if write["kind"] in ("file", "delete", "font") or write.get("dup"):     # linked files, fonts, duplicates: silent
@@ -2667,8 +2578,7 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
         if write.get("silent"):                 # a redraw's PNG: told only for the pixel fixes it carries
             return [{"kind": "guard-png", **base, "line": "re-exported for " + " and ".join(pixels)}] if pixels else []
         return [{"kind": "guard-png", **base, "line": write["line"].split(REDRAW, 1)[0]}]
-    said = [part for part in (write.get("shown") or "").split("; ") if part] + pixels
-    return [{"kind": "guard-fix", **base, "line": "; ".join(said)}] if said else []
+    return [{"kind": "guard-fix", **base, "line": "; ".join(pixels)}] if pixels else []
 
 
 def _renames_at(renames: dict, tip: Snapshot, payload: dict) -> dict:
@@ -2703,7 +2613,7 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
     its card no longer holds the blobs it rests on (a PSD fix rests on its PSD alone, a PNG on the whole card; any letter
     case; an R8 redraw lands plain without its PNGs); a write the branch already holds (a re-run after a landing) is not
     written again. The rest is one commit on the branch head (retried on a moved head, COMMIT_TRIES times); --local
-    commits in that clone instead (nothing pushed). dry_run (report mode) commits nothing. Never raises once the plan is
+    commits in that clone instead (nothing pushed). dry_run commits nothing. Never raises once the plan is
     read: any failure is the error.
     rerun (a re-run or a dispatch: an earlier run may have landed the writes): when the branch could not be read, no
     write is told as not made ("unread").
@@ -2846,7 +2756,7 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--cards", default="", metavar="NAMES", help="only these cards (comma separated, matched like Card Authors.txt)")
     one.add_argument("--whole-tree", action="store_true", help="every card PSD at --after: standards and PNG-vs-PSD")
     one.add_argument("--mode", default="dry", choices=MODES, type=str.lower,
-                     help="dry, report or on (CARD_GUARDS, any case): the report's wording")
+                     help="dry or on (CARD_GUARDS, any case): the report's wording")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: every core on a runner, else half the cores, at most 4)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
     one.add_argument("--convert", default="later", choices=CONVERTS,
@@ -2868,7 +2778,7 @@ def main(args: Optional[list] = None) -> int:
     if options.command == "land" and not (options.dry_run or options.local):
         with open(options.plan, encoding="utf-8") as fh:
             planned = load(fh).get("mode", "dry")
-        if planned != "on":                     # a dry or report check must never reach the branch
+        if planned != "on":                     # a dry check must never reach the branch
             cli.error(f"the plan was checked with --mode {planned}: land commits only an `on` plan (pass --dry-run, or --local DIR)")
     token_from_env()
     if options.command == "check":

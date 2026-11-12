@@ -1,11 +1,10 @@
 """
-commands/card_check.py offline: the clone's ground-truth cards through check_files and the CLI, --all on a tmp checkout
-with the clone's Types/ names and a synthetic edits file, cards as plain CardInfo objects for the edits and --repo paths
-(a fake GitHub), the Discord payload (the guards' checkout runs it: test_card_guards.py).
+commands/card_check.py offline: the clone's ground-truth cards through check_files and the CLI, cards as plain CardInfo
+objects for the edits and --repo paths (a fake GitHub), the Discord payload (the guards' checkout runs it:
+test_card_guards.py).
 """
 import json
 import re
-import shutil
 from pathlib import Path
 from subprocess import run as run_process
 
@@ -14,7 +13,7 @@ import pytest
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import Reply, at_rev, blob_sha_bytes as _sha, smallest
+from conftest import Reply, at_rev, blob_sha_bytes as _sha
 from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
@@ -173,52 +172,6 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
     assert "Nothing to report." in capsys.readouterr().out and json.loads(disc.read_text(encoding="utf-8")) == {}
 
 
-def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
-    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers Computer Virus's note; MDW/, Markers/ and .git/ are skipped."""
-    root = tmp_path / "repo"
-    cards = ["Auxiliary/Minions/God_Tamer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd", "Creatures/Kirby/3 Stars/Pix.psd",
-             "Auxiliary/Minions/Mini_Doomer.psd",
-             "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"]
-    for rel in cards:
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        if rel in OLD:                                                          # God Tamer with its note
-            (root / rel).write_bytes(old_blob(clone, rel))
-        else:
-            (root / rel).symlink_to(clone / rel)
-    names = [p.name for p in (clone / "Types").iterdir() if p.is_file() and not p.name.startswith(".")]
-    text = edits({"Computer Virus": {"problems_ok": True}})
-    fake_root(root, {"MDW/Templates/Creature_Template.psd": b"", "Auxiliary/Markers/M.psd": b"", ".git/x.psd": b"", "Items/note.txt": b""},
-              types=names, edits_text=text)
-    assert cc.card_psds(str(root)) == [(rel, str(root / rel)) for rel in sorted(cards)]
-    out = tmp_path / "r.json"
-    assert cc.main(["--all", str(root), "--json", str(out)]) == 0
-    text = capsys.readouterr().out
-    assert "5 card PSDs read." in text and '- `Auxiliary/Minions/God_Tamer.psd` (Someone): no stars (group them in "Stars")\n' in text
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["cards"] == [{"path": "Auxiliary/Minions/God_Tamer.psd", "author": "Someone", "notes": [NO_STARS]}] and data["errors"] == []
-    (root / "site" / "Card Edits.json").unlink()                                 # without the edits the two notes come back
-    report = cc.check_checkout(str(root))
-    assert {c.path: c.notes for c in report.cards} == {
-        "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
-        "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS]}
-
-
-def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
-    """--all from POOL_MIN PSDs parses in a process pool (a parser per worker): the same report as the sequential path."""
-    n = cc.POOL_MIN
-    psds = smallest(clone, "Auxiliary/Minions", n)
-    root = tmp_path / "repo"
-    for path in psds:
-        link = root / path.relative_to(clone)
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(path)
-    shutil.copytree(clone / "Types", root / "Types")
-    pooled = cc.check_checkout(str(root))
-    monkeypatch.setattr(cc, "POOL_MIN", n + 1)
-    sequential = cc.check_checkout(str(root))
-    assert pooled.as_dict() == sequential.as_dict() and pooled.checked + len(pooled.errors) == n
-
-
 def test_unreadable_psd_is_one_line_and_exit_0(tmp_path, capsys):
     root = fake_root(tmp_path / "repo", {"Items/Heal/1 Stars/Bad.psd": b"not a psd"})
     (tmp_path / "Lone.psd").write_bytes(b"not a psd")
@@ -251,14 +204,13 @@ def test_discord_payload_wording():
 
 def test_one_standards_post_per_push():
     """standards_post (owner 2026-11-11): the guards' lines, the card check's new notes and the font check's new fonts in
-    one post, a line per card in path order with its commit (the head's when the guards name none), a note both checks
-    tell once (layer ids: the guards' wording, stars: the card check's), the role pinged only for a missing font and kept
-    when lines are cut."""
+    one post, a line per card in path order with its commit (the head's when the guards name none), the role pinged only
+    for a missing font and kept when lines are cut."""
     from commands.standards_post import payload
     ids = "layers share an id (7): Photoshop's Duplicate Layer gives a new one"
-    plan = {"cards": [{"card": "A", "psd": "X/A.psd", "login": "netverk", "commit": "1" * 40, "told": [ids, "the stars are not in a group named Stars"],
-                       "issues": [{"code": "R13", "text": ids}, {"code": "R6", "text": "the stars are not in a group named Stars"}]}]}
-    checks = {"cards": [{"path": "X/A.psd", "author": "netverk", "notes": ["DUPLICATE LAYER IDS", NO_STARS], "new": ["DUPLICATE LAYER IDS", NO_STARS]},
+    plan = {"cards": [{"card": "A", "psd": "X/A.psd", "login": "netverk", "commit": "1" * 40, "told": [ids],
+                       "issues": [{"code": "R13", "text": ids}]}]}
+    checks = {"cards": [{"path": "X/A.psd", "author": "netverk", "notes": [NO_STARS], "new": [NO_STARS]},
                         {"path": "X/B.psd", "author": "bob", "notes": [NO_STATS], "new": []}]}
     fonts = {"cards": [{"path": "X/C.psd", "author": "bob", "missing": {"Futura": ["Name"]}, "new": ["Futura"]}]}
     post = payload("o/r", "f" * 40, plan=plan, card_check=checks)
@@ -296,8 +248,8 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     a, b, c, d, d0 = b"psd-a", b"psd-b", b"psd-c", b"psd-d", b"psd-d0"
     fake_cards[a] = lambda r: creature(r, defense=4, attack=5, speed=6)             # HP NOT FOUND, answered by the edits
     fake_cards[b] = lambda r: creature(r, card_type="item", problems=[NO_STARS])
-    fake_cards[d] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS", "UNKNOWN ICON TOKEN: fier"])
-    fake_cards[d0] = lambda r: creature(r, 1, 1, 1, 1, problems=["DUPLICATE LAYER IDS"])
+    fake_cards[d] = lambda r: creature(r, 1, 1, 1, 1, problems=["ICON TOKEN NOT IN STOOGEDINGS FONT: bolt", "UNKNOWN ICON TOKEN: fier"])
+    fake_cards[d0] = lambda r: creature(r, 1, 1, 1, 1, problems=["ICON TOKEN NOT IN STOOGEDINGS FONT: bolt"])
     psds = {"a": a, "Creatures/Kirby/3 Stars/A.psd": a, "Items/Heal/1 Stars/B.psd": b, "N.M.E/C.psd": c, "Creatures/D.psd": d}
     tree, blobs = tree_and_blobs(edits({"A": {"hp": 5}}), psds)
     before, _ = tree_and_blobs(edits({}), {"a": a, "Creatures/Kirby/3 Stars/A.psd": b"psd-a0", "Creatures/D.psd": d0})
@@ -319,14 +271,14 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--author", "pusher", "--json", str(out), "--discord", str(disc)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["cards"] == [
-        {"path": "Creatures/D.psd", "author": "alice", "notes": ["DUPLICATE LAYER IDS", "UNKNOWN ICON TOKEN: fier"], "new": ["UNKNOWN ICON TOKEN: fier"]},
+        {"path": "Creatures/D.psd", "author": "alice", "notes": ["ICON TOKEN NOT IN STOOGEDINGS FONT: bolt", "UNKNOWN ICON TOKEN: fier"], "new": ["UNKNOWN ICON TOKEN: fier"]},
         {"path": "Items/Heal/1 Stars/B.psd", "author": "pusher", "notes": [NO_STARS], "new": [NO_STARS]}]
     assert data["checked"] == 3 and data["errors"] == [f"N.M.E/C.psd: blob {_sha(c)[:8]} hashes to {_sha(b'garbage')[:8]}"]
     assert fake.blob_calls() == 7                                   # the manifest, the edits file, four card PSDs, D's old one
     assert any(u.endswith("/git/trees/c2?recursive=1") for u in fake.calls) and any(f"/git/trees/{'b' * 40}?" in u for u in fake.calls)
     text = capsys.readouterr().out
     assert '- `Items/Heal/1 Stars/B.psd` (pusher): no stars (group them in "Stars")\n' in text and "A.psd" not in text
-    assert "- `Creatures/D.psd` (alice): duplicate layer IDs; unknown icon fier\n" in text         # the comment: every note
+    assert "- `Creatures/D.psd` (alice): not in stoogedings: bolt; unknown icon fier\n" in text         # the comment: every note
     payload = json.loads(disc.read_text(encoding="utf-8"))
     assert payload["content"].splitlines() == ["alice pushed D: unknown icon fier. [c2](https://github.com/o/r/commit/c2)",
                                                'pusher pushed B: no stars (group them in "Stars"). [c2](https://github.com/o/r/commit/c2)']

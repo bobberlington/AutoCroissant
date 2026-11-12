@@ -5,10 +5,10 @@ card-guards.yml runs it on every push to main that touches a PSD (card-check.yml
 comment, and its notes the push made new (a pushed PSD's before the push lacked; owner 2026-11-11) in the standards
 channel's one post (standards_post), no ping.
 
-    python -m commands.card_check [--psd <path>...] [--all <checkout root>]
+    python -m commands.card_check [--psd <path>...]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
                                    [--clone <dir>]] [--json <out>] [--discord <payload out>]
-    card_notes(parser, edits, psd, rel) -> one card's notes; check_files / check_checkout / check_blobs -> Report
+    card_notes(parser, edits, psd, rel) -> one card's notes; check_files / check_blobs -> Report
     markdown(report), discord_payload(report) -> the job summary / commit comment and this check's part of the post
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
@@ -16,20 +16,18 @@ NO STATS FOUND ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), afte
 the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD with variant tags: each picture's ("A Snack2:
 ..."). A notification, never a
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
---psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
-parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
-from the tree at --after; --clone: the guards' clone first, so each PSD is fetched once for the three checks; with
+--psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --repo
+reads the pushed PSDs by blob sha (Types/, the manifest and the edits file from the tree at --after; --clone: the
+guards' clone first, so each PSD is fetched once for the three checks; with
 --before, each card's notes its PSD before the push lacked are its "new" ones, font_check.old_blobs). No Discord
 or config imports (the token: config through github_api, else GITHUB_TOKEN); the guards' checkout
 (card_guards.SPARSE_FILES) holds its import closure.
 """
 from argparse import ArgumentParser
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from json import dump, loads
-from os import cpu_count, remove, walk
+from os import remove, walk
 from os.path import abspath, basename, dirname, isdir, isfile, join, relpath, splitext
-from sys import stderr
 from tempfile import mkstemp
 from typing import Optional
 
@@ -37,11 +35,9 @@ from psd_tools import PSDImage
 
 from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase
-from commands.font_check import API_TIMEOUT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, old_blobs, \
-    pushed_files, tree_blobs
+from commands.font_check import API_TIMEOUT, NOBODY, is_card_psd, old_blobs, pushed_files, tree_blobs
 from commands.github_api import blob_text, fetch_verified, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
-from commands.psd_remote import RemotePSD
 from commands.standards_post import payload, short
 from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
@@ -49,7 +45,6 @@ from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 # Configuration
 # ========================
 UNREADABLE = "could not be read"
-_worker: tuple = ()                         # (parser, edits) of a pool worker, built once by _init_worker
 
 
 # ========================
@@ -226,7 +221,7 @@ def discord_payload(report: Report, repository: str = "", after: str = "") -> di
 
 
 # ========================
-# Sources: files, a checkout, the GitHub API
+# Sources: files, the GitHub API
 # ========================
 def _record(report: Report, rel: str, author: str, notes: list) -> None:
     report.checked += 1
@@ -286,74 +281,17 @@ def check_files(paths: list, author: str = NOBODY) -> Report:
     return report
 
 
-def card_psds(root: str) -> list:
-    """(repo path, file path) of every card PSD under a checkout, in path order; MDW/ and Markers/ left out like the traverser."""
-    found = []
-    for folder, subdirs, files in walk(root):
-        subdirs[:] = sorted(d for d in subdirs if d not in EXCLUDE_FOLDERS and d != ".git")
-        for name in sorted(files):
-            rel = relpath(join(folder, name), root).replace("\\", "/")
-            if is_card_psd(rel):
-                found.append((rel, join(folder, name)))
-    return found
-
-
-def _init_worker(vocab: Vocabulary, edits: Optional[CardEdits]) -> None:
-    global _worker
-    _worker = (vocab.parser(), edits)
-
-
-def _notes_of(item: tuple) -> tuple:
-    """(rel, file path) -> (notes, None) or (None, the error text) in a pool worker."""
-    rel, path = item
-    try:
-        return card_notes(_worker[0], _worker[1], path, rel), None
-    except Exception as e:                      # one bad PSD never stops the check
-        return None, str(e)
-
-
-def check_checkout(root: str) -> Report:
+def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], clone: str = "",
+                olds: Optional[dict] = None) -> Report:
     """
-    Every card PSD under a checkout, with its Types/ and edits file.
-
-    Args:
-        root: The checkout
-
-    Returns:
-        Report; from POOL_MIN PSDs the parses run in a process pool (half the cores), merged in path order
-    """
-    report = Report()
-    vocab, edits = clone_vocabulary(root), clone_edits(root, report.errors)
-    found = card_psds(root)
-    if len(found) < POOL_MIN:
-        parser = vocab.parser()
-        for rel, path in found:
-            _check_one(report, parser, edits, rel, NOBODY, path)
-        return report
-    workers = max(1, min((cpu_count() or 2) // 2, -(-len(found) // POOL_CHUNK)))
-    with ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(vocab, edits)) as pool:
-        for (rel, _), (notes, error) in zip(found, pool.map(_notes_of, found, chunksize=POOL_CHUNK)):
-            if error is not None:
-                report.errors.append(f"{rel}: {UNREADABLE} ({error})")
-            else:
-                _record(report, rel, NOBODY, notes)
-    return report
-
-
-def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], ref: str = "",
-                clone: str = "", olds: Optional[dict] = None) -> Report:
-    """
-    PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser). With ref (the
-    pushed commit) and a psd-tools that reads lazily, a PSD is read by range requests at ref instead: only what the
-    parser reads is fetched; one that fails that way is read whole. With clone: whole blobs, its object store first and
-    kept filled (the guards' clone: they read each pushed PSD whole anyway).
+    PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser). With clone:
+    its object store first and kept filled (the guards' clone: they read each pushed PSD whole anyway).
 
     Args:
         repository: owner/name
         psds: {path: (blob sha, author)}
         parser: PSDParser with the tree's vocabulary
         edits: The tree's edits file, or None
-        ref: The commit the PSDs are at ("": whole blobs)
         clone: A clone read first and kept filled (github_api.fetch_verified)
         olds: {path: its blob before the push, "" for a new card} (font_check.old_blobs): each card's new notes
 
@@ -361,16 +299,9 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
         Report
     """
     report = Report()
-    ranges = bool(ref) and not clone
     for path in sorted(psds):
         sha, author = psds[path]
         cards = len(report.cards)
-        if ranges:
-            notes = _ranged_notes(repository, ref, path, parser, edits)
-            if notes is not None:
-                _record(report, path, author, notes)
-                _mark_new(report, cards, repository, parser, edits, sha, olds, clone)
-                continue
         try:
             data = fetch_verified(repository, sha, timeout=API_TIMEOUT, clone=clone)
         except Exception as e:                  # a failed download is an error line
@@ -412,37 +343,21 @@ def _mark_new(report: Report, cards: int, repository: str, parser: PSDParser, ed
     card.new = [note for note in card.notes if note not in before]
 
 
-def _ranged_notes(repository: str, ref: str, path: str, parser: PSDParser, edits: Optional[CardEdits]) -> Optional[list]:
-    """One PSD's notes from range reads at ref; None when they failed or the PSD raised (the whole blob decides)."""
-    remote = None
-    try:
-        remote = RemotePSD(repository, ref, path)
-        notes = card_notes(parser, edits, remote.psd, path)
-        return None if remote.failed else notes
-    except Exception as e:
-        print(f"{path}: range reads failed ({e}); reading it whole", file=stderr)     # stdout is the report
-        return None
-    finally:
-        if remote is not None:
-            remote.close()
-
-
 # ========================
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """The command line: files, a checkout or the API; the markdown on stdout, --json and --discord files when asked."""
+    """The command line: files or the API; the markdown on stdout, --json and --discord files when asked."""
     cli = ArgumentParser(prog="python -m commands.card_check",
                          description="What the bot's parser and validator note about card PSDs (the lines /update_stats prints). "
                                      "Reports, never rejects: findings exit 0.")
     cli.add_argument("--psd", nargs="*", default=[], metavar="PATH", help="PSD files to check (each in the checkout of its nearest ancestor holding Types/)")
-    cli.add_argument("--all", default="", metavar="ROOT", help="every card PSD under a checkout (MDW/ and Markers/ excluded)")
     cli.add_argument("--repo", default="", metavar="OWNER/NAME", help="read the pushed PSDs by blob sha through the GitHub API")
     cli.add_argument("--before", default="", metavar="SHA", help="the push's previous head (github.event.before); empty: --after's own files")
     cli.add_argument("--after", default="", metavar="SHA", help="the push's head (github.sha)")
     cli.add_argument("--author", default=NOBODY, metavar="LOGIN", help="who to name when a commit's author has no login (github.actor)")
     cli.add_argument("--whole-tree", action="store_true", help="with --repo: every card PSD of the tree at --after (~813 blob downloads, 16 GB)")
-    cli.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first (no range reads); fetched ones are kept in it")
+    cli.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first; fetched ones are kept in it")
     cli.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
     cli.add_argument("--discord", default="", metavar="OUT", help="write this check's part of the standards post here ({} when nothing to tell)")
     options = cli.parse_args(args)
@@ -458,12 +373,10 @@ def main(args: Optional[list] = None) -> int:
             else:
                 psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author, options.clone)
                 olds = old_blobs(options.repo, options.before, psds, options.clone, notes)
-            report = check_blobs(options.repo, psds, parser, edits, options.after, options.clone, olds)
+            report = check_blobs(options.repo, psds, parser, edits, options.clone, olds)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, notes = Report(), [f"GitHub API: {e}"]
         report.errors = errors + report.errors + notes
-    elif options.all:
-        report = check_checkout(options.all)
     else:
         report = check_files(options.psd, options.author)
     print(markdown(report), end="")
@@ -489,9 +402,7 @@ __all__ = [
     'UNREADABLE',
     'Vocabulary',
     'card_notes',
-    'card_psds',
     'check_blobs',
-    'check_checkout',
     'check_files',
     'checkout_root',
     'clone_edits',

@@ -1,8 +1,8 @@
 """
 The standards channel's one post per push (owner 2026-11-11): the guards' lines (card_guards), the card check's notes
 (card_check) and the font check's missing fonts (font_check) in one message, one line per card with its commit link,
-a note two checks tell (TWINS) once; the Development role pinged only when a font is missing. Each check reports only
-what the push made new on a card (the old notes stay in its commit comment and job summary). Stdlib only:
+the Development role pinged only when a font is missing. Each check reports only what the push made new on a card
+(the old notes stay in its commit comment and job summary). Stdlib only:
 TTSCardMaker's card-guards.yml runs it in its tell job on the runner's own python3 (no venv there).
 
     python3 -m commands.standards_post --repo <owner/name> --after <sha> [--plan plan.json [--landed landed.json]]
@@ -24,11 +24,9 @@ SHORT = (                                   # a card check note's start -> what 
     ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),
     ("SPD NOT FOUND", "no SPD bar"), ("UNKNOWN ICON TOKEN: ", "unknown icon "),
     ("UNKNOWN ICON CHARACTER: ", "unknown icon character "), ("ICON TOKEN NOT IN STOOGEDINGS FONT: ", "not in stoogedings: "),
-    ("ICON TOKEN PARTLY IN STOOGEDINGS FONT: ", "partly in stoogedings: "), ("DUPLICATE LAYER IDS", "duplicate layer IDs"),
+    ("ICON TOKEN PARTLY IN STOOGEDINGS FONT: ", "partly in stoogedings: "),
     ("EFFECT LAYER WITHOUT TEXT LAYER: ", "FX layer without its text: "), ("EFFECT LAYER WORDS NOT IN TEXT: ", "FX words not in the text: "),
     ("EFFECT LAYER OUT OF DATE: ", "FX layer out of date: "))
-# a card check note and the guards issue telling the same thing: (note start, issue code, the wording kept)
-TWINS = (("NO STARS FOUND", "R6", "check"), ("DUPLICATE LAYER IDS", "R13", "guards"))
 ROLE_ID = "546427268751294475"              # the card makers' role, pinged for a missing font (owner 2026-10-23)
 FONT_NOTE = "the {font} font is not in MDW/Fonts ({layers}), bite this user"    # the owner's wording, per card
 DISCORD_LIMIT = 2000
@@ -56,12 +54,6 @@ def short(note: str) -> str:
     return note
 
 
-def _twin(note: str, start: str) -> bool:
-    """A card check note (or a variant's "A Snack2: " one) starting so."""
-    split = note.find(": ")
-    return note.startswith(start) or (split > 0 and note[split + 2:].startswith(start))
-
-
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
@@ -78,13 +70,13 @@ def payload(repository: str, after: str, plan: Optional[dict] = None, landed: Op
     Args:
         repository: owner/name (the commit links)
         after: The push's head (a card's link when no commit of its own is known; the overflow's link)
-        plan: The guards' plan.json (a card's "told" lines, its issues' codes, login and commit)
+        plan: The guards' plan.json (a card's "told" lines, login and commit)
         landed: land's landed.json: its "told" replaces the plan's (what stood after the landing)
         card_check: card_check's --json report (a card's "new" notes, else all of its notes)
         font_check: font_check's --json report (a card's "new" fonts, else all of its missing ones)
     """
     url = f"https://github.com/{repository}/commit/"
-    cards: dict = {}                            # psd path -> {login, commit, card, guards: [(text, code)], check, fonts}
+    cards: dict = {}                            # psd path -> {login, commit, card, guards: [text], check, fonts}
 
     def card(path: str, name: str = "", login: str = "", commit: str = "") -> dict:
         one = cards.setdefault(path, {"login": "", "commit": "", "card": name or card_name(path),
@@ -97,9 +89,8 @@ def payload(repository: str, after: str, plan: Optional[dict] = None, landed: Op
         path = entry.get("psd") or entry.get("card", "")
         if not path:
             continue
-        codes = {issue.get("text"): issue.get("code") for issue in entry.get("issues", [])}
-        card(path, entry.get("card", ""), entry.get("login", ""), entry.get("commit", ""))["guards"] += [
-            (line, codes.get(line, "")) for line in told.get(path, entry.get("told", []))]
+        card(path, entry.get("card", ""), entry.get("login", ""), entry.get("commit", ""))["guards"] += told.get(
+            path, entry.get("told", []))
     for one in (card_check or {}).get("cards", []):
         notes = one.get("new", one.get("notes", []))
         if notes:
@@ -112,14 +103,7 @@ def payload(repository: str, after: str, plan: Optional[dict] = None, landed: Op
     lines, ping = [], False
     for path in sorted(cards):
         one = cards[path]
-        guards, check = list(one["guards"]), list(one["check"])
-        for start, code, kept in TWINS:         # told by both: once
-            if any(_twin(note, start) for note in check) and any(c == code for _, c in guards):
-                if kept == "check":
-                    guards = [(text, c) for text, c in guards if c != code]
-                else:
-                    check = [note for note in check if not _twin(note, start)]
-        notes = [text for text, _ in guards] + [short(note) for note in check] + [
+        notes = one["guards"] + [short(note) for note in one["check"]] + [
             FONT_NOTE.format(font=font, layers=", ".join(layers)) for font, layers in one["fonts"]]
         notes = [note.rstrip(".") for note in dict.fromkeys(notes) if note]
         if not notes:
@@ -192,7 +176,6 @@ __all__ = [
     'LINE',
     'ROLE_ID',
     'SHORT',
-    'TWINS',
     'card_name',
     'main',
     'payload',
