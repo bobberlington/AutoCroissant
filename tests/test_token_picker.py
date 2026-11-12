@@ -91,3 +91,22 @@ def _icons(bs, monkeypatch, root, tree, out):
     monkeypatch.setattr(bs, "CACHE", str(out / ".cache"))
     return bs.build_icons(tree)
 
+
+
+def test_icons_get_a_68_px_copy(bs, tmp_path, monkeypatch):
+    """Each icon is a 96 px WebP plus <name>.<stamp>.68.webp beside it (grid.js iconSet's srcset), both from the PNG; a
+    cache with only the 96 px one (before 11-11) gets the 68 px one alone."""
+    from PIL import Image
+    root = tmp_path / "repo"
+    (root / "Types").mkdir(parents=True)
+    Image.new("RGBA", (300, 150), (220, 60, 20, 255)).save(root / "Types" / "fire.png")
+    tree = {"Types/fire.png": "ab" * 20}
+    big = tmp_path / "dist" / _icons(bs, monkeypatch, root, tree, tmp_path)[0]["fire"]["file"]
+    small = big.with_name(big.name.replace(".webp", ".68.webp"))
+    assert (Image.open(big).size, Image.open(small).size) == ((96, 48), (68, 34))
+    cached = {p.name: p.stat().st_mtime_ns for p in (tmp_path / ".cache" / "icons").iterdir()}
+    for p in (tmp_path / ".cache" / "icons").glob("*.68.webp"):
+        p.unlink()
+    _icons(bs, monkeypatch, root, tree, tmp_path)
+    assert {p.name: p.stat().st_mtime_ns for p in (tmp_path / ".cache" / "icons").iterdir() if not p.name.endswith(".68.webp")} \
+        == {k: v for k, v in cached.items() if not k.endswith(".68.webp")} and small.is_file()
