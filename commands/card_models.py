@@ -195,17 +195,16 @@ class StatsDatabase:
                     del self.old_stats[name]
         return bool(names)
 
-    def prune_clean_cards(self, at: float) -> tuple:
+    def prune_clean_cards(self, at: float) -> list:
         """
         Archive the cards not in seen_cards (their PSD left the card repo; an alt-art duplicate whose PNG or original
-        left, its tag at its own PNG): each moves to old_stats behind its earlier versions, tagged `archived`. The same
-        pass tags the untagged last versions of names gone from stats before archiving existed (backfill).
+        left, its tag at its own PNG): each moves to old_stats behind its earlier versions, tagged `archived`.
 
         Args:
             at: The run's time (epoch seconds), kept in each tag
 
         Returns:
-            (archived names, backfilled names), each sorted
+            The archived names, sorted
         """
         seen = set(self.seen_cards)
         archived = [name for name in self.stats if name not in seen]
@@ -219,17 +218,7 @@ class StatsDatabase:
                 versions[len(versions) - 1] = card
             else:
                 versions.append(card)
-
-        backfilled = []
-        for name, versions in self.old_stats.items():
-            if not versions or name in self.stats or name in seen:
-                continue
-            last = versions[len(versions) - 1]
-            if not self.archive_tag(name) and not getattr(last, "duplicate_of", None) and not getattr(last, "variant_of", None):
-                last.archived = _archive_tag(last, at)
-                last.archived["backfill"] = True
-                backfilled.append(name)
-        return (sorted(archived), sorted(backfilled))
+        return sorted(archived)
 
 
 def duplicate_png(card: CardInfo) -> str:

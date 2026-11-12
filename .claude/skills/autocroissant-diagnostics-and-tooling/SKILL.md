@@ -173,7 +173,7 @@ $P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py \
 ```
 known types (35): ['active', 'attack', ... 'water', 'wind']
                        ^- 35 since 2026-10-19. Before that, a macOS .DS_Store leaked in and
-                          the count was 36 (fixed: _populate_types_from_local skips dotfiles).
+                          the count was 36 (fixed: the clone vocabulary skips dotfiles).
 relative path: Auxiliary/Minions/Mini_Doomer.psd     <- computed CORRECTLY by this script
 --------------------------------------------------------------------------------
 type        : minion

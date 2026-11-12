@@ -406,7 +406,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 
 - **Symptom**: local type population (`_populate_types_from_local`) listed `.ds_store` as a type. Harmless, since
   no layer is named that, but it polluted `all_types`.
-- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:212 after the split, card_data.py:301 from 2026-10-22, :208 on 2026-10-25, in `_populate_types_from_local`, which the diagnostics scripts still use).
+- **Fix**: `if not file.startswith('.')` (psd_analyzer.py:1079 on 2026-10-19; 1502 on 2026-10-20 and repo_traverser.py:212 after the split, card_data.py:301 from 2026-10-22, :208 on 2026-10-25, in `_populate_types_from_local`; removed 2026-11-12: make_goldens and the diagnostics read `card_check.clone_vocabulary`).
 - **Verified**: the 2026-10-19 sandboxed local sweep (Entry 1) ran through this code with 0 type differences.
 
 ### 10.4 `update_stats()` Python default force-reparsed everything (was C9)
@@ -527,7 +527,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   at the owner's request, that file left main for its own local branch, `archive/local-update-stats`
   (commit e2835a7 on a7a4bb3); main has no `archive/` folder. The offline
   helpers `_populate_types_from_local` and `_icons_from_local` stayed in psd_analyzer.py (repo_traverser.py since the split, card_data.py since 2026-10-22) for parse_one.py and
-  gap_trace.py. In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:44; removed 2026-10-25, 8a1e629):
+  gap_trace.py (both gone by 2026-11-12: they read `card_check.clone_vocabulary`). In analytics.py, `SCHEDULED_DEFAULTS` (Entry 10.1) became `RETIRED_OPTIONS` (analytics.py:44; removed 2026-10-25, 8a1e629):
   stored reminders drop the two options at load (`REMINDER_VERSION` 2 → 3) and at fire time, pre-v2
   positional values are mapped by the old option order first, and a new reminder naming one gets a
   "Dropped ..." note instead of an error.
@@ -563,7 +563,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   scratch venv lacked). grep finds no remaining references.
 - **Kept on purpose** (reachable, or used by tooling): gap/type injection (fallback for cards not in the icon font),
   `RETIRED_OPTIONS` and the reminder migration (removed 2026-10-25), `_populate_types_from_local`/`_icons_from_local` (diagnostics
-  scripts), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features (AI later moved off main, 10.16).
+  scripts; both gone by 2026-11-12), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features (AI later moved off main, 10.16).
   `analytics.parse_time_str` (a one-line public wrapper of `_parse_when`, written in the rewrite and uncalled) was
   left in place as a candidate, and deleted in the 2026-10-20 code-health pass.
 

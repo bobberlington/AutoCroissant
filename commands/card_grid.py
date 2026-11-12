@@ -25,14 +25,7 @@ CACHE_DIR = "card_images"                                # gitignored: <blob>.jp
 POOL = 4                                                 # parallel downloads
 
 
-def _font():
-    try:
-        return ImageFont.load_default(FONT_SIZE)         # FreeType's scalable default (Pillow >= 10.1)
-    except (TypeError, OSError, ImportError):
-        return ImageFont.load_default()
-
-
-FONT = _font()
+FONT = ImageFont.load_default(FONT_SIZE)                # FreeType's scalable default
 
 
 # ========================

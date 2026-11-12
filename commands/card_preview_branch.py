@@ -5,7 +5,7 @@ retried on a moved head; when the branch would hold more than KEEP previews or o
 orphan with the KEEP_AFTER newest under DAYS_AFTER old (pushed with a lease). Also result.json's blank shape and clean(),
 which keeps a dispatched value on one line of the job's log.
 
-    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote <name or url>] [--png]
+    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote <name or url>]
     python -m commands.card_preview_branch --warm [--git <checkout>] [--remote <name or url>]
 
 --warm reads the branch while the job waits for the preview: publish's first try then builds on that head, no network
@@ -38,8 +38,7 @@ SPARSE_FILES = ("commands/card_preview_branch.py", "commands/repo_history.py", "
 REQUEST = re_compile(r"[A-Za-z0-9-]{8,64}")     # the client's id: a path on the branch (card-preview.yml checks it too)
 MAX_CARD = 200                                  # characters of a card input (longer: an input error, kept clipped)
 RESULT, PNG = "result.json", "preview.png"
-SMALLS = {"AVIF": ("preview.avif", "before.avif"), "WEBP": ("preview.webp", "before.webp")}   # by card_preview's codec
-SMALL, BEFORE = SMALLS["AVIF"]                  # 720 px; before: the card's PNG before the edit, made as SMALL (the Diff's)
+SMALL, BEFORE = "preview.avif", "before.avif"  # 720 px; before: the card's PNG before the edit, made as SMALL (the Diff's)
 STATES = ("baked", "redundant", "refused", "error")
 VERSION = 1                                     # result.json's and index.json's "v"
 BRANCH = "previews"
@@ -56,7 +55,7 @@ IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissa
 BREAKS = ("Cc", "Zl", "Zp")                     # control characters and line or paragraph separators
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
                  "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.avif` and "
-                 "`before.avif` (the card before the edit, for the Diff; `.webp` from a Pillow without AVIF); "
+                 "`before.avif` (the card before the edit, for the Diff); "
                  "`index.json` lists them. One commit per preview; rewritten as one fresh commit when it holds more "
                  f"than {KEEP} previews or one older than {DAYS.days} days. Never merged into main.\n")
 
@@ -212,8 +211,7 @@ def _result_of(out: str, request: str) -> dict:
     return result
 
 
-def publish(out: str, request: str, where: str = ".", remote: str = "origin", png: bool = False,
-            now: Optional[datetime] = None) -> dict:
+def publish(out: str, request: str, where: str = ".", remote: str = "origin", now: Optional[datetime] = None) -> dict:
     """
     One commit on the previews branch with previews/<request>/ and its index row, on warm()'s head if it ran, then on
     the branch's head (TRIES times from a moved head); a rewrite as a fresh orphan commit when kept() says so, pushed
@@ -225,7 +223,6 @@ def publish(out: str, request: str, where: str = ".", remote: str = "origin", pn
         where: A checkout of the card repo (its git and credentials; blobless is enough); nothing in it moves but LOCAL_REF
             (warm() moves WARM_REF)
         remote: Its remote name or a URL
-        png: Publish preview.png too (the workflow does not: the site shows SMALL)
 
     Returns:
         {"commit", "parent" (None for an orphan), "rewritten", "kept", "dropped", "result"}; raises Unpublished when no
@@ -235,7 +232,7 @@ def publish(out: str, request: str, where: str = ".", remote: str = "origin", pn
         raise ValueError("the request must be 8-64 of A-Z a-z 0-9 -")
     result = _result_of(out, request)
     files = {}
-    for name in [n for pair in SMALLS.values() for n in pair] + ([PNG] if png else []):
+    for name in (SMALL, BEFORE):
         if name in (result.get("files") or {}).values() and isfile(join(out, name)):
             with open(join(out, name), "rb") as fh:
                 files[name] = fh.read()
@@ -291,7 +288,6 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--request", help="the client's id (8-64 of A-Z a-z 0-9 -)")
     parser.add_argument("--git", default=".", help="a checkout of the card repo (its git and credentials)")
     parser.add_argument("--remote", default="origin", help="its remote (name or URL)")
-    parser.add_argument("--png", action="store_true", help=f"publish {PNG} too")
     parser.add_argument("--warm", action="store_true", help="only read the branch, for a publish later (no --out or --request)")
     options = parser.parse_args(argv[1:] if args is None else args)
     if not options.warm and (options.out is None or options.request is None):
@@ -301,7 +297,7 @@ def main(args: Optional[list] = None) -> int:
             head = warm(options.git, options.remote)
             print(f"Read `{BRANCH}` at `{head[:8]}`." if head else f"No `{BRANCH}` branch yet.")
             return 0
-        done = publish(options.out, options.request, options.git, options.remote, options.png)
+        done = publish(options.out, options.request, options.git, options.remote)
     except (ValueError, Unpublished) as error:  # a bad request, or no push landed
         print(f"card_preview_branch: not {'read' if options.warm else 'published'}: {clean(error, 2000)}", file=stderr)
         return 1

@@ -5,7 +5,7 @@ of deleted cards; db/links.json, every PSD's links and the linked files' blobs (
 
 The build (`python -m commands.card_data`, run by the card repo's Card sync Action): a local clone's tree and history,
 db/ JSON through card_db, versions only on data changes (card_history), changelog events and the gates. CardBuild is the
-parse and its REST blob source (the diagnostics use it alone); GitBuild adds the clone. Design:
+parse and its REST blob source; GitBuild adds the clone. Design:
 docs/Campaigns/DATA_BUILD_ACTION.md (sections 7 and 13).
 """
 from argparse import ArgumentParser
@@ -19,14 +19,14 @@ from hashlib import sha1
 from io import BytesIO
 from json import dumps as json_dumps, loads as json_loads
 from multiprocessing import get_context
-from os import environ, fdopen, remove, walk
+from os import environ, fdopen, remove
 from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
 from pickle import dumps as pickle_dumps, loads as pickle_loads
 from subprocess import CalledProcessError, run
 from sys import version_info
 from tempfile import mkstemp
 from threading import Lock, active_count, local
-from typing import Callable, Optional
+from typing import Optional
 
 from psd_tools import PSDImage
 from requests.exceptions import RequestException
@@ -112,23 +112,17 @@ def _fork_read(path: str, name: str, sha: str, given: dict) -> tuple:
 class CardBuild:
     """
     One build over the card repo: the parse, its details and the REST blob source (_blob, _repo_text, _download).
-    GitBuild reads a local clone for the tree, the dates and the authors; the diagnostics use this class alone for its
-    vocabulary and parser.
+    GitBuild reads a local clone for the tree, the dates and the authors.
 
     Args:
         db: The database it updates in place
-        report: One message (default print)
-        progress: The running parse count (default: PROGRESS printed)
     """
-    def __init__(self, db: StatsDatabase, report: Optional[Callable] = None, progress: Optional[Callable] = None):
+    def __init__(self, db: StatsDatabase):
         self.db = db
-        self.report = report or print
-        self.progress = progress or (lambda count: print(PROGRESS.format(count=count)))
         self.file_cache: dict = {}               # repo path -> (blob sha, text) of the small files read by REST
         self.parser: Optional[PSDParser] = None
         self.edits: Optional[CardEdits] = None
         self.edits_unread = False                # Card Edits.json is in the tree but was not read (5xx, bad JSON)
-        self.changed = 0                         # cards changed without a re-parse (authors, edits, duplicates)
         self.failed = 0                          # failed downloads and PSDs: retried next run
         self.failed_new = 0                      # of those, PSDs of names not in stats (maybe a rename): no prune
         self.unreadable: list = []               # PSDs that raised while read: {path, blob, error}; their cards keep their data
@@ -146,7 +140,6 @@ class CardBuild:
         self.details: dict = {}                  # blob sha -> psd_details record (db/psd_details.json)
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self.restored: list = []                 # archived cards whose PSD is back
-        self.returned: list = []                 # archived names back under another PSD (path and blob): new cards
         self.renamed_from: dict = {}             # new name -> the listed name its PSD renames (parsed with that card)
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the history)
@@ -215,79 +208,60 @@ class CardBuild:
         from commands.psd_details import VERSION  # lazy: traverse_remote loaded it
         return record.get("version") != VERSION   # gathered before a VERSION bump: read again once, like a parser bump
 
-    def traverse_remote(self,
-                        repository: str,
-                        output_problematic: bool = True,
-                        force_update: bool = False) -> tuple[list[str], int]:
+    def traverse_remote(self, repository: str, force_update: bool = False) -> None:
         """
         The tree, the changed PSDs, then authors, edits and duplicates.
 
         Args:
             repository: Repository name (owner/repo)
-            output_problematic: Whether to collect the validator's problem cards
             force_update: Re-parse every card even if its PSD did not change
-
-        Returns:
-            (formatted problem card messages, cards changed or moved)
         """
         self.repository = repository
-        resp = self._fetch_tree(repository)
-        self.tree = resp.json()                         # parsed once; the helpers below read it
+        self.tree = self._fetch_tree()                  # read once; the helpers below read it
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
         self.sizes = {item.get("path", ""): item.get("size") for item in self.tree.get("tree", []) if item.get("type") == "blob"}
         from commands import psd_details                # lazy: fontTools loads here
         self.font_index = psd_details.font_index(self.tree)     # this repo's MDW/Fonts
 
-        self._populate_types_from_response(resp)
-        self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
+        self._populate_types_from_response()
+        self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response())
         self.parser.linked = self._file_bytes           # a placed title's file (Gust of Wind's blurred names)
 
-        self.edits = self._edits_from_response(resp, repository)
+        self.edits = self._edits_from_response()
         self.dup_pngs = self._dup_pngs()                # before the parse's workers fork
-        problems, num_changed = self._process_files_from_response(resp, repository, output_problematic, force_update)
-        authors = self._authors_from_response(resp, repository)
-        self.changed += self._apply_authors(authors)
-        self.changed += self._apply_edits()
-        self.changed += self._variant_duplicates()
-        self.changed += self._sync_duplicates(resp)
-        self.changed += self._apply_edits()             # the duplicates' own edits
-        dates = self._dates_from_response(resp, repository)
-        self.changed += self._apply_dates(dates)
+        self._process_files_from_response(force_update)
+        authors = self._authors_from_response()
+        self._apply_authors(authors)
+        self._apply_edits()
+        self._variant_duplicates()
+        self._sync_duplicates()
+        self._apply_edits()                             # the duplicates' own edits
+        dates = self._dates_from_response()
+        self._apply_dates(dates)
         self._unmatched(authors, dates)
         if self.failed:
             self._send_failures()
-        return (problems, num_changed)
 
-    def _tree_items(self, response) -> list:
-        """The tree's entries: self.tree once traverse_remote parsed it, else the response's."""
-        return (self.tree if self.tree is not None else response.json()).get("tree", [])
+    def _tree_items(self) -> list:
+        """The tree's entries (traverse_remote read the tree)."""
+        return (self.tree or {}).get("tree", [])
 
-    def _populate_types_from_response(self, response) -> None:
+    def _populate_types_from_response(self) -> None:
         """Populate card types from the tree."""
         self.db.all_types.clear()
-        for item in self._tree_items(response):
+        for item in self._tree_items():
             path = item.get("path", "")
             if path.startswith(TYPES_DIR) and "Stars" not in path and '.' in path:
                 self.db.all_types.append(splitext(basename(path))[0].lower())
-
-    def _populate_types_from_local(self, local_path: str) -> None:
-        """Populate card types from a local clone (offline diagnostics; the build reads the tree)."""
-        self.db.all_types.clear()
-        types_dir = path_join(local_path, TYPES_DIR)
-        for folder, _, files in walk(types_dir):
-            if folder.endswith(TYPES_DIR):
-                for file in files:
-                    if not file.startswith('.'):
-                        self.db.all_types.append(splitext(file)[0].lower())
 
     @staticmethod
     def _star_name(path: str) -> str:
         """Types/Stars/Dst Star.png -> "dst_star" (the name the icon font uses)."""
         return splitext(basename(path))[0].lower().replace(" ", "_")
 
-    def _icons_from_response(self, response, repository: str) -> IconVocabulary:
+    def _icons_from_response(self) -> IconVocabulary:
         """Icon vocabulary from the GitHub tree: Types/ and Types/Stars/ names plus the font's manifest, if any."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
+        paths = [item.get("path", "") for item in self._tree_items()]
         stars = [self._star_name(p) for p in paths if p.startswith(STARS_DIR + "/") and p.lower().endswith(".png")]
         manifest = None
         if ICON_MANIFEST_PATH in paths:
@@ -300,9 +274,9 @@ class CardBuild:
                 print(f"Could not read {ICON_MANIFEST_PATH}, icon aliases and codepoints unavailable: {e}")
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
-    def _authors_from_response(self, response, repository: str) -> Optional[CardAuthors]:
+    def _authors_from_response(self) -> Optional[CardAuthors]:
         """The card repo's authors file (AUTHORS_PATH), or None if missing or unreadable."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
+        paths = [item.get("path", "") for item in self._tree_items()]
         path = AUTHORS_PATH if AUTHORS_PATH in paths else None
         if path is None:
             return None
@@ -328,9 +302,9 @@ class CardBuild:
             print(f"{changed} authors set from {AUTHORS_PATH}.")
         return changed
 
-    def _edits_from_response(self, response, repository: str) -> Optional[CardEdits]:
+    def _edits_from_response(self) -> Optional[CardEdits]:
         """The card repo's website fixes (EDITS_PATH), or None if missing or unreadable."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
+        paths = [item.get("path", "") for item in self._tree_items()]
         path = EDITS_PATH if EDITS_PATH in paths else None
         self.edits_unread = False
         if path is None:
@@ -345,7 +319,7 @@ class CardBuild:
             print(f"Could not read {path}; edits stay as they are: {e}")
             return None
 
-    def _sync_duplicates(self, response) -> int:
+    def _sync_duplicates(self) -> int:
         """
         Duplicates: a card PNG with no PSD whose Card Edits.json entry has dup_of (Stubborn_Queen.png, build_site's
         rule; numbered PNGs are variant pictures since the 5 PSDs were tagged). Each is recorded as a
@@ -353,7 +327,7 @@ class CardBuild:
         guarded prune archives it like any card; with Card Edits.json unread, one whose PNG and original are still
         there stays as it is (its dup_of can't be read). Returns how many entries changed.
         """
-        paths = [item.get("path", "") for item in self._tree_items(response)]
+        paths = [item.get("path", "") for item in self._tree_items()]
         found = duplicate_pngs(paths, self.db.stats, self.edits)
         before = {n: repr(c) for n, c in self.db.stats.items()
                   if getattr(c, "duplicate_of", None) and not getattr(c, "variant_of", None)}
@@ -426,9 +400,9 @@ class CardBuild:
             print(f"{changed} cards changed by {EDITS_PATH} or straight apostrophes.")
         return changed
 
-    def _dates_from_response(self, response, repository: str) -> Optional[CardDates]:
+    def _dates_from_response(self) -> Optional[CardDates]:
         """The card repo's creation dates (CREATED_PATH), or None if missing or unreadable."""
-        paths = [item.get("path", "") for item in self._tree_items(response)]
+        paths = [item.get("path", "") for item in self._tree_items()]
         path = CREATED_PATH if CREATED_PATH in paths else None
         if path is None:
             return None
@@ -467,13 +441,13 @@ class CardBuild:
                   f"(python -m commands.card_dates created): {', '.join(missing[:10])}")
         return changed
 
-    def _card_psds(self, response) -> list:
+    def _card_psds(self) -> list:
         """The tree's card PSDs (excluded folders and rule pages left out: the rulebook is site/rulebook's chapters since
         2026-10-29), one per card name: of two PSDs with one name the stored
         card's path stays (else the first in tree order) and the other is ignored, one line each (a clash would
         otherwise flip the card between them and add a version at every run)."""
         items, by_name = [], {}
-        for item in self._tree_items(response):
+        for item in self._tree_items():
             path = item.get("path", "")
             parts = path.split('/')
             if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in parts):
@@ -489,15 +463,15 @@ class CardBuild:
             keep = next((item for item in found if item.get("path") == stored), found[0])
             others = [item.get("path", "") for item in found if item is not keep]
             skipped.update(others)
-            self.report(f"Two PSDs share the card name {name}: {', '.join(item.get('path', '') for item in found)}; "
-                        f"{', '.join(others)} ignored until one is renamed.")
+            print(f"Two PSDs share the card name {name}: {', '.join(item.get('path', '') for item in found)}; "
+                  f"{', '.join(others)} ignored until one is renamed.")
         return [item for item in items if item.get("path", "") not in skipped]
 
-    def _todo(self, response, force_update: bool) -> tuple[list, int]:
+    def _todo(self, force_update: bool) -> tuple[list, int]:
         """The tree's card PSDs to re-parse (path, name, blob) and how many stay; archived names back are restored, a
         listed card's PSD under a new name is a rename (renamed_from)."""
         todo, num_old = [], 0
-        items = self._card_psds(response)
+        items = self._card_psds()
         names = {card_name(item.get("path", "")) for item in items}
         gone: dict = {}                                 # blob -> a listed name gone from the tree
         for listed, card in self.db.stats.items():
@@ -511,9 +485,6 @@ class CardBuild:
             self.db.seen_cards.extend(getattr(self.db.stats.get(name), "variants", None) or [])   # until a re-parse says
             if name not in self.db.stats and self.db.restore(name, path, item.get("sha")):  # same blob: no download
                 self.restored.append(name)
-                self.changed += 1
-            elif name not in self.db.stats and self.db.archive_tag(name):
-                self.returned.append(name)              # another PSD under an archived name: a new card, history kept
             if name not in self.db.stats:
                 old = gone.get(item.get("sha")) or self._art_renamed(path, names)
                 if old:
@@ -525,15 +496,10 @@ class CardBuild:
                 num_old += 1
         return (todo, num_old)
 
-    def _process_files_from_response(self,
-                                     response,
-                                     repository: str,
-                                     output_problematic: bool,
-                                     force_update: bool) -> tuple[list[str], int]:
+    def _process_files_from_response(self, force_update: bool) -> None:
         """Re-parse the PSDs whose blob changed (all with force_update). Unchanged cards cost no requests."""
-        problematic_cards = []
         num_updated = num_changed = num_moved = 0
-        todo, num_old = self._todo(response, force_update)
+        todo, num_old = self._todo(force_update)
 
         self.raw_ref = self._raw_ref() if todo and range_reads() else ""
         if todo:
@@ -634,16 +600,11 @@ class CardBuild:
                     self.edits.apply(name, card)
                     straighten_card(card)
                 self.db.stats[name] = card
-
-                if output_problematic:
-                    problems = CardValidator.validate(card)
-                    if problems:
-                        problematic_cards.append((path, card, problems))
-                self._store_variants(name, old, card, path, sha, timestamp, author, problematic_cards if output_problematic else None)
+                self._store_variants(name, old, card, path, sha, timestamp, author)
 
                 num_updated += 1
                 if num_updated % UPDATE_RATE == 0:
-                    self.progress(num_updated)
+                    print(PROGRESS.format(count=num_updated))
         finally:
             for _, task in ahead:
                 task.cancel()
@@ -653,11 +614,10 @@ class CardBuild:
         if self.ranged:
             print(f"{len(self.ranged)} PSDs read by range requests at {self.raw_ref[:8]}: "
                   f"{sum(self.ranged) / 1e6:.1f} MB fetched.")
-        self.report(f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
-        return (self._format_problems(problematic_cards), num_changed + num_moved)
+        print(f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
 
     def _store_variants(self, name: str, old: Optional[CardInfo], card: CardInfo, path: str, sha: str, timestamp: float,
-                        author: Optional[str], problematic: Optional[list]) -> None:
+                        author: Optional[str]) -> None:
         """A tagged PSD's variants 2..N as their own cards (variant_of the card); variants the PSD no longer has go."""
         found = self.variant_cards.pop(name, [])
         dropped = set(getattr(old, "variants", None) or []) - {v.name for v in found}
@@ -673,10 +633,6 @@ class CardBuild:
                 self.edits.apply(variant.name, variant)
             self.db.stats[variant.name] = variant
             self.db.seen_cards.append(variant.name)
-            if problematic is not None:
-                problems = CardValidator.validate(variant)
-                if problems:
-                    problematic.append((path, variant, problems))
 
     def _dup_pngs(self) -> dict:
         """card_edits.dup_pictures of the tree; Card Edits.json unread: the stats' duplicates whose PNG is in the tree."""
@@ -920,28 +876,18 @@ class CardBuild:
         unread, unlooked = len(self.unreadable), len(self.unlooked)
         downloads = self.failed - unread - unlooked
         if unlooked:
-            self.report(f"Could not date {unlooked} PSD{'' if unlooked == 1 else 's'} ("
-                        + ", ".join(self.unlooked[:10]) + (", ..." if unlooked > 10 else "") + "); "
-                        + ("its card keeps its" if unlooked == 1 else "their cards keep their")
-                        + " last version and the next run tries again.")
+            print(f"Could not date {unlooked} PSD{'' if unlooked == 1 else 's'} ("
+                  + ", ".join(self.unlooked[:10]) + (", ..." if unlooked > 10 else "") + "); "
+                  + ("its card keeps its" if unlooked == 1 else "their cards keep their")
+                  + " last version and the next run tries again.")
         if downloads:
-            self.report(f"Could not download {downloads} file{'' if downloads == 1 else 's'} from the card repo; "
-                        "the next run tries again.")
+            print(f"Could not download {downloads} file{'' if downloads == 1 else 's'} from the card repo; "
+                  "the next run tries again.")
         if unread:
-            self.report(f"Could not read {unread} PSD{'' if unread == 1 else 's'} from the card repo ("
-                        + ", ".join(u["path"] for u in self.unreadable) + "); "
-                        + ("its card keeps its" if unread == 1 else "their cards keep their")
-                        + " last version and the next run tries again.")
-
-    @staticmethod
-    def _format_problems(
-        problematic_cards: list[tuple[str, CardInfo, list[str]]]
-    ) -> list[str]:
-        """Format problematic cards for display."""
-        return [
-            f"{path}\n```\n" + '\n'.join(problems) + "\n```"
-            for path, _, problems in problematic_cards
-        ]
+            print(f"Could not read {unread} PSD{'' if unread == 1 else 's'} from the card repo ("
+                  + ", ".join(u["path"] for u in self.unreadable) + "); "
+                  + ("its card keeps its" if unread == 1 else "their cards keep their")
+                  + " last version and the next run tries again.")
 
 
 # ========================
@@ -1298,15 +1244,6 @@ def ls_tree(repo: str, head: str) -> dict:
     return {"sha": _git(repo, "rev-parse", f"{head}^{{tree}}").strip(), "tree": items, "truncated": False}
 
 
-class _TreeReply:
-    """The tree as the traversal's helpers take it (json())."""
-    def __init__(self, tree: dict):
-        self._tree = tree
-
-    def json(self) -> dict:
-        return self._tree
-
-
 class GitBuild(CardBuild):
     """
     The build's source: a full clone of the card repo (git ls-tree and cat-file, never a lazy fetch) and its GitIndex.
@@ -1314,15 +1251,13 @@ class GitBuild(CardBuild):
     intro and a new card's author the first commit's at its path (card_history).
     """
     def __init__(self, db: StatsDatabase, checkout: str, head: str = "HEAD", index=None, blobs: str = "",
-                 budget: int = BUDGET, **kwargs):
+                 budget: int = BUDGET):
         from commands.card_history import GitIndex
-        super().__init__(db, **kwargs)
+        super().__init__(db)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
         self.head = _git(checkout, "rev-parse", head).strip()
         self.at = float(_git(checkout, "log", "-1", "--format=%ct", self.head).strip())   # not show: a merge diffs (blobs)
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
-        self.pushed = self.head                  # a commit on GitHub with head's other PSDs: range reads there
-        self.pushed_blobs = None                 # path -> blob at pushed when that is not head (a bake's parent)
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
         self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
@@ -1331,8 +1266,8 @@ class GitBuild(CardBuild):
         self._rate_held: set = set()
         self._stores: dict = {}                  # blob -> store that has it
 
-    def _fetch_tree(self, repository: str):
-        return _TreeReply(ls_tree(self.checkout, self.head))
+    def _fetch_tree(self) -> dict:
+        return ls_tree(self.checkout, self.head)
 
     def _store(self, sha: str) -> str:
         """The local object store that has this blob ("" when none)."""
@@ -1359,8 +1294,8 @@ class GitBuild(CardBuild):
             return run(["git", "-C", store, "cat-file", "blob", sha], capture_output=True, env={**environ, **NO_LAZY}).stdout
         return super()._file_bytes(path)
 
-    def _todo(self, response, force_update: bool) -> tuple[list, int]:
-        todo, num_old = super()._todo(response, force_update)
+    def _todo(self, force_update: bool) -> tuple[list, int]:
+        todo, num_old = super()._todo(force_update)
         kept = []
         for path, name, sha in todo:
             known = self.failed_before.get((path, sha))
@@ -1396,18 +1331,13 @@ class GitBuild(CardBuild):
         return True
 
     def _raw_ref(self) -> str:
-        if self.pushed != self.head:
-            try:
-                self.pushed_blobs = {item["path"]: item["sha"] for item in ls_tree(self.checkout, self.pushed)["tree"]}
-            except CalledProcessError as e:
-                print(f"Range reads off this run: no tree at {self.pushed[:8]} ({e})")
-                return ""
-        return self.pushed
+        """The commit for range reads: head (on GitHub)."""
+        return self.head
 
     def _fetch_psd(self, path: str, sha: str):
-        """A blob the clone has is read there; others by range reads at pushed when it has that blob at the path, else
-        whole through REST (both within the budget)."""
-        if self._store(sha) or (self.pushed_blobs is not None and self.pushed_blobs.get(path) != sha):
+        """A blob the clone has is read there; others by range reads at head, else whole through REST (both within the
+        budget)."""
+        if self._store(sha):
             return self._download(path, sha)
         return super()._fetch_psd(path, sha)
 
@@ -1654,8 +1584,7 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
 
 def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", empty: bool = False,
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
-          dry_run: bool = False, restore: str = "", builder_ref: str = "",
-          baked: bool = False, own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
+          restore: str = "", builder_ref: str = "", own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
           guard_docs: Optional[list] = None, records: Optional[list] = None) -> Outcome:
     """
     One build (design section 7.1): db/ before, the tree and index from git, the
@@ -1674,10 +1603,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         allow_archive: Lift G2
         budget: REST downloads at most
         run_url: The Actions run (manifest, commit message)
-        dry_run: Build and report, write nothing
         restore: A data commit whose db/ becomes the current one again
         builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
-        baked: head is the run's local bake commit B (a push of its own, by the card sync)
         own: Comma-separated main commits the card sync pushed (the bake's M): their pushes are the card sync's
         verdicts: The bake's verdicts for db/verdicts.json ({key: verdict, or None to remove}; card_db.merge_verdicts)
         side: The bake's events (baked, bake-refused), each with its commit (M) when it has one
@@ -1691,8 +1618,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     from commands import changelog, psd_details
     from commands.card_db import check_db, read_db, round_trip_problems, write_db
     from commands.font_check import fonts_report
-    from commands.card_history import (Refined, allows_high, close_archived, date_archive, kept_values, out_of_range,
-                                       record_versions, unchecked, unknown_values)
+    from commands.card_history import close_archived, date_archive, kept_values, record_versions
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
@@ -1728,8 +1654,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     archived_before = _archived(before, before_old)
     details_before = len(details)
 
-    if baked:
-        run_build.pushed = _git(checkout, "rev-parse", f"{head}^").strip()   # B is local; its other PSDs are its parent's
     run_build.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
     run_build.again = set(pending_before.get("stale") or [])  # held by the last run's budget: read now
     run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}
@@ -1742,32 +1666,31 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         render, spot = merge_records(render, spot, [], psds, record_moves(index, psds))   # renamed PSDs keep theirs
         set_records(render, spot)                             # before the parse
         run_build.again |= set(spot) - had                    # spot entries moved in: their details read again
-        run_build.traverse_remote(repository, True, full)
+        run_build.traverse_remote(repository, full)
         found = {p: run_build._repo_text(p) for p in run_build.shas if p.startswith(RULEBOOK_SRC + "/") and p.endswith(".md")}
         book = rulebook.rulebook_text(rulebook.chapters({p: t for p, t in found.items() if t is not None}))
         pruning = can_prune(run_build)
-        gone, backfilled = db.prune_clean_cards(run_build.at) if pruning else ([], [])
+        gone = db.prune_clean_cards(run_build.at) if pruning else []
         if pruning:
-            date_archive(db.stats, db.old_stats, index, Refined())
+            date_archive(db.stats, db.old_stats, index)
             for name in gone:                               # a new card with its blob this run: a rename
                 tag = db.old_stats[name][len(db.old_stats[name]) - 1].archived
                 if not tag.get("renamed_to") and run_build.new_blobs.get(tag.get("blob") or ""):
                     tag["renamed_to"] = run_build.new_blobs[tag["blob"]]
-            close_archived(db.old_stats, list(gone) + list(backfilled), index)
+            close_archived(db.old_stats, list(gone), index)
         edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
         record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
         links = gather_links(run_build, links_before)
         colors = status_colors(run_build, colors_before)
         run_build.duplicate_versions()
         db.drop_stale_archives()
-        impossible = unknown_values(db.stats, db.old_stats)        # a replaced misparse's values: unknown in history
         if run_build.font_index is not None:
             psd_details.refill(details, run_build.font_index)
         keep = set(run_build.shas.values()) | {c.archived["blob"] for c in db.archived().values() if c.archived.get("blob")}
         keep |= {c.blob_sha for c in db.stats.values() if getattr(c, "blob_sha", None)}
         psd_details.prune(details, keep)
     else:
-        gone, impossible = [], []
+        gone = []
     if run_build.lost:                                    # a 5xx or rate limit: red, nothing written, the next run retries
         if beside is not None:
             beside.stop()
@@ -1801,8 +1724,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         for push in listed:                               # GITHUB_TOKEN's push: listed as github-actions[bot]
             if push["after"] in mine:
                 push["by"] = changelog.CARD_SYNC
-        new_events = changelog.assign_pushes(new_events, listed, commits, base,
-                                             ({run_build.head} if baked else set()) | mine, guards)
+        new_events = changelog.assign_pushes(new_events, listed, commits, base, mine, guards)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -1820,15 +1742,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     bad = round_trip_problems(db.stats, db.old_stats)
     if bad:
         out.refused["G3"] = f"records change through a round trip: {', '.join(bad[:10])}"
-    wrong = sorted({n for n, versions in db.old_stats.items() for v in versions
-                    if unchecked(v) and out_of_range(v, allows_high(n, db.stats.get(n)))})
-    if wrong:                                             # the range check on history (unknown_values leaves none)
-        out.refused["G3"] = "; ".join(filter(None, [out.refused.get("G3"), f"history values out of range: {', '.join(wrong[:10])}"]))
 
     kinds = [e["kind"] for e in new_events]
     out.counts = {"cards": len(db.stats), "versions": sum(len(v) for v in db.old_stats.values()),
                   "archived": len(db.archived()), "details": len(details), "changed": kinds.count("changed"),
-                  "new": kinds.count("new"), "failed": run_build.failed + len(run_build.still_failed), "baked": 0}
+                  "new": kinds.count("new"), "failed": run_build.failed + len(run_build.still_failed)}
     failed = sorted([{"path": u["path"], "blob": u["blob"], "error": u["error"], "parser_version": PARSER_VERSION}
                      for u in run_build.unreadable] + run_build.still_failed, key=lambda f: f["path"])
     stale = sorted(run_build.stale)
@@ -1841,7 +1759,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out.lines = [_plain_line(e) for e in numbered] + ([measured] if measured else [])
     out.manifest = {
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
-        "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at, "main_commit": None,
+        "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at,
         "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
                     "details_version": psd_details.VERSION, "psd_tools": _version("psd-tools"),
                     "python": ".".join(map(str, version_info[:2]))},
@@ -1850,24 +1768,19 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                                                                    ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
                                                                    ("types_tree", TYPES_DIR), ("fonts_tree", "MDW/Fonts"))},
         "counts": out.counts,
-        "pending": {"stale": stale, "failed": failed, "full": still, "repin": []},
+        "pending": {"stale": stale, "failed": failed, "full": still},
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
         "restored_from": restore or None, "fonts": fonts_report(details, db.stats)}       # the bot's /fonts
     if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
         for key in ("card_commit", "card_commit_at", "inputs"):
             out.manifest[key] = restored_manifest.get(key, out.manifest[key])
         kept = restored_manifest.get("pending") or {}
-        out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None, "repin": []}
-    if impossible:
-        out.lines.append(f"History values out of range set to unknown: {len(impossible)} "
-                         f"({', '.join(sorted({n for n, _, _ in impossible}))})")
+        out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None}
     kept = kept_values(db.stats, db.old_stats)
     if kept:                                              # read by parser 2: kept until an allow_high_stats entry
         out.lines.append(f"History values out of range kept (an allow_high_stats entry allows them): {', '.join(kept)}")
     if out.refused:
         out.code = EXIT_GATE
-        return out
-    if dry_run:
         return out
     tip = _remote_tip(db_dir)
     if tip is not None and tip != data_head and not _checks_only(db_dir, data_head):
@@ -2067,70 +1980,6 @@ def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: O
     return out
 
 
-def rewrite_commit(db_dir: str, checkout: str, old: str, new: str, message: str = "") -> dict:
-    """
-    Stage 4's B-to-M rewrite: the run's local bake commit B became main commit M (the same card files plus the save),
-    so every reference to B in db/ (version starts and ends, PNG pins, archive tags, card dates, the events, their
-    push and the manifest) becomes M, B's time M's. The manifest gains main_commit, counts.baked (the PSDs B changed)
-    and pending.repin (the PNGs B changed: their save links are pinned by the next run). The data commit's message
-    file, if given, names M too.
-
-    Returns:
-        The manifest written
-    """
-    from commands import changelog, psd_details
-    from commands.card_db import read_db, write_db
-    old, new = _git(checkout, "rev-parse", old).strip(), _git(checkout, "rev-parse", new).strip()
-    old_at = float(_git(checkout, "log", "-1", "--format=%ct", old).strip())
-    new_at = float(_git(checkout, "log", "-1", "--format=%ct", new).strip())
-    stats, old_stats, details, manifest = read_db(db_dir)
-
-    def fix(card) -> None:
-        info = getattr(card, "version", None) or {}
-        for sha_key, at_key in (("from_commit", "from"), ("to_commit", "to")):
-            if info.get(sha_key) == old:
-                info[sha_key], info[at_key] = new, new_at
-        if info.get("png_commit") == old:
-            info["png_commit"] = new
-        if info.get("from_commit") == new and card.timestamp == old_at:
-            card.timestamp = new_at                  # a card baked in the run is dated by M
-        tag = getattr(card, "archived", None)
-        if tag and tag.get("commit") == old:
-            tag["commit"], tag["at"] = new, new_at
-    for card in stats.values():
-        fix(card)
-    for versions in old_stats.values():
-        for card in versions:
-            fix(card)
-    for card in stats.values():                      # a duplicate keeps its original's date
-        original = stats.get(getattr(card, "duplicate_of", None) or "")
-        if original is not None:
-            card.timestamp = original.timestamp
-
-    def fix_event(event: dict) -> dict:
-        for key in ("card_commit", "commit"):
-            if event.get(key) == old:
-                event[key] = new
-        push = event.get("push") or {}
-        if push.get("after") == old:
-            push.update(after=new, at=new_at, by=changelog.CARD_SYNC)
-        return event
-    changelog.rewrite_events(db_dir, fix_event)
-    changed = [line.split("\t", 1) for line in _git(checkout, "diff-tree", "--no-commit-id", "-r", "--name-status", old).splitlines()]
-    if manifest.get("card_commit") == old:
-        manifest["card_commit"], manifest["card_commit_at"] = new, new_at
-    manifest["main_commit"] = new
-    manifest.setdefault("counts", {})["baked"] = sum(1 for _, path in changed if path.lower().endswith(".psd"))
-    manifest.setdefault("pending", {})["repin"] = sorted(path for status, path in changed
-                                                          if path.lower().endswith(".png") and status != "D")
-    if message and isfile(message):
-        with open(message, encoding="utf-8") as fh:
-            text = fh.read()
-        with open(message, "w", encoding="utf-8") as fh:
-            fh.write(text.replace(old, new).replace(old[:8], new[:8]))
-    return write_db(db_dir, stats, old_stats, psd_details.text_of(details), manifest)
-
-
 def _text(folder: str, name: str) -> Optional[str]:
     path = path_join(folder, name)
     if not isfile(path):
@@ -2220,9 +2069,7 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--run", default="", help="the Actions run URL (manifest, commit message)")
     parser.add_argument("--builder-ref", default="", help="the AutoCroissant ref of this builder (manifest)")
     parser.add_argument("--summary", default="", help="write the job summary (Markdown) here")
-    parser.add_argument("--message", default="", help="write the data commit's message here (--rewrite: names M in it)")
-    parser.add_argument("--dry-run", action="store_true", help="build and report; write no db/")
-    parser.add_argument("--baked", action="store_true", help="--head is the run's local bake commit (its own push)")
+    parser.add_argument("--message", default="", help="write the data commit's message here")
     parser.add_argument("--own", default="", metavar="SHA", help="main commits the card sync pushed (comma separated): "
                                                                   "their pushes are the card sync's")
     parser.add_argument("--verdicts", default="", metavar="FILE", help="the bake's verdicts ({\"cards\": {key: verdict or "
@@ -2231,24 +2078,17 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--guard-events", default="", metavar="FILE", help="the guards' guard-events.json files (a JSON list)")
     parser.add_argument("--records", default="", metavar="FILE", help="records read off PSDs before a rewrite (a JSON list of "
                                                                        "{\"render\", \"spot\"}, oldest first) for db/")
-    parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
-                                                                        "become main commit M (after the main push)")
     args = parser.parse_args(argv)
     from commands.github_api import token_from_env
     token_from_env()
     try:
-        if args.rewrite:
-            manifest = rewrite_commit(args.db, args.checkout, args.rewrite[0], args.rewrite[1], args.message)
-            print(f"db/ now names {manifest['main_commit'][:8]} for {args.rewrite[0][:8]}; "
-                  f"{len(manifest['pending']['repin'])} PNGs to re-pin.")
-            return EXIT_OK
         verdicts = (_json_file(args.verdicts).get("cards") or {}) if args.verdicts else None
         side = _json_file(args.events) if args.events else []
         docs = _json_file(args.guard_events) if args.guard_events else []
         found = _json_file(args.records) if args.records else []
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.empty, args.full, args.cards,
-                    args.allow_archive, args.budget, args.run, args.dry_run, args.restore, args.builder_ref,
-                    args.baked, args.own, verdicts, side.get("events", []) if isinstance(side, dict) else side,
+                    args.allow_archive, args.budget, args.run, args.restore, args.builder_ref, args.own, verdicts,
+                    side.get("events", []) if isinstance(side, dict) else side,
                     docs if isinstance(docs, list) else [docs], found if isinstance(found, list) else [found])
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
@@ -2300,7 +2140,6 @@ __all__ = [
     'record_moves',
     'records_text',
     'pushes',
-    'rewrite_commit',
     'side_events',
     'subject',
     'summary',

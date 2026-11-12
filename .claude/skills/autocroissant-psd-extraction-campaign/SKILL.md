@@ -400,8 +400,8 @@ What remains open is the HARNESS: scripting the two checks from autocroissant-va
 every PSD; sandboxed local sweep diffed field-by-field) so every future parser change can run them
 in minutes. The predictions below are kept because they are the harness's expected outputs.
 
-**Theory obligation (met):** nothing else in local mode is path-sensitive. `_populate_types_from_local`
-walks `Types/` directly; the `EXCLUDE_FOLDERS` skip splits the absolute folder into parts; file access
+**Theory obligation (met):** nothing else in local mode is path-sensitive. The clone vocabulary
+(`card_check.clone_vocabulary`) walks `Types/` directly; the `EXCLUDE_FOLDERS` skip splits the absolute folder into parts; file access
 uses the absolute path and only classification/storage uses the relative one. **Why it was ranked
 first:** it unblocks fast local iteration for everything below — remote sweeps then cost 1+ API call per
 card and minutes of wall time (since 2026-10-20 only changed PSDs cost requests); local-timestamp sweeps make no API calls.
@@ -627,8 +627,8 @@ documented in autocroissant-failure-archaeology).
   `grep -rn "use_local" main.py commands/` (finds nothing since 2026-10-25); `grep -n "force_update: Optional" main.py`
 - Python-side `update_stats` force_update=False default since 2026-10-19 (card_sync.update since 2026-10-25):
   `grep -n "force_update: bool = " commands/card_sync.py`
-- `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, card_data.py:294 since 2026-10-22, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
-  `grep -n -A9 "def _populate_types_from_local" commands/card_data.py`
+- The clone's type vocabulary (`card_check.clone_vocabulary`, skips dotfiles; `_populate_types_from_local` removed 2026-11-12):
+  `grep -n -A9 "def clone_vocabulary" commands/card_check.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`

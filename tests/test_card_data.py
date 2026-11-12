@@ -38,7 +38,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         shutil.copy(REPO / rel, bot / rel)
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
-                           "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--records",
+                           "--own", "--verdicts", "--events", "--guard-events", "--records",
                            "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--help"},
              "png_changes": {"--help"}}
@@ -463,31 +463,18 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0) and old["The Freezer"][0].version["to"] == 2000.0
 
 
-def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
-    """Tainted Lazarus' 110s: a build sets them unknown and says so; a value out of range left in history (the range
-    check failing to run) refuses G3. A parser-2 reading's 22 (a problem when read) is kept and listed."""
-    old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
-                                                          stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0),
-                                             cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
+def test_history_values_out_of_range_are_kept_and_listed(cards):
+    """A parser-2 reading's 22 (a problem when read) is kept and listed."""
+    old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
                                                           stats=cm.CardStats(22, 3, 3, 3), timestamp=600.0,
                                                           parser_version=2)]})
     cdb.write_db(str(cards.db), {}, old, '{"version": 1, "cards": {\n\n}}\n', {})
     code, message = _build(cards, "--empty")
-    assert code == cd.EXIT_OK and "History values out of range set to unknown: 1 (Mini Doomer)" in message
-    assert "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
-    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(22, 3, 3, 3)]
-    import commands.card_history as ch
-    monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
-    shutil.rmtree(cards.db)
-    cards.db.mkdir()
-    cdb.write_db(str(cards.db), {}, old, '{"version": 1, "cards": {\n\n}}\n', {})
-    capsys.readouterr()
-    assert _build(cards, "--empty")[0] == cd.EXIT_GATE
-    assert "history values out of range: Mini Doomer" in capsys.readouterr().out
+    assert code == cd.EXIT_OK and "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
+    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(22, 3, 3, 3)]
 
 
-def test_dry_run_and_errors(cards, tmp_path):
-    assert _build(cards, "--empty", "--dry-run")[0] == cd.EXIT_OK and not any(cards.db.iterdir())
+def test_errors(cards, tmp_path):
     assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ without --empty
     shallow = tmp_path / "shallow"
     subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{cards.repo}", str(shallow)], check=True)
@@ -572,7 +559,7 @@ def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
     assert len(_read(cards)[3]["pending"]["stale"]) == 1 and _read(cards)[3]["pending"]["full"]["approved_run"] == "https://x/runs/1"
     assert _build(cards, "--budget", "5")[0] == cd.EXIT_OK
     assert sorted(parsed) == sorted([DOOMER, FREEZER, OTHER])
-    assert _read(cards)[3]["pending"] == {"stale": [], "failed": [], "full": None, "repin": []}
+    assert _read(cards)[3]["pending"] == {"stale": [], "failed": [], "full": None}
     times = {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
     assert _build(cards)[0] == cd.EXIT_OK and len(parsed) == 3                   # done: nothing read, nothing written
     assert {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()} == times
@@ -802,35 +789,6 @@ def test_git_authors_go_through_the_mailmap(tmp_path):
     build = cd.GitBuild(cm.StatsDatabase(), str(repo))
     assert build.file_commit("site/Card Edits.json").author == "MichaelJSr"
     assert build.index.first["Items/A.psd"].author == "MichaelJSr"
-
-
-def test_bake_commit_rewritten_to_the_main_commit(cards):
-    """Stage 4: the build ran on the local bake commit B; after M (B plus the save) is pushed, --rewrite B M names M
-    everywhere B was (dates too) and lists B's PNGs to re-pin."""
-    _build(cards, "--empty")
-    put(cards.repo, DOOMER, cards.psds[OTHER])
-    put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", b"baked png")
-    b = commit(cards.repo, "AutoCroissant", 2000)
-    assert _build(cards, "--head", b)[0] == cd.EXIT_OK
-    put(cards.repo, "TTS/Impossibility Simulator.json", b"{}")
-    git(cards.repo, "add", "-A")
-    git(cards.repo, "commit", "-q", "--amend", "-m", "Card sync: 1 card baked, TTS save updated",
-        env={"GIT_COMMITTER_DATE": "@2500 +0000", "GIT_AUTHOR_DATE": "@2500 +0000"})
-    m = git(cards.repo, "rev-parse", "HEAD").strip()
-    message = cards.tmp / "message.txt"
-    assert b[:8] in message.read_text(encoding="utf-8")
-    assert cd.main(["--checkout", str(cards.repo), "--db", str(cards.db), "--message", str(message), "--rewrite", b, m]) == cd.EXIT_OK
-    assert m[:8] in message.read_text(encoding="utf-8") and b[:8] not in message.read_text(encoding="utf-8")
-    stats, old, _, manifest, events = _read(cards)
-    doomer = stats["Mini Doomer"]
-    assert (doomer.version["from_commit"], doomer.version["from"], doomer.timestamp) == (m, 2500.0, 2500.0)
-    assert old["Mini Doomer"][0].version["to_commit"] == m and old["Mini Doomer"][0].version["to"] == 2500.0
-    assert (manifest["card_commit"], manifest["main_commit"], manifest["card_commit_at"]) == (m, m, 2500.0)
-    assert manifest["counts"]["baked"] == 1 and manifest["pending"]["repin"] == ["Auxiliary/Minions/Mini_Doomer.png"]
-    changed = events[len(events) - 1]
-    assert (changed["commit"], changed["card_commit"], changed["push"]["after"], changed["push"]["by"]) == (m, m, m, "Card sync")
-    assert b not in (cards.db / "stats.json").read_text() + (cards.db / "old_stats.json").read_text()
-    assert cdb.check_db(str(cards.db)) == []
 
 
 def test_restore_writes_an_older_data_commit_back(cards):

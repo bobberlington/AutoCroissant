@@ -105,11 +105,11 @@ def test_clone_readers_match_the_traversers(clone, monkeypatch):
     traverser.tree = {"tree": [{"path": p, "type": "blob", "sha": p} for p in paths]}
     traverser.shas = {p: p for p in paths}
     monkeypatch.setattr(traverser, "_repo_text", lambda path: (clone / path).read_text(encoding="utf-8"))
-    traverser._populate_types_from_response(None)
-    icons = traverser._icons_from_response(None, "o/r")
+    traverser._populate_types_from_response()
+    icons = traverser._icons_from_response()
     vocab = cc.clone_vocabulary(str(clone))
     assert vocab.all_types == traverser.db.all_types and vocab.parser().icons == icons
-    assert cc.clone_edits(str(clone), []).cards == traverser._edits_from_response(None, "o/r").cards
+    assert cc.clone_edits(str(clone), []).cards == traverser._edits_from_response().cards
 
 
 # ========================

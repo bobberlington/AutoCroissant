@@ -23,7 +23,7 @@ from re import compile as re_compile
 from typing import Optional
 from urllib.parse import quote
 
-from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
+from global_config import SITE_URL, TIMEZONE
 from commands.card_db import parse_stats, write_text
 from commands.card_edits import art_list, as_parsed
 from commands.card_history import STAT_KINDS, STAT_MAX, same_series, unknown
@@ -46,7 +46,7 @@ SILENT = ("reparse", "guard-png", "guard-fix")           # never in a Discord po
 PLAIN = re_compile(r"\boverflow: |: bad [\d.]+%, mean [\d.]+, max \d+| \([+-]?\d+ px(?:, '(?:[^'\\]|\\.)*'|, \"[^\"]*\")?\)")   # Discord: no codes, no pixel counts (nor the layer they name)
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
-              "unknown": "Other", "rulebook": "Rulebook page"}   # site/assets/app.js KIND_LABEL, and the rulebook's pages
+              "unknown": "Other"}                       # site/assets/app.js KIND_LABEL
 SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New art"), (("moved", "renamed"), "Moved and renamed"),
             (("archived",), "Archived"), (("restored",), "Restored"), (("edited", "authors"), "Database edits"),
             (("baked",), "Baked into the PSDs"), (("bake-refused",), "Bake refused"),
@@ -477,18 +477,12 @@ def site_ids(data) -> dict:
     return {c.get("key") or c.get("name"): c["id"] for c in cards or [] if isinstance(c, dict) and c.get("id")}
 
 
-def is_rulebook(event: dict) -> bool:
-    """Whether an event's card is a rulebook page (build_site's rule: its type, or a Rulebook folder)."""
-    return event.get("card_type") == "rulebook" or RULEBOOK_DIR in (event.get("path") or "").split("/")
-
-
-def card_link(name: str, site: str, ids: Optional[dict] = None, rulebook: bool = False) -> str:
-    """The card's share page (SITE/c/<id>/); a rulebook page (not in cards.json): the rulebook searched for it; else a
-    search for the card."""
+def card_link(name: str, site: str, ids: Optional[dict] = None) -> str:
+    """The card's share page (SITE/c/<id>/), else a search for the card."""
     card_id = (ids or {}).get(name)
     if card_id:
         return f"{site}/c/{card_id}/"
-    return f"{site}/#/rules?q={quote(name)}" if rulebook else f"{site}/#/cards?q={quote(name)}"
+    return f"{site}/#/cards?q={quote(name)}"
 
 
 def _md(text: str) -> str:
@@ -582,7 +576,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     kind = event["kind"]
     if kind == "restore":
         return f"Card data restored from {_md((event.get('restored_from') or '?')[:8])}"
-    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids, is_rulebook(event))})"
+    title = f"[{_md(event.get('title') or event['card'])}]({card_link(event['card'], site, ids)})"
     if kind == "new":
         stars = f", {event['stars']}\u2605" if event.get("stars") else ""
         by = f" by {_md(event['by'])}" if event.get("by") else ""
@@ -629,7 +623,7 @@ def title_of(group: list) -> str:
     """"Zomoroko, Oct 22 14:05: 1 new, 2 changed": who pushed and when (a push-less group: the card sync, at its build)."""
     push = group[0].get("push")
     who, at = (push.get("by") or "Someone", push.get("at")) if push else (CARD_SYNC, group[0].get("at"))
-    if push and who == CARD_SYNC:                         # the run's own commit M (rewrite_commit)
+    if push and who == CARD_SYNC:                         # the run's own commit M (card_data --own)
         who = "Website edits baked into the PSDs"
     kinds = [e["kind"] for e in group]
     counts: dict = {}
@@ -726,11 +720,6 @@ def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, re
     return out
 
 
-def size(body: dict) -> int:
-    """A message's characters as Discord counts them (embed titles and descriptions)."""
-    return sum(len(e.get("title") or "") + len(e.get("description") or "") for e in body.get("embeds", []))
-
-
 # ========================
 # CLI
 # ========================
@@ -796,7 +785,6 @@ __all__ = [
     'field_changes',
     'fields_of',
     'formatting_only',
-    'is_rulebook',
     'link_of',
     'main',
     'messages',
@@ -808,7 +796,6 @@ __all__ = [
     'rewrite_events',
     'silent',
     'site_ids',
-    'size',
     'split_changes',
     'tags_of',
     'text_change',

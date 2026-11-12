@@ -15,7 +15,7 @@ from typing import Optional
 from global_config import MAILMAP_PATH
 from commands.card_db import record
 from commands.card_edits import as_parsed
-from commands.card_models import RAID_STARS, RENAMED, CardInfo, CardStats, card_name, rename_trailer
+from commands.card_models import RAID_STARS, RENAMED, CardInfo, card_name, rename_trailer
 
 # ========================
 # Configuration
@@ -33,8 +33,6 @@ STAT_KINDS = ("creature", "minion", "creatures")       # psd_parser.STAT_KINDS: 
 SERIES = ("series", "subseries")
 RETIRED = ("MDW", "Markers")                          # no card folders (card_data.EXCLUDE_FOLDERS): a PSD there retired
 STAT_MAX, STAT_CAP, STARS_MAX = 20, 99, 7             # a stat above 20 needs an allowance (allows_high); 3 digits: none
-# CardValidator.EXCESSIVE_STAT_EXCLUSIONS until parser 2 (5835139, 2026-10-21): their history's high stats were allowed
-HIGH_STATS_LISTED = frozenset({"Royal Eradicator Main Cannon", "Pix", "Tainted Lazarus", "Sonic", "Twin Emperors"})
 RANGE_PARSER = 2                                      # parser 2 (5835139): the validator's range check, allow_high_stats
 STAT_KEYS = ("hp", "defense", "attack", "speed")
 
@@ -272,7 +270,7 @@ def misread_stats(card: CardInfo) -> bool:
     allowed (STATS TOO HIGH), a bar of a kind with bars not read (HP or DEF; ATK or SPD unless active). Chris & Jordi's
     four bars all named Health read HP 26 = 7+6+7+6."""
     if unchecked(card):
-        return False                                  # unknown_values' OUT OF RANGE says it
+        return False                                  # before the validator's range check: not judged
     if "stats" in out_of_range(card):
         return True
     if getattr(card, "card_type", None) not in STAT_KINDS:
@@ -386,9 +384,8 @@ def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], othe
 
 def allows_high(name: str, holder: Optional[CardInfo]) -> bool:
     """Whether a name's history may hold stats above STAT_MAX (up to STAT_CAP): its card has allow_high_stats or is a
-    raid boss (RAID_STARS), it was on the retired exclusion list (HIGH_STATS_LISTED), or it has no current card to tell
-    (archived: never unknown)."""
-    return holder is None or bool(getattr(holder, "allow_high_stats", False)) or name in HIGH_STATS_LISTED \
+    raid boss (RAID_STARS), or it has no current card to tell (archived)."""
+    return holder is None or bool(getattr(holder, "allow_high_stats", False)) \
         or (getattr(holder, "stars", None) or 0) >= RAID_STARS
 
 
@@ -413,38 +410,9 @@ def unchecked(card: CardInfo) -> bool:
     return (getattr(card, "parser_version", None) or 0) < RANGE_PARSER
 
 
-def unknown_values(stats: dict, old_stats: dict) -> list:
-    """
-    Stored versions' impossible values set to unknown (stats -1, stars None; out_of_range), in place, each noted in its
-    problems: they can't be checked (no PSD of theirs is read again). Only the versions read before the range check
-    (unchecked); a later one's are kept and listed (kept_values).
-
-    Returns:
-        (name, timestamp, fields) of each version changed
-    """
-    changed = []
-    for name, versions in old_stats.items():
-        allowed = allows_high(name, stats.get(name))
-        for version in versions:
-            fields = out_of_range(version, allowed) if unchecked(version) else []
-            if not fields:
-                continue
-            was = []
-            if "stats" in fields:
-                s = version.stats
-                was.append(f"stats {s.hp}/{s.defense}/{s.attack}/{s.speed}")
-                version.stats = CardStats()
-            if "stars" in fields:
-                was.append(f"stars {version.stars}")
-                version.stars = None
-            version.problems = [*(getattr(version, "problems", None) or []), f"OUT OF RANGE: {', '.join(was)} (unknown)"]
-            changed.append((name, version.timestamp, fields))
-    return changed
-
-
 def kept_values(stats: dict, old_stats: dict) -> list:
-    """History values out of range that unknown_values keeps (read by RANGE_PARSER or later; an allow_high_stats entry
-    allows a stat up to STAT_CAP), for the owner: the names, sorted."""
+    """History values out of range read by RANGE_PARSER or later (kept: an allow_high_stats entry allows a stat up to
+    STAT_CAP), for the owner: the names, sorted."""
     return sorted({name for name, versions in old_stats.items() for v in versions
                    if not unchecked(v) and out_of_range(v, allows_high(name, stats.get(name)))})
 
@@ -452,23 +420,14 @@ def kept_values(stats: dict, old_stats: dict) -> list:
 # ========================
 # Archive tags
 # ========================
-@dataclass
-class Refined:
-    """What date_archive changed."""
-    tagged: list = field(default_factory=list)        # archive tags added (backfill)
-    tags_dated: list = field(default_factory=list)    # archive tags given git's date and commit
-    renamed: list = field(default_factory=list)       # (old, new) exact renames recorded on tags
-    retired: list = field(default_factory=list)       # names whose PSD moved into a folder of no cards (moved_to)
-
-
-def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined, backfill: bool = True) -> None:
-    """Names gone from stats: the last version tagged archived (backfill) if untagged (not with backfill False); every tag's at and commit from its path's deleting commit (an
-    archived duplicate's from its PNG's, or its original's when the PNG stayed), renamed_to from an exact rename chain
-    that ends at a listed card (else its PNG's: a rename that also edited the PSD), moved_to from one into a folder of
-    no cards (MDW/The Morgue: retired, not deleted), either dated by the chain's step that reached it (Pandiety's move
-    into MDW, not its rename to Pandeity 44 min before; the new name starts there too: intro_of). A deletion or rename older than the record's own reading, or an
-    index that lacks the tag's commit (a clone not fetched since: a path deleted, added back and deleted again),
-    changes nothing."""
+def date_archive(stats: dict, old_stats: dict, index: GitIndex) -> None:
+    """Names gone from stats, their last version tagged archived (an untagged one changes nothing): every tag's at and
+    commit from its path's deleting commit (an archived duplicate's from its PNG's, or its original's when the PNG
+    stayed), renamed_to from an exact rename chain that ends at a listed card (else its PNG's: a rename that also
+    edited the PSD), moved_to from one into a folder of no cards (MDW/The Morgue: retired, not deleted), either dated
+    by the chain's step that reached it (Pandiety's move into MDW, not its rename to Pandeity 44 min before; the new
+    name starts there too: intro_of). A deletion or rename older than the record's own reading, or an index that lacks
+    the tag's commit (a clone not fetched since: a path deleted, added back and deleted again), changes nothing."""
     def copy_of(card) -> Optional[str]:
         return None if getattr(card, "variant_of", None) else getattr(card, "duplicate_of", None)   # a variant: its own
     for name, versions in sorted(old_stats.items(), key=lambda item: bool(copy_of(
@@ -477,14 +436,8 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
             continue
         last = versions[len(versions) - 1]
         original = copy_of(last)
-        if original and not getattr(last, "archived", None):
-            continue
         if not getattr(last, "archived", None):
-            if not backfill:
-                continue
-            last.archived = {"at": None, "path": last.path, "blob": getattr(last, "blob_sha", None) or None,
-                             "commit": None, "backfill": True}
-            report.tagged.append(name)
+            continue
         tag = last.archived
         read = getattr(last, "timestamp", None) or 0.0
         stale = bool(tag.get("commit")) and tag["commit"] not in index.by_sha      # the index predates the tag's commit
@@ -500,15 +453,12 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
             gone = step                                         # the chain's step that reached the card or MDW
         if gone is not None and not stale and gone.at >= read and (tag.get("at"), tag.get("commit")) != (gone.at, gone.sha):
             tag["at"], tag["commit"] = gone.at, gone.sha
-            report.tags_dated.append(name)
         if original or stale or tag.get("renamed_to") or tag.get("moved_to"):
             continue
         if new:
             tag["renamed_to"] = new
-            report.renamed.append((name, new))
         elif retired:
             tag["moved_to"] = retired
-            report.retired.append(name)
 
 
 # ========================
@@ -619,12 +569,10 @@ def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
 # ========================
 __all__ = [
     'DATA_FIELDS',
-    'HIGH_STATS_LISTED',
     'RETIRED',
     'UNKNOWN_IF',
     'Commit',
     'GitIndex',
-    'Refined',
     'allows_high',
     'carry',
     'carry_to',
@@ -644,6 +592,5 @@ __all__ = [
     'start_of',
     'unchecked',
     'unknown',
-    'unknown_values',
 ]
 

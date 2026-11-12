@@ -295,8 +295,8 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
   content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is
   `num_changed`; `card_data.update` (the bot's legacy sweep, 2026-10-22 to 2026-10-25) gated the prune by
   `can_prune(build)` and the save by `num_changed > 0 or ...`; it went at step 10. Today `can_prune` (card_data.py:1221)
-  is called by the Card sync build (`build`, :1721), and `_process_files_from_response` still returns
-  `num_changed + num_moved` (:649).)
+  is called by the Card sync build (`build`, :1721); `_process_files_from_response` prints `num_changed` and
+  `num_moved` and returns nothing since 2026-11-12.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
 - Bonus name-lie inside the same loop (renamed 2026-10-20): until then `num_new` ALSO counted re-parsed existing

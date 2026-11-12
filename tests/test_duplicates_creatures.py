@@ -8,13 +8,14 @@ from commands.card_models import StatsDatabase
 from golden_cards import parser
 
 
-class Tree:
-    """Stands in for the tree response: _sync_duplicates only calls .json()."""
-    def __init__(self, paths):
-        self.paths = list(paths)
+def _tree(paths: list) -> dict:
+    """A tree of these paths, as traverse_remote reads it."""
+    return {"tree": [{"path": p, "sha": "0" * 40} for p in paths]}
 
-    def json(self):
-        return {"tree": [{"path": p, "sha": "0" * 40} for p in self.paths]}
+
+def _sync(tr: cd.CardBuild, paths: list) -> int:
+    tr.tree = _tree(paths)
+    return tr._sync_duplicates()
 
 
 def _traverser(cards: dict) -> cd.CardBuild:
@@ -36,7 +37,7 @@ def test_duplicate_rules():
              "Items/Heal/2 Stars/x2.png",                      # has its own PSD: not a duplicate
              "Items/Heal/Y3.png",                              # no Y.psd
              "Auxiliary/Rulebook/R.psd", "Auxiliary/Rulebook/R2.png", "MDW/Z.psd", "MDW/Z2.png", "Items/Q.psd"]
-    assert tr._sync_duplicates(Tree(paths)) == 0                  # numbered PNGs are variant pictures: no duplicates
+    assert _sync(tr, paths) == 0                  # numbered PNGs are variant pictures: no duplicates
     assert {n for n, c in tr.db.stats.items() if c.duplicate_of} == {"Old2"} and tr.db.seen_cards == []   # Old2: the prune's
 
 
@@ -49,15 +50,15 @@ def test_a_png_only_card_with_dup_of_is_a_duplicate():
     paths = ["Creatures/Other/2 Stars/Stubborn_King.psd", "Creatures/Other/2 Stars/Stubborn_King.png",
              "Creatures/Other/2 Stars/Stubborn_Queen.png", "Items/Support/2 Stars/Gust_of_Trees.png"]
     tr = _traverser({"Stubborn King": king})
-    assert tr._sync_duplicates(Tree(paths)) == 0
+    assert _sync(tr, paths) == 0
     tr.edits = CardEdits.parse('{"cards": {"Stubborn Queen": {"dup_of": "stubborn king", "aliases": ["queen"]}, '
                                '"Gust of Trees": {"dup_of": "Gust of Wind"}}}')
-    assert tr._sync_duplicates(Tree(paths)) == 1
+    assert _sync(tr, paths) == 1
     queen = tr.db.stats["Stubborn Queen"]
     assert (queen.duplicate_of, queen.ability, queen.path, queen.display_name) == ("Stubborn King", "Rule.", king.path, "Queen")
     assert "Gust of Trees" not in tr.db.stats and "Stubborn Queen" in tr.db.seen_cards
     tr.edits = CardEdits.parse('{"cards": {"Stubborn Queen": {"dup_of": "Stubborn King"}}}')
-    tr._sync_duplicates(Tree(paths))
+    _sync(tr, paths)
     assert tr.db.stats["Stubborn Queen"].display_name is None                  # its own name is its title
 
 
@@ -74,7 +75,7 @@ def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
     tr = _traverser({"Stubborn King": king})
     tr.edits = CardEdits.parse('{"cards": {"Stubborn Queen": {"dup_of": "Stubborn King"}}}')
     tr.db.seen_cards.append("Stubborn King")
-    tr._sync_duplicates(Tree(paths))
+    _sync(tr, paths)
     assert "Stubborn Queen" in tr.db.stats
 
     def unreadable(path):
@@ -85,10 +86,11 @@ def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
     for tree, kept in ((paths, True), (paths[:2] + paths[3:], False)):
         tr.db.seen_cards.clear()
         tr.db.seen_cards.append("Stubborn King")
-        tr.edits = tr._edits_from_response(Tree(tree), "o/r")
+        tr.tree = _tree(tree)
+        tr.edits = tr._edits_from_response()
         assert tr.edits is None and tr.edits_unread
-        tr._sync_duplicates(Tree(tree))
-        gone, _ = tr.db.prune_clean_cards(1.0)
+        tr._sync_duplicates()
+        gone = tr.db.prune_clean_cards(1.0)
         assert (gone == []) is kept and ("Stubborn Queen" in tr.db.stats) is kept
 
 

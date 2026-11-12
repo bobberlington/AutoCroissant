@@ -429,15 +429,6 @@ def _refresh_cards(interaction) -> None:
         queue_command(sync_changed_emojis, interaction, card_repo.repository, shas)
 
 
-def startup() -> None:
-    """
-    on_ready's database: the local copy first (no network), then a sync (on_ready queues the refreshes itself).
-    With neither (GitHub down at the first boot), no cards until a sync works.
-    """
-    load_local()
-    sync(None, output_problematic=False, quiet=True, follow_ups=False)
-
-
 # ========================
 # Card sync runs (force_update, cards)
 # ========================
@@ -480,8 +471,6 @@ def dispatch(repository: str, inputs: dict) -> Optional[dict]:
     body = {"ref": CARD_BRANCH, "inputs": inputs, "return_run_details": True}
     try:
         reply = _post_dispatch(repository, body)
-        if reply.status_code == 422 and "return_run_details" in reply.text:   # GitHub without that option: not started
-            reply = _post_dispatch(repository, {"ref": CARD_BRANCH, "inputs": inputs})
     except RequestException as e:
         raise NoAnswer(f"{type(e).__name__}: {e}") from e
     _refusal(reply)
@@ -704,7 +693,6 @@ __all__ = [
     'on_use',
     'report',
     'request_run',
-    'startup',
     'sync',
     'update',
 ]

@@ -206,9 +206,8 @@ def test_a_stale_index_never_dates_a_tag_back_to_an_older_deletion():
     index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
     for commit in ("new", None):
         record = _card(timestamp=200.0, archived={"at": 300.0, "path": "Items/A.psd", "blob": None, "commit": commit})
-        report = ch.Refined()
-        ch.date_archive({}, defaultdict(list, {"A": [record]}), index, report, backfill=False)
-        assert (record.archived["at"], record.archived["commit"], report.tags_dated) == (300.0, commit, [])
+        ch.date_archive({}, defaultdict(list, {"A": [record]}), index)
+        assert (record.archived["at"], record.archived["commit"]) == (300.0, commit)
 
 
 V2 = dict(parser_version=2)
@@ -285,20 +284,10 @@ def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
 G1, O1 = b"gone one", b"old one"
 
 
-def test_impossible_values_become_unknown_once():
-    lazarus = _card("L", stats=cm.CardStats(110, 110, 110, 110), stars=3, timestamp=1.0)
-    spawn = _card("S", stars=10, timestamp=2.0)
-    cannon = _card("C", stats=cm.CardStats(9, 8, 12, 3), timestamp=3.0)
-    stats = {"C": _card("C", stats=cm.CardStats(9, 8, 12, 3), allow_high_stats=True)}
-    old = defaultdict(list, {"L": [lazarus], "S": [spawn], "C": [cannon]})
-    changed = ch.unknown_values(stats, old)
-    assert [(n, f) for n, _, f in changed] == [("L", ["stats"]), ("S", ["stars"])]
-    assert lazarus.stats == cm.CardStats() and spawn.stars is None and cannon.stats.attack == 12   # its card allows it
-    assert lazarus.problems == ["OUT OF RANGE: stats 110/110/110/110 (unknown)"]
-    assert ch.unknown_values(stats, old) == []
+def test_values_out_of_range_are_kept_and_listed():
     printed = _card("P", stats=cm.CardStats(22, 3, 3, 3), stars=3, timestamp=4.0, parser_version=2)
-    old["P"], stats["P"] = [printed], _card("P")      # read by parser 2: its problem was shown; kept for an allowance
-    assert ch.unknown_values(stats, old) == [] and printed.stats.hp == 22 and ch.kept_values(stats, old) == ["P"]
+    stats, old = {"P": _card("P")}, defaultdict(list, {"P": [printed]})   # read by parser 2: its problem was shown
+    assert ch.kept_values(stats, old) == ["P"] and printed.stats.hp == 22
     stats["P"] = _card("P", allow_high_stats=True)
     assert ch.kept_values(stats, old) == []
 
@@ -315,14 +304,12 @@ def test_a_rename_chain_reaches_the_listed_card(tmp_path):
     old = defaultdict(list, {n: [_card(n, path=f"Items/{n}.psd", blob_sha=tag["blob"], timestamp=1000.0, archived=tag)]
                              for n, tag in tags.items()})
     stats = {"V": _card("V", path="Aux/V.psd", blob_sha=blob(O1), timestamp=1000.0)}
-    report = ch.Refined()
-    ch.date_archive(stats, old, index, report)
+    ch.date_archive(stats, old, index)
     assert [(t.get("renamed_to"), t.get("moved_to"), t["at"], t["commit"]) for t in tags.values()] == [
         ("V", None, 3000.0, c[2]), (None, "MDW/P2.psd", 3000.0, c[2])]
-    assert sorted(report.tags_dated) == ["K", "P"] and report.renamed == [("K", "V")] and report.retired == ["P"]
-    again = ch.Refined()
-    ch.date_archive(stats, old, index, again)
-    assert again == ch.Refined()
+    dated = deepcopy(tags)
+    ch.date_archive(stats, old, index)                  # a second pass changes nothing
+    assert tags == dated
 
 
 def _cards_repo(tmp_path, steps: list):

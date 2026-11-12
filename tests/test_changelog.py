@@ -189,7 +189,7 @@ def test_the_bake_commit_is_a_push_of_its_own():
     assert by["A"] == {"after": "c1", "before": "c0", "by": "AutoCroissant", "at": 10.0}
     assert by["C"] == {"after": "B", "before": "c1", "by": cl.CARD_SYNC, "at": 20.0}
     merged = {e["card"]: e["push"]["after"] for e in cl.assign_pushes([dict(e) for e in events], [], commits, "c0")}
-    assert merged == {"A": "B", "C": "B"}                                         # what --baked prevents
+    assert merged == {"A": "B", "C": "B"}                                         # what --own prevents
 
 
 def test_payload_words_links_and_order():
@@ -218,25 +218,20 @@ def test_payload_words_links_and_order():
     assert cl.payload([], "https://site") is None
 
 
-def test_links_by_the_sites_key_and_rulebook_pages_to_the_rulebook(tmp_path):
-    """cards.json's `name` is the shown title: ids go by `key` (the database's name), else name; a rulebook page (not
-    in cards.json) links the rulebook searched for it, never a card search."""
+def test_links_by_the_sites_key(tmp_path):
+    """cards.json's `name` is the shown title: ids go by `key` (the database's name), else name."""
     site = {"cards": [{"id": "metal-general", "name": "MEtal General", "key": "Metal General"},
                       {"id": "kirby", "name": "Kirby"}]}
     assert cl.site_ids(site) == {"Metal General": "metal-general", "Kirby": "kirby"}
     db = str(tmp_path / "db")
     cl.append_events(db, [dict(e, push=PUSH) for e in cl.number([
-        {"kind": "changed", "card": "Metal General", "title": "MEtal General", "card_type": "creature", "fields": {"hp": [1, 2]}},
-        {"kind": "changed", "card": "11 Abilities2", "card_type": "rulebook", "path": "Auxiliary/Rulebook/11_Abilities2.psd",
-         "fields": {"ability": ["a", "b"]}},
-        {"kind": "new", "card": "Page", "card_type": "rulebook", "stars": None}], 0, at=T)])
+        {"kind": "changed", "card": "Metal General", "title": "MEtal General", "card_type": "creature", "fields": {"hp": [1, 2]}}],
+        0, at=T)])
     (tmp_path / "cards.json").write_text(json.dumps(site), encoding="utf-8")
     out = tmp_path / "discord.json"
     assert cl.main(["post", "--db", db, "--out", str(out), "--ids", str(tmp_path / "cards.json"), "--site", "https://site"]) == 0
     text = "\n".join(e.get("description") or "" for e in json.loads(out.read_text(encoding="utf-8"))["messages"][0]["body"]["embeds"])
     assert "[MEtal General](https://site/c/metal-general/): HP 1 → 2" in text
-    assert "[11 Abilities2](https://site/#/rules?q=11%20Abilities2): ability 'a' → 'b'" in text
-    assert "[Page](https://site/#/rules?q=Page) (Rulebook page)" in text and "#/cards?q=" not in text
 
 
 def test_every_kind_posts_alone():
@@ -338,7 +333,8 @@ def test_payload_stays_within_discord_limits():
         [{"kind": k, "card": f"{k} card {i} " + "x" * 60, "card_type": "item", "fields": {"ability": ["a", "b"]}}
          for k in ("new", "changed", "art", "moved", "archived", "restored", "edited") for i in range(150)], 0, at=T)]
     body = cl.payload(events, "https://michaeljsr.github.io/TTSCardMaker")
-    assert len(body["embeds"]) <= cl.EMBEDS_MAX and cl.size(body) <= cl.MESSAGE_MAX
+    assert len(body["embeds"]) <= cl.EMBEDS_MAX and sum(len(e.get("title") or "") + len(e.get("description") or "")
+                                                        for e in body["embeds"]) <= cl.MESSAGE_MAX
     assert all(len(e["description"]) <= cl.DESCRIPTION_MAX for e in body["embeds"])
     last = body["embeds"][len(body["embeds"]) - 1]["description"]
     shown = sum(e["description"].count("\n") for e in body["embeds"][:len(body["embeds"]) - 1])   # less the headings

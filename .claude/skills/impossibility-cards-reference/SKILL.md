@@ -224,7 +224,7 @@ joined with `\n`; blanks and line breaks at their ends are stripped during the j
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, card_data.py:201) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`card_check.clone_vocabulary`) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -647,11 +647,11 @@ keeps its own path's (Auto Croissant, not Mini Auto Croissant's minion); the car
 from their last reading (`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW), and a
 renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before).
 Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
-differ are one misread (`misreads`), and impossible history values become unknown with an `OUT OF RANGE: ...` problem
-keeping the old value (`unknown_values`, only on versions read before parser 2: `unchecked`): stars outside 0..7, a
-stat above 20 (10 until 2026-11-06) without an allowance (`allows_high`: the card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS
-names, or no current card), any stat of three digits; the kept ones above 20 are listed for the owner (`high_values`),
-a parser-2 reading's out-of-range value is kept and listed by the data build (`kept_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+differ are one misread (`misreads`). A history value out of range (stars outside 0..7, a stat above 20 (10 until
+2026-11-06) without an allowance (`allows_high`: the card's allow_high_stats, raid boss stars, or no current card), any
+stat of three digits) is kept, and the data build lists the names of parser-2 readings holding one (`kept_values`);
+the versions read before parser 2 (`unchecked`) had theirs set unknown once, with an `OUT OF RANGE: ...` problem keeping
+the old value (`unknown_values`, removed 2026-11-12 with none left). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the
@@ -659,7 +659,8 @@ history clone's `clean_history`, 2026-10-23: for a tag linked along an exact ren
 end; a recovered archive's `blob` is the bytes git deleted)
 plus `"renamed_to"` when the PSD was renamed (same blob, or the commit's rename), `"moved_to"` when it moved into MDW
 (retired; set from the history clone, 2026-10-23), and `"backfill": True` on names that left
-stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!). The one-time history backfill (`commands/history_backfill.py`, branch work/backfill) adds `"author"` to every tag then in old_stats (the card it became, its Card Authors.txt line, else its first git author; also on the card of a record it adds; a card archived later has the card's own `author` only, so a reader takes the tag's, else the record's), `"backfill_id"` on what it wrote, and archives three renamed cards that shared a live card's name under qualified keys with the plain name as `display_name` (`Pizza (item)`, `Dogma (item)`, `Auto Croissant (minion)`); a renamed record's title is dropped when the card it became (or another card) has it; a corrected version keeps its old stats in `version["backfill_was"]`. It runs only behind
+stats.pkl before archiving existed (tagged by the first full run; one on 2026-10-22, ZOEY!!!!!; history only, the
+build's backfill passes were removed 2026-11-12). The one-time history backfill (`commands/history_backfill.py`, branch work/backfill) adds `"author"` to every tag then in old_stats (the card it became, its Card Authors.txt line, else its first git author; also on the card of a record it adds; a card archived later has the card's own `author` only, so a reader takes the tag's, else the record's), `"backfill_id"` on what it wrote, and archives three renamed cards that shared a live card's name under qualified keys with the plain name as `display_name` (`Pizza (item)`, `Dogma (item)`, `Auto Croissant (minion)`); a renamed record's title is dropped when the card it became (or another card) has it; a corrected version keeps its old stats in `version["backfill_was"]`. It runs only behind
 `_can_prune` (a full tree, not truncated, no failed new-name download, some cards). An archived card is a name not in
 stats.pkl whose last old_stats version is tagged; read them only through `StatsDatabase.archived()`. stats.pkl still
 means current cards, so no query, export, alias or website reader sees them. A PSD back under the name at the tag's

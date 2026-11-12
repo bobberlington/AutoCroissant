@@ -212,8 +212,9 @@ the reply (say), then queue_command(refresh_history), queue_command(_refresh_car
       then queue_command(sync_changed_emojis) over that tree)
 ```
 
-Nothing parses and nothing is written but `card_data/` (gitignored). Startup (`init_psd` -> `card_sync.startup`) loads
-`card_data/` first and syncs once; card commands queue the same sync on use (at most every 2 minutes, `card_sync.on_use`).
+Nothing parses and nothing is written but `card_data/` (gitignored). Startup (`init_psd`: `card_sync.load_local`, then
+`sync`) loads `card_data/` first and syncs once; card commands queue the same sync on use (at most every 2 minutes,
+`card_sync.on_use`).
 
 ### (c) A reminder firing (slash_registry + FakeInteraction), as of 2026-10-19
 

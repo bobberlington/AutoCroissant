@@ -171,6 +171,12 @@ def _queued() -> list:
     return [getattr(func, "__name__", str(func)) for _, func in utils.command_queue]
 
 
+def _start() -> None:
+    """init_psd's card data: the local copy first (no network), then a quiet sync."""
+    cs.load_local()
+    cs.sync(None, output_problematic=False, quiet=True, follow_ups=False)
+
+
 ME = SimpleNamespace(user=SimpleNamespace(id=1))
 
 
@@ -225,7 +231,7 @@ def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monke
     for file, data in files.items():                                  # on disk anyway (an older bot, a hand copy)
         (tmp_path / "card_data" / file).write_bytes(data)
     assert cs.load_local("card_data") is False and cdb.check_db("card_data")
-    cs.startup()
+    _start()
     assert cm.stats_db.stats == {}                                    # no cards until a sync works
 
 
@@ -278,7 +284,7 @@ def test_startup_loads_the_local_copy_then_syncs(github, tmp_path, monkeypatch):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     cdb.sync("card_data", REPO, "data")
     github.tip = None                                                 # GitHub unreachable at startup: the copy serves
-    cs.startup()
+    _start()
     assert set(cm.stats_db.stats) == {"A"} and _queued() == []
 
 
@@ -297,7 +303,7 @@ def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypa
 
 
 def test_startup_without_data_holds_no_cards(github):
-    cs.startup()
+    _start()
     assert cm.stats_db.stats == {} and cs._loaded["commit"] is None
 
 

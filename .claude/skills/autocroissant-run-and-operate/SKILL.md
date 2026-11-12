@@ -51,7 +51,7 @@ Bot initialization complete                            <- the four loops started
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
 Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
                                                        <- plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
-Card data loaded from card_data: 819 cards             <- init_psd: card_sync.startup's local copy (no network)
+Card data loaded from card_data: 819 cards             <- init_psd: card_sync.load_local's local copy (no network)
 Card list: 1101 entries from the saved tree           <- the card list from card_tree.json (no network; since 2026-10-25)
 Card data is already current: built 12 min ago from TTSCardMaker@1a2b3c4d (run: <...>).   <- its sync (one conditional request)
 Loaded 771 cards                                       <- prep_dataframes (query_card.py); counts vary

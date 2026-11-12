@@ -391,10 +391,10 @@ def _index(bare) -> dict:
 
 def test_publish_one_commit_per_preview(remote, tmp_path):
     a, b = "aaaaaaaa-0001", "bbbbbbbb-0002"
-    first = br.publish(str(_out(tmp_path, a)), a, str(remote.work), png=True)
+    first = br.publish(str(_out(tmp_path, a)), a, str(remote.work))
     assert first["parent"] is None and not first["rewritten"]
     files = _branch(remote.bare)
-    assert sorted(files) == sorted([br.README, br.INDEX] + [f"previews/{a}/{f}" for f in (br.BEFORE, br.PNG, br.SMALL, br.RESULT)])
+    assert sorted(files) == sorted([br.README, br.INDEX] + [f"previews/{a}/{f}" for f in (br.BEFORE, br.SMALL, br.RESULT)])   # no PNG
     assert json.loads(files[f"previews/{a}/{br.RESULT}"])["request"] == a and files[f"previews/{a}/{br.SMALL}"] == b"webp of " + a.encode()
     second = br.publish(str(_out(tmp_path, b, state="refused", image=False)), b, str(remote.work))
     assert second["parent"] == first["commit"] and _git(remote.bare, "rev-parse", "previews").strip() == second["commit"]
@@ -407,7 +407,7 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     shutil.copytree(_out(tmp_path, "cccccccc-0003", image=False), rerun)
     result = json.loads((rerun / br.RESULT).read_text())
     (rerun / br.RESULT).write_text(json.dumps({**result, "request": a, "state": "error"}))
-    br.publish(str(rerun), a, str(remote.work), png=True)
+    br.publish(str(rerun), a, str(remote.work))
     files = _branch(remote.bare)
     assert json.loads(files[f"previews/{a}/{br.RESULT}"])["state"] == "error" and f"previews/{a}/{br.SMALL}" not in files
 
@@ -502,7 +502,7 @@ def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
     preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; the card workflows' install of
     requirements-cards.txt and its cache entry, no oxipng) hands its out dir to the publish job (contents: write,
-    actions: read; card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), which starts
+    actions: read; card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip), which starts
     beside it and waits for the hand-over (Take over and Publish only then), 15 minutes at most;
     no secret but GITHUB_TOKEN (the preview's REST reads), no Discord, and no input expanded inside a shell script
     (only in env). The preview starts in the background before the fonts restore (Start, bounded by timeout) and waits
@@ -571,13 +571,13 @@ def test_workflow_shape():
     assert "preview.code" in start["run"] and "preview.code" in shown["run"] and 'tee -a "$GITHUB_STEP_SUMMARY"' in shown["run"]
     hand = step(preview, "Hand over")
     assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}" and hand["uses"].startswith("actions/upload-artifact@")
-    assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, *sum(br.SMALLS.values(), ()))]   # not the PNG
+    assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, br.SMALL, br.BEFORE)]   # not the PNG
     assert hand["with"]["if-no-files-found"] == "ignore"
     take = step(publish, "Take over")
     assert take["uses"].startswith("actions/download-artifact@") and take["continue-on-error"] is True
     assert take["with"] == {"name": hand["with"]["name"], "path": "${{ runner.temp }}/preview"}
     run = step(publish, "Publish")["run"]
-    assert run.startswith("python -S -m commands.card_preview_branch ") and "--png" not in run and '"$RUNNER_TEMP/preview"' in run
+    assert run.startswith("python -S -m commands.card_preview_branch ") and '"$RUNNER_TEMP/preview"' in run
     assert start["env"]["CARD"] == "${{ inputs.card }}" and '--card="$CARD"' in start["run"] and '"$RUNNER_TEMP/preview"' in start["run"]
     assert start["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
     font_cache = next(s for s in preview["steps"] if s.get("id") == "font-cache")

@@ -386,7 +386,6 @@ class CardDates:
         return True
 
 
-@dataclass
 class CardRatings:
     """
     TTSCardMaker's site/Card Ratings.json: dated ratings per card, whole numbers 1-10 (owner, 2026-10-26), oldest first.
@@ -394,28 +393,12 @@ class CardRatings:
     file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` (the website's Rate it
     until 2026-11-11); read by the website build only, which shows none (never the bot, the card sync or the checks).
     """
-    cards: dict = field(default_factory=dict)       # normalized card name -> (name as written, [entry])
-
     SCALES = ("favorability", "power")
     SOURCES = ("TTS session", "website")
     KEYS = ("date", "scale", "value", "by", "source")
     ABOUT = ("Card ratings, whole numbers 1 to 10. favorability: how much players like the card; power: 1 weak, 10 too "
              "strong; the middle (5.5) is balanced. Keyed by card file name; entries oldest first. by: \"group\" (a TTS "
              "session) or a GitHub login. Read by the website only.")
-
-    @classmethod
-    def valid(cls, entry) -> bool:
-        if not isinstance(entry, dict) or entry.get("scale") not in cls.SCALES or entry.get("source") not in cls.SOURCES:
-            return False
-        value, by = entry.get("value"), entry.get("by")
-        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 10:      # whole numbers only
-            return False
-        if not isinstance(by, str) or not by or len(by) > 100:
-            return False
-        try:
-            return isinstance(entry.get("date"), str) and date.fromisoformat(entry["date"]).isoformat() == entry["date"]
-        except ValueError:
-            return False
 
     @staticmethod
     def number(value: float):
@@ -432,18 +415,6 @@ class CardRatings:
         rank = lambda seq, v: seq.index(v) if v in seq else len(seq)
         return sorted(entries, key=lambda e: (str(e.get("date", "")), rank(cls.SOURCES, e.get("source")),
                                               str(e.get("by", "")).lower(), rank(cls.SCALES, e.get("scale"))))
-
-    @classmethod
-    def parse(cls, text: str) -> "CardRatings":
-        """Raises ValueError for a file that isn't JSON; bad entries and non-list values are skipped."""
-        data = json_loads(text)
-        cards = data.get("cards") if isinstance(data, dict) else None
-        ratings = cls()
-        for name, entries in (cards if isinstance(cards, dict) else {}).items():
-            kept = [cls.entry(*(e[k] for k in cls.KEYS)) for e in entries if cls.valid(e)] if isinstance(entries, list) else []
-            if kept:
-                ratings.cards[CardAuthors.key(name)] = (name, kept)
-        return ratings
 
 
 # ========================

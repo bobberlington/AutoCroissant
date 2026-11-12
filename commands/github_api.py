@@ -1,5 +1,6 @@
 """GitHub access for the card repo: the token, auth headers, a Session per thread, tree and blob fetches (sha-verified),
 and the retry policy. No psd-tools: the bot loads it (RemotePSD is psd_remote's)."""
+from fcntl import LOCK_EX, flock                    # the two checks side by side: one REST read of a blob
 from hashlib import sha1
 from http.cookiejar import DefaultCookiePolicy
 from os import environ
@@ -11,10 +12,6 @@ from threading import local
 from time import sleep, time
 from urllib.parse import quote
 
-try:
-    from fcntl import LOCK_EX, flock                # the two checks side by side: one REST read of a blob
-except ImportError:                                 # Windows: no claim
-    flock = None
 try:
     import config
 except ImportError:                                 # standalone use (python -m commands.tts_save) without config.py
@@ -177,7 +174,7 @@ def _claim(sha: str):
     """With PENDING_ENV: a lock on sha's REST read (held until closed), so the other check waits and reads the clone;
     None without it."""
     path = environ.get(PENDING_ENV, "")
-    if not path or flock is None:
+    if not path:
         return None
     try:
         held = open(f"{path}.{sha}.lock", "a")

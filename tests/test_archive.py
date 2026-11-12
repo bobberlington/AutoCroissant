@@ -44,7 +44,7 @@ def test_tag_is_plain_data():
 def test_prune_archives_behind_the_history():
     v1 = _card("Gone", blob="1" * 40, ability="First.")
     db = _db([_card("Gone", blob="2" * 40), _card("Kept")], old=[v1], seen=["Kept"])
-    assert db.prune_clean_cards(AT) == (["Gone"], [])
+    assert db.prune_clean_cards(AT) == ["Gone"]
     versions = db.old_stats["Gone"]
     assert "Gone" not in db.stats and versions[0] is v1 and v1.archived is None
     assert versions[1].archived["blob"] == "2" * 40 and set(db.archived()) == {"Gone"}
@@ -54,7 +54,7 @@ def test_duplicates_are_archived_at_their_png():
     """An alt-art duplicate not seen (its PNG or original left) is a card under the archive rule: tagged at its PNG."""
     dup = _card("A Snack2", duplicate_of="A Snack")
     db = _db([_card("A Snack"), dup], seen=["A Snack"])
-    assert db.prune_clean_cards(AT) == (["A Snack2"], []) and "A Snack2" not in db.stats
+    assert db.prune_clean_cards(AT) == ["A Snack2"] and "A Snack2" not in db.stats
     record = db.old_stats["A Snack2"][0]
     assert record.duplicate_of == "A Snack" and record.archived == {"at": AT, "path": "Items/A_Snack2.png", "blob": None,
                                                                     "commit": None}
@@ -121,17 +121,6 @@ def test_untagged_history_is_never_restored():
     db = _db([], old=[_card("Reset")])
     assert not _restore(db, "Reset") and "Reset" not in db.stats and len(db.old_stats["Reset"]) == 1
     assert not _restore(db, "Never there") and "Never there" not in db.old_stats
-
-
-def test_backfill_tags_only_unlisted_unseen_untagged_names():
-    done = _card("Done", archived={"at": 1.0, "path": "Items/Done.psd", "blob": None, "commit": None})
-    db = _db([_card("Live")], old=[_card("Live", blob="0" * 40), _card("Gone"), done, _card("Dup", duplicate_of="X")])
-    assert db.prune_clean_cards(AT) == ([], ["Gone"])
-    assert db.old_stats["Gone"][0].archived == {"at": AT, "path": "Items/Gone.psd", "blob": "a" * 40, "commit": None,
-                                                "backfill": True}
-    assert db.old_stats["Live"][0].archived is None and db.old_stats["Done"][0].archived["at"] == 1.0
-    assert db.old_stats["Dup"][0].archived is None
-    assert db.prune_clean_cards(AT + 1) == ([], [])             # once
 
 
 def test_a_copy_left_by_a_kill_is_replaced():

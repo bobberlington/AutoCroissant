@@ -3,10 +3,7 @@ The card database as JSON (db/, the card data build's output): CardInfo <-> plai
 old_stats.json one card per line written atomically, the manifest's sha256 per file. No Discord or psd-tools.
 
 The bot's sync() is the one network use, imported lazily.
-
-CLI: python -m commands.card_db check <db dir>
 """
-from argparse import ArgumentParser
 from collections import defaultdict
 from dataclasses import MISSING, fields
 from hashlib import sha256
@@ -482,20 +479,6 @@ def sync(folder: str, repository: str, branch: str) -> dict:
 
 
 # ========================
-# CLI
-# ========================
-def main(argv: Optional[list] = None) -> int:
-    parser = ArgumentParser(prog="python -m commands.card_db", description="The card database's JSON files (db/).")
-    sub = parser.add_subparsers(dest="command", required=True)
-    check = sub.add_parser("check", help="db/'s files against its manifest")
-    check.add_argument("db")
-    args = parser.parse_args(argv)
-    problems = check_db(args.db)
-    print("\n".join(problems) if problems else f"{args.db}: whole.")
-    return 1 if problems else 0
-
-
-# ========================
 # Module Exports
 # ========================
 __all__ = [
@@ -510,7 +493,6 @@ __all__ = [
     'card',
     'check_db',
     'file_sha256',
-    'main',
     'merge_verdicts',
     'old_stats_text',
     'parse_old_stats',
@@ -529,7 +511,3 @@ __all__ = [
     'write_db',
     'write_text',
 ]
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

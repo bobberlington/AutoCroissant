@@ -301,7 +301,7 @@ drift; before trusting one, re-find it:
 # Section 1 - card data corruption
 grep -n "^def gates\|^def can_prune" commands/card_data.py              # the build's gates and its prune gate
 grep -n "def prune_clean_cards" commands/card_models.py                  # deletion handling
-grep -n "def startup\|def sync\|Card data sync failed" commands/card_sync.py   # the bot's load and sync
+grep -n "def load_local\|def sync\|Card data sync failed" commands/card_sync.py   # the bot's load and sync
 git log --format='%h %ad %s' --date=short -1 eb9aa84                     # pickle-era revert precedent 2025-11-10
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py | tail -6   # the bot's card_data/
 

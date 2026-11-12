@@ -102,9 +102,9 @@ themselves until 2026-10-25), so these problems persist and surface as the `"pro
 computed checks — `UNKNOWN TYPE`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1014) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
-card**: during a sweep it flows into `_format_problems` (card_data.py:609, called :529)
-and out to Discord/console (the archived local traversal on branch `archive/local-update-stats` has its
-own copy of this flow). Since 2026-10-21 the same `validate()` runs in a second place, `commands/card_check.py`
+card**: the data build runs it once over every card it re-parsed (`build`'s loop over `reparsed`, variants included)
+into the manifest's `problems`, which the bot's /update_stats shows (the archived local traversal on branch
+`archive/local-update-stats` has its own copy of this flow). Since 2026-10-21 the same `validate()` runs in a second place, `commands/card_check.py`
 (the push guard's card check, a step of TTSCardMaker card-guards.yml's check job since 2026-10-25, card-check.yml before): per pushed PSD, after `CardEdits.apply` as in the sweep
 (card_data.py:506-510), into a report, a commit comment and a Discord line; `tests/test_card_check.py` pins the clone's
 cards to the sweep's output, so a validator change shows there first (autocroissant-run-and-operate §7).
@@ -461,7 +461,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | `PARSER_VERSION` (4) and its stamp, re-parse (psd_parser.py:24, :452; card_data.py:144) (2026-10-25) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |
-| validate() gated on output_problematic (card_data.py:669 on 2026-10-23; the archive has its own) | `grep -n "if output_problematic" commands/card_data.py` |
+| validate() once per re-parsed card, in build (the traversal's own pass and `_format_problems` removed 2026-11-12; the archive has its own) | `grep -n "CardValidator.validate" commands/card_data.py` |
 | Pickled problems key in to_dict (113) (2026-10-20) | `grep -n '"problem"' commands/card_models.py` |
 | Local-path fix present (method B precondition) (2026-10-20: moved to branch `archive/local-update-stats`) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115) |
 | Channel-A baseline (0 on 2026-10-23) | `python3 $SCRIPTS/inspect_card_data.py --problems` |

@@ -503,7 +503,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 |---|---|---|
 | `SPARSE_FILES` | 13 paths | the import closure card-preview.yml's preview job checks out of this repo (a test compares the two) |
 | `MAX_EDIT` | 16384 bytes | the edit's JSON; past it: an input error |
-| `SMALL_WIDTH`, `SMALL_AS` | 720, AVIF q50 4:4:4 speed 6, 8x4 tiles | preview.avif / before.avif: the card view's width and codec (WebP q75 from a Pillow without AVIF) |
+| `SMALL_WIDTH`, `SMALL_AS` | 720, AVIF q50 4:4:4 speed 6, 8x4 tiles | preview.avif / before.avif: the card view's width and codec |
 | `RETRY` | card_bake's `TRANSIENT` + `blob` | refusal codes reported as `error`, `transient` (try again) |
 | `PNG_LEVEL` | 1 | preview.png's zlib level, set on `psd_edit.PNG_LEVEL` (6, the commit's) for the bake: never published, same pixels |
 

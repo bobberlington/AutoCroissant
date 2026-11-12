@@ -59,7 +59,7 @@ def test_one_open_reads_as_two(clone, monkeypatch):
     """The build's shared open gives the card (pickle, db/ line, notes) and details record that two opens of the file give."""
     monkeypatch.setattr(pd, "datetime", _Frozen)
     psd_parser = golden_parser()
-    build = cd.CardBuild(psd_parser.db, report=lambda text: None, progress=lambda count: None)
+    build = cd.CardBuild(psd_parser.db)
     build.parser = psd_parser
     for rel in SAME:
         path, name = str(clone / rel), card_name(rel)

@@ -22,17 +22,10 @@ CLONE = pinned_clone()                    # the card repo at CARDS_REV
 
 
 def freeze_vocab() -> None:
-    from commands.card_data import CardBuild
-    from global_config import ICON_MANIFEST_PATH
-    from commands.card_models import StatsDatabase
-    db = StatsDatabase()
-    tr = CardBuild(db)
-    tr._populate_types_from_local(str(CLONE))
-    stars_dir = CLONE / "Types" / "Stars"
-    stars = [tr._star_name(f.name) for f in sorted(stars_dir.iterdir()) if f.name.lower().endswith(".png")]
-    manifest = json.loads((CLONE / ICON_MANIFEST_PATH).read_text(encoding="utf-8"))
+    from commands.card_check import clone_vocabulary
+    vocab = clone_vocabulary(str(CLONE))
     VOCAB.parent.mkdir(exist_ok=True)
-    VOCAB.write_text(json.dumps({"all_types": db.all_types, "stars": stars, "manifest": manifest},
+    VOCAB.write_text(json.dumps({"all_types": vocab.all_types, "stars": vocab.stars, "manifest": vocab.manifest},
                                 indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 

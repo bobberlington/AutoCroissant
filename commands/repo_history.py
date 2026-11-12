@@ -18,7 +18,6 @@ REPOSITORY = CARD_REPO                          # the card repo the history clon
 GIT_TIMEOUT = 300                               # seconds per git call
 BATCH_MODE = "-o BatchMode=yes"                 # ssh fails at once instead of prompting for a key or host
 SSH_CACHE_SECONDS = 60                          # core.sshCommand lookups reused this long
-_PLINK = re_compile(r"^(\"[^\"]*[/\\]|'[^']*[/\\]|\S*[/\\])?(tortoise)?plink(\.exe)?[\"']?(\s|$)", IGNORECASE)   # takes no -o
 _HAS_BATCH = re_compile(r"batchmode(\s*=|\s+(yes|no)\b)", IGNORECASE)     # BatchMode set on purpose
 
 # ========================
@@ -63,7 +62,7 @@ def ssh_command(where: str = "", env: Optional[dict] = None) -> Optional[str]:
     Returns:
         Git's order: GIT_SSH_COMMAND, else core.sshCommand, else GIT_SSH, else ssh, keeping their options (-i keys);
         None for a GIT_SSH program (takes no options) or a failed config lookup;
-        a plink command or an explicit BatchMode is left as is
+        an explicit BatchMode is left as is
     """
     env = environ if env is None else env
     command = env.get("GIT_SSH_COMMAND", "").strip() or _configured_ssh(abspath(where) if where else "")
@@ -73,7 +72,7 @@ def ssh_command(where: str = "", env: Optional[dict] = None) -> Optional[str]:
         if env.get("GIT_SSH"):
             return None
         command = "ssh"
-    if _PLINK.match(command) or _HAS_BATCH.search(command):
+    if _HAS_BATCH.search(command):
         return command
     return f"{command} {BATCH_MODE}"
 

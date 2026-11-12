@@ -110,9 +110,9 @@ def test_unreadable_file_keeps_the_dates(capsys):
     build = cd.CardBuild.__new__(cd.CardBuild)
     build.tree = {"tree": [{"path": FILE}]}
     build._repo_text = lambda path: "{"
-    assert build._dates_from_response(None, "r") is None and "creation dates stay as they are" in capsys.readouterr().out
+    assert build._dates_from_response() is None and "creation dates stay as they are" in capsys.readouterr().out
     build.tree = {"tree": []}
-    assert build._dates_from_response(None, "r") is None
+    assert build._dates_from_response() is None
 
 
 # ========================

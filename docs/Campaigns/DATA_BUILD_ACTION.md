@@ -90,7 +90,7 @@ cannot repeat: the data writers run one at a time from the data head, the posted
 marker comment on the push's head commit, §6.3 step 9); a run without a push also keeps the once per failing streak of
 each lane (the lane's outcome in the newest other live run where its job ended; runs that skipped the lane, and dry
 runs, pass over); the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
-by its Card data job (replaced before it started: dispatched again). `--baked` and `--rewrite` are unused by the workflow. §6.3 below describes the single `sync` job before this.
+by its Card data job (replaced before it started: dispatched again). `--baked` and `--rewrite` went 2026-11-12 (unused). §6.3 below describes the single `sync` job before this.
 
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
@@ -330,7 +330,8 @@ Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs mo
     `commands/psd_parser.py`, read raw from AutoCroissant at no API cost, so a parser change shows up within one interval (gate
     G4 stops it until it is approved). The same for `psd_details.VERSION` against `manifest.builder.details_version`: each
     details record keeps the VERSION it was gathered under, and a record of another one is read again like a parser bump;
-  - (d) `manifest.pending.repin` is not empty: images baked by the last run still need their save links (§6.3, stage 4);
+  - (d) `manifest.pending.repin` is not empty: images baked by the last run still need their save links (§6.3, stage 4;
+    gone 2026-11-12: the main lane re-pins in a second commit on M);
   - (e) events are unposted: the last event's `seq` is past `posted.seq` (a post failed);
   - (f) a dispatch with `force`, `cards`, `full`, `restore` or `seed`.
 - **Failed cards are not retried every run.** A broken PSD stays broken until someone pushes a fix, and that push changes its
@@ -511,7 +512,7 @@ github_api reads it inside a try/except and takes the token from the environment
 9. **History** (§7.4).
 10. **Changelog events** (§12.1), each with the push that brought its commit.
 11. **Gates** (§13).
-12. **Write** `db/`, the manifest (with `pending.repin` for the PNGs baked in B), the summary and the commit message.
+12. **Write** `db/`, the manifest, the summary and the commit message.
 
 ### 7.2 Dates and authors
 
@@ -605,7 +606,8 @@ github_api reads it inside a try/except and takes the token from the environment
     included (`Pickles.done`, the bytes `restored_from` in the commit's pickles). So a restored version removed later on
     purpose (a fold of the types-only ones below, dupes-5) stays removed, and undoing the recovery is a pickle-only
     revert of its PICKLE (no code revert). Idempotent besides (`once=False`): a second pass finds every reading held;
-  - `unknown_values`: an impossible history value (stars outside 0..7; a stat above 10 without an allowance, INT-4's
+  - `unknown_values` (removed 2026-11-12, none left; G3's range check with it): an impossible history value
+    (stars outside 0..7; a stat above 10 without an allowance, INT-4's
     rule; with one, a stat of three digits) of a version read before parser 2 (`unchecked`: no `parser_version`, the
     validator had no range check) becomes unknown (stats -1, stars None), the old value kept in an `OUT OF RANGE: ...`
     problem; the build runs it after its versions and G3 refuses any such left (the range check), the seed report
@@ -790,12 +792,11 @@ github_api reads it inside a try/except and takes the token from the environment
 ```json
 {"schema": 1, "built_at": "2026-10-22T18:04:11Z", "run": "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/<id>",
  "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>", "card_commit_at": 1792700000,
- "main_commit": "<M, or null when the run made no main commit>",
  "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "details_version": 6, "psd_tools": "1.25.0", "python": "3.14"},
  "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
  "inputs": {"edits_blob": "…", "authors_blob": "…", "created_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
- "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0, "baked": 0},
- "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null, "repin": []},
+ "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0},
+ "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null},
  "problems": [{"card": "…", "path": "…", "notes": ["HP NOT FOUND"]}],
  "gates": {"G2": "override by run 123"}, "restored_from": null,
  "files": {"stats.json": "<sha256>", "old_stats.json": "<sha256>", "psd_details.json": "<sha256>"}}

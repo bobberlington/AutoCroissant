@@ -9,7 +9,7 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
 pixels the bake would commit, saved at PNG_LEVEL and recompressed losslessly where oxipng is installed), preview.avif
-(SMALL_WIDTH wide, the card view's width and codec; .webp from a Pillow without AVIF) and before.avif (the card's
+(SMALL_WIDTH wide, the card view's width and codec) and before.avif (the card's
 official PNG made the same way, beside the bake: the site's Diff compares like with like). The bake is lean: no
 duplicate PNGs or artifact crops.
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
@@ -35,7 +35,7 @@ from time import perf_counter, sleep
 from traceback import format_exc
 from typing import Optional
 
-from PIL import Image, features
+from PIL import Image
 from psd_tools import PSDImage
 from requests import RequestException
 
@@ -45,7 +45,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, snapshot_at, vocabulary
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
-from commands.card_preview_branch import MAX_CARD, PNG, REQUEST, RESULT, SMALLS, blank, clean, stamp
+from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, SMALL, blank, clean, stamp
 from commands.git_commit import ref_head
 from commands.github_api import token_from_env
 from global_config import CARD_REPO, ICON_MANIFEST_PATH
@@ -60,9 +60,8 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/psd_links.py", "commands/card_preview_reads.py")    # the last: the Reads step's (stdlib)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
-SMALL_AS = (("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None, "tile_rows": 3, "tile_cols": 2})
-            if features.check("avif") else ("WEBP", {"quality": 75, "method": 4}))   # 8x4 tiles: an edit's codec noise stays near it
-SMALL, BEFORE = SMALLS[SMALL_AS[0]]
+SMALL_AS = ("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None,
+                     "tile_rows": 3, "tile_cols": 2})   # 8x4 tiles: an edit's codec noise stays near it
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
@@ -392,7 +391,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
     started = perf_counter()
     out, clone = expanduser(out), abspath(expanduser(clone)) if clone else ""
     makedirs(out, exist_ok=True)
-    for name in (RESULT, PNG, *sum(SMALLS.values(), ())):
+    for name in (RESULT, PNG, SMALL, BEFORE):
         if exists(join(out, name)):
             remove(join(out, name))
     result = blank(request, card)

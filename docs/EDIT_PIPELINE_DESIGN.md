@@ -1205,7 +1205,7 @@ The card repo (2026-11-08, no actions/checkout): Clone fetches it into the works
 The venv's key (2026-11-09): Clone also reads AC main's requirements-cards.txt once through the API (`bot.reqs`), so the venv restores while the bot clone runs (that clone moves itself into bot/ and compiles there; a failed one waits for the read); no read: the clone's file as before. venv-ok, after Bot, checks the clone's file gives the same sha (AC main moved in between: the venv is removed, cards-python sets up as on a miss).
 
     python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>] [--request <id>]
-    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote origin] [--png]
+    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote origin]
     python -m commands.card_preview_branch --warm [--git <checkout>] [--remote origin]
 
 The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG and blob gates, the redundancy check,
@@ -1243,12 +1243,12 @@ result on the branch; the site says so before an editor's first press.
 
 **Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the pixels the bake would
 commit, saved at zlib level 1 (`card_preview.PNG_LEVEL`) and losslessly recompressed by `png_export.recompress` where
-oxipng is installed; the workflow leaves the oxipng CLI out (~4 s a preview for nothing) and does not publish the PNG,
-`--png` publishes it; the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
+oxipng is installed; the workflow leaves the oxipng CLI out (~4 s a preview for nothing) and the PNG is never published
+(`--png` went 2026-11-12); the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
 and `preview.avif` (720 px wide, the card view's AVIF: quality 50, 4:4:4, speed 6, no ICC profile, 8x4 tiles; an
 opaque alpha dropped) when an image was rendered, with `before.avif`: the card's official PNG made the same way, for the
 site's Diff (one codec on both sides, so unchanged pixels match). WebP q75 until 2026-11-10 (4:2:0 shifted coloured
-words' colours); still `.webp` (q75, method 4) from a Pillow without AVIF. On 16 real previews: word colour error
+words' colours; the WebP fallback for a Pillow without AVIF went 2026-11-12). On 16 real previews: word colour error
 20.0 -> 6.6 levels, 49.7 kB vs 67.3, the Diff's flags beyond 64 px of a change 3010 -> 1394 px (the tiles and the
 dropped alpha: without them 2.4x WebP's).
 result.json (`v` 1):

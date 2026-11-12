@@ -313,18 +313,6 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
     assert {path for _, path in served} == {DOOMER, FREEZER} and {ref for ref, _ in served} == {cards.first}
 
 
-def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatch):
-    helpers._build(cards, "--empty")
-    helpers.put(cards.repo, DOOMER, cards.psds[OTHER])
-    baked = helpers.commit(cards.repo, "AutoCroissant", 2000)          # B: local, not on GitHub
-    _hide(monkeypatch, {_sha(cards.psds[FREEZER])})
-    served: list = []
-    monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
-    assert helpers._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
-    assert served and set(served) == {(cards.first, FREEZER)}      # B's own PSD came from the clone
-    assert _strip(helpers._read(cards)[0]["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
-
-
 def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, monkeypatch):
     """gather_links reads MDW PSDs and .psb files by ranges in the download workers: links.json as one worker gives."""
     rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"

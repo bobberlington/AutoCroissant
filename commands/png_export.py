@@ -328,11 +328,6 @@ def _cli(data: bytes, keep_colour: bool) -> Optional[bytes]:
             return None
 
 
-def tool() -> Optional[str]:
-    """What optimize runs: "cli", or None without the oxipng CLI."""
-    return "cli" if which(OXIPNG) else None
-
-
 def _all(data: bytes) -> list:
     """[(type, payload, the chunk's bytes)] of a PNG file; raises ValueError when it is not one."""
     if not data.startswith(SIGNATURE):
