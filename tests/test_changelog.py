@@ -55,7 +55,8 @@ def test_field_changes_list_the_data_fields():
 def test_field_changes_skip_what_a_reading_could_not_know():
     """No phantom steps: a name or types before parser 2 (Mol D Truffy; Dumplings' tomato read as panda), a series the
     2026-10-20 split moved under a parent (Bob-ulk; the same subseries in another series is a step), stars a parse
-    could not find (Bubble), an empty ability's two forms, a retired icon's name."""
+    could not find (Bubble), an empty ability's two forms, a retired icon's name, misread stats (a bar not read, one
+    over 20 not allowed, none read)."""
     early = _card(parser_version=None, display_name=None, types=["panda"])
     assert cl.field_changes(early, _card(display_name="Mol D. A", types=["food"])) == {}
     assert list(cl.field_changes(early, _card(display_name="Mol D. A", stars=4))) == ["stars"]
@@ -68,6 +69,12 @@ def test_field_changes_skip_what_a_reading_could_not_know():
                             _card(stars=1)) == {}
     assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
     assert cl.field_changes(_card(display_name="A"), _card()) == {}                 # a title equal to the name
+    for misread in (_card(stats=cm.CardStats(26, -1, -1, -1)), _card(stats=cm.CardStats(23, 2, 3, 4)),
+                    _card(stats=cm.CardStats(), problems=["NO STATS FOUND: no HP, DEF, ATK or SPD bars read"])):
+        assert cl.field_changes(_card(), misread) == {} == cl.field_changes(misread, _card())    # Chris & Jordi's 7 -> 26
+    assert list(cl.field_changes(_card(), _card(stats=cm.CardStats(23, 2, 3, 4), allow_high_stats=True))) == ["hp"]
+    active = dict(types=["active"], stats=cm.CardStats(5, 2, -1, -1))
+    assert list(cl.field_changes(_card(types=["active"]), _card(**active))) == ["atk", "spd"]
 
 
 # ========================
@@ -375,3 +382,25 @@ def test_cursor_moves_only_after_each_message(tmp_path):
     cl.advance(db, 1, p1["after"])
     assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
 
+
+
+def test_past_misread_stat_lines_dropped(tmp_path):
+    """drop_misread (png_changes backfill --events): Tyler's 'HP 7 -> 23 (buff)' beside DEF, ATK, SPD none goes art; a
+    bars-gone side beside a text change keeps the text; an allowed 23, a raid boss's 30, a real step and an edit stay;
+    seqs kept, once."""
+    from commands.card_db import stats_text
+    db = str(tmp_path)
+    (tmp_path / "stats.json").write_text(stats_text({"High": _card("High", allow_high_stats=True)}), encoding="utf-8")
+
+    def event(seq, fields, card="A", kind="changed", stars=5):
+        verdict = {k: v for k, v in cl.classify(fields).items() if v is not None}
+        return {"seq": seq, "at": T, "kind": kind, "card": card, "card_type": "creature", "stars": stars, "fields": fields, **verdict}
+    misread = {"hp": [7, 23], "def": [6, None], "atk": [4, None], "spd": [6, None]}
+    text = {"hp": [6, None], "ability": ["Hit.", "Smash."]}
+    kept = [event(3, {"hp": [20, 23]}, "High"), event(4, {"hp": [7, 30]}, stars=6), event(5, {"hp": [5, 6]}),
+            event(6, {"hp": [None, 6]}, kind="edited")]
+    cl.append_events(db, [event(1, misread), event(2, text), *kept])
+    assert cl.drop_misread(db) == 2 and cl.drop_misread(db) == 0
+    got = cl.read_events(db)
+    assert got[0] == {k: v for k, v in event(1, misread).items() if k not in ("fields", "buffs", "nerfs", "verdict")} | {"kind": "art"}
+    assert got[1] == event(2, {"ability": text["ability"]}) and got[2:] == kept and "verdict" not in got[1]

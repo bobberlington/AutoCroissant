@@ -113,14 +113,15 @@ def test_an_old_version_shows_its_data_and_dates(db):
 
 
 def test_an_old_version_says_what_its_reading_could_not_know(db):
-    """card_history.unknown's fields say unknown (types read before parser 2, an ability its parse found no layer for);
-    a later reading's types show."""
+    """card_history.unknown's fields say unknown (types read before parser 2, an ability its parse found no layer for,
+    stats it read none of); a later reading's types show."""
     old = cm.stats_db.old_stats["Tainted Bethany"]
-    old[0].types, old[0].ability, old[0].problems = ["fire"], None, ["NO ABILITY LAYER"]
+    old[0].types, old[0].ability, old[0].problems = ["fire"], None, ["NO ABILITY LAYER", "NO STATS FOUND: no bars read"]
     old[1].types, old[1].parser_version = ["dark"], 2
     first = _old("Tainted Bethany", -1)[0]
     assert "types: unknown (read before parser 2, 2026-10-21)" in first and "fire" not in first
     assert "ability: unknown (no ability layer)" in first
+    assert "stats: unknown (no stats found)" in first and "hp: " not in first
     assert "types: ['dark']" in _texts("Tainted Bethany", "2026-02-07")[0]
 
 
