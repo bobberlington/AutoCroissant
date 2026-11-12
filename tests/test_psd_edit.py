@@ -554,7 +554,8 @@ def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path, monkeypatch):
     """Croissant's Isaac bars (a knockout group's moved mask, Transparency Shapes Layer off, nested smart objects) draw
     as Photoshop stored them: Tainted Isaac's HP at 6 from a document saved at 10, Clot Black's with no last applied
     comp, Tainted Magdalene's deep knockout with the shapes layer on; a set_comp edit gates and reads; a bar drawn
-    otherwise than stored is refused; capped at 10 even when its art fills the box (Uumuu's)."""
+    otherwise than stored is refused, and so is every bar on a fork that cannot draw knockout; capped at 10 even when
+    its art fills the box (Uumuu's)."""
     def placed(rgba, where, box):
         out = np.zeros((box[3] - box[1], box[2] - box[0], 4), np.float32)
         out[where[1] - box[1]:where[3] - box[1], where[0] - box[0]:where[2] - box[0]] = rgba
@@ -582,6 +583,10 @@ def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path, monkeypatch):
     psd.save(saved, update_preview=False)
     pe.gate_bytes(path, saved, [edit])
     assert pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"]["hp"] == 4
+    import commands.psd_links as pl
+    monkeypatch.setattr(pl, "fork_draws_knockout", lambda: False)
+    with pytest.raises(pe.Refused, match="cannot draw 'Group 2''s knockout"):
+        pe.comp_render(comp_bars(PSDImage.open(path))["hp"][0][0], 4)
 
 
 def test_alt_parts_rows_decide(clone):

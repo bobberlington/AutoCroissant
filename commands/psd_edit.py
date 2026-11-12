@@ -3872,9 +3872,10 @@ def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = Tru
 
 def _flat_layer(inner) -> bool:
     """A bar document's layer comp_render's own path draws (the template's): a shape or pixel layer, Normal, no
-    effects."""
+    effects, no knockout."""
     return not inner.is_group() and inner.kind in ("shape", "pixel") and not inner.has_effects() \
-        and inner.blend_mode == BlendMode.NORMAL
+        and inner.blend_mode == BlendMode.NORMAL \
+        and not (inner.tagged_blocks is not None and inner.tagged_blocks.get_data(Tag.KNOCKOUT_SETTING, 0))
 
 
 def comp_custom(layer) -> bool:
@@ -3919,14 +3920,18 @@ def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[i
     Transparency Shapes Layer off, nested smart objects; custombars 2026-11-11).
 
     Returns:
-        (straight RGB, alpha) float32 at the document's size; Refused for another colour profile or mode, a comp that
-        moves a vector mask or a layer, changes a look, or captures what is not read
+        (straight RGB, alpha) float32 at the document's size; Refused for another colour profile or mode, a layer
+        the installed fork cannot draw (undrawable: knockout before cards-20261112), a comp that moves a vector mask
+        or a layer, changes a look, or captures what is not read
     """
     def refuse(why: str):
         raise Refused("unsupported-card", f"{layer.name!r}: {why}: set it in Photoshop")
     if doc.color_mode != ColorMode.RGB or doc.image_resources.get_data(Resource.ICC_PROFILE) != \
             layer._psd.image_resources.get_data(Resource.ICC_PROFILE):
         refuse("its bar is in another colour profile")
+    undrawn = undrawable(doc)
+    if undrawn:
+        refuse(f"the bot cannot draw {undrawn[0]!r}'s knockout or Transparency Shapes Layer as Photoshop does")
     captured = next(int(c.get(b"capturedInfo", 0)) for c in comps.get(b"list") or [] if int(c[b"compID"]) == want)
     if captured & ~(COMP_SHOWN | COMP_PLACED | COMP_LOOK):
         refuse("a layer comp holding more than eyes, places and looks")
