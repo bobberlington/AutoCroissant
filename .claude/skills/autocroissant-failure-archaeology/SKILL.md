@@ -782,7 +782,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Root cause**: `@tasks.loop(seconds=1)` on the three drains; one `queue_message` per result in `query_ability`.
 - **Evidence**: the three drains tick every 0.1 s (main.py:880-912; ordering, per-item try, `_running`, the fallback
   and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:874-876), started
-  and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s,
+  and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (a 10-20 one-off script, deleted, in git history; on a snapshot, 10 s,
   no Discord): 1.29 ms CPU/s with 0 reminders, 1.53 with 200 (0.33 / 0.40 at 1 s), 2 threads alive.
   `query_ability` (query_card.py:577-623; :966 on 2026-10-25) posts one match as before (its image URL, a preview; since 2026-10-21 its name when
   the PNG is not in the tree: `get_card_url` returned None and the content=None message was dropped by Discord); more as

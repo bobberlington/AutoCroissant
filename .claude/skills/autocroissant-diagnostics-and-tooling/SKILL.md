@@ -670,7 +670,7 @@ Not part of the five, and not read-only in the same sense (most need a sandbox c
 |---|---|---|
 | Offline test suite | `tests/` (`~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests`) | Behaviour contracts, parser goldens; owner: autocroissant-validation-and-qa row 1c |
 | Whole-corpus parser gate | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` (table below; venv interpreter) | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
-| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and, then, the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/import_ns.py` (sandbox root as first argument) | Queue hops, import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
+| Profiling and benches | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/import_ns.py` (sandbox root as first argument) | Import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
 | Skill line-ref check | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/grepcheck.py` runs every quoted grep; `provcheck.py` checks the line numbers after them | Stale `file:line` references after code moves |
 
 ### Optimization-pass scripts
@@ -776,7 +776,7 @@ TTSCardMaker grows a new top-level folder, update inspect_card_data.py's known-t
 If a script is added, this document must gain a routing row, a section, and a provenance line.
 
 2026-10-20 (later): the optimization-pass scripts and their JSON moved from `~/Documents/ac-optimization/` into
-`scripts/optimization/` (byte-identical, described above); the reports and `bench/` went to `docs/Finished/optimization-pass-2026-10-20/`.
+`scripts/optimization/` (byte-identical, described above); the reports went to `docs/Finished/optimization-pass-2026-10-20/`.
 
 2026-10-22 (data build): RepositoryTraverser's body moved to commands/card_data.py (`CardBuild`); the `*_from_local` helpers the scripts call are there, unchanged.
 

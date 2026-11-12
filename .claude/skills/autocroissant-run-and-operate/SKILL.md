@@ -542,7 +542,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | `card_tree.json` | startup (read), every card list fetch whose tree or Card Edits.json changed (commands/query_card.py) | repo root: the card repo's last tree (paths and blob shas), its ETag and Card Edits.json's text, with a sha256; written atomically, never for a /set_repo repository | NO (gitignored) — delete it and the next start fetches the tree whole |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q -n auto tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the reminder store |
-| 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
+| 2026-10-20 optimization-pass audits and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
 
 ## 9. Reminders operations
 
@@ -833,7 +833,7 @@ mtimes with commit dates (B6); then revisit section 7's operating rule and the r
 section 9, keeping the pointer to autocroissant-failure-archaeology for the history.
 
 2026-10-20 (later): the optimization-pass pointers above moved from `~/Documents/ac-optimization/` to
-`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (scripts) and `docs/Finished/optimization-pass-2026-10-20/` (reports, bench).
+`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (scripts) and `docs/Finished/optimization-pass-2026-10-20/` (reports).
 
 2026-10-21: the queue drains tick every 0.1 s and `process_reminders` is the 1 s reminder heartbeat (section 1); main.py line numbers re-pointed (review: on_ready start range, /update range). Review: the "Loaded N cards" print is query_card.py:472.
 

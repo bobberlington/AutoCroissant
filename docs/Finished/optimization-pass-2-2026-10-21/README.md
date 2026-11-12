@@ -5,7 +5,7 @@ Session checklist item 3: a measured pass over the code written the night before
 `github_api` for the duplication question, `/query_ability` and `/fonts` in `query_card.py` / `main.py`. AutoCroissant
 main 74a5c2c (working tree, committed by the orchestrator); TTSCardMaker f5a0e50 (five files: two workflow lists,
 `build_site.py`, `app.js`, `edit.js`; no PSD or PNG). Three read-only audits ran first (perf.md, code-health.md,
-tests.md), then the fixes, then a review round. bench/ holds the profiling scripts (they stub `config`; paths are this Mac's).
+tests.md), then the fixes, then a review round. Its bench/ scripts were deleted on 2026-11-12 (in git history).
 
 Machine: Apple M2 Ultra, 24 cores, 192 GB, load average 12-25 throughout (a rendering workflow shared the box), so wall
 times are pessimistic by 20-40 % and only before/after pairs on the same day compare.
