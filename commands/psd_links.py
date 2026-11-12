@@ -1936,18 +1936,16 @@ def main(args: Optional[list] = None) -> int:
     cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
     red.add_argument("--checkout", "--local", required=True, help="the card repo's checkout (blobless is enough)")
-    red.add_argument("--db", default="", help="the data's db folder (its links.json)")
-    red.add_argument("--repo", default="", help="the card repo (card-sync.yml's; blobs come from the checkout's origin)")
+    red.add_argument("--db", required=True, help="the data's db folder (its links.json)")
     red.add_argument("--head", default="HEAD", help="the commit to read the PSDs at and commit R on")
     red.add_argument("--bytes", type=int, default=1 << 30, help="bytes written at most")
-    red.add_argument("--until", "--deadline", type=float, default=0.0, help="epoch seconds: no PSD started past it")
+    red.add_argument("--deadline", type=float, default=0.0, help="epoch seconds: no PSD started past it")
     red.add_argument("--out", default="", help="a folder for redraw.json (due: the PSDs still due)")
     red.add_argument("--dry-run", action="store_true", help="commit nothing")
     due = sub_.add_parser("due", help="Card sync's Linked due: prints how many PSDs a redraw would draw again")
     due.add_argument("--clone", required=True, help="the card repo's checkout (its trees; nothing fetched)")
     due.add_argument("--db", required=True, help="the data's db folder (its links.json)")
     due.add_argument("--head", default="HEAD", help="the commit to read")
-    due.add_argument("--repo", default="", help="card-sync.yml's (unused)")
     opts = parser.parse_args(args)
     if opts.command == "catalogue" and opts.held and not (opts.held_ref and opts.held_base):
         parser.error("--held needs --held-ref and --held-base (PLAN 5.3: a held card pushed meanwhile is read at --ref)")
@@ -1978,8 +1976,6 @@ def main(args: Optional[list] = None) -> int:
             dump(out, fh, indent=0, sort_keys=True)
         print(dumps({"psds": len(out["psds"]), "files": len(out["files"]), "errors": len(out["errors"]), **_counts(out)}))
         return 1 if out["errors"] else 0
-    if opts.command == "redraw" and not opts.db:
-        parser.error("redraw needs --db")
     with open(posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
         links = load(fh)
     details, cleared = None, {}                 # psd_glyphs' texts (the data's psd_details.json), people's flags that went
@@ -1993,7 +1989,7 @@ def main(args: Optional[list] = None) -> int:
         print(due_count(opts.clone, links, opts.head, details))
         return 0
     fonts_dir = (environ.get("PSD_TOOLS_FONT_DIRS") or "").split(":")[0] or path_join(opts.checkout, "MDW", "Fonts")
-    found = redraw_linked(opts.checkout, links, opts.head, budget=opts.bytes, until=opts.until, details=details,
+    found = redraw_linked(opts.checkout, links, opts.head, budget=opts.bytes, until=opts.deadline, details=details,
                           fonts_dir=fonts_dir, cleared=cleared)
     commit = ""
     if found.files and not opts.dry_run:

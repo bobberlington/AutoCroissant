@@ -282,9 +282,9 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     db.mkdir()
     (db / "links.json").write_text(json.dumps(known))
     capsys.readouterr()
-    assert pl.main(["due", "--repo", "o/cards", "--head", "HEAD", "--clone", str(repo), "--db", str(db)]) == 0
+    assert pl.main(["due", "--head", "HEAD", "--clone", str(repo), "--db", str(db)]) == 0
     assert capsys.readouterr().out == "2\n"
-    assert pl.main(["redraw", "--repo", "o/cards", "--head", "HEAD", "--local", str(repo), "--db", str(db), "--out", str(report),
+    assert pl.main(["redraw", "--head", "HEAD", "--local", str(repo), "--db", str(db), "--out", str(report),
                     "--deadline", "0", "--bytes", "1000000000", "--dry-run"]) == 0
     assert json.loads((report / "redraw.json").read_text())["cards"] == sorted(users)
     done = pl.redraw_linked(str(repo), known)
