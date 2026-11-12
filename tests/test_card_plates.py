@@ -18,6 +18,7 @@ from commands.psd_edit import card_parts, _bare_parser
 
 DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Ability FX: Blazing"
 PUZZLED = "Creatures/Other/3 Stars/Puzzled_Cat.psd"    # her own pictures under the old template's digit rows
+PIX = "Creatures/Kirby/3 Stars/Pix.psd"                 # three creatures: their own DEF rows, one HP bar for all
 
 
 def test_plates_of_a_card(clone):
@@ -103,6 +104,29 @@ def test_star_pictures_are_the_bakes(clone, tmp_path):
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     stars = cp.with_stars(None, psd, raw, png, parsed, parser, PUZZLED, 5)["icons"]["bars"]["stars"]
     assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
+
+
+def test_creature_pictures_are_the_bakes(clone, tmp_path):
+    """Creature 2's own stat picture is the bake's PNG of that `creatures` edit, keyed "<stat>@2" at its value; none
+    past what its row prints, nor on a bar creature 1 shares (creature 1's picture)."""
+    raw = (clone / PIX).read_bytes()
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / PIX.replace(".psd", ".png"))
+    png.load()
+    parser = _bare_parser()
+    parsed = psd_edit.parse_card(parser, str(clone / PIX), PIX, psd)
+    psd_edit.use_record(psd, PIX)
+    icc = psd_edit.export_icc(psd, png)
+    wanted = [dict(one) for one in parsed["card"]["creatures"]]
+    wanted[1]["def"] = 9
+    job = psd_edit.classify(parsed, {"creatures": wanted}, psd, parser).jobs["creatures"]
+    ours = cp.bar_value(psd, raw, png, parsed, parser, PIX, "def", 9, icc, creature=2)
+    baked = psd_edit.apply_jobs(str(clone / PIX), str(clone / PIX.replace(".psd", ".png")), PIX, {"creatures": job},
+                                parsed, parser, str(tmp_path), str(clone / "MDW" / "Fonts"), psd=psd)
+    assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
+    assert cp.bar_value(psd, raw, png, parsed, parser, PIX, "def", 11, icc, creature=2) is None
+    assert cp.bar_value(psd, raw, png, parsed, parser, PIX, "hp", 5, icc, creature=2) is None
+    at = {**parsed["card"], **cp._creature_stats(parsed["card"])}
+    assert cp.bar_sheet({"def@2": {9: _moved(png, ours)}}, at)["bars"]["def@2"]["at"] == 8 and at["def@3"] == 2
 
 
 def _moved(png, merged):

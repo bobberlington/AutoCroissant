@@ -293,6 +293,17 @@ out([m.barCut(bars, "hp", 4, 6), m.barCut(bars, "hp", 4, 7), m.barCut(bars, "def
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "statLabel"), reason="no creature pictures in mockup.js")
+def test_creature_stat_jobs(tmp_path):
+    """Creature 2's own stat edit is a "<stat>@2" job (the plate's pictures only); none without a matching list."""
+    out = node(tmp_path, """
+const was = [{ hp: 2, def: 1 }, { hp: 3, def: 1 }], two = [was[0], { hp: 5, def: 1 }];
+out([m.changes({ hp: 2, creatures: two }, { hp: 2, creatures: was }).stats,
+  m.changes({ creatures: two }, { creatures: null }).stats]);""")
+    assert out == [{"hp@2": [3, 5]}, {}]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "labelRow"), reason="no labelRow in mockup.js")
 def test_plates_port_of_the_rows(tmp_path):
     """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one

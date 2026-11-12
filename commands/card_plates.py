@@ -336,19 +336,30 @@ def mock_misses(image: Image.Image, psd: PSDImage, card: dict, kinds: dict, sure
 
 
 def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, stat: str, value: int,
-              icc: bool) -> Optional[Image.Image]:
+              icc: bool, creature: int = 1) -> Optional[Image.Image]:
     """
     The card's PNG after a website edit of one stat, as the bake makes it (psd_edit._apply_jobs' steps for a stat job:
     classify, set_stat on a copy, gate_dirty, baseline, the merge), or None when the bake refuses it or the re-parse
     would not read the value. The saved file's gates (gate_bytes, stories, filters, fx, idempotence) are not run:
     saving every value is too slow here, and no stat value only they refuse is known (Chef, Computer Virus HP 0-20).
+    creature: past 1, that creature's stat on a card of several (a `creatures` job, set_creatures); None when the job
+    moves another creature too (a shared bar: creature 1's picture).
     """
-    found = psd_edit.classify(parsed, {stat: value}, psd, parser)
-    if stat not in found.jobs:
+    if creature == 1:
+        job = psd_edit.classify(parsed, {stat: value}, psd, parser).jobs.get(stat)
+    else:
+        wanted = [dict(one) for one in parsed["card"]["creatures"]]
+        wanted[creature - 1][stat] = value
+        job = psd_edit.classify(parsed, {"creatures": wanted}, psd, parser).jobs.get("creatures")
+        if job is not None and any(one for n, one in enumerate(job) if n != creature - 1):
+            return None
+    if job is None:
         return None
     try:
         new = psd_edit.edit_copy(psd, raw)
-        edits = [edit for edit in [psd_edit.set_stat(new, parsed, stat, value)] if edit.layers or edit.removed]
+        made = psd_edit.set_creatures(new, parsed, job) if creature > 1 \
+            else [psd_edit.set_stat(new, parsed, stat, value)]
+        edits = [edit for edit in made if edit.layers or edit.removed]
         if not edits:
             return None
         kept, merged, edited = {}, png, psd_edit.edited_ids(edits)
@@ -363,8 +374,12 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
                 return None
     except psd_edit.Refused:
         return None
-    if parser is not None and psd_edit.parse_card(parser, rel, rel, new)["card"].get(stat) != value:
-        return None                             # gate_reparse's
+    if parser is not None:                      # gate_reparse's
+        got = psd_edit.parse_card(parser, rel, rel, new)["card"]
+        if creature > 1:
+            got = dict(enumerate(got.get("creatures") or [], 1)).get(creature, {})
+        if got.get(stat) != value:
+            return None
     return merged
 
 
@@ -409,9 +424,15 @@ def _moved(was: np.ndarray, merged: Image.Image) -> Optional[tuple]:
     return x0, y0, now[y0:y1, x0:x1].copy(), was[y0:y1, x0:x1].copy()
 
 
+def _creature_stats(card: dict) -> dict:
+    """{"<stat>@<n>": value} of creatures 2..N on a card of several (bar_changes' keys past creature 1's)."""
+    return {f"{stat}@{n}": one[stat] for n, one in enumerate(card.get("creatures") or [], 1) if n > 1
+            for stat in psd_edit.STAT_FIELDS if isinstance(one.get(stat), int) and one[stat] >= 0}
+
+
 def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str) -> dict:
     """{stat: {value: _moved()}} over the view pixels a stat edit moves (bar_value at the site's card view, view());
-    every stat the card has, every value the bake takes."""
+    every stat the card has, every value the bake takes; creatures 2..N's own as "<stat>@<n>" (_creature_stats)."""
     card = parsed["card"]
     stats = [stat for stat in psd_edit.STAT_FIELDS if isinstance(card.get(stat), int) and card[stat] >= 0]
     if not stats or png.size != psd.size or psd_edit.story_style_drift(psd, kerning=False):
@@ -419,14 +440,16 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
     psd_edit.use_record(psd, rel)
     icc = psd_edit.export_icc(psd, png)
     was = np.asarray(view(png).convert("RGBA"))
-    out = {}
+    out, at = {}, {**{stat: card[stat] for stat in stats}, **_creature_stats(card)}
     with psd_edit.render_cache(shared=True):
-        for stat in stats:
+        for key, now_at in at.items():
+            stat, _, n = key.partition("@")
             for value in range(BAR_TOP + 1):
-                merged = None if value == card[stat] else bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc)
+                merged = None if value == now_at else bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc,
+                                                                 int(n or 1))
                 moved = _moved(was, merged) if merged is not None else None
                 if moved:
-                    out.setdefault(stat, {})[value] = moved
+                    out.setdefault(key, {})[value] = moved
     return out
 
 
@@ -535,7 +558,8 @@ def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image
     card = parsed["card"]
     if not pictured(psd, png, card, style):
         return plate
-    sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel), card, vw=view(png).width)
+    sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel), {**card, **_creature_stats(card)},
+                      vw=view(png).width)
     if sheet is None:
         return plate
     return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "bars": sheet}
