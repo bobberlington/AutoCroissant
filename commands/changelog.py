@@ -563,10 +563,23 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
         gone = f"moved to {_md(event['moved_to'].rsplit('/', 1)[0])}" if event.get("moved_to") else "PSD deleted"
         return f"{_md(event.get('title') or event['card'])} ({gone})"
     if kind in ("baked", "bake-refused", "guard-png", "guard-fix"):
-        why = PLAIN.sub("", event.get("reason") or event.get("line") or "")
+        why, was = event.get("reason") or event.get("line") or "", event.get("renamed_from")
+        if was:                                           # the rename said once, at the end
+            why = _without_rename(why, was, event["card"])
+        why = PLAIN.sub("", why)
         png = " (PNG re-made)" if kind == "baked" and event.get("pngs") else ""
-        return f"{title}: {_md(why)}{png}" if why else f"{title}{png}"
+        renamed = f" (renamed from {_md(was)})" if was else ""
+        return f"{title}: {_md(why)}{png}{renamed}" if why else f"{title}{png}{renamed}"
     return title
+
+
+def _without_rename(reason: str, old: str, new: str) -> str:
+    """A bake reason without its "renamed: Old -> New" (card_bake._describe's last job)."""
+    said = f"renamed: {old} -> {new}"
+    for cut in (f", {said}", f"{said}; ", said):
+        if cut in reason:
+            return reason.replace(cut, "", 1)
+    return reason
 
 
 def _when(at: Optional[float]) -> str:
@@ -605,7 +618,7 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     One push's Discord message: titled title_of(), linked link_of(), one embed per section (SECTIONS order), the
     website's kind words, within Discord's limits (EMBEDS_MAX embeds, DESCRIPTION_MAX each, MESSAGE_MAX in all); what
     doesn't fit becomes "N more on the website". A baked card's new art is its bake line's "(PNG re-made)": no New art
-    line (owner, 2026-11-11).
+    line; its rename, the line's "(renamed from Old)": no Moved and renamed line (owner, 2026-11-11).
 
     Returns:
         The webhook body, or None when there is nothing to post
@@ -613,7 +626,13 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     if not group:
         return None
     baked = {e["card"] for e in group if e["kind"] == "baked"}
-    group = [e for e in group if not (e["kind"] == "art" and e["card"] in baked)]
+    was: dict = {}                                        # a baked card -> its old name
+    for e in group:
+        if e["kind"] == "renamed" and e.get("renamed_to") in baked:
+            was.setdefault(e["renamed_to"], e["card"])
+    group = [dict(e, renamed_from=was[e["card"]]) if e["kind"] == "baked" and e["card"] in was else e for e in group
+             if not (e["kind"] == "art" and e["card"] in baked)
+             and not (e["kind"] == "renamed" and was.get(e.get("renamed_to")) == e["card"])]
     title, url = title_of(group), link_of(group, repository)
     embeds, total, hidden = [], len(title), 0
     for kinds, heading in SECTIONS:

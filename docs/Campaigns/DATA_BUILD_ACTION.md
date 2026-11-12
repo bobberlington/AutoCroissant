@@ -1008,8 +1008,9 @@ A duplicate's change is listed under its original.
 **One post per push.**
 - **Which pushes.** Each push in the run's batch that brought at least one event gets one message, oldest first. A push with
   no card events (site code, the save alone, `Types/` art with no data change) gets none. The run's own commit M is a push:
-  baked edits post as "Website edits baked into the PSDs" (a baked card is not listed under New art too). Parser
-  re-reads never post (owner 2026-11-11: the website keeps them).
+  baked edits post as "Website edits baked into the PSDs" (a baked card is not listed under New art too, nor under
+  Moved and renamed: its bake line ends "(renamed from Old)"). Parser re-reads never post (owner 2026-11-11: the website
+  keeps them).
 - **The message.** Titled with who pushed and when, for example "Zomoroko, Oct 22 14:05: 1 new, 2 changed", linked to the
   push's compare view (`before...after`). It uses the website's card-kind words (`KIND_LABEL` in `site/assets/app.js`: Creature,
   Minion, Item, Field card, N.M.E. item, Debuff, Buff…), never invented ones (memory `game-terminology`).

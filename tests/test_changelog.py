@@ -303,18 +303,27 @@ def test_lines_show_the_real_change():
     assert (cl.text_change("Hit\n2.", "Hit 2."), cl.text_change("Hit  2.", "Hit 2.")) == ("line breaks only", "spacing only")
 
 
-def test_a_baked_card_is_not_new_art_too():
-    """Owner 11-11: a bake post lists a baked card once (its "(PNG re-made)"); other new art stays, and the title counts
-    what is listed."""
+def test_a_baked_card_is_listed_once():
+    """Owner 11-11: a bake post lists a baked card once (its "(PNG re-made)", its "(renamed from Old)"); other new art
+    and renames stay, and the title counts what is listed."""
     sync = dict(PUSH, by=cl.CARD_SYNC)
     events = cl.number([dict(e, push=sync) for e in (
         {"kind": "art", "card": "Earth Totem"}, {"kind": "art", "card": "Breakfast"},
-        {"kind": "baked", "card": "Earth Totem", "reason": "ability 'have +1 DEF.' -> 'have +0.5 DEF.'", "pngs": ["a.png"]})], 0, at=T)
+        {"kind": "renamed", "card": "Zess T Deluxe", "renamed_to": "Zess Deluxe"},
+        {"kind": "renamed", "card": "Old Shield", "renamed_to": "New Shield"},
+        {"kind": "baked", "card": "Earth Totem", "reason": "ability 'have +1 DEF.' -> 'have +0.5 DEF.'", "pngs": ["a.png"]},
+        {"kind": "baked", "card": "Zess Deluxe", "pngs": ["z.png"],
+         "reason": "title 'Zess T. Deluxe' -> 'Zess Deluxe', renamed: Zess T Deluxe -> Zess Deluxe"})], 0, at=T)
     body = cl.messages(events, "https://site")[0]["body"]
-    assert body["embeds"][0]["title"] == "Website edits baked into the PSDs, Oct 22 14:13: 1 new art, 1 baked"
+    assert body["embeds"][0]["title"] == "Website edits baked into the PSDs, Oct 22 14:13: 1 new art, 1 renamed, 2 baked"
     assert [e["description"] for e in body["embeds"]] == [
         "**New art**\n[Breakfast](https://site/#/cards?q=Breakfast)",
-        "**Baked into the PSDs**\n[Earth Totem](https://site/#/cards?q=Earth%20Totem): ability 'have +1 DEF.' -> 'have +0.5 DEF.' (PNG re-made)"]
+        "**Moved and renamed**\n[New Shield](https://site/#/cards?q=New%20Shield) (renamed from Old Shield)",
+        "**Baked into the PSDs**\n[Earth Totem](https://site/#/cards?q=Earth%20Totem): ability 'have +1 DEF.' -> 'have +0.5 DEF.' (PNG re-made)\n"
+        "[Zess Deluxe](https://site/#/cards?q=Zess%20Deluxe): title 'Zess T. Deluxe' -> 'Zess Deluxe' (PNG re-made) (renamed from Zess T Deluxe)"]
+    alone = cl.payload([dict(e, push=sync) for e in ({"kind": "renamed", "card": "A", "renamed_to": "B"},
+                                                     {"kind": "baked", "card": "B", "reason": "renamed: A -> B; stars not baked: x"})], "https://site")
+    assert alone["embeds"][0]["description"] == "**Baked into the PSDs**\n[B](https://site/#/cards?q=B): stars not baked: x (renamed from A)"
 
 
 def test_payload_stays_within_discord_limits():
