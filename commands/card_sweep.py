@@ -77,7 +77,9 @@ _worker: dict = {}
 # ========================
 def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None, whole: bool = False,
           earlier: tuple = (), template: str = "", catalogue: Optional[dict] = None, held: str = "",
-          reuse: Optional[dict] = None, widen: Optional[dict] = None) -> None:
+          reuse: Optional[dict] = None, widen: Optional[dict] = None, cores: int = 0) -> None:
+    if cores:
+        png_export.use_cores(cores)             # its share for band()'s threads
     source = Source(clone)
     if chained:                                 # blobs an earlier pass wrote: {sha: file}
         stored = source.blob
@@ -572,9 +574,10 @@ def _sweep(plan: dict, jobs: list, clone: str, tree: dict, kind: str, work: str,
            chained: Optional[dict] = None, whole: bool = False, earlier: tuple = (), template: str = "",
            catalogue: Optional[dict] = None, held: str = "", reuse: Optional[dict] = None,
            widen: Optional[dict] = None) -> None:
-    with ProcessPoolExecutor(max(1, min(workers, WORKERS, cpu_count() or 1)), initializer=_init,
+    count = max(1, min(workers, WORKERS, cpu_count() or 1))
+    with ProcessPoolExecutor(count, initializer=_init,
                              initargs=(clone, tree, kind, work, chained, whole, earlier, template, catalogue,
-                                       held, reuse, widen)) as pool:
+                                       held, reuse, widen, png_export.share(count))) as pool:
         for done in pool.map(sweep_card, jobs, chunksize=4 if kind != NORMALISE else 1):
             state = done.pop("state")
             if state == "skip":

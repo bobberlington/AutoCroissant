@@ -26,6 +26,7 @@ draw those.
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
     recompress(data, minimum, floor) -> bytes or None        the PNG banded (a preview's: oxipng), checked, or None
     band(data) -> bytes or None                              the PNG deflated in BAND-row bands (git deltas a change)
+    use_cores(count), share(workers)                         band()'s threads: a pool worker's share of the cores
     same_png(a, b) -> bool                                   the same image: size, RGBA pixels and every chunk but text
 
 Every PNG the guards and the bake write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x
@@ -37,10 +38,12 @@ No Discord, network or config.
 """
 import hashlib
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from contextlib import nullcontext
 from io import BytesIO
+from os import cpu_count
 from re import search
 from shutil import which
 from struct import pack, unpack
@@ -100,8 +103,10 @@ OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng"
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 BAND = 64                                       # rows a band: its own IDAT, ending in a full flush (owner 2026-11-11)
 BAND_LEVEL = 9                                  # band()'s zlib level (memLevel 9)
+DEFLATES = 4                                    # band()'s deflate threads at most (zlib frees the GIL)
 FLUSH = b"\x00\x00\xff\xff"                     # the empty stored block a full flush ends with
 PIXEL_BYTES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}    # a pixel's bytes at bit depth 8, by colour type
+_cores = [cpu_count() or 1]                     # band()'s cores: a pool worker's share (use_cores)
 
 
 # ========================
@@ -448,12 +453,34 @@ def _filtered(rows: np.ndarray, above: np.ndarray, step: int) -> bytes:
     return out.tobytes()
 
 
+def use_cores(count: int) -> None:
+    """band() from now on in this process deflates on min(DEFLATES, count) threads (a pool worker: its share)."""
+    _cores[0] = max(1, count)
+
+
+def cores() -> int:
+    """This process's cores for band() (use_cores)."""
+    return _cores[0]
+
+
+def share(workers: int) -> int:
+    """A pool worker's cores (use_cores in its initializer)."""
+    return max(1, (cpu_count() or 1) // workers)
+
+
+def _deflate(raw: bytes, last: bool) -> bytes:
+    """One band's raw deflate, as the one-stream file's: a full flush starts the next band afresh (no history, hash
+    cleared), so the bands deflate apart with the same bytes."""
+    deflate = zlib.compressobj(BAND_LEVEL, zlib.DEFLATED, -15, 9)
+    return deflate.compress(raw) + deflate.flush(zlib.Z_FINISH if last else zlib.Z_FULL_FLUSH)
+
+
 def band(data: bytes) -> Optional[bytes]:
     """
     An 8-bit PNG deflated in BAND-row bands, each its own IDAT ending in a full flush (_filtered's rows, zlib at
-    BAND_LEVEL): an unchanged band is the same bytes in the next version, so git deltas a small change (owner,
-    2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every other chunk kept in place. Unchecked:
-    recompress checks it.
+    BAND_LEVEL; the bands deflate side by side, _deflate): an unchanged band is the same bytes in the next version, so
+    git deltas a small change (owner, 2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every other
+    chunk kept in place. Unchecked: recompress checks it.
 
     Returns:
         The new file (maybe not smaller); None for a PNG not 8-bit or one that cannot be read
@@ -475,12 +502,20 @@ def band(data: bytes) -> Optional[bytes]:
     if pixels.size != height * width * step:
         return None
     rows = np.ascontiguousarray(pixels, np.uint8).reshape(height, width * step)
-    deflate, idat, above = zlib.compressobj(BAND_LEVEL, zlib.DEFLATED, 15, 9), [], np.zeros(width * step, np.uint8)
-    for top in range(0, height, BAND):
-        part = deflate.compress(_filtered(rows[top:top + BAND], above, step))
-        idat.append(_chunk(b"IDAT", part + deflate.flush(zlib.Z_FULL_FLUSH if top + BAND < height else zlib.Z_FINISH)))
-        above = rows[min(top + BAND, height) - 1]
-    out = [SIGNATURE]
+    zero, tops = np.zeros(width * step, np.uint8), range(0, height, BAND)
+    raw = [_filtered(rows[top:top + BAND], rows[top - 1] if top else zero, step) for top in tops]
+    count, last = min(DEFLATES, _cores[0], len(raw)), [n == len(raw) - 1 for n in range(len(raw))]
+    if count > 1:
+        with ThreadPoolExecutor(count) as pool:
+            parts = list(pool.map(_deflate, raw, last))
+    else:
+        parts = list(map(_deflate, raw, last))
+    adler = 1
+    for part in raw:
+        adler = zlib.adler32(part, adler)
+    parts[0] = zlib.compress(b"", BAND_LEVEL)[:2] + parts[0]       # the stream's header and its checksum
+    parts[-1] += pack(">I", adler)
+    idat, out = [_chunk(b"IDAT", part) for part in parts], [SIGNATURE]
     for name, _, whole in chunks:
         if name == b"IHDR":
             out.append(_chunk(name, pack(">IIBBBBB", width, height, 8, kind, 0, 0, 0)))
@@ -1467,6 +1502,9 @@ __all__ = [
     'RECOMPRESS_MIN',
     'band',
     'banded',
+    'cores',
+    'share',
+    'use_cores',
     'export',
     'export_new',
     'miss_notes',

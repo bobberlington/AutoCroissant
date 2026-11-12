@@ -920,14 +920,19 @@ def _pngs(job: Job) -> list:
         [job.png_new] if job.case in ("pair", "png-only") and job.png_new else [])
 
 
+def _init_overlap(cores: int) -> None:
+    token_from_env()
+    png_export.use_cores(cores)
+
+
 @contextmanager
 def _overlap(source: Source, jobs) -> Iterator[None]:
-    """The jobs' pushed PNGs recompressed in one process of their own (_pngs), started now: oxipng runs beside the rest
-    of the check. The same writes in the same order; a start that fails
-    leaves them inline."""
+    """The jobs' pushed PNGs recompressed in one process of their own (_pngs), started now: band() runs beside the rest
+    of the check, on all but one of its cores. The same writes in the same order; a start that fails leaves them
+    inline."""
     shas, pool = list(dict.fromkeys(sha for job in jobs for sha in _pngs(job))), None
     try:
-        pool = ProcessPoolExecutor(1, initializer=token_from_env) if shas else None
+        pool = ProcessPoolExecutor(1, initializer=_init_overlap, initargs=(png_export.cores() - 1,)) if shas else None
         for sha in shas:
             _early[sha] = pool.submit(_recompressed, source.clone, source.repository, sha)
     except Exception:                           # inline, as before
@@ -1483,8 +1488,11 @@ def changes(old, new, parser, fonts=None) -> list:
         return []
 
 
-def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str, earlier: tuple = ()) -> None:
+def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str, earlier: tuple = (),
+                 cores: int = 0) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
+    if cores:
+        png_export.use_cores(cores)             # its share for band()'s threads
     wait_fonts()
     source = Source(clone, repository, fonts)
     source.checked = tree
@@ -1738,8 +1746,10 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
         old.update(file=_save(out, path, data), sha=blob_sha(data), composer=True)
 
 
-def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, fonts: str) -> None:
+def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, fonts: str, cores: int = 0) -> None:
     token_from_env()
+    if cores:
+        png_export.use_cores(cores)
     wait_fonts()
     source = Source(clone, repository, fonts)
     source.checked = tree
@@ -1917,8 +1927,9 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
         ctx = LinkContext(tree, catalogue(source, tree, [e["psd"] for e in entries], index,
                                           sorted(vocab.all_types), workers), source.blob)
         if len(entries) >= POOL_MIN and workers != 1:
-            with ProcessPoolExecutor(workers or pool_size(len(entries)), initializer=_init_convert,
-                                     initargs=(source.clone, source.repository, ctx, vocab, source.checked, source.fonts)) as pool:
+            count = workers or pool_size(len(entries))
+            with ProcessPoolExecutor(count, initializer=_init_convert, initargs=(source.clone, source.repository, ctx,
+                                     vocab, source.checked, source.fonts, png_export.share(count))) as pool:
                 done = list(pool.map(_pooled_convert, [(e, out, deadline) for e in entries], chunksize=1))
         else:
             parser = vocab.parser()
@@ -2352,7 +2363,8 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         if pooled:
             count = workers or pool_size(len(jobs))
             with ProcessPoolExecutor(count, initializer=_init_worker,
-                                     initargs=(clone, repository, context, vocab, tree, fonts, earlier)) as pool:
+                                     initargs=(clone, repository, context, vocab, tree, fonts, earlier,
+                                               png_export.share(count))) as pool:
                 results = list(pool.map(_pooled, [(job, out, early) for job in jobs], chunksize=1))
         else:
             parser = vocab.parser() if vocab is not None else None

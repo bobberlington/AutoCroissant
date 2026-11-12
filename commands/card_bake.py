@@ -1608,8 +1608,11 @@ def name_clashes(cards: list) -> set:
     return clashes
 
 
-def _init_worker(repository: str, head: str, info: dict, tree: dict, local: str, fonts_dir: str, work: str) -> None:
+def _init_worker(repository: str, head: str, info: dict, tree: dict, local: str, fonts_dir: str, work: str,
+                 cores: int = 0) -> None:
     token_from_env()        # a spawned worker (forkserver on 3.14) starts without the run's header
+    if cores:
+        png_export.use_cores(cores)             # its share for band()'s threads
     snapshot = Snapshot(repository, head, info, tree, local)
     _worker.update(snapshot=snapshot, parser=vocabulary(snapshot), fonts_dir=fonts_dir,
                    chart=status_chart(snapshot, work), work=work)
@@ -1644,7 +1647,8 @@ def bake_pool(cards: list, snapshot: Snapshot, fonts_dir: str, work: str, starte
     settled: set = set()
     try:
         with ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(
-                snapshot.repository, snapshot.head, snapshot.info, snapshot.tree, snapshot.local, fonts_dir, work)) as pool:
+                snapshot.repository, snapshot.head, snapshot.info, snapshot.tree, snapshot.local, fonts_dir, work,
+                png_export.share(workers))) as pool:
             while waiting or running:
                 while waiting and len(running) < workers:
                     if running and sum(1 for c in cards if c.baked) + len(running) >= MAX_BAKES:

@@ -575,6 +575,24 @@ def test_recompress_leaves_16_bit_and_bands_without_oxipng(monkeypatch):
 
 
 @pytest.mark.oxipng
+@pytest.mark.parametrize("cores", [1, 4])
+def test_bands_deflated_apart_are_the_one_streams_bytes(monkeypatch, cores):
+    """band()'s bands deflated side by side (threads) are one stream's with a full flush per band, IDAT for IDAT."""
+    monkeypatch.setattr(pe, "_cores", [cores])
+    y, x = np.mgrid[:300, :200]
+    noise = np.random.default_rng(3).integers(0, 6, (300, 200, 4))
+    pixels = (np.stack([x, y % 256, (x * y) % 256, 255 - x], 2) + noise).clip(0, 255).astype(np.uint8)
+    for image in (Image.fromarray(pixels), Image.fromarray(pixels[:, :, 1]), Image.fromarray(pixels[:10, :, :3])):
+        data = pe.band(photoshop_png(image))
+        parts = [payload for kind, payload, _ in pe._all(data) if kind == b"IDAT"]
+        raw, deflate = zlib.decompress(b"".join(parts)), zlib.compressobj(pe.BAND_LEVEL, zlib.DEFLATED, 15, 9)
+        stride = len(raw) // image.height
+        want = [deflate.compress(raw[top * stride:(top + pe.BAND) * stride]) + deflate.flush(
+            zlib.Z_FULL_FLUSH if top + pe.BAND < image.height else zlib.Z_FINISH) for top in range(0, image.height, pe.BAND)]
+        assert len(parts) == -(-image.height // pe.BAND) and parts == want and pe.banded(data)
+
+
+@pytest.mark.oxipng
 def test_a_small_change_leaves_the_other_bands_as_they_were(tmp_path):
     """band(): each BAND rows deflated after a full flush, so a one-pixel change leaves every other band's bytes as they
     were (the last: the stream's checksum) and git stores the new version as a small delta. Banded is told by the flush
