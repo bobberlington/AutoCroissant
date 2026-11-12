@@ -189,3 +189,39 @@ def test_guesses_cards_only(repo, monkeypatch):
     assert [kw["content"] for _, kw in utils.dispatch_queue] == [
         f"**22. Light** is a rulebook chapter: {qc.SITE_URL}/#/rules/light"]
 
+
+def test_morgue_and_unfinished_cards_say_so(monkeypatch):
+    """A Morgue card (cards.json morgue) says it is retired, with its page; an MDW/Unfinished/ one says it is not in play,
+    its archived name finding it (Pandiety); a live card and cardback.png as before."""
+    at = 1792658876.0                                   # 2026-10-22, Pacific
+    moved = lambda psd, **kw: [SimpleNamespace(display_name=None, archived={"at": at, "commit": "b633073" + "0" * 33,
+                                                                            "moved_to": psd, **kw})]
+    monkeypatch.setattr(cm.stats_db, "stats", {"Spice": SimpleNamespace(display_name=None, hidden=False, duplicate_of=None)})
+    monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list, {
+        "White Palace": moved("MDW/The Morgue/White_Palace.psd"),
+        "Pandiety": moved("MDW/Unfinished/6 Stars/Pandeity.psd", backfill=True)}))
+    site = {"cards": [{"id": "spice", "png": "Items/Heal/1 Stars/Spice.png"}],
+            "morgue": [{"id": "white-palace", "png": "MDW/The Morgue/White_Palace.png", "retired": at}]}
+    monkeypatch.setattr(qc, "get", lambda *a, **k: SimpleNamespace(status_code=200, headers={}, json=lambda: site,
+                                                                   raise_for_status=lambda: None))
+    paths = ["Items/Heal/1 Stars/Spice.png", "MDW/The Morgue/White_Palace.png", "MDW/The Morgue/cardback.png",
+             "MDW/Unfinished/6 Stars/Pandeity.png"]
+    repo = qc.CardRepository()
+    repo._fetch_tree = lambda name: ({"tree": [{"path": p, "sha": "s"} for p in paths]}, "", 200, "")
+    repo.populate_files()
+    repo.get_card_url = lambda key: f"https://img/{key}"
+    monkeypatch.setattr(qc, "card_repo", repo)
+    page = f"{qc.SITE_URL}/c/%s/"
+    for query, content, links in [
+            ("white palace", "**White Palace** is retired: in MDW/The Morgue since 2026-10-22, out of play. Archived on "
+             "2026-10-22 (PSD moved to MDW/The Morgue in b633073).\nhttps://img/white_palace.png",
+             [("Card page", page % "white-palace")]),
+            ("Pandiety", "**Pandeity** (renamed from Pandiety) is unfinished (MDW/Unfinished/6 Stars): not in play. "
+             "Archived by 2026-10-22 (PSD moved to MDW/Unfinished/6 Stars in b633073).\nhttps://img/pandeity.png", None),
+            ("spice", "https://img/spice.png", [("Card page", page % "spice")]),
+            ("cardback", "https://img/cardback.png", None)]:
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        assert [(kw["content"], kw.get("links")) for _, kw in utils.dispatch_queue] == [(content, links)], query
+    assert repo.name_choices("pandi") == []                      # not offered
+    utils.dispatch_queue.clear()

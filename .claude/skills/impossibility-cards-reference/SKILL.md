@@ -697,7 +697,8 @@ the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
 
 Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
-`_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today; the reply says
+`_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today, else to the PNG beside
+the PSD its archive `moved_to` MDW/ (Pandiety -> MDW/Unfinished/6 Stars/Pandeity.png, not autocompleted); the reply says
 "(renamed from X)"); else a guess (`closest` :632), which the reply labels "Closest match: X" and the console logs
 (`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
 "luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
@@ -706,6 +707,9 @@ a plain key before its folder-prefixed twins), then difflib `get_close_matches` 
 autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so.
 A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
 link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
+A Morgue card (a PNG cards.json `morgue` lists: its "Card page" too) or one under MDW/Unfinished/ gets a line above
+the picture (`_out_of_play`, 2026-11-12): "**White Palace** is retired: in MDW/The Morgue since 2026-10-22, out of
+play." / "**Bill Cipher** is unfinished (MDW/Unfinished/6 Stars): not in play.", plus the archive's `archived_text`.
 Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names; their squeezed
 text and letter pairs precomputed): today's substring ranking, then names holding the text without spaces and
 `_ - . ' ’ ! ? , : ™ ® ©` ("Moms Knife", "WX 78"), and when nothing matches (3+ letters) up to 5 near spellings

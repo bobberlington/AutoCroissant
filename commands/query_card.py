@@ -8,7 +8,7 @@ from discord.utils import escape_markdown
 from hashlib import sha256
 from io import BytesIO
 from json import dumps, loads
-from os.path import basename, splitext
+from os.path import basename, dirname, splitext
 from threading import Lock
 from requests import get
 from requests.exceptions import RequestException
@@ -51,8 +51,10 @@ BAN_LIST = "Constructed ban list"                        # the website's (cards.
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
-            "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned")   # populate_files builds aside, swaps in
+            "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned",
+            "morgue")                                    # populate_files builds aside, swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
+UNFINISHED = "MDW/Unfinished/"                           # cards not finished: not in play
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
 NAME_NORM = compile(r"[\s_\-.'\u2019!?,:\u2122\u00ae\u00a9]+")  # autocomplete: WEB_NORM and ! ? , : TM (R) (C)
@@ -137,6 +139,7 @@ class CardRepository:
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self.banlist: dict = {}                          # the website's Constructed ban list (cards.json)
         self.banned: dict[str, str] = {}                 # website card id -> ban reason (duplicate pictures too)
+        self.morgue: dict[str, Optional[float]] = {}     # retired cards (cards.json morgue): png path -> retired stamp
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
@@ -625,24 +628,35 @@ class CardRepository:
             return target
         return next((k for k in self.git_files if k.endswith("/" + target)), None)
 
+    def _png_key(self, psd: str) -> Optional[str]:
+        """The registry key of the PNG beside a PSD path (any letter case), or None."""
+        png = splitext(psd)[0].lower() + ".png"
+        return next((k for k, p in self.git_files.items() if p.lower() == png), None)
+
     def _populate_renames(self) -> None:
-        """Old names of renamed cards (their archive's renamed_to, followed to a card of today) and the autocomplete list."""
+        """Old names of renamed cards (their archive's renamed_to, followed to a card of today, else to the PNG beside
+        the PSD it moved into MDW/) and the autocomplete list."""
         try:
             archived, cards = stats_db.archived(), dict(stats_db.stats)
         except RuntimeError:                                     # /update_stats writing meanwhile: after it, again
             return
         renamed = {}
         for name, record in archived.items():
-            target, seen = name, set()
+            target, seen, tag = name, set(), {}
             while target not in cards and target in archived and target not in seen:
                 seen.add(target)
-                target = (getattr(archived[target], "archived", None) or {}).get("renamed_to") or ""
-            key = self._key_of(target) if target in cards else None
+                tag = getattr(archived[target], "archived", None) or {}
+                target = tag.get("renamed_to") or ""
+            if target in cards:
+                key, now = self._key_of(target), getattr(cards[target], "display_name", None) or target
+            else:                                                # Pandiety: MDW/Unfinished/6 Stars/Pandeity.png
+                key = self._png_key(tag["moved_to"]) if tag.get("moved_to") else None
+                now = splitext(basename(tag.get("moved_to") or ""))[0].replace("_", " ")
             old = getattr(record, "display_name", None) or name
             for spelling in (name, old):                         # Pizza (item) and its printed Pizza
                 old_key = self._normalize_card_name(spelling)
                 if key and old_key not in self.git_files:        # a name of today wins
-                    renamed.setdefault(old_key, (key, old, getattr(cards[target], "display_name", None) or target))
+                    renamed.setdefault(old_key, (key, old, now))
         self._renamed = renamed
         self._populate_choices(cards)
 
@@ -668,8 +682,9 @@ class CardRepository:
             shown = shown_as.get(card, card)
             for alias in extra:
                 add(alias, alias if alias.lower() == shown.lower() else f"{alias} ({shown})")
-        for _, old, now in self._renamed.values():
-            add(old, f"{old} (now {now})")
+        for key, old, now in self._renamed.values():
+            if not self.git_files.get(key, "").startswith(NOT_CARDS):     # retired, unfinished: not offered
+                add(old, f"{old} (now {now})")
         rows = []
         for shown, value in found.values():                     # card: one per PNG for the near matches
             key = self._normalize_card_name(value)
@@ -730,7 +745,7 @@ class CardRepository:
         return found
 
     def _populate_site_ids(self) -> None:
-        """Website card ids, for "Card page" links, and the ban list."""
+        """Website card ids, for "Card page" links (the Morgue's too), and the ban list."""
         try:
             reply = get(f"{SITE_URL}/data/cards.json", timeout=30,
                         headers={"If-None-Match": self._site_etag} if self.site_ids and self._site_etag else {})
@@ -738,7 +753,7 @@ class CardRepository:
                 return
             reply.raise_for_status()
             body = reply.json()
-            cards, banlist = body.get("cards", []), body.get("banlist") or {}
+            cards, morgue, banlist = body.get("cards", []), body.get("morgue") or [], body.get("banlist") or {}
             banned = {e["id"]: e.get("reason") or "" for g in banlist.get("groups") or [] for e in g.get("entries") or []
                       if e.get("id")}
             for c in cards:                                      # a duplicate picture: its card's ban (app.js derive)
@@ -748,7 +763,11 @@ class CardRepository:
         except Exception as e:
             print(f"Could not read the website's cards: {e}")
             return
-        self.site_ids = {basename(c["png"]).lower(): (c["id"], c.get("color") or "") for c in cards if c.get("png")}
+        ids = {basename(c["png"]).lower(): (c["id"], c.get("color") or "") for c in cards if c.get("png")}
+        for c in morgue:                                     # live cards' names first
+            if c.get("png"):
+                ids.setdefault(basename(c["png"]).lower(), (c["id"], c.get("color") or ""))
+        self.site_ids, self.morgue = ids, {c["png"]: c.get("retired") for c in morgue if c.get("png")}
         self.banlist, self.banned = banlist, banned
 
     def site_url(self, filename: str) -> Optional[str]:
@@ -904,7 +923,32 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     elif how == "guess":
         print(f"Search guess: /query {query!r} -> {_label(closest)}")
         note = f"Closest match: **{_label(closest)}**"
+    gone = _out_of_play(closest)                        # The Morgue, MDW/Unfinished: never as if in play
+    if gone:
+        note = f"{note or f'**{_label(closest)}**'} {gone}"
     _post_card(interaction, closest, note=note)
+
+
+def _out_of_play(key: str) -> str:
+    """'is retired: ...' for a Morgue card (cards.json morgue), 'is unfinished (<folder>): ...' for one in MDW/Unfinished/,
+    with its archive's archived_text (the PSD moved there); "" for any other key."""
+    path = card_repo.git_files.get(key, "")
+    if path not in card_repo.morgue and not path.startswith(UNFINISHED):
+        return ""
+    png = path.lower()
+    try:
+        tags = [t for t in (getattr(r, "archived", None) or {} for r in stats_db.archived().values())
+                if splitext(t.get("moved_to") or "")[0].lower() + ".png" == png]
+    except RuntimeError:                                 # /update_stats writing meanwhile
+        tags = []
+    tag = max(tags, key=lambda t: t.get("at") or 0.0) if tags else None
+    if path in card_repo.morgue:                         # the website's words (app.js)
+        when = card_repo.morgue[path] or (tag or {}).get("at")
+        text = f"is retired: in MDW/The Morgue{f' since {_day(when)}' if when else ''}, out of play."
+    else:
+        text = f"is unfinished ({dirname(path)}): not in play."
+    said = archived_text(tag) if tag else ""
+    return f"{text} {said[:1].upper()}{said[1:]}." if said else text
 
 
 def _chapter(query: str) -> Optional[dict]:
