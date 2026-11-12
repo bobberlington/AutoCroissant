@@ -2594,8 +2594,9 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
 
 
 def test_site_data_wait(clone, tmp_path):
-    """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
-    job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
+    """site.yml's Data wait: git looks every 0.5 s, the jobs API every 4th, until a newer "Card data" commit is on data (by
+    git: no jobs API look; another writer's: the API's) or the named Card sync job's Commit data is done or the job ended
+    (never another job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
     head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches (the step's
     timeout leaves room for them): checked out later too. A look that finds main past the early images' commit, those
     done (exit 0): the early images again at main's head (same log and code)."""
@@ -2648,7 +2649,7 @@ def test_site_data_wait(clone, tmp_path):
             if (temp / "setup" / "sizes.code").exists():
                 break
             subprocess.run(["/bin/sleep", "0.05"])
-        assert done.returncode == 0 and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
+        assert done.returncode == 0 and naps.read_text().split() == ["0.5"] * 4 * looks, (answer, done.stderr)
         calls = json.loads((tmp_path / "gh.json").read_text())["log"]
         return [c for c in calls if "/git/trees/" in c]
 
@@ -2674,6 +2675,18 @@ def test_site_data_wait(clone, tmp_path):
     push("A.psd", b"4")
     assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
     assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
+    for subject, by_git in (("Card checks", False), ("Card data: 1 changed (main x)", True)):    # the data on origin too
+        data(subject)
+        git("fetch", "-q", str(dorigin), "+data:data")
+        push("B.png", subject.encode())
+        if not by_git:
+            assert not run(jobs("pending"), jobs("completed"), 1)
+        else:
+            naps.write_text("")
+            (tmp_path / "gh.json").unlink(missing_ok=True)
+            done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("pending"), "FAKE_JOBS_LATER": jobs("completed"), "FAKE_LOOKS": "0"}, cwd=work)
+            assert done.returncode == 0 and "committed" in done.stdout and not naps.read_text() and not (tmp_path / "gh.json").exists(), done.stderr
+        assert rev(card) == rev(dorigin) and rev(work) == git("rev-parse", "HEAD").stdout.strip()
     subprocess.run(["git", "-C", str(card), "remote", "set-url", "origin", str(tmp_path / "gone")], check=True)
     naps.write_text("")
     done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("completed")}, cwd=work)
@@ -2703,7 +2716,8 @@ def test_site_data_wait(clone, tmp_path):
 
 def test_checks_data_wait(clone, tmp_path):
     """card-checks.yml's early run: fonts restored, then site.yml's Data wait, then main's and the data's heads (the
-    sparse files fetched); a fonts change in the wait: the outdated restore removed and the new fonts checked out."""
+    sparse files fetched; a "Card data" commit seen by git: no jobs API look); a fonts change in the wait: the outdated
+    restore removed and the new fonts checked out."""
     yaml = pytest.importorskip("yaml")
     workflows = _workflow(clone).parent
     job = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))["jobs"]["check"]
@@ -2718,14 +2732,14 @@ def test_checks_data_wait(clone, tmp_path):
     git = lambda cwd, *a: subprocess.run(["git", "-C", str(cwd), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
                                          check=True, capture_output=True, text=True).stdout.strip()
 
-    def commit(branch, files):
+    def commit(branch, files, subject=None):
         git(origin, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
         git(origin, "reset", "-q", "--hard")
         for name, text in files.items():
             (origin / name).parent.mkdir(parents=True, exist_ok=True)
             (origin / name).write_text(text)
         git(origin, "add", "-A")
-        git(origin, "commit", "-qm", branch)
+        git(origin, "commit", "-qm", subject or branch)
     subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
     git(origin, "config", "uploadpack.allowFilter", "true")
     git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
@@ -2755,7 +2769,7 @@ def test_checks_data_wait(clone, tmp_path):
         naps.write_text("")
         (tmp_path / "gh.json").unlink(missing_ok=True)
         done, _ = run("Data wait", RUN="7", JOB="Card data", FAKE_JOBS=jobs("in_progress"), FAKE_JOBS_LATER=jobs("completed"), FAKE_LOOKS="2")
-        assert done.returncode == 0 and naps.read_text().split() == ["3", "3"], done.stderr
+        assert done.returncode == 0 and naps.read_text().split() == ["0.5"] * 8, done.stderr
         assert git(work, "rev-parse", "HEAD") == git(origin, "rev-parse", "main") and (work / "site/Card Edits.json").read_text() == fonts
         assert git(work / "carddata", "rev-parse", "HEAD") == git(origin, "rev-parse", "data")
         assert (work / "MDW/Fonts/a.ttf").read_text() == "old"           # a restore: outside the patterns, kept
@@ -2764,6 +2778,14 @@ def test_checks_data_wait(clone, tmp_path):
             done, _ = run("Fonts (cache miss)")
         assert done.returncode == 0 and (tree["sha"] == first["sha"]) == (fonts == "old"), done.stderr
         assert (work / "MDW/Fonts/a.ttf").read_text() == fonts
+    commit("main", {"site/Card Edits.json": "2", "MDW/Fonts/a.ttf": "new", "A.psd": "2"})
+    commit("data", {"db/stats.json": "2"}, "Card data: 1 changed (main x)")
+    naps.write_text("")
+    (tmp_path / "gh.json").unlink(missing_ok=True)
+    done, _ = run("Data wait", RUN="7", JOB="Card data", FAKE_JOBS=jobs("in_progress"), FAKE_JOBS_LATER=jobs("completed"), FAKE_LOOKS="0")
+    assert done.returncode == 0 and not naps.read_text() and not (tmp_path / "gh.json").exists(), done.stderr
+    assert git(work, "rev-parse", "HEAD") == git(origin, "rev-parse", "main") and (work / "site/Card Edits.json").read_text() == "2"
+    assert git(work / "carddata", "rev-parse", "HEAD") == git(origin, "rev-parse", "data")
 
 
 def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
