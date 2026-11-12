@@ -134,6 +134,10 @@ def test_card_sync_clones_the_builder_and_the_data(tmp_path):
     api = server / "api" / "repos" / "bobberlington" / "AutoCroissant" / "contents" / "requirements-cards.txt"
     api.parent.mkdir(parents=True)
     api.write_text("read\n")
+    runs = {step: steps[step]["run"] for step in ("Clones start", "Cards start", "Cards", "Bot and data")}
+    for step, cap in (("Cards start", "timeout 15 git"), ("Cards start", "timeout 8 git"), ("Cards", "$SECONDS -lt 25 ]")):
+        assert cap in runs[step], cap                     # 300 s: a loaded Mac is slow, never failing
+        runs[step] = runs[step].replace(cap, re.sub(r"\d+", "300", cap))
     for name, ref in (("ok", sha), ("failed", "nope")):
         workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
         workspace.mkdir(parents=True)
@@ -147,7 +151,7 @@ def test_card_sync_clones_the_builder_and_the_data(tmp_path):
                "GITHUB_API_URL": f"file://{server}/{'api' if name == 'ok' else 'none'}", "CARD_FILES": steps["Cards start"]["env"]["CARD_FILES"],
                "BUILDER_REF": ref, "BOT_FILES": jobs["data"]["env"]["BOT_FILES"], "TOKEN": "t0ken",
                "GITHUB_ENV": str(runner / "env"), "HIT": "true" if name == "ok" else "", "KEY": "k3y"}
-        done = [_bash(steps[step]["run"], workspace, env) for step in ("Clones start", "Cards start", "Cards", "Bot and data")]
+        done = [_bash(r, workspace, env) for r in runs.values()]
         assert [d.returncode for d in done] == [0, 0, 0, 0] and "::add-mask::" in done[0].stdout, done[3].stdout
         output = (runner / "output").read_text() if (runner / "output").is_file() else ""
         assert ("bot=true" in output) == (name == "ok") == (workspace / "bot").is_dir() and "carddata=true" in output

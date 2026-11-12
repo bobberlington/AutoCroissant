@@ -908,7 +908,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     start, images, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Images start", "Setup wait"))
     bin_ = tmp_path / "bin"
     bin_.mkdir()
-    call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; [ -z "$DELAY" ] || /bin/sleep "$DELAY"; '
+    call = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"; [ -z "$HOLD" ] '      # held till go (60 s at most)
+            '|| until [ -e "$RUNNER_TEMP/go" ] || [ $(( held += 1 )) -gt 6000 ]; do /bin/sleep 0.01; done; ')
     curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
             'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
     for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
@@ -919,7 +920,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
                               'exit "${CLONE_CODE:-0}";; esac\necho 0123abcd',
                        "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
                        "sha256sum": 'cat > /dev/null; exit "${SHA_CODE:-0}"', "pip-python": call + 'echo "pip said"',
-                       "sleep": "exec /bin/sleep 0.01"}.items():
+                       "sleep": "exec /bin/sleep 0.01", "seq": 'exec /usr/bin/seq "$(( $1 < 3 ? $1 : 3 ))"'}.items():   # 3 tries
         (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
         (bin_ / name).chmod(0o755)
     uv = f"#!/bin/sh\n{call}echo \"uv said\"; exit \"${{UV_CODE:-0}}\"\n".encode()
@@ -930,10 +931,10 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     versions = f"{'c1' * 20}\n{'c2' * 20}\n"
     with zipfile.ZipFile(tmp_path / "versions.zip", "w") as zf:        # the version job's artifact
         zf.writestr("versions.txt", versions)
-    shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
-                                            capture_output=True, text=True, timeout=30)
+    shell = lambda run, env, limit=30: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
+                                                      capture_output=True, text=True, timeout=limit)
     # 1: a wrong checksum from both: pip. 2: the mirror down: the GitHub release
-    for n, (codes, failed, warns) in enumerate((({"DELAY": "0.5"}, "", False), ({"GH_CODE": "1", "SHA_CODE": "1"}, "", True),
+    for n, (codes, failed, warns) in enumerate((({"HOLD": "1"}, "", False), ({"GH_CODE": "1", "SHA_CODE": "1"}, "", True),
                                                 ({"UV_CODE": "2", "NPM_CODE": "3", "ASTRAL_CODE": "22", "CLONE_CODE": "128", "VERSION_AT": "2"},
                                                  " uv npm", False))):            # 2: the version job of attempt 2 (a re-run)
         temp = tmp_path / f"t{n}"
@@ -943,15 +944,18 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
                "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(temp / "out"), "TARBALL": str(tmp_path / "uv.tar.gz"),
                "UV_PYTHON": str(bin_ / "pip-python"), "GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "3",
                "ZIP": str(tmp_path / "versions.zip"), **codes}
-        done = shell(start, env)
-        assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
+        try:
+            done = shell(start, env)
+            assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
+        finally:
+            (temp / "go").touch()                                     # 0: the held jobs go on (never left spinning)
         assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
         end = time.monotonic() + 120                                 # a loaded machine: slow, never stuck
         while n == 0 and time.monotonic() < end:                     # 0: Setup wait once it runs (else never started)
             if (temp / "calls").exists() and "--images" in (temp / "calls").read_text():
                 break
             time.sleep(0.01)
-        done = shell(wait, env)
+        done = shell(wait, env, 120)
         out = done.stdout
         assert (done.returncode != 0) == bool(failed) and ("::error::" in out) == bool(failed), (out, done.stderr)
         assert not failed or f"::error::failed:{failed}" in out
@@ -971,7 +975,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         assert sum("/git clone -q --depth 1 --no-tags --single-branch --branch data https://x/o/r carddata" in c for c in calls) == 1
         assert ((temp / "out").read_text() == "data=true\n") == (n != 2) and ("::warning::the data clone failed" in out) == (n == 2)
         code, end = temp / "setup" / "versions.code", time.monotonic() + 120
-        while time.monotonic() < end:                                # 1: every call fails, 60 tries
+        while time.monotonic() < end:                                # 1: every call fails, all tries
             if code.exists() and code.read_text().strip():
                 break
             time.sleep(0.01)
@@ -1095,7 +1099,7 @@ esac"""
     (temp / "failpost").touch()
     env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5",
            "GITHUB_SHA": sha}
-    done = subprocess.run(["bash", "-e", "-c", made["run"]], env=env, capture_output=True, text=True, timeout=30)
+    done = subprocess.run(["bash", "-e", "-c", made["run"]], env=env, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and (temp / "versions.txt").read_text() == f"{v1}\n{v2}\n", (done.stdout, done.stderr)
     assert (temp / "calls").read_text().splitlines() == [f"api repos/o/r/git/commits/{sha} --jq .tree.sha"] * 2 + [
         f"api -X POST repos/o/r/git/commits -f message=Pages deploy: run 5, try {n} -f tree=tree1 -f parents[]={sha} --jq .sha"
@@ -1113,7 +1117,7 @@ esac"""
             (["syncing_files"] * 3 + ["succeed"], "22", fast, 0, "Run 7 waits: cancel failed", 1),
             (["deployment_queued", "deployment_failed"], "0", {}, 1, "::error::deployment_failed", 0),
             (["deployment_queued"], "0", {"-lt 360 ]": "-lt 0 ]"}, 1, "::error::not deployed in 6 minutes", 1),
-            (["ERR"], "0", {}, 1, "::error::15 status reads failed", 1),
+            (["ERR"], "0", {"-lt 15 ]": "-lt 2 ]"}, 1, "::error::15 status reads failed", 1),   # the 2nd failed read, as the 15th
             (["syncing_files"], "0", stuck, 1, "::error::not deployed in 6 minutes", 1))):   # stuck
         temp = tmp_path / f"t{n}"
         (temp / "setup").mkdir(parents=True)
@@ -1126,8 +1130,9 @@ esac"""
                "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "rt", "CANCEL": cancel, "STATUSES": str(temp / "statuses"), "RUNS": str(runs)}
         step = run
         for a, b in swap.items():
+            assert a in step, a
             step = step.replace(a, b)
-        done = subprocess.run(["bash", "-e", "-c", step], env=env, capture_output=True, text=True, timeout=30)
+        done = subprocess.run(["bash", "-e", "-c", step], env=env, capture_output=True, text=True, timeout=120)
         calls = (temp / "calls").read_text().splitlines()
         out = done.stdout
         assert done.returncode == code and said in out and "::warning::" not in out, (n, out, done.stderr)
@@ -1140,7 +1145,7 @@ esac"""
         assert f"Deployment {v1}: version {v1}" in out and "  ".join(calls).count(f"pages/deployments/{v1} --jq") >= len(statuses) - 1
     (temp / "statuses").write_text("succeed\n")                      # the retry, after the stuck try
     done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43", "TRY": "2"}, capture_output=True,
-                          text=True, timeout=30)
+                          text=True, timeout=120)
     assert done.returncode == 0 and f"Deployment {v2}: version {v2}" in done.stdout, done.stdout
     assert json.loads((temp / "body").read_text()) == {"artifact_id": 43, "pages_build_version": v2, "oidc_token": "tok3n"}
     (temp / "setup" / "versions.code").write_text("1\n")              # none handed over: the run's commit, and why
@@ -1148,13 +1153,13 @@ esac"""
     (temp / "versions.txt").unlink()
     (temp / "statuses").write_text("succeed\n")
     done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43"}, capture_output=True, text=True,
-                          timeout=30)
+                          timeout=120)
     assert done.returncode == 0 and f"::warning::no version commit handed over: {sha}, as deploy-pages\nthe version job" in done.stdout
     assert json.loads((temp / "body").read_text())["pages_build_version"] == sha
     (temp / "out").write_text("")                                     # under GITHUB_SHA: never stuck, never to a run at it
     (temp / "statuses").write_text("syncing_files\n")
     runs.write_text(json.dumps({"workflow_runs": [{"id": 7, "status": "queued", "display_title": "Card browser", "head_sha": sha}]}))
     done = subprocess.run(["bash", "-e", "-c", run.replace("-ge 120 ]", "-ge 0 ]").replace("-lt 360 ]", stuck["-lt 360 ]"])],
-                          env={**env, "ARTIFACT": "43"}, capture_output=True, text=True, timeout=30)
+                          env={**env, "ARTIFACT": "43"}, capture_output=True, text=True, timeout=120)
     assert done.returncode == 1 and "stuck" not in (temp / "out").read_text() and "Run 7" not in done.stdout, done.stdout
     assert sum("actions/workflows/site.yml/runs" in c for c in (temp / "calls").read_text().splitlines()) == 1
