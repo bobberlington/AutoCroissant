@@ -94,7 +94,7 @@ class Thread:
     async def edit(self, **kw):
         if self.deleted:
             raise _error(NotFound, 404, 10003, "Unknown Channel")
-        if "edit" in self.refuse or ("locked" in kw and "lock" in self.refuse):
+        if "edit" in self.refuse:
             raise _error(Forbidden, 403, 50013, "Missing Permissions")
         if self.archived and kw.get("archived") is not False:
             raise _error(HTTPException, 400, 50083, "Thread is archived")
@@ -115,7 +115,7 @@ class Thread:
     async def send(self, content, allowed_mentions=None):
         if self.deleted:
             raise _error(NotFound, 404, 10003, "Unknown Channel")
-        if "send" in self.refuse or self.locked:
+        if self.locked:
             raise _error(Forbidden, 403, 50013, "Missing Permissions")
         self._archive(False)                            # sending opens an archived post
         self.messages.append(Message(self, content, allowed_mentions=allowed_mentions))
@@ -180,7 +180,6 @@ class Client:
     def __init__(self, forum, app_emojis=()):
         self.user, self.forum, self.results, self.app_emojis = SimpleNamespace(id=BOT), forum, Channel(), list(app_emojis)
         self.guilds = [SimpleNamespace(get_role=lambda role_id: object() if role_id == ROLE else None)]
-        self.fetched = []
 
     def get_channel(self, channel_id):              # the gateway's cache: active posts only
         known = {self.forum.id: self.forum, RESULTS: self.results, OTHER: Channel(OTHER)}
@@ -188,7 +187,6 @@ class Client:
         return known.get(channel_id)
 
     async def fetch_channel(self, channel_id):
-        self.fetched.append(channel_id)
         found = self.get_channel(channel_id) or next((t for t in self.forum.archived if t.id == channel_id), None)
         if found is None or getattr(found, "deleted", False):
             raise _error(NotFound, 404, 10003, "Unknown Channel")

@@ -213,11 +213,7 @@ class StatsDatabase:
             card.archived = _archive_tag(card, at)
             if getattr(card, "duplicate_of", None) or getattr(card, "variant_of", None):    # its own file is its PNG
                 card.archived["path"], card.archived["blob"] = duplicate_png(card), None
-            versions = self.old_stats.setdefault(name, [])
-            if versions and _tagged_copy(versions[len(versions) - 1], card):    # archived already: never doubled
-                versions[len(versions) - 1] = card
-            else:
-                versions.append(card)
+            self.old_stats.setdefault(name, []).append(card)
         return sorted(archived)
 
 

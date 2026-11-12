@@ -123,17 +123,8 @@ def test_untagged_history_is_never_restored():
     assert not _restore(db, "Never there") and "Never there" not in db.old_stats
 
 
-def test_a_copy_left_by_a_kill_is_replaced():
-    card = _card("Gone")
-    left = deepcopy(card)
-    left.archived = {"at": 1.0, "path": card.path, "blob": card.blob_sha, "commit": None}
-    db = _db([card], old=[left], seen=["Other"])
-    db.prune_clean_cards(AT)
-    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived["at"] == AT
-
-
 def test_an_untagged_equal_version_stays_history():
-    """Only a tagged copy is replaced: an old untagged version equal to the card (a 2025 balloon) stays."""
+    """An old untagged version equal to the card (a 2025 balloon) stays: the archived card goes behind it."""
     card = _card("Gone")
     db = _db([card], old=[deepcopy(card)], seen=["Other"])
     db.prune_clean_cards(AT)
@@ -148,13 +139,3 @@ def test_a_new_card_under_an_archived_name_keeps_the_archive():
     db = _db([stub], old=[real], seen=["Other"])
     db.prune_clean_cards(AT)
     assert [c.ability for c in db.old_stats["Gone"]] == ["The real card.", None]
-
-
-def test_a_copy_left_by_a_kill_is_dropped_when_the_psd_is_back():
-    """Killed after old_stats.pkl while archiving, PSD back before the next run: the tagged copy is no 'old version'."""
-    card = _card("Back")
-    left = deepcopy(card)
-    left.archived = {"at": 1.0, "path": card.path, "blob": card.blob_sha, "commit": None}
-    db = _db([card], old=[_card("Back", blob="0" * 40), left])
-    assert db.stale_archives() == ["Back"] and db.drop_stale_archives()
-    assert [c.blob_sha for c in db.old_stats["Back"]] == ["0" * 40]

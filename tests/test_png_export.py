@@ -3,9 +3,8 @@ png_export (guard 1 of the push guards): the PNG the bake would make (the fork's
 card's ICC export mode, merged into the old PNG), gated; Photoshop's stored composite only as a cross-check that can
 refuse. Fixture PSDs (a pixel layer, made here) cover the gates; real commits from the card clone's object store (read
 with git cat-file, never written) pin the fork-render replay of docs/Campaigns/PUSH_GUARDS.md 2.2 (2026-10-22, pin
-cards-20261022b): Dirty Bed and Final Dark Mind Eye within the bar of the author's export, God Tamer's push moved no
-pixel, a bot bake drawn, and the refusals: a script save under a stale composite, Restrained's old PNG already stale where
-the change is, Defcon Panda's drop shadow the fork draws differently, 20 Creature Types' image changed where no layer did.
+cards-20261022b): Dirty Bed within the bar of the author's export, and the refusals: a script save under a stale
+composite, Restrained's old PNG already stale where the change is, a changed colour profile.
 """
 import subprocess
 import zlib

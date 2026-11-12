@@ -42,7 +42,7 @@ FOLDER = "Items/Heal/2 Stars"
 # ========================
 # A card repo
 # ========================
-def _git(root, *args, author="Base", subject=None):
+def _git(root, *args, author="Base"):
     env = {**os.environ, "GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": f"{author.lower()}@example.com",
            "GIT_COMMITTER_NAME": author, "GIT_COMMITTER_EMAIL": f"{author.lower()}@example.com"}
     if author == "AutoCroissant":

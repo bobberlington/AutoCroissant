@@ -35,10 +35,8 @@ class FakeGitHub:
         self.looks: defaultdict = defaultdict(int)  # (run or jobs, run id) -> looks so far (each kind walks the states)
         self.posts: list = []
         self.post_replies: list = []            # Reply per POST, in order
-        self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
         self.compare_reply = None               # a Reply for the compare instead of self.compare
-        self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs: dict = {}                    # run id -> the jobs lists GET returns, one per look (the last repeats);
                                                 # else a dispatched run's Card data job follows its states
 
@@ -61,7 +59,7 @@ class FakeGitHub:
             return Reply(404) if data is None else Reply(200, data)
         if url.endswith("/runs?per_page=10"):
             self.calls.append(("runs", None))
-            return self.runs_reply or Reply(200, body={"workflow_runs": self.runs})
+            return Reply(200, body={"workflow_runs": self.runs})
         if url.endswith("/jobs"):
             run_id = int(url.rsplit("/", 2)[1])
             self.calls.append(("jobs", run_id))
@@ -89,12 +87,7 @@ class FakeGitHub:
         assert url.endswith("/actions/workflows/card-sync.yml/dispatches")
         assert headers["Authorization"] == f"Bearer {TOKEN}"
         self.posts.append(json)
-        reply = self.post_replies.pop(0) if self.post_replies else Reply(204)
-        if self.on_post:
-            self.on_post(len(self.posts))
-        if isinstance(reply, Exception):
-            raise reply
-        return reply
+        return self.post_replies.pop(0) if self.post_replies else Reply(204)
 
     def publish(self, stats: dict, old: dict, folder, details: str = '{"version": 1, "cards": {\n\n}}\n', **manifest) -> str:
         """A data commit holding these cards (card_db.write_db's bytes); the branch moves to it."""

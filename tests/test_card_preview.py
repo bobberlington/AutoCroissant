@@ -67,9 +67,6 @@ def _commit(repo, message="Website edit: test") -> str:
 def preview_template(tmp_path_factory, clone):
     """A card repo with Mini Doomer, A Snack (Doomer's PSD) and its numbered A_Snack2.png, Types/, the manifest, and
     Doomer's PSD again in MDW/ (no card: an EXCLUDE_FOLDERS folder); built once per worker."""
-    for rel in (DOOMER, DOOMER_PNG):
-        if not (clone / rel).exists():
-            pytest.skip(f"{rel} not in the clone")
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
     files = {f"Types/{t}.png": t.encode() for t in vocab["all_types"]}
     files.update({f"Types/Stars/{s}.png": s.encode() for s in vocab["stars"]})

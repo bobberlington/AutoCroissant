@@ -103,8 +103,7 @@ def test_text_layers_and_template(records):
     assert ability["visible"] and ability["text"].startswith("Has stats equal to")
     assert doomer["template"] == {"name_layer": "Text/Name", "ability_layers": ["Text/Ability"], "deviations": ["icons as images"]}
     assert doomer["smart_objects"][:2] == ["images/Background (1)", "Stars/Warpstar"] and doomer["overlays"] == []
-    badge = ["Ability FX: (BOT)"] if doomer["fx"] else []      # the badge's gradient; retired by the 2026-10-25 batch
-    assert doomer["fx"] == badge and (["Ability FX: (BOT)", "pixel", True] in doomer["tree"]) == bool(badge)
+    assert doomer["fx"] == []
     assert doomer["fonts"]["stoogedings-Regular"]["layers"] == ["Text/Ability"]                        # the (BOT) badge run
     assert doomer["effects"]["Creature Types"] == ["Stroke (off)"] and doomer["effects"]["Creature Types/Light"] == ["DropShadow", "OuterGlow"]
     cannon = records[CANNON]

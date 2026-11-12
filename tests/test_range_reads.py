@@ -54,7 +54,6 @@ def github(monkeypatch, psds):
         return Reply(200, fake.files[path]) if path is not None else Reply(503)
 
     monkeypatch.setattr(ga, "get", get)
-    monkeypatch.setattr(ga, "sleep", lambda seconds: None)
     return fake
 
 

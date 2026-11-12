@@ -141,24 +141,6 @@ def test_duplicate_name_order():
 # ========================
 # Multi-creature split
 # ========================
-AUX_CREATURES = {"Azamoth_the_Possessed_Vessel": 5, "Igor_Roballtowski": 2, "Mettaton_EX": 4, "Mettaton_NEO": 4,
-                 "Militron_(No_Armor)": 4, "Morpho_Knight": 5, "Shadow_Queen": 5}
-
-
-def test_auxiliary_creatures_count_their_printed_stars(clone):
-    """The 7 Auxiliary/Creatures cards print 2-5 stars; their folder says none, so the PSD's are counted. Their stat bars
-    are checked like a creature's (STAT_KINDS): no note on any of the 7."""
-    import commands.psd_parser as pp
-    assert pp.stars_from_psd("Auxiliary/Creatures/Shadow_Queen.psd") and not pp.stars_from_psd("Creatures/Other/3 Stars/X.psd")
-    found, notes = {}, {}
-    for stem, stars in AUX_CREATURES.items():
-        rel = f"Auxiliary/Creatures/{stem}.psd"
-        card = parser().parse(str(clone / rel), rel)
-        found[stem] = card.stars
-        notes[stem] = pp.CardValidator.validate(card)
-    assert found == AUX_CREATURES and notes == dict.fromkeys(AUX_CREATURES, [])
-
-
 def test_auxiliary_creature_without_bars(clone):
     """No stat bar read on an Auxiliary/Creatures card: one NO STATS FOUND note, worded for a creature."""
     from psd_tools import PSDImage

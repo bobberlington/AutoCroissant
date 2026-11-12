@@ -100,12 +100,10 @@ def test_near_matches_say_so(repo, monkeypatch):
     import commands.utils as utils
     monkeypatch.setattr(qc, "card_repo", repo)
     monkeypatch.setattr(cg, "grids", lambda cards: [b"jpg"])
-    utils.dispatch_queue.clear()
     query = "Deal 3 damage to the enemy."                 # A-Z would be Fire Bomb, Kirby, Meta Knight
     qc.query_ability(utils.make_simple_fake_interaction(1), query)
     qc.query_ability_num_occur(utils.make_simple_fake_interaction(1), query)
     out = [kw["content"] for _, kw in utils.dispatch_queue]
-    utils.dispatch_queue.clear()
     assert out[0].split("\n")[:4] == [f"No card has the text '{query}'; 3 cards have a similar ability, closest first:",
                                       "**1.** Kirby", "**2.** Fire Bomb", "**3.** Meta Knight"]
     assert out[-1] == f"No card has '{query}'; 3 cards have a similar ability."
@@ -131,7 +129,6 @@ def test_rulebook_lines(monkeypatch):
     assert qc._bold("<:x_1:12> 1", "1") == "<:x_1:12> **1**"                                   # emoji markup kept whole
     assert qc.rulebook_lines(repo.rulebook_search_engine("global  turn"), "global turn") == [
         ("08 Global Turn", ["THE GLOBAL TURN"]), ("50 Bricks", ["1 per global turn."])]          # over a line break
-    utils.dispatch_queue.clear()
     qc.query_rulebook(utils.make_simple_fake_interaction(1), "turn")
     sent = [kw for _, kw in utils.dispatch_queue]
     utils.dispatch_queue.clear()
@@ -143,7 +140,6 @@ def test_rulebook_lines(monkeypatch):
     for text in ("it\u2019s", "\u201cfree\u201d"):                 # a curly apostrophe found; curly quotes as printed
         qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
     sent = [kw["content"] for _, kw in utils.dispatch_queue]
-    utils.dispatch_queue.clear()
     assert sent == ["'it's' is on 1 line of 1 rulebook chapter:\n\n**C**\n- **It's** \u201cfree\u201d.",
                     "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]
 
@@ -167,11 +163,9 @@ def test_ban_list(monkeypatch):
     repo.rulebook_dff = DataFrame({"ability": ["Use an item."]}, index=["13. Items"])
     monkeypatch.setattr(qc, "card_repo", repo)
     monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
-    utils.dispatch_queue.clear()
     for text in ("item", "antifun"):
         qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
     sent = [kw for _, kw in utils.dispatch_queue]
-    utils.dispatch_queue.clear()
     assert sent[0]["content"] == ("'item' is on 3 lines of 1 rulebook chapter and the Constructed ban list:\n\n**13. Items**\n"
                                   "- Use an **item**.\n\n**Constructed ban list**\n- One of each **item**.\n- 4 star **item**s:")
     assert [label for label, _ in sent[0]["links"]] == ["Rulebook on the website", "Constructed ban list"]
