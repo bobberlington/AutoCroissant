@@ -1,7 +1,7 @@
 """
 A card's parts: one box per PSD layer the website edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2): the title layers, the ability
-layers, the layers that follow them (copies, watermarks, a relaid hidden Ability), the
-variant pictures and, for a card without an ability or a type icon, its kind's template. The selection is the parser's
+layers, the layers that follow them (copies, watermarks, a relaid hidden Ability), each with the pictures it shows
+in and, for a card without an ability or a type icon, its kind's template. The selection is the parser's
 (PSDParser.title_parts, ability_parts, under psd_parser.variant_view); this module only assembles the record.
 No Discord or config; psd_edit and psd_details are imported where used (psd_edit imports this module).
 
@@ -15,8 +15,8 @@ from typing import Callable, Optional
 
 from psd_tools import PSDImage
 
-from commands.psd_parser import (EFFECT_LAYER_TAG, PSDParser, base_name, layer_tag, name_key,
-                                 title_text, variant_view, variants_of)
+from commands.psd_parser import (EFFECT_LAYER_TAG, PSDParser, base_name, name_key, title_text, variant_view,
+                                 variants_of)
 
 # ========================
 # Configuration
@@ -176,12 +176,11 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, card=None, templates
         templates: Templates for a card with no ability part or type icon; None: "template" stays null
 
     Returns:
-        {"title", "ability", "follow", "variants", "template"}; each part's "variants": the pictures it shows in
-        (null: all)
+        {"title", "ability", "follow", "template"}; each part's "variants": the pictures it shows in (null: all)
     """
     pictures = variants_of(psd)
     tagged = len(pictures) > 1
-    out = {"title": [], "ability": [], "follow": [], "variants": None, "template": None}
+    out = {"title": [], "ability": [], "follow": [], "template": None}
     seen, shown, follows = {}, {}, {}
     for n in (pictures if tagged else [None]):
         with variant_view(psd, n):
@@ -203,11 +202,6 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, card=None, templates
         for key, entry in [(e["id"], e) for e in seen.values()] + [(("follow", e["id"]), e) for e in follows.values()]:
             found = sorted(shown[key])
             entry["variants"] = None if found == pictures else found
-        stem = rel.rsplit("/", 1)[len(rel.rsplit("/", 1)) - 1][:-4]
-        out["variants"] = {"count": len(pictures),
-                           "pngs": {str(n): f"{stem}{'' if n == 1 else n}.png" for n in pictures},
-                           "tagged": [{"id": layer.layer_id, "layer": layer_path(layer), "in": sorted(layer_tag(layer.name)[1])}
-                                      for layer in psd.descendants() if layer_tag(layer.name)[1] is not None]}
     if templates is not None:
         if card is None:
             card = parser.parse(psd, rel, variant=1 if tagged else None)

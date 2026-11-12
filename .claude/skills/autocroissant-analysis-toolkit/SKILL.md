@@ -133,7 +133,7 @@ append, Twin Emperors and 00_Table_of_Contents have unfilled gaps.)
 
 | Signature | What you see | Mechanism it points to |
 |---|---|---|
-| No text layer | `[2] ability text layers found: 0`; parse_one shows `NO ABILITY LAYER` (appended at psd_parser.py:449) and/or `ABILITY TEXT NOT FOUND` (validator, psd_parser.py:1104) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
+| No text layer | `[2] ability text layers found: 0` (no parser note since 2026-11-04: cards need no ability) | Text layer missing, or not named `ability` on a non-rulebook card — check the dump for a `type`-kind layer with an unexpected name |
 | Icon above midline | The icon appears in `[1]`, not `[4]`; the gap in `[3]` stays unfilled | Icon y < 1200 → it's classified as a creature type, never an injection candidate. TYPE_REGION_RATIO=0.5 is deliberate — do NOT "fix" by injecting top-half icons (fenced off in autocroissant-psd-extraction-campaign) |
 | Gap/type mismatch, extra types | `[5] gap count = N vs kept types = M   <-- MISMATCH, leftover types get appended to last line!` | `_inject_type_names` appends leftovers as ` [x] [y]` onto the LAST line (psd_parser.py:1045, "Append remaining types") — the classic "types stuck at the end of the ability" symptom |
 | Gap/type mismatch, extra gaps | `[5]` MISMATCH the other way; final text keeps raw multi-space runs — and a gap directly before punctuation silently VANISHES (cleanup `\s+([:;,\.\?!])` → `\1`, psd_parser.py:947) | Fewer icons survived than gaps exist — check `[4]`'s `dropped:` list (prune threshold ate them) before blaming the text |
@@ -534,7 +534,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 |---|---|
 | Scripts exist / arg handling (full paths needed) | `ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/` ; `grep -n 'expanduser().resolve()' .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py` |
 | Nebulous Precipice golden trace ([1]-[6] numbers); The Lich King's token case | rerun the `gap_trace.py` command in Recipe 1 (with `~/.venvs/ac-py314-fork/bin/python`) |
-| Gap regex `\s{3,}` :348; punctuation cleanup :947; leftover-append :1045; NO ABILITY LAYER :449; ABILITY TEXT NOT FOUND :1104 (2026-10-23) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER\|ABILITY TEXT NOT FOUND' commands/psd_parser.py` |
+| Gap regex `\s{3,}` :348; punctuation cleanup :947; leftover-append :1045 (2026-10-23) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types' commands/psd_parser.py` |
 | removeprefix no-op line — FIXED 2026-10-19 | `grep -c 'relpath\|removeprefix' commands/psd_analyzer.py` (0; local mode archived 2026-10-20); story in autocroissant-failure-archaeology Entry 1 |
 | stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_card_data.py` |
 | Timestamp clustering (103 distinct; 769 shared; max cluster 64 @ 2026-02-08 04:11:26Z) | the Counter one-liner in Recipe 2 (drifts with every sweep — recompute, don't reuse) |

@@ -99,7 +99,7 @@ themselves until 2026-10-25), so these problems persist and surface as the `"pro
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never stored.**
 `CardValidator.validate(card)` (psd_parser.py:1081-1117 on 2026-10-23) builds a fresh local list from
-computed checks — `UNKNOWN TYPE`, `ABILITY TEXT NOT FOUND`, `HP/DEF/ATK/SPD NOT FOUND`,
+computed checks — `UNKNOWN TYPE`, `HP/DEF/ATK/SPD NOT FOUND`,
 `STATS TOO HIGH` (via `_validate_stats`, psd_parser.py:1014) — then extends it with
 the card's Channel-A problems and returns it. The return value is **never stored on the
 card**: during a sweep it flows into `_format_problems` (card_data.py:609, called :529)
@@ -125,7 +125,8 @@ Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values
   import sys; sys.path.insert(0, '.')
   from os.path import expanduser
   from commands.card_db import read_cards
-  from commands.psd_analyzer import stats_db, CardValidator
+  from commands.psd_analyzer import stats_db
+  from commands.psd_parser import CardValidator
   stats_db.stats, stats_db.old_stats = read_cards('origin/data', expanduser('~/Desktop/TTSCardMaker'))
   bad = {n: p for n, p in ((n, CardValidator.validate(c)) for n, c in stats_db.stats.items()) if p}
   print('cards failing full validation:', len(bad))
@@ -380,8 +381,7 @@ information that exists solely during layer traversal, and expect a higher preci
 
 **Problem-string convention.** SCREAMING short phrases, stable and grep-able, optional
 lowercase detail after a colon — existing vocabulary: `UNKNOWN TYPE`,
-`ABILITY TEXT NOT FOUND`, `HP NOT FOUND`, `STATS TOO HIGH`, `NO ABILITY LAYER`,
-`MISSPELT TYPE: tornado`. Match it.
+`HP NOT FOUND`, `STATS TOO HIGH`, `MISSPELT TYPE: tornado`. Match it.
 
 **Exclusion-set etiquette.** No per-card list is left (`ABILITY_EXCLUSIONS`, 21 names, went on 2026-11-09). Such a list
 only ever silenced TRUE positives — cards that legitimately have no ability text (`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 20 (10 until 2026-11-06) is allowed per card

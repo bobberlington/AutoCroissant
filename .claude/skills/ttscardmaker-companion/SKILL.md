@@ -1085,7 +1085,7 @@ no card-repo checkout at all; the bot files are `card_check.SPARSE_FILES` (card_
 card_models, card_edits, global_config; pip `psd-tools fonttools requests`; since 2026-10-24, branch work/py314:
 requirements-cards.txt in the list and the fork from the card workflows' wheel cache on Python 3.14). It reports what `/update_stats` prints for each card
 (the parser's own notes such as NO STARS FOUND, NO STATS FOUND, MISSPELT TYPE are also the website's Parser notes; the
-validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, ABILITY TEXT NOT FOUND, UNKNOWN TYPE are printed only), after the card's
+validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, UNKNOWN TYPE are printed only), after the card's
 edits entry. Same three outputs and the same secret, but no ping; the Discord line is plain: "<login> has pushed <card>
 with: <note>; <note>." An unreadable PSD or a failed API call is one error line, exit 0 (both checkers since 2026-10-21).
 The first whole-repo dispatch ran on 2026-10-21 (run 39690899334; expected: Bubble and God_Tamer NO STARS FOUND, 20_Creature_Types

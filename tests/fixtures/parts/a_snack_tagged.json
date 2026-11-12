@@ -70,58 +70,6 @@
    }
   ],
   "follow": [],
-  "variants": {
-   "count": 3,
-   "pngs": {
-    "1": "A_Snack.png",
-    "2": "A_Snack2.png",
-    "3": "A_Snack3.png"
-   },
-   "tagged": [
-    {
-     "id": 1015,
-     "layer": "images/A Snack #1",
-     "in": [
-      1
-     ]
-    },
-    {
-     "id": 1022,
-     "layer": "images/Breakfast #2",
-     "in": [
-      2
-     ]
-    },
-    {
-     "id": 1024,
-     "layer": "images/Supper #3",
-     "in": [
-      3
-     ]
-    },
-    {
-     "id": 327,
-     "layer": "Text/Name #1",
-     "in": [
-      1
-     ]
-    },
-    {
-     "id": 1023,
-     "layer": "Text/Name #2",
-     "in": [
-      2
-     ]
-    },
-    {
-     "id": 1025,
-     "layer": "Text/Name #3",
-     "in": [
-      3
-     ]
-    }
-   ]
-  },
   "template": null
  }
 }

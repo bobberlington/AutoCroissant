@@ -186,8 +186,7 @@ def flagged(cards: dict, rel: str, blob: str) -> bool:
     return found.get("psd") == blob[:8] and MARK in (found.get("hand") or "")
 
 
-def due(clone: str, head: str, tree: dict, details: Optional[dict], edits: Optional[bytes] = None,
-        fetch: bool = True) -> dict:
+def due(clone: str, head: str, tree: dict, details: Optional[dict], edits: Optional[bytes] = None) -> dict:
     """
     The PSDs whose icon glyphs Card sync draws again: drawn before one of font_commits (the oldest such commit F counts:
     the glyphs it and the later ones changed that head's font still draws otherwise than F's parent), shaping such a
@@ -197,7 +196,6 @@ def due(clone: str, head: str, tree: dict, details: Optional[dict], edits: Optio
     Args:
         tree: {repo path: blob} at head
         details: db/psd_details.json
-        fetch: The font blobs the clone lacks fetched first (one batch)
 
     Returns:
         {PSD path: Due}
@@ -208,8 +206,7 @@ def due(clone: str, head: str, tree: dict, details: Optional[dict], edits: Optio
     from commands.psd_links import _git_bytes, fetch_blobs
     olds = {sha: (_blob_at(clone, f"{sha}^", FONT_FILE), _blob_at(clone, sha, FONT_FILE)) for sha in commits}
     blobs = list(dict.fromkeys([tree[FONT_FILE]] + [b for pair in olds.values() for b in pair if b]))
-    if fetch:
-        fetch_blobs(clone, blobs)
+    fetch_blobs(clone, blobs)
     got = _git_bytes(clone, blobs)
     now = got.get(tree[FONT_FILE])
     if now is None or not all(got.get(b) for pair in olds.values() for b in pair):

@@ -28,7 +28,7 @@ SmartObject.link_target), never from the filesystem.
 
     python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
                                            [--recheck catalogue.json] [--history CLONE]
-    python -m commands.psd_links redraw --local DIR --db DIR [--head SHA] [--cards N] [--bytes N] [--deadline SECONDS]
+    python -m commands.psd_links redraw --local DIR --db DIR [--head SHA] [--bytes N] [--deadline SECONDS]
                                         [--out DIR] [--dry-run]           (card-sync.yml's)
     python -m commands.psd_links due --clone DIR --db DIR [--head SHA]       prints how many PSDs are due
 
@@ -1663,7 +1663,7 @@ def due_count(clone: str, links: dict, head: str = "HEAD", details: Optional[dic
 
 
 def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARDS_CAP, budget: int = 1 << 30,
-                  until: float = 0.0, fetch: bool = True, details: Optional[dict] = None,
+                  until: float = 0.0, details: Optional[dict] = None,
                   fonts_dir: str = "", cleared: Optional[dict] = None) -> Redrawn:
     """
     Card sync's Linked redraw (C1-C6): the PSDs whose linked files changed, drawn again at head (C4: redraw_psd), their
@@ -1697,14 +1697,13 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     linked = sorted({link["path"] for record in records.values() for link in record.get("links") or [] if link.get("path")})
     sizes = {path: (seen.get(path) or {}).get(tree[path]) for path in linked if path in tree}
     unknown = [tree[p] for p, size in sizes.items() if size is None]
-    if fetch:
-        fetch_blobs(clone, unknown)
+    fetch_blobs(clone, unknown)
     got = _git_bytes(clone, unknown)
     sizes.update({p: len(got[tree[p]]) for p, size in sizes.items() if size is None and tree[p] in got})
     seen = {**seen, **{p: {**(seen.get(p) or {}), tree[p]: size} for p, size in sizes.items() if size is not None}}
     due = due_links(records, tree, sizes)
     out, written = Redrawn(), 0
-    glyphs, olds = _glyphs_due(clone, head, tree, details, fonts_dir, edits, fetch, out)
+    glyphs, olds = _glyphs_due(clone, head, tree, details, fonts_dir, edits, out)
     order = sorted(set(due) | set(glyphs))
     for n, rel in enumerate(order):
         if len(out.cards) >= cards or (until and time() > until) or written >= budget:
@@ -1718,8 +1717,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             drawn = link.get("drawn")
             wanted += [drawn] if drawn and drawn != blob else \
                 [b for b, size in (seen.get(link["path"]) or {}).items() if size == link.get("size") and b != blob]
-        if fetch:
-            fetch_blobs(clone, wanted)
+        fetch_blobs(clone, wanted)
         blobs = _git_bytes(clone, list(dict.fromkeys(wanted)))
         if tree[rel] not in blobs:
             out.due.append(rel)
@@ -1727,8 +1725,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
 
         def read_blob(blob: str) -> Optional[bytes]:
             if blob not in blobs:                   # one not fetched above
-                if fetch:
-                    fetch_blobs(clone, [blob])
+                fetch_blobs(clone, [blob])
                 blobs.update(_git_bytes(clone, [blob]))
             return blobs.get(blob)
         raw = blobs[tree[rel]]
@@ -1805,7 +1802,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
 
 
 def _glyphs_due(clone: str, head: str, tree: dict, details: Optional[dict], fonts_dir: str, edits: Optional[bytes],
-                fetch: bool, out: Redrawn) -> tuple:
+                out: Redrawn) -> tuple:
     """redraw_linked's psd_glyphs.due ({} without details or fonts_dir, or when fonts_dir's icon font is not the tree's)
     and {font blob: a file of it} for the fonts the due PSDs were drawn with."""
     if details is None or not fonts_dir:
@@ -1816,7 +1813,7 @@ def _glyphs_due(clone: str, head: str, tree: dict, details: Optional[dict], font
     if psd_glyphs.FONT_FILE not in tree or not isfile(here) or git_blob(open(here, "rb").read()) != tree[psd_glyphs.FONT_FILE]:
         out.lines.append(f"- icon glyphs: {here} is not the tree's icon font, none drawn")
         return {}, {}
-    glyphs = psd_glyphs.due(clone, head, tree, details, edits, fetch)
+    glyphs = psd_glyphs.due(clone, head, tree, details, edits)
     olds, work = {}, mkdtemp(prefix="glyphs-") if glyphs else ""
     for blob, data in _git_bytes(clone, sorted({d.was for d in glyphs.values()})).items():
         olds[blob] = path_join(work, f"stoogedings-{blob[:12]}.ttf")
@@ -1942,7 +1939,6 @@ def main(args: Optional[list] = None) -> int:
     red.add_argument("--db", default="", help="the data's db folder (its links.json)")
     red.add_argument("--repo", default="", help="the card repo (card-sync.yml's; blobs come from the checkout's origin)")
     red.add_argument("--head", default="HEAD", help="the commit to read the PSDs at and commit R on")
-    red.add_argument("--cards", type=int, default=CARDS_CAP, help="PSDs at most")
     red.add_argument("--bytes", type=int, default=1 << 30, help="bytes written at most")
     red.add_argument("--until", "--deadline", type=float, default=0.0, help="epoch seconds: no PSD started past it")
     red.add_argument("--out", default="", help="a folder for redraw.json (due: the PSDs still due)")
@@ -1997,7 +1993,7 @@ def main(args: Optional[list] = None) -> int:
         print(due_count(opts.clone, links, opts.head, details))
         return 0
     fonts_dir = (environ.get("PSD_TOOLS_FONT_DIRS") or "").split(":")[0] or path_join(opts.checkout, "MDW", "Fonts")
-    found = redraw_linked(opts.checkout, links, opts.head, opts.cards, opts.bytes, opts.until, details=details,
+    found = redraw_linked(opts.checkout, links, opts.head, budget=opts.bytes, until=opts.until, details=details,
                           fonts_dir=fonts_dir, cleared=cleared)
     commit = ""
     if found.files and not opts.dry_run:

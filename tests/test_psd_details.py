@@ -1,6 +1,6 @@
 """
-commands/psd_details.py: the record on the goldens' PSDs (skipped without the clone), the file's text, load and prune,
-a card psd-tools can't walk.
+commands/psd_details.py: the record on the goldens' PSDs (skipped without the clone), the file's text and prune, a
+card psd-tools can't walk.
 """
 import json
 from types import SimpleNamespace
@@ -14,14 +14,8 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # templat
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn heart cells
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
-BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
-ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
-AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
-PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                    # its title layer is named after its own text
 LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: planned as a move
 FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
-FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder
-MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"                             # its 'field' icon is a frame: fixed
 KEYS = ("path", "name", "at", "parser", "version", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "header", "tree", "parts")
 

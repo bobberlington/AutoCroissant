@@ -1,6 +1,6 @@
 ---
 name: autocroissant-psd-extraction-campaign
-description: The gated campaign to make PSD ability/type/stat extraction perfect, with scoreboard commands and fenced-off wrong paths. Use for improving the parser in commands/psd_analyzer.py, [type] landing in the wrong place, gaps vs icons, ABILITY_EXCLUSIONS burn-down, problem cards, fixing ABILITY TEXT NOT FOUND / STATS TOO HIGH / MISSPELT TYPE. What the data means is impossibility-cards-reference.
+description: The gated campaign to make PSD ability/type/stat extraction perfect, with scoreboard commands and fenced-off wrong paths. Use for improving the parser in commands/psd_analyzer.py, [type] landing in the wrong place, gaps vs icons, ABILITY_EXCLUSIONS burn-down, problem cards, fixing STATS TOO HIGH / MISSPELT TYPE. What the data means is impossibility-cards-reference.
 ---
 
 # The PSD Extraction Campaign
@@ -92,8 +92,8 @@ Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 - **Re-validation problems**: cards that fail `CardValidator.validate` when run over today's stored
   data. Today 1 (Computer Virus: all four stats NOT FOUND, since 2026-10-26 one parse-time `NO STATS FOUND` stored at its next
   re-parse; the owner adds its stat bars); 5 on 2026-07-11 — the stored count undercounts because the pickle stores only parse-time problems
-  (`NO ABILITY LAYER`, `MISSPELT TYPE`, `NO STATS FOUND` since 2026-10-26); validator-computed problems (`ABILITY TEXT NOT FOUND`,
-  `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`) are reported to Discord during a sweep but never
+  (`NO ABILITY LAYER`, `MISSPELT TYPE`, `NO STATS FOUND` since 2026-10-26); validator-computed problems
+  (`HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`) are reported to Discord during a sweep but never
   stored. The 2026-07-11 five: `20 Creature Types`, `Computer Virus` (all four stats NOT FOUND),
   `Anubisath Guardian`, `Qiraji Soldier`, `Silithid` (ABILITY TEXT NOT FOUND — blank minions then not in
   the exclusion list; added to it on 2026-10-21).
@@ -290,7 +290,8 @@ python3 - <<'EOF' 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 import sys, re; sys.path.insert(0, '.')
 from os.path import expanduser
 from commands.card_db import read_cards
-from commands.psd_analyzer import stats_db, CardValidator
+from commands.psd_analyzer import stats_db
+from commands.psd_parser import CardValidator
 stats_db.stats, stats_db.old_stats = read_cards('origin/data', expanduser('~/Desktop/TTSCardMaker'))
 val = [(n, CardValidator.validate(c)) for n, c in sorted(stats_db.stats.items())]
 val = [(n, p) for n, p in val if p]

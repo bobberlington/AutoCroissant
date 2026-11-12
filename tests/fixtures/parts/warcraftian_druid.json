@@ -64,7 +64,6 @@
    }
   ],
   "follow": [],
-  "variants": null,
   "template": {
    "kind": "creature",
    "file": "MDW/Templates/Creature_Template.psd",

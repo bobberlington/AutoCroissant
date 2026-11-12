@@ -64,7 +64,7 @@ SMALL_AS = (("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_pr
             if features.check("avif") else ("WEBP", {"quality": 75, "method": 4}))   # 8x4 tiles: an edit's codec noise stays near it
 SMALL, BEFORE = SMALLS[SMALL_AS[0]]
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
-RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
+RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
 WAIT_ENV = "CARD_PREVIEW_WAIT"                  # files card-preview.yml makes once the reads and fonts are in (pathsep)
 READS_ENV = "CARD_PREVIEW_READS"                # its files once the reads are in: the bake goes on up to its first font

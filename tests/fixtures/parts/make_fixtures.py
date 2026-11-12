@@ -5,14 +5,12 @@ Writes, next to this file:
 - mini_doomer.json, miracle_matter.json, warcraftian_druid.json, a_snack_tagged.json: I1, each
   {"blob", "path", "name", "parts"} with "parts" the details record's VERSION 2 key (card_parts(psd, rel, name, parser));
   a_snack_tagged is A_Snack.psd with §9's tags applied in memory (the card repo stays untagged);
-- card_edits.parts.json (I2), stats.variants.json (I3), result.v2.json (I4).
+- card_edits.parts.json (I2).
 
 Format: json.dumps(obj, indent=1, ensure_ascii=False) + "\\n", keys in the order written here; the parts are
 psd_parts.card_parts' (until Track A landed, a stand-in here wrote the same bytes).
 
     ~/.venvs/ac-py314-fork/bin/python tests/fixtures/parts/make_fixtures.py [--clone ~/Desktop/TTSCardMaker] [--ref origin/main]
-
-Copy the folder to TTSCardMaker site/tests/fixtures/parts/ afterwards.
 """
 import sys
 from argparse import ArgumentParser
@@ -127,33 +125,7 @@ def main() -> int:
     }}
     write("card_edits.parts.json", edits)
 
-    keep = ("ability", "blob_sha", "card_type", "display_name", "duplicate_of", "name", "parser_version", "path", "problems",
-            "series", "stars", "stats", "subtype", "types")
-    snack_rec = {k: stats["A Snack"][k] for k in keep}
-    variant = lambda n, title: {**snack_rec, "name": f"A Snack{n}", "display_name": title, "parser_version": 3,
-                                "variant": n, "variant_of": "A Snack"}
-    titles = {p["variants"][0]: p["text"] for p in made["a_snack_tagged"]["parts"]["title"]}
-    write("stats.variants.json", {"schema": 1, "cards": {
-        "A Snack": {**snack_rec, "display_name": titles[1], "parser_version": 3, "variant": 1, "variants": ["A Snack2", "A Snack3"]},
-        "A Snack2": variant(2, titles[2]), "A Snack3": variant(3, titles[3]),
-        "Mini Doomer": {**{k: stats["Mini Doomer"][k] for k in keep}, "parser_version": 3, "variant": None}}})
-
-    snack_blob = made["a_snack_tagged"]["blob"]
-    write("result.v2.json", {
-        "v": 2, "request": "michaeljsr-mh7k2c3d-0a1b", "card": "A Snack2", "variant": 2, "path": "Items/Heal/2 Stars/A_Snack.psd",
-        "png": "Items/Heal/2 Stars/A_Snack2.png",
-        "base": {"repo": "MichaelJSr/TTSCardMaker", "commit": "c8556d541f6aff67b4f3b2f6462ff91980f79fec", "psd_blob": snack_blob,
-                 "png_blob": git(clone, "rev-parse", f"{ref}:Items/Heal/2 Stars/A_Snack2.png").decode().strip()},
-        "edit": {"ability": snack[320], "name": "Second Breakfast",
-                 "parts": edits["cards"]["A Snack"]["parts"]},
-        "state": "baked", "transient": False, "fields": {"name": "baked", "ability": "baked"}, "reason": "",
-        "parts": {"320": "baked", "1023": "baked"},
-        "changes": [{"field": "ability", "old": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.", "new": snack[320]},
-                    {"field": "name", "old": "Breakfast", "new": "Second Breakfast"}],
-        "notes": ["the ability layer is shared: changes every variant (A snack, Breakfast, Supper)"], "parity": {}, "region": None,
-        "image": "baked", "files": {"webp": "preview.webp", "png": "preview.png", "before": "before.webp"}, "runner": {},
-        "run": "", "took_s": 0.0, "at": "2026-10-26T01:05:00Z"})
-    print("wrote", ", ".join(sorted(made)), "and the I2-I4 fixtures to", HERE)
+    print("wrote", ", ".join(sorted(made)), "and the I2 fixture to", HERE)
     return 0
 
 

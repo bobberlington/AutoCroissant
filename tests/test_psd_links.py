@@ -264,7 +264,7 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
         git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "art")
         return (repo / "MDW/Linked/art.png").read_bytes()
     lossless = commit(art, 1)
-    done = pl.redraw_linked(str(repo), known, fetch=False)
+    done = pl.redraw_linked(str(repo), known)
     assert sorted(done.files) == sorted(users) and not done.notes and not done.due
     for rel in users:
         old, new = PSDImage.open(repo / rel), PSDImage.open(BytesIO(done.files[rel]))
@@ -287,7 +287,7 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     assert pl.main(["redraw", "--repo", "o/cards", "--head", "HEAD", "--local", str(repo), "--db", str(db), "--out", str(report),
                     "--deadline", "0", "--bytes", "1000000000", "--dry-run"]) == 0
     assert json.loads((report / "redraw.json").read_text())["cards"] == sorted(users)
-    done = pl.redraw_linked(str(repo), known, fetch=False)
+    done = pl.redraw_linked(str(repo), known)
     assert sorted(done.files) == sorted([*users, *pngs.values()]) and not done.notes
     for rel, (x, y, s) in users.items():
         new = PSDImage.open(BytesIO(done.files[rel]))
@@ -505,9 +505,9 @@ def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
     (fonts / "stoogedings.ttf").write_bytes((repo / font).read_bytes())
     tree = pl._tree_at(str(repo), "HEAD")
     assert psd_glyphs.font_commits(str(repo)) == [git("rev-parse", "HEAD~1").strip()]
-    assert list(psd_glyphs.due(str(repo), "HEAD", tree, details, fetch=False)) == [rel]
+    assert list(psd_glyphs.due(str(repo), "HEAD", tree, details)) == [rel]
 
-    found = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False)
+    found = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts))
     assert found.glyphs == [rel] and sorted(found.files) == [png, rel] and not found.flagged and not found.notes
     assert pl.redraw_message(found).startswith("Card sync: icon glyphs redrawn\n") and pl.redraw_message(found).endswith("\nCard-sweep: glyphs")
     new = PSDImage.open(BytesIO(found.files[rel]))
@@ -523,15 +523,15 @@ def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
     assert moved.sum() > 1000 and not (moved & ~inside).any()
     assert png_export.png_check(new, after)["ok"] is True
 
-    flagged = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False,
+    flagged = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts),
                                cards=0)             # capped: still due, nothing written
     assert flagged.due == [rel] and not flagged.files
     monkeypatch.setattr(psd_glyphs, "redraw", lambda *a: (_ for _ in ()).throw(Refused("unsupported-card", "Ability lays out otherwise")))
-    refused = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False)
+    refused = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts))
     edits = refused.files.pop("site/Card Edits.json")
     assert not refused.files and refused.flagged == {rel: psd_glyphs.NOTE.format(why="Ability lays out otherwise")}
     assert json.loads(edits)["cards"]["Blazing"]["flags"] == {"hand": refused.flagged[rel], "psd": tree[rel][:8]}
-    assert psd_glyphs.due(str(repo), "HEAD", tree, details, edits, fetch=False) == {}
+    assert psd_glyphs.due(str(repo), "HEAD", tree, details, edits) == {}
     theirs = json.dumps({"cards": {"Blazing": {"flags": {"hand": "x. " * 99, "psd": tree[rel][:8]}}}})
     hand = json.loads(psd_glyphs.flag(theirs, rel, tree[rel], refused.flagged[rel]))["cards"]["Blazing"]["flags"]["hand"]
     assert hand.startswith(refused.flagged[rel]) and len(hand) <= 300                # a person's long reason: ours kept
@@ -539,13 +539,13 @@ def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
     for path, data in found.files.items():                  # its own commit, then a person's save: not due
         (repo / path).write_bytes(data)
     git("commit", "-qam", pl.redraw_message(found), who=psd_glyphs.BOT)
-    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False) == {}
+    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details) == {}
     git("reset", "-q", "--hard", "HEAD~1")
     psd[0].name += "y"
     save_psd(psd, str(repo / rel))
     git("commit", "-qam", "Blazing: saved")
-    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False) == {}
+    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details) == {}
     git("reset", "-q", "--hard", "HEAD~1")                  # a person's move alone: still due, at its new path
     git("mv", str(repo / rel), str(repo / "Blazing.psd"))
     git("commit", "-qm", "Blazing: moved")
-    assert list(psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False)) == ["Blazing.psd"]
+    assert list(psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details)) == ["Blazing.psd"]
