@@ -547,6 +547,34 @@ def test_resized_bar_mode(clone, tmp_path):
         assert pe.stored_mode(layer) == mode
 
 
+ISAAC_BARS = "77733fc93579d5fd30513b3e2df9d5540cddfa2f"     # Croissant's Isaac bars (cc68ac36, 647aa0d1), guards' pass
+
+
+def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path):
+    """Croissant's Isaac bars (a knockout group's moved mask, Transparency Shapes Layer off, nested smart objects) draw
+    as Photoshop stored them: Tainted Isaac's HP at 6 from a document saved at 10, Clot Black's with no last applied
+    comp, Tainted Magdalene's deep knockout with the shapes layer on; a set_comp edit gates and reads."""
+    def placed(rgba, where, box):
+        out = np.zeros((box[3] - box[1], box[2] - box[0], 4), np.float32)
+        out[where[1] - box[1]:where[3] - box[1], where[0] - box[0]:where[2] - box[0]] = rgba
+        return np.concatenate([out[..., :3] * out[..., 3:], out[..., 3:]], axis=2) * 255
+    for rel in ("Creatures/Isaac/3 Stars/Tainted_Isaac.psd", "Auxiliary/Minions/Clot_Black.psd",
+                "Creatures/Isaac/3 Stars/Tainted_Magdalene.psd"):
+        path = tmp_path / Path(rel).name
+        path.write_bytes(at_rev(clone, ISAAC_BARS, rel))
+        layer, value, box = comp_bars(PSDImage.open(str(path)))["hp"][0]
+        drawn = placed(*pe.comp_render(layer, value), box)
+        assert np.abs(drawn - placed(layer.numpy(), tuple(layer.bbox), box)).max() <= 2, rel
+    rel = "Creatures/Isaac/3 Stars/Tainted_Isaac.psd"
+    path = str(tmp_path / Path(rel).name)
+    psd = PSDImage.open(path)
+    edit = pe.set_comp(psd, pe.parse_card(parser, path, rel, psd), "hp", 4)
+    saved = str(tmp_path / "new.psd")
+    psd.save(saved, update_preview=False)
+    pe.gate_bytes(path, saved, [edit])
+    assert pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"]["hp"] == 4
+
+
 def test_alt_parts_rows_decide(clone):
     """The digits' row decides a bar's place (the Pandas' def and atk art are named for each other's rows) and a split
     row's halves are one bar (Royal Eradicator's "atk top" and "atk bottom")."""

@@ -3768,6 +3768,7 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
     placed on its transform's rectangle. Resized: by mode, else as its stored pixels show (stored_mode), else nearest if
     hard_edged, else bicubic. The card stores no mode; Photoshop's redraw on a copy equals nearest (2026-11-07).
+    Any other embedded document (groups, effects, knockout: the Isaac bars) is drawn by comp_document.
 
     Returns:
         (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
@@ -3788,7 +3789,7 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
              for c in comps.get(b"list") or []}
     want = next((cid for cid, name in names.items() if name == str(value)), None)
     last = int(comps.get(b"lastAppliedComp", -1))
-    if want is None or last not in names:
+    if want is None:
         refuse(f"no comp {value} to draw")
     corners = [float(v) for v in placed.get(b"Trnf") or []]
     if len(corners) != 8 or not (corners[0] == corners[6] and corners[2] == corners[4] and corners[1] == corners[3]
@@ -3797,7 +3798,12 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     x0, y0, x1, y1 = corners[0], corners[1], corners[2], corners[5]
     width, height = doc.width, doc.height
     rgb, alpha = np.zeros((height, width, 3), np.float32), np.zeros((height, width), np.float32)
-    for inner in doc:
+    flat = last in names and all(not inner.is_group() and inner.kind in ("shape", "pixel") and not inner.has_effects()
+                                 and inner.blend_mode == BlendMode.NORMAL for inner in doc
+                                 if _comp_states(inner, [want])[want].get(b"enab", True))
+    if not flat:
+        rgb, alpha = comp_document(layer, doc, comps, want, last if last in names else None)
+    for inner in doc if flat else ():
         states = _comp_states(inner, [want, last])
         now, then = states[want], states[last]
         if not now.get(b"enab", True):
@@ -3858,6 +3864,56 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     c0, c1, r0, r1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
     rgba = np.concatenate([rgb[r0:r1, c0:c1], alpha[r0:r1, c0:c1, None]], axis=2).astype(np.float32)
     return rgba, (left + c0, top + r0, left + c1, top + r1)
+
+
+COMP_SHOWN, COMP_PLACED, COMP_LOOK = 1, 2, 4      # a layer comp's capturedInfo: visibility, position, appearance
+COMP_LOOKS = (b"Lefx", b"blendOptions", b"FXRefPoint", b"layerSpecific")   # cmls keys COMP_LOOK applies
+
+
+def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[int]) -> tuple:
+    """
+    comp_render's second path: the comp applied to every layer of the bar's embedded document at any depth, as
+    Photoshop applies it (only what its capturedInfo holds), and the document composited by psd-tools: its pixel masks
+    moved by the comp's offset less the saved state's (the last applied comp's, else none: the raw offsets), its eyes
+    set when it captures visibility. Equal to Photoshop's renders at every comp of the Isaac bars (knockout groups,
+    Transparency Shapes Layer off, nested smart objects; custombars 2026-11-11).
+
+    Returns:
+        (straight RGB, alpha) float32 at the document's size; Refused for another colour profile or mode, a comp that
+        moves a vector mask or a layer, changes a look, or captures what is not read
+    """
+    def refuse(why: str):
+        raise Refused("unsupported-card", f"{layer.name!r}: {why}: set it in Photoshop")
+    if doc.color_mode != ColorMode.RGB or doc.image_resources.get_data(Resource.ICC_PROFILE) != \
+            layer._psd.image_resources.get_data(Resource.ICC_PROFILE):
+        refuse("its bar is in another colour profile")
+    captured = next(int(c.get(b"capturedInfo", 0)) for c in comps.get(b"list") or [] if int(c[b"compID"]) == want)
+    if captured & ~(COMP_SHOWN | COMP_PLACED | COMP_LOOK):
+        refuse("a layer comp holding more than eyes, places and looks")
+    for inner in doc.descendants():
+        order = [want] if last is None else [want, last]
+        states = _comp_states(inner, order)
+        now, then = states[want], states[last] if last is not None else {}
+        if captured & COMP_LOOK and any(now.get(key) != then.get(key) for key in COMP_LOOKS):
+            refuse(f"a layer comp changes the look of {inner.name!r}")
+        if captured & COMP_PLACED:
+            if _offset(now, b"vectorMask") != _offset(then, b"vectorMask"):
+                refuse("a comp moves its vector mask")
+            if (now.get(b"Ofst") or {}) != (then.get(b"Ofst") or {}):
+                refuse(f"a comp moves {inner.name!r}")
+            dx, dy = (a - b for a, b in zip(_offset(now, b"imageMask"), _offset(then, b"imageMask")))
+            if (dx or dy) and inner.has_mask():
+                try:
+                    inner.mask.offset = (inner.mask.left + dx, inner.mask.top + dy)
+                except ValueError:
+                    refuse(f"a comp moves the mask of {inner.name!r}, which has a vector mask")
+        if captured & COMP_SHOWN and b"enab" in now:
+            inner.visible = bool(now[b"enab"])
+    image = doc.composite(ignore_preview=True, apply_icc=False, force=True)
+    if image is None:
+        return np.zeros((doc.height, doc.width, 3), np.float32), np.zeros((doc.height, doc.width), np.float32)
+    rgba = np.asarray(image.convert("RGBA"), np.float32) / 255.0
+    return np.ascontiguousarray(rgba[..., :3]), np.ascontiguousarray(rgba[..., 3])
 
 
 def place_bar(layer, box: tuple) -> None:
