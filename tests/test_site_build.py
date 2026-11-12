@@ -901,9 +901,9 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
     assert names.index("py") < names.index("python") < names.index("Setup start") < names.index("Setup wait") == names.index("build") - 2
     fallback = steps[names.index("build") - 1]
-    assert fallback["if"] == "steps.setup.outputs.data != 'true'"
+    assert fallback["if"] == "steps.early.outputs.run == '' && steps.setup.outputs.data != 'true'"
     assert fallback["with"] == {"ref": "data", "path": "carddata", "fetch-depth": 1}
-    assert steps[names.index("python")]["if"] == "steps.py.outputs.python == ''"
+    assert steps[names.index("python")]["if"] == "steps.early.outputs.run == '' && steps.py.outputs.python == ''"
     gone = ("actions/configure-pages", "astral-sh/setup-uv", "actions/upload-pages-artifact")    # never downloaded
     assert not [s for s in steps if s.get("uses", "").split("@")[0] in gone]
     assert names.index("cache-before") < names.index("Images start") < names.index("Data wait")
@@ -1164,3 +1164,66 @@ esac"""
                           env={**env, "ARTIFACT": "43"}, capture_output=True, text=True, timeout=120)
     assert done.returncode == 1 and "stuck" not in (temp / "out").read_text() and "Run 7" not in done.stdout, done.stdout
     assert sum("actions/workflows/site.yml/runs" in c for c in (temp / "calls").read_text().splitlines()) == 1
+
+
+def test_site_push_with_card_data_left_to_the_early_build(tmp_path):
+    """site.yml's Early build: a push that also changed a Card sync data input (card-sync.yml's push paths but
+    TTS/Global.lua, Global.xml and the save; the payload's lists, else the compare API) stops once Card sync's unfinished
+    early build for it is found (every later step skipped, the summary names it); site code only: no call, it builds;
+    no such build in 30 s: it builds."""
+    yaml = pytest.importorskip("yaml")
+    workflows = SITE_SRC / ".github" / "workflows"
+    if not (workflows / "site.yml").is_file() or not shutil.which("jq"):
+        pytest.skip(f"no {workflows / 'site.yml'} or jq")
+    steps = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
+    names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
+    early, guard = steps[0], "steps.early.outputs.run == ''"
+    assert early["id"] == "early" and early["if"] == "github.event_name == 'push' && github.run_attempt == '1'" and early["continue-on-error"] is True
+    assert not [n for n, s in zip(names[1:], steps[1:]) if "if" not in s]           # none runs unasked
+    assert all(steps[names.index(n) + d]["if"].startswith(guard + " && ") for n, d in (("python", 0), ("build", -1)))
+    paths = yaml.safe_load((workflows / "card-sync.yml").read_text(encoding="utf-8"))[True]["push"]["paths"]
+    no_data = {"TTS/Global.lua", "TTS/Global.xml", "TTS/Impossibility Simulator.json"}
+    assert no_data <= set(paths)
+    glob = lambda p: re.compile("".join(".*" if t == "**" else "[^/]*" if t == "*" else t if t[0] == "[" else re.escape(t)  # noqa: E731
+                                        for t in re.findall(r"\*\*|\*|\[[^]]*\]|.", p)) + r"\Z")
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    gh = ('echo "$*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *compare/b4...ab*) j=$COMPARE;; *card-sync.yml/runs?event=push\\&head_sha=ab*) j=$SYNC;;'
+          ' *site.yml/runs?event=workflow_dispatch*) j=$RUNS;; *) exit 1;; esac\nwhile [ $# -gt 1 ]; do [ "$1" != --jq ] || f=$2; shift; done\n'
+          'jq -r "$f" "$j"')
+    for name, body in {"gh": gh, "timeout": 'shift; exec "$@"', "sleep": "exec /bin/sleep 0.2"}.items():
+        (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
+        (bin_ / name).chmod(0o755)
+    def data(name, obj):
+        (tmp_path / name).write_text(json.dumps(obj))
+        return str(tmp_path / name)
+    runs = [{"id": 87, "display_title": "Card browser (after 77 after)", "status": "pending"},
+            {"id": 88, "display_title": "Card browser (after 77 data)", "status": "pending"}]
+    env = {"PATH": f"{bin_}:/usr/bin:/bin", "GITHUB_REPOSITORY": "o/r", "GITHUB_SHA": "ab" * 20, "GITHUB_SERVER_URL": "https://x",
+           "SYNC": data("sync.json", {"workflow_runs": [{"id": 77}]}), "RUNS": data("runs.json", {"workflow_runs": runs}),
+           "COMPARE": data("compare.json", {"files": [{"filename": "site/app.js"}, {"filename": "Types/A.png", "previous_filename": "Types/B.png"}]})}
+
+    def step(n, event, swap=("", "")):
+        temp = tmp_path / f"t{n}"
+        temp.mkdir()
+        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", early["run"].replace(*swap)], capture_output=True,
+                              text=True, timeout=60, env={**env, "RUNNER_TEMP": str(temp), "GITHUB_EVENT_PATH": data(f"e{n}.json", event),
+                                                          "GITHUB_OUTPUT": str(temp / "out"), "GITHUB_STEP_SUMMARY": str(temp / "summary")})
+        assert done.returncode == 0, done.stderr
+        read = lambda f: (temp / f).read_text() if (temp / f).exists() else ""  # noqa: E731
+        return read("out"), read("calls").count("api repos/"), read("summary"), done.stdout
+    files = ["Creatures/A/1 Stars/X.psd", "Items/Y.PNG", "Types/Fire.webp", "MDW/Linked/a/b.psb", "MDW/Fonts/Futura.ttf",
+             "MDW/Fonts/stoogedings-src/stoogedings.json", "MDW/Fonts/stoogedings-src/build_stoogedings.py", "site/Card Edits.json",
+             "site/Card Authors.txt", "site/Card Creation Dates.json", "site/Card Ratings.json", "site/rulebook/1 Basics.md",
+             "site/assets/app.js", "TTS/decks.json", ".mailmap", *sorted(no_data)]
+    for n, f in enumerate(files):                                     # card-sync.yml's paths but the three
+        out, calls, summary, _ = step(n, {"before": "b4", "commits": [{"added": [], "modified": [f], "removed": []}]})
+        want = f not in no_data and any(glob(p).match(f) for p in paths)
+        assert (out, calls, "actions/runs/88" in summary) == (("run=88\n", 2, True) if want else ("", 0, False)), f
+    two = [{"added": ["site/x.js"], "modified": [], "removed": []}, {"added": [], "modified": ["TTS/Global.lua"], "removed": ["Items/Z.psd"]}]
+    assert step("both", {"before": "b4", "commits": two})[:2] == ("run=88\n", 2)
+    assert step("lists", {"before": "b4", "commits": []})[:2] == ("run=88\n", 3)  # the compare API's
+    runs[1]["status"] = "completed"                                   # ended (or not dispatched): this run builds
+    data("runs.json", {"workflow_runs": runs})
+    out, calls, summary, said = step("none", {"before": "b4", "commits": two}, ('"$SECONDS" -lt 28 ]', "$(( looks += 1 )) -lt 3 ]"))
+    assert (out, summary, calls) == ("", "", 4) and "No early build of Card sync's run 77 in 30 s" in said   # 3 looks, run 77 read once
