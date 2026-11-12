@@ -598,15 +598,16 @@ Re-pin:
 1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first wheels;
    delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
 2. Change the tag in `requirements-cards.txt` (one line) and commit it to AutoCroissant main. The workflows need nothing:
-   they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days).
+   they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days). TTSCardMaker's
+   cards-python action builds the wheels with `--uploaded-prior-to <date>` (PyPI as of then): move that date only when
+   the fork needs a package or build tool released after it.
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers) and,
    against a TTSCardMaker checkout, `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml AC_SITE_SRC=<checkout>`
-   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` and `tests/test_card_bake.py -k "fork or 314"`
-   (`test_card_bake.fork_install` checks each of the six workflows' install: no pin of its own, Python 3.14, the file's
-   wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
+   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`helpers.fork_install` checks each card
+   workflow's install: no pin of its own, the shared cards-python setup, the file's wheels, one cache key on 3.14).
 4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112` and `cards-20261112b`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b` and `cards-20261112c`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
@@ -828,6 +829,7 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-11-11 (fork release): the fork's version list runs to `cards-20261111`.
 2026-11-11 (fork release): the fork's version list runs to `cards-20261112`.
 2026-11-12 (fork release): the fork's version list runs to `cards-20261112b`.
+2026-11-12 (fork release): the fork's version list runs to `cards-20261112c`; re-pin step 3 without `test_card_bake.py -k "fork or 314"` (it selected nothing); step 2 on TTSCardMaker's `--uploaded-prior-to`.
 
 2026-11-11 (docs check): `ADD_ABILITY_LIVE` True; `PARSER_VERSION` 7 and its card_data.py citations; setup.py table without `EXCLUDE_FILES` (10 compiled modules).
 
