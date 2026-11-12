@@ -38,12 +38,13 @@ PAD = 16                    # px round a stat group's box for its row renders
 NEAR = 400                  # px a straight cut may take from the wrong row at a value the card does not show
 
 # Each card: its stat groups (paths from the root), extra layers a row draws (Green Mage's dark overlay bars), layers
-# deleted with the old bars, and its recipe for the stat at n when AC's own edit is not the card's look.
+# deleted with the old bars, its recipe for the stat at n when AC's own edit is not the card's look, and bands: each
+# bar holds everything drawn in its own band of the card (rows whose glows reach the next row, under its dark overlay).
 CARDS = {
     "Hive_Knight": {"groups": "Stats Bars/Bars/{Hp,Def,Atk,Spd}"},
     "False_Knight": {"groups": "Stats Bars/Darks/{Hp,DEF,ATK,SPD}", "recipe": "false_knight"},
     "Chris_&_Jordi": {"groups": "Stats Bars/Bars/{hp,def,atk,spd}", "recipe": "chris"},
-    "Green_Mage": {"groups": "Stats Bars/Bars/{hp,Def,ATK,SPD}",
+    "Green_Mage": {"groups": "Stats Bars/Bars/{hp,Def,ATK,SPD}", "bands": True,
                    "extra": "Stats Bars/Darks/{Health,Defense,Attack,Speed}", "empty": ["Stats Bars/Darks"]},
     "Grimora": {"groups": "Text/bars/{hp,def,atk,spd}"},
     "Skeleton_Mate": {"groups": "Text/Darks/{HP,DEF,ATK,SPD}"},
@@ -157,6 +158,14 @@ def _row_doc(psd, groups: dict, extra: dict, stats) -> None:
             layer.visible = False
 
 
+def _bands(psd, groups: dict) -> dict:
+    """{stat: (0, y0, width, y1)}: the card cut across halfway between the stat groups' rows, top to bottom."""
+    order = sorted(STATS, key=lambda stat: find(psd, groups[stat]).bbox[1])
+    cuts = [0] + [(find(psd, groups[a]).bbox[3] + find(psd, groups[b]).bbox[1]) // 2
+                  for a, b in zip(order, order[1:])] + [psd.height]
+    return {stat: (0, cuts[i], psd.width, cuts[i + 1]) for i, stat in enumerate(order)}
+
+
 def _render(psd, box) -> np.ndarray:
     """Premultiplied float RGBA of what shows in box over transparency."""
     im = psd.composite(viewport=box, ignore_preview=True, apply_icc=False, color=0.0, alpha=0.0)
@@ -262,6 +271,8 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
     base = PSDImage.open(BytesIO(raw))
     parsed = psd_edit.parse_card(parser, path, rel, base)
     values = {stat: parsed["card"][stat] for stat in STATS}
+    bands = _bands(base, groups) if config.get("bands") else {}
+    shown = lambda stat: STATS if bands else [stat]     # a band's rows draw every stat's layers
     folder = join(out, stem)
     makedirs(folder, exist_ok=True)
     with open(join(folder, "T.psd"), "wb") as fh:
@@ -275,11 +286,13 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
         x1 = max(l.bbox[2] for l in layers if l.bbox[2] > l.bbox[0])
         y1 = max(l.bbox[3] for l in layers if l.bbox[2] > l.bbox[0])
         box = (max(0, x0 - PAD), max(0, y0 - PAD), min(base.width, x1 + PAD), min(base.height, y1 + PAD))
+        if stat in bands:
+            box = (box[0], max(box[1], bands[stat][1]), box[2], min(box[3], bands[stat][3]))
         rows = {}
         for n in VALUES:
             psd = PSDImage.open(BytesIO(raw))
             recipe(psd, parsed, stat, n, groups)
-            _row_doc(psd, groups, extra, [stat])
+            _row_doc(psd, groups, extra, shown(stat))
             rows[n] = _render(psd, box)
         cuts = _cuts(rows)
         edge = _profile(cuts, box[3] - box[1], box[2] - box[0], values[stat])
@@ -289,14 +302,14 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
             edge["offsets"] = {n: box[0] + o for n, o in edge["offsets"].items()}
             edge["top"] = box[1]
         stats[stat] = {"group": groups[stat], "extra": extra.get(stat), "name": SO_NAMES[stat], "value": values[stat],
-                       "box": box, "edge": edge,
+                       "box": box, "edge": edge, "band": bands.get(stat),
                        "cuts": {n: ({"lo": c["lo"], "hi": c["hi"]} if "lo" in c else {"best": c["best"], "bad": c["bad"]})
                                 for n, c in cuts.items()}}
     for state, n in (("F", 10), ("E", 0)):
         for stat in STATS:
             psd = PSDImage.open(BytesIO(raw))
             recipe(psd, parsed, stat, n, groups)
-            _row_doc(psd, groups, extra, [stat])
+            _row_doc(psd, groups, extra, shown(stat))
             psd.save(join(folder, f"R{state}_{stat}.psd"))
     card = {"stem": stem, "rel": rel, "path": abspath(path), "folder": abspath(folder), "values": values,
             "stats": stats, "delete": config.get("delete", []), "empty": config.get("empty", [])}
@@ -466,6 +479,37 @@ def restore_links(new, old) -> int:
     return kept
 
 
+FILLS = ("solidcolorfill", "gradientfill", "patternfill")
+
+
+def restore_fills(new, old) -> list:
+    """Fill layers as the card stored them: Photoshop's save gives an untouched one its pixels (Hive Knight's 'Gradient
+    Fill 1': 37 KB -> 4 MB) where the card kept none; every reader draws a fill from its settings. The same layer
+    (id, name, mask) gets its old rectangle, channels and settings back."""
+    from copy import deepcopy
+    was = {layer.layer_id: layer for layer in old.descendants() if layer.kind in FILLS}
+    size = lambda layer: sum(len(channel.data) for channel in layer._channels)
+    kept = []
+    for layer in new.descendants():
+        before = was.get(layer.layer_id)
+        if before is None or (layer.kind, layer.name) != (before.kind, before.name) or size(layer) <= size(before):
+            continue
+        now, then = ([(r.mask_data.top, r.mask_data.left, r.mask_data.bottom, r.mask_data.right) if r.mask_data else None,
+                      [c.id for c in r.channel_info]] for r in (layer._record, before._record))
+        if now != then:                         # the same mask and channels
+            continue
+        record, source = layer._record, before._record
+        record.top, record.left, record.bottom, record.right = source.top, source.left, source.bottom, source.right
+        record.channel_info = deepcopy(source.channel_info)
+        layer._channels[:] = deepcopy(before._channels)     # in place: the document's channel list holds it
+        layer._invalidate_bbox()
+        for key in (Tag.SOLID_COLOR_SHEET_SETTING, Tag.GRADIENT_FILL_SETTING, Tag.PATTERN_FILL_SETTING):
+            if key in before.tagged_blocks and key in layer.tagged_blocks:
+                layer.tagged_blocks[key] = deepcopy(before.tagged_blocks[key])
+        kept.append(layer.name)
+    return kept
+
+
 def parser_for(clone: str):
     from commands.card_check import clone_vocabulary
     return clone_vocabulary(clone).parser()
@@ -506,10 +550,10 @@ def main(argv: list) -> int:
         return 0
     if command == "strip":                      # the repo's PSDs carry no merged image (owner 2026-11-07)
         for card in cards:
-            psd = PSDImage.open(join(card["folder"], "final.psd"))
-            kept = restore_links(psd, PSDImage.open(join(card["folder"], "T.psd")))
+            psd, old = PSDImage.open(join(card["folder"], "final.psd")), PSDImage.open(join(card["folder"], "T.psd"))
+            kept, fills = restore_links(psd, old), restore_fills(psd, old)
             psd_edit.save_psd(psd, join(card["folder"], "card.psd"))
-            print(card["stem"], "card.psd", f"{kept} link paths as they were")
+            print(card["stem"], "card.psd", f"{kept} link paths as they were", f"fills as they were: {fills}")
         return 0
     if command == "verify":
         parser = parser_for(clone)

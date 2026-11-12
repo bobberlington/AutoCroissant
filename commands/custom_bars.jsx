@@ -1,8 +1,9 @@
 #target photoshop
 // custom_bars.py's Photoshop half. PLAN: {"log", "step": "build"|"finish", "margin", "cards": [plan.json, ...]}.
-// build: each stat's Dark and Light rows (its row documents merged) become one smart object in the stat's group,
-// the old layers deleted; inside it the Light group's mask, unlinked, moved per value with a layer comp "0".."10";
-// the comp set to the value. finish: each bar redrawn by Photoshop at its value, saved; every comp saved as a PNG copy.
+// build: each stat's Dark and Light rows (its row documents merged, cut to its band if it has one) become one smart
+// object in the stat's group, the old layers deleted; inside it the Light group's mask, unlinked, moved per value
+// with a layer comp "0".."10"; the comp set to the value. finish: each bar redrawn by Photoshop at its value, saved;
+// every comp saved as a PNG copy.
 var PLAN = /*PLAN*/;
 var LOG = new File(PLAN.log); LOG.encoding = "UTF-8"; LOG.lineFeed = "Unix"; LOG.open("w");
 var DD = app.displayDialogs; app.displayDialogs = DialogModes.NO;
@@ -73,6 +74,11 @@ function row(card, T, stat, state, s) {
   R.activeLayer = find(R, s.group);            // Merge Visible needs a visible layer selected
   executeAction(sT('mergeVisible'), new ActionDescriptor(), DialogModes.NO);
   var m = R.activeLayer; m.name = state === "F" ? "Light" : "Dark";
+  if (s.band) {                                // only the stat's band of the card
+    var b = s.band;
+    R.selection.select([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]], SelectionType.REPLACE, 0, false);
+    R.selection.invert(); R.selection.clear(); R.selection.deselect();
+  }
   var dup = m.duplicate(T, ElementPlacement.PLACEATBEGINNING);
   R.close(SaveOptions.DONOTSAVECHANGES);
   app.activeDocument = T;
