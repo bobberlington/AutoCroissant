@@ -531,6 +531,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `VIEW_W`, `QUALITY` | 720, AVIF q60 | the crops: the card view's width |
 | `TRIES` | 5 | publish pushes, each from the branch head |
 | `BAR_TOP`, `BAR_MOVED` | 20, 2 | stat pictures (`with_bars`, 2026-11-11): each value 0-20 the bake takes, its view pixels moved past 2 levels |
+| `with_stars`' top | `card_checks.MAX_STARS` (7) | stars pictures (the plate's `icons`, 2026-11-12): each count 1-7 but the card's, as the bake draws it |
 | `BAR_BYTES`, `BAR_AVIF` | 192000, 50 | a lossless WebP bar sheet past this goes AVIF at the site's 720 px image quality |
 | `BAR_SIDE` | 16383 | the bar sheet's cuts stack in columns of at most this height (WebP's largest side) |
 | `SURE` | 1.2 | `mock_misses`' margin on the mock-up's own row finder (mockup.js; the live thumbs needed 1.15) |

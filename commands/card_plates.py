@@ -7,7 +7,8 @@ Card checks makes them (check_card's "plate") and publishes them on the `plates`
 PSDs gone from main dropped; the website fetches the open card's in edit mode. With the fonts, a layer's crop also
 carries the fork's layout of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows
 the mock-up's cells cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it
-takes, at that view, which the mock-up pastes instead.
+takes, at that view, which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own
+stars at every count, pasted in place of the mock-up's erased and redrawn ones.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
@@ -367,9 +368,50 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
     return merged
 
 
+def star_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, value: int,
+               icc: bool) -> Optional[Image.Image]:
+    """
+    The card's PNG after a website edit of its stars, as the bake makes it (card_bake.plan_move: a folder card moves into
+    its "N Stars" folder; psd_edit._apply_jobs' steps for a lone stars job: plan_stars, set_icons, gate_dirty, baseline,
+    the merge, gate_reparse), or None when the bake refuses it or keeps the printed stars. bar_value's: no save gates.
+    """
+    if "stars" not in psd_edit.classify(parsed, {"stars": value}, psd, parser).jobs:
+        return None
+    target = psd_edit.star_target(rel, value)
+    target = f"{target}/{rel.rsplit('/', 1)[-1]}" if target else rel
+    try:
+        if target != rel:                       # plan_move's: refused, the printed stars stay
+            psd_edit.plan_stars(psd, parsed, value, parser)
+        new = psd_edit.edit_copy(psd, raw)
+        edit = psd_edit.set_icons(new, psd_edit.plan_stars(new, parsed, value, parser, split=True), None,
+                                  target)
+        first = psd_edit.gate_dirty(psd, new, [edit], icon=True)
+        if not (edit.layers or edit.removed):
+            return None
+        base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
+        render = psd_edit.render_region(new, edit.region, icc, measured["text"], psd_edit.edited_ids([edit]))
+        merged, replaced = psd_edit.merge_png(png, base, render, edit.region)
+        if not replaced.any() and not psd_edit._within_bar(measured):
+            return None
+        psd_edit.gate_reparse(parser, parsed, target, target, {"stars": value}, new, [edit], [])
+    except Exception:                           # noqa: BLE001 - refused or the bake's error: no picture of that count
+        return None
+    return merged
+
+
+def _moved(was: np.ndarray, merged: Image.Image) -> Optional[tuple]:
+    """(x, y, the view's pixels there after the edit, before it) over the view pixels merged moves, None for none."""
+    now = np.asarray(view(merged).convert("RGBA"))
+    ys, xs = np.nonzero((now != was).any(-1))
+    if not len(xs):
+        return None
+    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+    return x0, y0, now[y0:y1, x0:x1].copy(), was[y0:y1, x0:x1].copy()
+
+
 def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str) -> dict:
-    """{stat: {value: (x, y, the view's pixels there after the edit, before it)}} over the view pixels a stat edit moves
-    (bar_value at the site's card view, view()); every stat the card has, every value the bake takes."""
+    """{stat: {value: _moved()}} over the view pixels a stat edit moves (bar_value at the site's card view, view());
+    every stat the card has, every value the bake takes."""
     card = parsed["card"]
     stats = [stat for stat in psd_edit.STAT_FIELDS if isinstance(card.get(stat), int) and card[stat] >= 0]
     if not stats or png.size != psd.size or psd_edit.story_style_drift(psd, kerning=False):
@@ -382,13 +424,29 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
         for stat in stats:
             for value in range(BAR_TOP + 1):
                 merged = None if value == card[stat] else bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc)
-                if merged is None:
-                    continue
-                now = np.asarray(view(merged).convert("RGBA"))
-                ys, xs = np.nonzero((now != was).any(-1))
-                if len(xs):
-                    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
-                    out.setdefault(stat, {})[value] = (x0, y0, now[y0:y1, x0:x1].copy(), was[y0:y1, x0:x1].copy())
+                moved = _moved(was, merged) if merged is not None else None
+                if moved:
+                    out.setdefault(stat, {})[value] = moved
+    return out
+
+
+def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, top: int) -> dict:
+    """{count: _moved()} of star_value at every count 1 to top but the card's; {} for a card whose stars no edit
+    moves (bar_changes' cards, a tagged PSD: one picture only)."""
+    count = parsed["card"].get("stars")
+    if not isinstance(count, int) or png.size != psd.size or len(variants_of(psd)) > 1 \
+            or psd_edit.story_style_drift(psd, kerning=False):
+        return {}
+    psd_edit.use_record(psd, rel)
+    icc = psd_edit.export_icc(psd, png)
+    was = np.asarray(view(png).convert("RGBA"))
+    out = {}
+    with psd_edit.render_cache(shared=True):
+        for value in range(1, top + 1):
+            merged = None if value == count else star_value(psd, raw, png, parsed, parser, rel, value, icc)
+            moved = _moved(was, merged) if merged is not None else None
+            if moved:
+                out[value] = moved
     return out
 
 
@@ -481,6 +539,15 @@ def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image
     if sheet is None:
         return plate
     return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "bars": sheet}
+
+
+def with_stars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
+               top: int) -> Optional[dict]:
+    """The plates file with its "icons": bar_sheet of star_changes under "stars"; plate as it was without any."""
+    sheet = bar_sheet({"stars": star_changes(psd, raw, png, parsed, parser, rel, top)}, parsed["card"], vw=view(png).width)
+    if sheet is None:
+        return plate
+    return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "icons": sheet}
 
 
 # ========================
@@ -612,6 +679,9 @@ __all__ = [
     'plates',
     'psd_blobs',
     'publish',
+    'star_changes',
+    'star_value',
     'view',
     'with_bars',
+    'with_stars',
 ]

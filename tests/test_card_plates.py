@@ -87,6 +87,24 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     assert lossy["img"].startswith("data:image/avif") and lossy["cuts"] == sheet["cuts"] and np.array_equal(alpha >= 128, held)
 
 
+def test_star_pictures_are_the_bakes(clone, tmp_path):
+    """A stars count's picture is the bake's PNG of that edit (apply_jobs into its "N Stars" folder, as card_bake's
+    plan_move); with_stars pictures every count to the top but the card's, at the card's."""
+    raw = (clone / PUZZLED).read_bytes()
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / PUZZLED.replace(".psd", ".png"))
+    png.load()
+    parser = _bare_parser()
+    parsed = psd_edit.parse_card(parser, str(clone / PUZZLED), PUZZLED, psd)
+    psd_edit.use_record(psd, PUZZLED)
+    ours = cp.star_value(psd, raw, png, parsed, parser, PUZZLED, 4, psd_edit.export_icc(psd, png))
+    baked = psd_edit.apply_jobs(str(clone / PUZZLED), str(clone / PUZZLED.replace(".psd", ".png")),
+                                "Creatures/Other/4 Stars/Puzzled_Cat.psd", {"stars": 4}, parsed, parser, str(tmp_path),
+                                str(clone / "MDW" / "Fonts"), psd=psd)
+    assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
+    stars = cp.with_stars(None, psd, raw, png, parsed, parser, PUZZLED, 5)["icons"]["bars"]["stars"]
+    assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
+
+
 def _moved(png, merged):
     """bar_changes' entry of one value."""
     was, now = (np.asarray(cp.view(image).convert("RGBA")) for image in (png, merged))

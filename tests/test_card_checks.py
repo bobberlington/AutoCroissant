@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import commands.card_checks as cc
+import commands.card_plates as card_plates
 from commands.card_edits import CardEdits
 from commands.psd_edit import SOFT_NOTE, real_notes
 from conftest import SITE_SRC
@@ -235,6 +236,7 @@ def test_lost_bars_read_at_the_earlier_boxes(clone, monkeypatch):
     before, after, png = (at_rev(clone, rev, path) for rev, path in (("b293ca6f", rel), ("bfdc80ef", rel),
                                                                       ("bfdc80ef", rel[:-4] + ".png")))
     monkeypatch.setattr(cc, "edit_notes", lambda *args: [])
+    monkeypatch.setattr(card_plates, "with_stars", lambda plate, *args: plate)
     sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
     for psd, notes in ((after, [cc.LOST_NOTE.format(stats="HP, DEF, ATK and SPD", layers="Stats Bars/Darks",
                                                      shown="HP 5, DEF 5, ATK 6, SPD 7")]), (before, [])):
