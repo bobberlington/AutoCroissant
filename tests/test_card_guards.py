@@ -2605,7 +2605,8 @@ def test_site_data_wait(clone, tmp_path):
     """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
     job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
     head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches (the step's
-    timeout leaves room for them): checked out later too."""
+    timeout leaves room for them): checked out later too. A look that finds main past the early images' commit, those
+    done (exit 0): the early images again at main's head (same log and code)."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq") or not shutil.which("git"):
         pytest.skip("no jq or git")
@@ -2688,6 +2689,26 @@ def test_site_data_wait(clone, tmp_path):
     done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("completed")}, cwd=work)
     assert done.returncode == 0 and "::warning::data not fetched again (3 tries): checked out" in done.stdout, done.stderr
     assert not card.exists() and (temp / "setup" / "data.code").read_text().strip() == "1" and naps.read_text().split() == ["10", "15"]
+    setup, bin_ = temp / "setup", Path(env["PATH"].split(":")[0])     # follow: main moved past the early images, those done
+    (bin_ / "python").write_text('#!/bin/sh\necho "python $*"\n')
+    (bin_ / "python").chmod(0o755)
+    git("config", "uploadpack.allowFilter", "true")
+    for code, moved, again in (("0", True, True), ("0", False, False), ("1", True, False)):
+        at = git("rev-parse", "HEAD").stdout.strip()
+        (setup / "images.code").write_text(f"{code}\n")
+        (setup / "images.at").write_text(f"{at}\n")
+        (setup / "images.log").write_text("")
+        if moved:
+            push("C.png", at.encode())
+        head = git("rev-parse", "HEAD").stdout.strip()
+        assert not run(jobs("completed"))
+        for _ in range(100):
+            if (setup / "images.code").read_text().strip():
+                break
+            subprocess.run(["/bin/sleep", "0.05"])
+        ran = f"python site/build/build_site.py --images {head} {setup}/images.stop\n"
+        assert (setup / "images.log").read_text() == (ran if again else "") and (setup / "images.code").read_text().strip() == code
+        assert (setup / "images.at").read_text().strip() == (head if again else at)
 
 
 def test_checks_data_wait(clone, tmp_path):
@@ -2703,7 +2724,7 @@ def test_checks_data_wait(clone, tmp_path):
     step = {n: s for n, s in zip(names, job["steps"])}
     assert names.index("Python environment") + 6 == names.index("Data wait") == names.index("To check") - 1    # Help start, join
     assert step["fonts-first-cache"]["uses"].startswith("actions/cache/restore@") and step["font-cache"]["if"].endswith("&& !inputs.after")
-    loop = lambda run: run.split("if [ \"$SECONDS\" -ge")[0]                 # noqa: E731
+    loop = lambda run: [ln for ln in run[run.index("while ["):run.index("if [ \"$SECONDS\" -ge")].splitlines() if "follow" not in ln]  # noqa: E731
     assert loop(step["Data wait"]["run"]) == loop(next(s for s in site if s.get("name") == "Data wait")["run"])
     origin, work = tmp_path / "origin", tmp_path / "work"
     git = lambda cwd, *a: subprocess.run(["git", "-C", str(cwd), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
