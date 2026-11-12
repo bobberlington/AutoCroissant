@@ -4,7 +4,7 @@ style, stat-row encoding, status-word layers, template deviations, the header's 
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
-6). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's
+6; its outline, stroke: VERSION 7). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's
 build); its "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -41,7 +41,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 6                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"
+VERSION = 7                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -240,9 +240,31 @@ def _set(layer, font: Optional[str] = None) -> dict:
     return out
 
 
+def _stroke(layer) -> Optional[list]:
+    """[r, g, b, size] of the Stroke round a type layer's letters: its own enabled one, else its nearest group's. Only a
+    solid RGB colour, Normal, 100%, outside; else None (the mock-up guesses it from pixels)."""
+    from psd_tools.api.effects import Stroke
+    from psd_tools.constants import BlendMode, StrokeFillType, StrokePosition
+    for owner in (layer, *_ancestors(layer)):
+        try:
+            effects = list(owner.effects) if owner.effects.enabled else []
+        except Exception:                       # an effects block psd-tools can't read
+            continue
+        stroke = next((e for e in effects if isinstance(e, Stroke) and e.enabled), None)
+        if stroke is None:
+            continue
+        rgb = [(stroke.color or {}).get(key) for key in (b"Rd  ", b"Grn ", b"Bl  ")]
+        if (None in rgb or stroke.fill_type != StrokeFillType.SOLID_COLOR or stroke.position != StrokePosition.OUTSIDE
+                or stroke.blend_mode != BlendMode.NORMAL or float(stroke.opacity) != 100 or not stroke.size > 0):
+            return None
+        size = float(stroke.size)
+        return [*(max(0, min(255, round(float(_value(v))))) for v in rgb), int(size) if size.is_integer() else round(size, 2)]
+    return None
+
+
 def _text(texts: list) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
-    A layer of several colours has "runs" (_runs); how it is set: _set's keys."""
+    A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke)."""
     out = []
     for layer in texts:
         try:
@@ -266,6 +288,12 @@ def _text(texts: list) -> list:
             out[-1].update(_set(layer, font))
         except Exception:                       # engine data psd-tools can't read: the mock-up's own guess
             pass
+        try:
+            stroke = _stroke(layer)
+        except Exception:                       # the mock-up's own guess
+            stroke = None
+        if stroke:
+            out[-1]["stroke"] = stroke
     return out
 
 

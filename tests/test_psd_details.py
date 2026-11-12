@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -87,6 +87,17 @@ def test_how_text_is_set(clone):
     assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0,     # a 0.1 degree turn: still set
                                "badges": [[0.814, 0], [0.814, 345], None, [0.814, 0]]}
     assert got["Chef_Saltbaker.psd"]["lf"] == "CupheadMemphis-Medium"                # first run MyriadPro-Regular
+
+
+def test_stroke_is_the_layers_or_its_groups(records, clone):
+    """VERSION 7: the outline the mock-up draws round re-laid letters. Mini Doomer's Ability: the Text group's (7 px
+    black); Afraid's: its own; Dark Matter Swordsman's nearest is its own at 44%: none (the mock-up's guess)."""
+    from psd_tools import PSDImage
+    assert {t["layer"]: t.get("stroke") for t in records[DOOMER]["text"]}["Text/Ability"] == [0, 0, 0, 7]
+    got = {}
+    for rel, lid in (("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 23), ("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", 596)):
+        got[rel.rsplit("/", 1)[1]] = pd._stroke(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
+    assert got == {"Afraid.psd": [0, 0, 0, 6], "Dark_Matter_Swordsman.psd": None}
 
 
 def test_effects_switch_off_marks_every_effect_off(clone):
