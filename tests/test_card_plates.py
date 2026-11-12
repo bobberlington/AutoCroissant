@@ -67,7 +67,13 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
                                 parsed, parser, str(tmp_path), str(clone / "MDW" / "Fonts"), psd=psd)
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     assert cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 11, icc) is None
-    sheet = cp.bar_sheet({"def": {9: _moved(png, ours)}}, parsed["card"])
+    monkeypatch.setattr(cp, "bar_value", lambda *args: ours if args[6:8] == ("def", 9) else None)   # one value baked
+    changes = cp.bar_changes(psd, raw, png, parsed, parser, PUZZLED)
+    entry = _moved(png, ours)
+    assert list(changes) == ["def"] and list(changes["def"]) == [9] and changes["def"][9][:2] == entry[:2]
+    assert all(np.array_equal(a, b) for a, b in zip(changes["def"][9][2:], entry[2:]))
+    sheet = cp.bar_sheet(changes, parsed["card"])
+    assert cp.with_bars(None, psd, raw, png, parsed, parser, PUZZLED, "custom")["bars"] == sheet
     x, y, w, h, sx, sy = sheet["cuts"][sheet["bars"]["def"]["to"]["9"]]
     cut = np.asarray(Image.open(io.BytesIO(base64.b64decode(sheet["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w]
     shown, want = np.asarray(cp.view(png).convert("RGBA")).copy(), np.asarray(cp.view(ours).convert("RGBA"))
@@ -83,7 +89,7 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     assert img.shape == (300, 80, 4) and [c[4:] for c in two["cuts"]] == [[0, 0], [40, 0]]
     assert all(np.array_equal(img[:, 40 * v:40 * v + 40, :3], tall[v][..., :3]) for v in (0, 1))
     monkeypatch.setattr(cp, "BAR_BYTES", 0)
-    lossy = cp.bar_sheet({"def": {9: _moved(png, ours)}}, parsed["card"])
+    lossy = cp.bar_sheet(changes, parsed["card"])
     alpha = np.asarray(Image.open(io.BytesIO(base64.b64decode(lossy["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w, 3]
     assert lossy["img"].startswith("data:image/avif") and lossy["cuts"] == sheet["cuts"] and np.array_equal(alpha >= 128, held)
 
