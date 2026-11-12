@@ -32,7 +32,7 @@ card_commands = {
     "/query <query> [as_of]":                "Posts a card by name, title or alias (closest match if none); as_of: the card on a date.",
     "/website":                              "Links the card website.",
     "/query_ability <query> [limit] [howmany]": "Posts the cards matching text or conditions (syntax below); howmany: just the count.",
-    "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter.",
+    "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter (the ban list too).",
     "/sync_emojis [refresh] [prune]":        "Uploads the icons in Types/ as the bot's emojis (admin).",
     "/set_ratio [value]":                    "Shows or sets the name-match tolerance, 0-1 (higher: stricter).",
     "/set_repo [new_repo]":                  "Shows or sets the card repo, USER/REPO (admin).",
@@ -49,7 +49,7 @@ stats_commands = {
                                                                        "themselves); force_update or cards re-parse every card or some (admin).",
     "/fonts":                                "Lists the fonts the cards ask for that MDW/Fonts lacks, from the card data.",
     "/export_cards [only_ability] [as_csv]": "Exports every card's data as a file.",
-    "/export_rulebook":                      "Exports the rulebook as a text file.",
+    "/export_rulebook":                      "Exports the rulebook and the ban list as a text file.",
     "/view_old_metadata <query> [version]":  "Shows an older stored version of a card (0 = the last, -1 = the oldest).",
     "/list_orphans":                         "Lists the cards without an author.",
 }

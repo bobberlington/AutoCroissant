@@ -17,7 +17,7 @@ from commands.card_edits import CardAuthors, CardEdits
 from commands.card_history import UNKNOWN_IF, unknown
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
-from commands.query_card import archived_text, card_repo, history_match, init_query
+from commands.query_card import BAN_LIST, archived_text, ban_list_text, card_repo, history_match, init_query
 from commands.rulebook import label as chapter_label
 from commands.utils import queue_message, queue_file, queue_long_message
 
@@ -264,7 +264,7 @@ def export_stats_to_file(interaction: Interaction,
 
 def export_rulebook_to_file(interaction: Interaction) -> None:
     """
-    Export the rulebook's chapters (db/rulebook.json) to a text file, in book order.
+    Export the rulebook's chapters (db/rulebook.json) to a text file, in book order, then the website's ban list.
 
     Args:
         interaction: Discord interaction
@@ -275,6 +275,9 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
     with open(filename, 'w') as f:
         for chapter in stats_db.rulebook:
             f.write(f"{chapter_label(chapter)}\n{ascii_pattern.sub('', chapter['text'])}\n\n")
+        bans = ban_list_text(card_repo.banlist)
+        if bans:
+            f.write(f"{BAN_LIST}\n{ascii_pattern.sub('', bans)}\n\n")
 
     with open(filename, 'rb') as f:
         queue_file(interaction, File(f, filename))

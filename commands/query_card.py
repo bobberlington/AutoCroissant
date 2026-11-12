@@ -53,10 +53,11 @@ BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's o
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
 MAX_CONTENT = 2000                                       # Discord's message length limit
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
+BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
-            "_renamed", "choices", "site_ids", "_site_etag")    # what populate_files builds aside and swaps in
+            "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned")   # populate_files builds aside, swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
@@ -68,6 +69,15 @@ def typed(text: str, quotes: bool = False) -> str:
     too (/query_ability's syntax; the rulebook prints curly ones)."""
     text = straight(text).replace("\u2018", "'")
     return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
+
+
+def ban_list_text(banlist: dict) -> str:
+    """The ban list as its file reads (build_site.py parse_banlist): notes, then "Group:" lines, each card "Name - reason"."""
+    lines = list(banlist.get("notes") or [])
+    for group in banlist.get("groups") or []:
+        lines += ["", f"{group.get('title', '')}:"]
+        lines += [e.get("name", "") + (f" - {e['reason']}" if e.get("reason") else "") for e in group.get("entries") or []]
+    return "\n".join(lines).strip()
 
 
 def _pairs(text: str) -> set:
@@ -131,6 +141,8 @@ class CardRepository:
         self.card_keys: list[str] = []                   # git_files keys of card PNGs: what guesses pick from
         self.blobs: dict[str, str] = {}                  # png path -> blob sha, for commit-pinned links
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
+        self.banlist: dict = {}                          # the website's Constructed ban list (cards.json)
+        self.banned: dict[str, str] = {}                 # website card id -> ban reason (duplicate pictures too)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
@@ -569,11 +581,14 @@ class CardRepository:
         Returns:
             DataFrame of matching rulebook entries
         """
+        pages, bans = self.rulebook_dff, ban_list_text(self.banlist)
+        if bans:                                                   # the ban list: one more section
+            pages = concat([pages, DataFrame({"ability": [bans]}, index=[BAN_LIST])])
         words = search_text.split()
         if not words:
-            return self.rulebook_dff
+            return pages
         pattern = r"\s+".join(escape(w) for w in words)           # any spaces or line breaks between the words
-        return self.rulebook_dff[self.rulebook_dff["ability"].str.contains(pattern, na=False, case=False)]
+        return pages[pages["ability"].str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json (EDITS_PATH)."""
@@ -725,19 +740,26 @@ class CardRepository:
         return found
 
     def _populate_site_ids(self) -> None:
-        """Website card ids, for "Card page" links."""
+        """Website card ids, for "Card page" links, and the ban list."""
         try:
             reply = get(f"{SITE_URL}/data/cards.json", timeout=30,
                         headers={"If-None-Match": self._site_etag} if self.site_ids and self._site_etag else {})
             if reply.status_code == 304:                         # unchanged since the last look
                 return
             reply.raise_for_status()
-            cards = reply.json().get("cards", [])
+            body = reply.json()
+            cards, banlist = body.get("cards", []), body.get("banlist") or {}
+            banned = {e["id"]: e.get("reason") or "" for g in banlist.get("groups") or [] for e in g.get("entries") or []
+                      if e.get("id")}
+            for c in cards:                                      # a duplicate picture: its card's ban (app.js derive)
+                if c.get("dup") in banned:
+                    banned.setdefault(c["id"], banned[c["dup"]])
             self._site_etag = reply.headers.get("ETag", "")
         except Exception as e:
             print(f"Could not read the website's cards: {e}")
             return
         self.site_ids = {basename(c["png"]).lower(): (c["id"], c.get("color") or "") for c in cards if c.get("png")}
+        self.banlist, self.banned = banlist, banned
 
     def site_url(self, filename: str) -> Optional[str]:
         """The card's page on the website, for a registry file name (aliases included)."""
@@ -935,23 +957,25 @@ def art_text(text: str) -> str:
 
 
 def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None) -> None:
-    """The card's image (an embed when it has a website name, subseries, note, artwork source or original) and any
-    ambiguity; url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
+    """The card's image (an embed when it has a website name, subseries, note, artwork source, original or ban) and
+    any ambiguity; url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
     url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
     shown = getattr(card, "display_name", None) if card else None
     subseries = getattr(card, "subseries", None) if card else None
-    extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
+    found = card_repo.site_ids.get(basename(card_repo.git_files.get(closest, "")).lower())
+    ban = card_repo.banned.get(found[0]) if found else None   # "": banned, no reason given
+    extra = [("Banned in constructed" + (f": {escape_markdown(ban)}" if ban else "")) if ban is not None else "",
+             f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
     arts = art_list(getattr(card, "art", None), getattr(card, "ability_art", None)) if card else []   # a card's artwork sources
     extra += [f"Artwork source{f' #{i}' if len(arts) > 1 else ''}: {art_text(source)}" for i, source in enumerate(arts, 1)]
-    if card and (shown or subseries or any(extra)):     # website name, subseries, note, art or duplicate: an embed says so
+    if card and (shown or subseries or any(extra)):     # website name, subseries, note, art, duplicate or ban: an embed
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)
         if created:
             extra.append(f"Created {'about ' if created.get('provisional') else ''}{created['date']}")
-        found = card_repo.site_ids.get(basename(card_repo.git_files.get(closest, "")).lower())
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)
         embed.set_image(url=url)
@@ -1333,7 +1357,15 @@ def query_rulebook(interaction: Interaction,
         return
     shown = pages if limit < 0 else pages[:limit]
     count = sum(len(lines) for _, lines in pages)
-    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {len(pages)} rulebook chapter{'s' if len(pages) != 1 else ''}"
+    chapters = sum(name != BAN_LIST for name, _ in pages)
+    where = [f"{chapters} rulebook chapter{'s' if chapters != 1 else ''}"] if chapters else []
+    if chapters < len(pages):                        # the ban list: its own link (the website's ?q= search skips it)
+        where.append(f"the {BAN_LIST}")
+        if not chapters:
+            links = []
+        if BAN_LIST in dict(shown):                  # last: a limit cuts it first
+            links.append((BAN_LIST, f"{SITE_URL}/#/rules/banlist"))
+    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}"
     head += f" (showing {len(shown)} chapters):" if len(shown) < len(pages) else ":"
     blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), text)}" for line in lines)
                        for name, lines in shown]
@@ -1353,7 +1385,7 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
 
     Returns:
         [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
-        most lines, then by name; a match across a line break: that passage
+        most lines, then by name, the ban list last; a match across a line break: that passage
     """
     found, low = [], text.lower()
     start = compile(r"(?<![a-z])" + escape(low), IGNORECASE)   # no letter just before: "ring", not "during"
@@ -1363,7 +1395,8 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
         if not lines:                                # the text runs over a line break
             lines = [" ".join(str(ability).split())]
         found.append((name, [_cut(line, low) for line in lines]))
-    found.sort(key=lambda page: (-sum(bool(start.search(line)) for line in page[1]), -len(page[1]), str(page[0]).lower()))
+    found.sort(key=lambda page: (page[0] == BAN_LIST, -sum(bool(start.search(line)) for line in page[1]), -len(page[1]),
+                                 str(page[0]).lower()))      # the ban list after the chapters
     return found
 
 

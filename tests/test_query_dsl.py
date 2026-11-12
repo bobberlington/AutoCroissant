@@ -146,3 +146,40 @@ def test_rulebook_lines(monkeypatch):
     utils.dispatch_queue.clear()
     assert sent == ["'it's' is on 1 line of 1 rulebook chapter:\n\n**C**\n- **It's** \u201cfree\u201d.",
                     "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]
+
+
+def test_ban_list(monkeypatch):
+    """The website's ban list: a section after the chapters (its own link), a banned card's line (a duplicate's too)."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    from types import SimpleNamespace
+    site = {"cards": [{"id": "marx", "png": "Creatures/Kirby/Marx.png"}, {"id": "marx2", "png": "Creatures/Kirby/Marx2.png",
+                                                                          "dup": "marx"}],
+            "banlist": {"notes": ["One of each item."], "groups": [
+                {"title": "5 star creatures", "entries": [{"name": "Marx", "reason": "antifun", "id": "marx"}]},
+                {"title": "4 star items", "entries": [{"name": "Mimic", "reason": "", "id": None}]}]}}
+    reply = SimpleNamespace(status_code=200, headers={}, raise_for_status=lambda: None, json=lambda: site)
+    monkeypatch.setattr(qc, "get", lambda url, **kw: reply)
+    repo = qc.CardRepository()
+    repo._populate_site_ids()
+    assert repo.banned == {"marx": "antifun", "marx2": "antifun"}
+    assert qc.ban_list_text(repo.banlist) == "One of each item.\n\n5 star creatures:\nMarx - antifun\n\n4 star items:\nMimic"
+    repo.rulebook_dff = DataFrame({"ability": ["Use an item."]}, index=["13. Items"])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    utils.dispatch_queue.clear()
+    for text in ("item", "antifun"):
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    sent = [kw for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent[0]["content"] == ("'item' is on 3 lines of 1 rulebook chapter and the Constructed ban list:\n\n**13. Items**\n"
+                                  "- Use an **item**.\n\n**Constructed ban list**\n- One of each **item**.\n- 4 star **item**s:")
+    assert [label for label, _ in sent[0]["links"]] == ["Rulebook on the website", "Constructed ban list"]
+    assert sent[1]["content"].startswith("'antifun' is on 1 line of the Constructed ban list:")
+    assert sent[1]["links"] == [("Constructed ban list", f"{qc.SITE_URL}/#/rules/banlist")]
+    posted = []
+    monkeypatch.setattr(qc, "queue_message", lambda inter, content, **kw: posted.append(kw))
+    repo.git_files = {"marx2.png": "Creatures/Kirby/Marx2.png"}
+    monkeypatch.setattr(cm.stats_db, "stats", {"Marx2": SimpleNamespace(name="Marx2", series="Kirby")})
+    qc._post_card(SimpleNamespace(), "marx2.png")
+    assert posted[0]["embed"].description == "Kirby\nBanned in constructed: antifun"
