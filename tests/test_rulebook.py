@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import types
 from io import BytesIO
+from time import sleep, time
 
 import pytest
 from PIL import Image
@@ -235,6 +236,11 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
         assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] - n == 3, lag
         assert clock["sleeps"] == ([] if lag[0] == "pg-old" else [poll] * 2), lag     # another build: no sleep
         rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
+    out = tmp_path / "out"                                 # Card sync's look in the background: the checkout left alone
+    assert rulebook_pages.main([str(tmp_path), "--wait", "0", "--out", str(out)]) == 0
+    head = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout
+    assert (out / "inputs").read_text() == "\n".join((head.strip(), *rulebook_pages.INPUTS)) + "\n" and (out / "Rulebook.pdf").is_file()
+    assert rulebook_pages.read_pages("", str(out))["key"] == "k1" and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0"
 
 
 def _gh_bash(script, cwd, env, timeout=60):
@@ -306,6 +312,74 @@ def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
                                             "LANE": gate["env"]["LANE"], "UNDRAWN": gate["env"]["UNDRAWN"], "RETRY": "", "CHAIN": "",
                                             "GIT_NO_LAZY_FETCH": "1"})
         assert done.returncode == 0 and f"GO={go}" in envs.read_text().split(), (marked, done.stdout, done.stderr)
+
+
+def test_card_sync_keeps_the_look_in_the_background(tmp_path):
+    """card-sync.yml as written: Rulebook PDF start looks in the background (--out) once main's history is in; Rulebook
+    PDF keeps that look when main's head since left its inputs alone (a card), else stops it and looks again (a Types/
+    icon), as after a failure; after a lag, once (--wait 0). Rulebook PDF stop ends a look."""
+    yaml = pytest.importorskip("yaml")
+    path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file() or not shutil.which("timeout"):
+        pytest.skip(f"no {path} or timeout")
+    steps = {s.get("name"): s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]["steps"]}
+    start, pages, stop = steps["Rulebook PDF start"], steps["Rulebook PDF"], steps["Rulebook PDF stop"]
+    assert pages["env"]["STARTED"] == "${{ steps.pdf-start.outcome }}" and "steps.pdf-start.outcome == 'success'" in stop["if"]
+    repo, bin_, temp, calls = tmp_path / "ws", tmp_path / "bin", tmp_path / "temp", tmp_path / "calls"
+    (repo / "bot").mkdir(parents=True)
+    bin_.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _commit(repo, "2026-11-12T10:00:00+00:00", {"TTS/Rulebook/pages.json": b"{}\n", "site/rulebook/01-a.md": b"# A"})
+    venv = temp / "venv" / "bin"
+    venv.mkdir(parents=True)
+    look = ('out=""; prev=""; for a in "$@"; do [ "$prev" = --out ] && out=$a; prev=$a; done; echo "$*" >> "$CALLS"\n'
+            'if [ -n "$out" ]; then mkdir -p "$out"; echo \'{"key": "bg"}\' > "$out/pages.json"\n'
+            '  { git -C "$GITHUB_WORKSPACE" rev-parse HEAD; printf "%s\\n" "$INPUTS"; } > "$out/inputs.part"; mv "$out/inputs.part" "$out/inputs"\n'
+            '  sleep "${NAP:-0}"; echo "Rulebook PDF: the background\'s"; exit "${CODE:-0}"; fi\n'
+            'echo \'{"key": "here"}\' > "$GITHUB_WORKSPACE/TTS/Rulebook/pages.json"; echo "Rulebook PDF: here"')
+    for where, name, body in ((venv, "python", look), (bin_, "fc-list", "echo 'Noto Color Emoji'")):
+        (where / name).write_text(f"#!/bin/bash\n{body}\n")
+        (where / name).chmod(0o755)
+    env = {"PATH": f"{bin_}:{os.environ['PATH']}", "RUNNER_TEMP": str(temp), "GITHUB_WORKSPACE": str(repo), "SITE_URL": "https://site",
+           "HOME": str(tmp_path), "CALLS": str(calls), "INPUTS": "\n".join(rulebook_pages.INPUTS), "STARTED": "success"}
+    (temp / "history.code").write_text("0\n")
+    bg = temp / "pdf"
+
+    def begin(**more):
+        shutil.rmtree(bg, ignore_errors=True)
+        calls.write_text("")
+        subprocess.run(["git", "-C", str(repo), "checkout", "-q", "--", "TTS/Rulebook"], check=True)
+        assert _gh_bash(start["run"], repo / "bot", {**env, **more}).returncode == 0
+        for _ in range(200):
+            if (bg / "out" / "inputs").exists():
+                return
+            sleep(0.05)
+        raise AssertionError("no look")
+
+    def ended():                                         # the look's exit code, in 5 s
+        for _ in range(100):
+            if (bg / "code").exists():
+                return (bg / "code").read_text().strip()
+            sleep(0.05)
+
+    for when, (moved, more, kept, again) in enumerate((({"Items/x.png": b"x"}, {}, True, None),
+                                                       ({"Types/Fire.PNG": b"f"}, {"NAP": "30"}, False, ""),
+                                                       (None, {"CODE": "3"}, False, "--wait 0"), (None, {"CODE": "1"}, False, ""))):
+        begin(**more)
+        if moved:                                        # Newest brought it
+            _commit(repo, f"2026-11-12T10:0{when}:00+00:00", moved)
+        out = tmp_path / "out"
+        out.write_text("")
+        t = time()
+        done = _gh_bash(pages["run"], repo / "bot", {**env, "GITHUB_OUTPUT": str(out)})
+        assert done.returncode == 0 and time() - t < 10 and "lag=false" in out.read_text().split(), (when, done.stdout, done.stderr)
+        key = json.loads((repo / "TTS" / "Rulebook" / "pages.json").read_text())["key"]
+        looks = calls.read_text().splitlines()
+        assert key == ("bg" if kept else "here") and len(looks) == (1 if kept else 2) and "--out" in looks[0], (when, looks)
+        assert kept or ("--out" not in looks[1] and ("--wait 0" in looks[1]) == bool(again)), (when, looks)
+        assert ended() == more.get("CODE", "143" if moved and not kept else "0"), when      # stopped when looked at again
+    begin(NAP="30")
+    assert _gh_bash(stop["run"], repo, env).returncode == 0 and ended() == "143"
 
 
 def _card(guid, path, nick, deck_id):

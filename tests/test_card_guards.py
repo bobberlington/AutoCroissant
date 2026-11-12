@@ -2506,7 +2506,7 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
-                                    ("main", 11, ["Fonts first", None, "Fonts first (cache miss)"], ["History wait"])):
+                                    ("main", 11, ["Fonts first", None, "Fonts first (cache miss)", "Rulebook PDF start"], ["History wait"])):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]
         assert names[at:at + len(want)] == want, (job, names)
@@ -2797,8 +2797,8 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
     main = doc["jobs"]["main"]
     assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
     steps = {s.get("name"): s for s in main["steps"]}
-    assert [s.get("name") for s in main["steps"]][11:19] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
-                                                            "Guards' fixes", "History wait", "Newest", "Gate"]
+    assert [s.get("name") for s in main["steps"]][11:20] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
+                                                            "Rulebook PDF start", "Guards' fixes", "History wait", "Newest", "Gate"]
     assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
     bin_dir = _fake_tools(tmp_path)
     state, posts = tmp_path / "gh.json", tmp_path / "posts.jsonl"

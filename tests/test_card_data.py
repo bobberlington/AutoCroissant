@@ -39,7 +39,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
                            "--allow-archive", "--restore", "--budget", "--run", "--summary", "--message",
                            "--own", "--verdicts", "--events", "--guard-events", "--records",
                            "--help"},
-             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--help"},
+             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--out", "--help"},
              "png_changes": {"--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)

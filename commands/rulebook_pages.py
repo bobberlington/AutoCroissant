@@ -19,20 +19,22 @@ changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
 Chrome too when the website, the fonts and Chrome are as at the last kept key (PRE_SKIP; --full: Chrome looks in any case).
 Other files in the folder are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
+--out DIR: the PDF and pages.json go to DIR instead (the checkout's copied in first), and DIR/inputs lists HEAD's sha and
+INPUTS (Card sync's look in the background: kept unless main's head moved one since).
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
 from json import dumps, loads
-from os import close, environ, listdir, makedirs, pipe, read, write
+from os import close, environ, listdir, makedirs, pipe, read, remove, replace, write
 from hashlib import sha256
 from http.client import HTTPException
 from os.path import getsize, isdir, isfile, join
 from platform import system
 from re import DOTALL, compile as regex
 from select import select
-from shutil import rmtree, which
+from shutil import copyfile, rmtree, which
 from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired, run as run_process
 from tempfile import mkdtemp
 from time import monotonic, sleep, time
@@ -89,6 +91,8 @@ PICTURES = ("webp", "png", "jpg", "jpeg", "gif", "avif")
 SITE_PATHS = (*(f":(glob,icase)site/rulebook/img/*.{x}" for x in PICTURES), "site/rulebook/fonts/", ":(glob,icase)Types/*.png",
               ":(glob,icase)Types/Stars/*.png", "MDW/Fonts/stoogedings-src/stoogedings.json", "site/assets/")
 LAGS = "the website lags main's rulebook"     # in the report of a look that waited in vain: exit 3
+INPUTS = (f"{RULEBOOK_SRC}/", f"{RULEBOOK_PAGES}/", f"{FONTS_DIR}/", *SITE_PATHS)   # what a look reads off the checkout
+LOOK_FILE = "inputs"                           # --out's: HEAD's sha, then INPUTS
 # Chrome's copies of the fonts and pictures the page's CSS loads by plain URL (no stamp: the CDN's, up to 10 minutes
 # old; force-cache: those the page drew with): {url: git blob id, null when missing}
 PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].flatMap(s => [...s.textContent.matchAll(/url\(\s*["']?(rulebook\/[^"')?#\s]+)/g)].map(m => m[1])))]
@@ -338,9 +342,10 @@ def page_sha(png: bytes) -> str:
         return sha256(im.convert("RGB").tobytes() + str(im.size).encode()).hexdigest()
 
 
-def read_pages(checkout: str) -> dict:
-    """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}], "key": the print's key}."""
-    path = join(checkout, RULEBOOK_PAGES, PAGES_JSON)
+def read_pages(checkout: str, folder: str = "") -> dict:
+    """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}], "key": the print's key}.
+    folder: its folder (default: the checkout's)."""
+    path = join(folder or join(checkout, RULEBOOK_PAGES), PAGES_JSON)
     try:
         with open(path, encoding="utf-8") as fh:
             data = loads(fh.read())
@@ -483,12 +488,27 @@ def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional
 # ========================
 # Public API Functions
 # ========================
-def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False) -> str:
+def _out_start(checkout: str, out: str) -> None:
+    """update_pages' out: HEAD read, the checkout's pages.json and PDF copied in (one it lacks removed), then LOOK_FILE."""
+    head = _git(checkout, "rev-parse", "HEAD")[1].strip()
+    makedirs(out, exist_ok=True)
+    for name in (PAGES_JSON, PDF_FILE):
+        if isfile(join(checkout, RULEBOOK_PAGES, name)):
+            copyfile(join(checkout, RULEBOOK_PAGES, name), join(out, name))
+        elif isfile(join(out, name)):
+            remove(join(out, name))
+    with open(join(out, LOOK_FILE + ".part"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join((head, *INPUTS)) + "\n")
+    replace(join(out, LOOK_FILE + ".part"), join(out, LOOK_FILE))
+
+
+def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False, out: str = "") -> str:
     """
     The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
     and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
     again); else nothing changes and the report says LAGS. Chrome is not started when pages.json's pre is the website's
-    pre_key() and the PDF is there (PRE_SKIP; full: Chrome looks in any case).
+    pre_key() and the PDF is there (PRE_SKIP; full: Chrome looks in any case). out: the PDF and pages.json go there
+    (_out_start(): the checkout's copied in first, LOOK_FILE written), the checkout left alone.
 
     Returns:
         The report (one line; then a ::warning:: line when the pre-key held but the key changed)
@@ -496,13 +516,16 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     Raises:
         RuntimeError, TimeoutError, OSError: the pages could not be drawn (nothing written)
     """
+    if out:
+        _out_start(checkout, out)
     exe = find_chrome()
     if not exe:
         raise RuntimeError(f"no Chrome: set CHROME or install one of {', '.join(CHROMES)}")
     mine = chapter_sources(checkout)
     if not mine:
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
-    folder, old, fonts, trees = join(checkout, RULEBOOK_PAGES), read_pages(checkout), book_fonts(checkout), _trees(checkout)
+    folder = out or join(checkout, RULEBOOK_PAGES)
+    old, fonts, trees = read_pages(checkout, folder), book_fonts(checkout), _trees(checkout)
     has_pdf = isfile(join(folder, PDF_FILE))
     known = old.get("key", "") if has_pdf else ""
     until = monotonic() + wait
@@ -549,9 +572,10 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--site", default=SITE_URL, help="the website (default: the card browser)")
     parser.add_argument("--wait", type=float, default=SITE_WAIT, help="seconds to wait for the website to show HEAD's rulebook")
     parser.add_argument("--full", action="store_true", help="Chrome looks even when the pre-key held (the schedule's run)")
+    parser.add_argument("--out", default="", help="the PDF and pages.json go here (the checkout's copied in first), with inputs")
     options = parser.parse_args(args)
     try:
-        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full)
+        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full, out=options.out)
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError, HTTPException) as e:
         print(f"Rulebook PDF not printed: {e}")
         return 1
