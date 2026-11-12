@@ -9,7 +9,6 @@ from hashlib import sha256
 from io import BytesIO
 from json import dumps, loads
 from os.path import basename, splitext
-from asyncio import to_thread
 from threading import Lock
 from requests import get
 from requests.exceptions import RequestException
@@ -33,7 +32,6 @@ from commands.utils import BREAK_LEN, queue_file, queue_message
 # ========================
 # Configuration
 # ========================
-DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
@@ -129,7 +127,7 @@ class _NameIndex:
 class CardRepository:
     """Manages card repository state and operations."""
 
-    repository: str = DEFAULT_REPOSITORY
+    repository: str = CARD_REPO
     match_ratio: float = DEFAULT_MATCH_RATIO
 
     def __post_init__(self):
@@ -158,27 +156,23 @@ class CardRepository:
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
         self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
 
-    def populate_files(self, repository: Optional[str] = None) -> int:
+    def populate_files(self) -> int:
         """
         Fetch and populate file listings from GitHub repository.
-
-        Args:
-            repository: Switch to this repository, only if its tree loads (/set_repo)
 
         Returns:
             HTTP status code (200 for success)
         """
-        repo = repository or self.repository
+        repo = self.repository
         with self._tree_lock:                                   # _tree and _tree_etag change together
             tree, etag, status, why = self._fetch_tree(repo)
             if tree is None:                                    # keep the last good tree (B7)
                 print(f"Card list: GitHub tree fetch for {repo} failed ({why}); "
                       f"keeping the last good list ({len(self.git_files)} entries)")
                 return status
-            self.repository, self._tree, self._tree_etag = repo, tree, etag or ""   # an ETag must match _tree
+            self._tree, self._tree_etag = tree, etag or ""     # an ETag must match _tree
         self._build(tree)
-        if repo == DEFAULT_REPOSITORY:                          # never a /set_repo one's
-            self._save_tree()
+        self._save_tree()
         return status
 
     def _build(self, tree: dict, site: bool = True) -> None:
@@ -1051,7 +1045,7 @@ def archived_text(tag: dict) -> str:
 
 def history_match(query: str) -> Optional[tuple]:
     """(registry file name or None, card name) for query, archived cards included (their PNG may be gone; their own
-    name before an alias or another card's PNG that claims it): /query as_of and /view_old_metadata."""
+    name before an alias or another card's PNG that claims it): /query as_of."""
     found = _history_lookup(query)
     return found[:2] if found else None
 
@@ -1413,48 +1407,6 @@ def _bold(line: str, text: str) -> str:
     return "".join(p if i % 2 else found.sub(lambda m: f"**{m.group(0)}**", p) for i, p in enumerate(parts))
 
 
-async def set_match_ratio(interaction: Interaction, value: Optional[float] = None) -> None:
-    """
-    Set or display the fuzzy match ratio.
-
-    Args:
-        interaction: Discord interaction
-        value: New match ratio (0.0-1.0)
-    """
-    if value is None:
-        await interaction.response.send_message(f"Current match ratio: {card_repo.match_ratio}")
-        return
-
-    if not 0.0 <= value <= 1.0:
-        await interaction.response.send_message("Match ratio must be between 0.0 and 1.0.")
-        return
-
-    card_repo.match_ratio = value
-    await interaction.response.send_message(f"Match ratio set to {card_repo.match_ratio}")
-
-
-async def set_repository(interaction: Interaction, new_repo: Optional[str] = None) -> None:
-    """
-    Set or display the GitHub repository.
-
-    Args:
-        interaction: Discord interaction
-        new_repo: New repository name
-    """
-    if not new_repo:
-        await interaction.response.send_message(f"Current repository: {card_repo.repository}")
-        return
-
-    await interaction.response.defer()
-    old_repo = card_repo.repository                     # switched only once new_repo's tree loads
-    status = await to_thread(card_repo.populate_files, new_repo)  # off the event loop (retries can take seconds)
-
-    if status != 200:
-        await interaction.followup.send(f"Error {status or 'no response'} when connecting to {new_repo}; still using {old_repo}.")
-    else:
-        await interaction.followup.send(f"Repository set to {card_repo.repository}")
-
-
 # ========================
 # Initialization
 # ========================
@@ -1485,6 +1437,4 @@ __all__ = [
     'query_ability_num_occur',
     'query_name',
     'query_rulebook',
-    'set_match_ratio',
-    'set_repository',
 ]

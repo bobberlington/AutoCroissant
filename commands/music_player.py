@@ -1,7 +1,7 @@
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from discord import VoiceClient, PCMVolumeTransformer, Interaction, FFmpegOpusAudio
+from discord import VoiceClient, Interaction, FFmpegOpusAudio
 import logging
 from os import listdir, makedirs, sep
 from os.path import join, isdir
@@ -315,24 +315,6 @@ def replay_all(interaction: Interaction) -> None:
         queue_message(interaction, "No previously played songs.")
 
 
-def set_volume(interaction: Interaction, volume: float) -> None:
-    """
-    Set the playback volume (note: not supported with FFmpegOpusAudio).
-
-    Args:
-        interaction: Discord interaction
-        volume: Volume multiplier (0.5=half, 1.0=default, 2.0=double)
-    """
-    if state.vc and (state.vc.is_playing() or state.vc.is_paused()):
-        if state.vc.source.is_opus():
-            queue_message(interaction, "Volume control not available with FFmpegOpusAudio. Switch to FFmpegPCMAudio to adjust volume.")
-            return
-        queue_message(interaction, f"Setting volume: {str(volume)}")
-        state.vc.source = PCMVolumeTransformer(state.vc.source, volume=volume)
-    else:
-        queue_message(interaction, "Not currently playing a song.")
-
-
 def shuffle_music(interaction: Interaction) -> None:
     """Shuffle the current queue."""
     queue_message(interaction, "Shuffling songs.")
@@ -498,7 +480,6 @@ __all__ = [
     'print_queue',
     'replay',
     'replay_all',
-    'set_volume',
     'shuffle_music',
     'skip',
     'stop',

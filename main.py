@@ -26,7 +26,6 @@ from commands.forum_votes import (
     post_deleted,
     run_pass as forum_pass,
 )
-from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
 from commands.management import (
@@ -53,7 +52,6 @@ from commands.music_player import (
     print_queue,
     replay,
     replay_all,
-    set_volume,
     shuffle_music,
     skip,
     stop,
@@ -63,7 +61,6 @@ from commands.psd_analyzer import (
     export_stats_to_file,
     init_psd,
     list_orphans,
-    view_old_metadata,
 )
 from commands.reminder_panel import open_panel
 from commands.query_card import (
@@ -72,8 +69,6 @@ from commands.query_card import (
     query_ability_num_occur,
     query_name,
     query_rulebook,
-    set_match_ratio,
-    set_repository,
 )
 from commands.repo_history import refresh as refresh_history
 from commands.type_emojis import init_type_emojis, sync_type_emojis
@@ -185,22 +180,9 @@ async def on_raw_thread_delete(payload):
     await post_deleted(payload.thread_id)
 
 
-async def card_names(interaction: Interaction, current: str) -> list:
-    """Autocomplete: card names, printed titles, aliases and renamed cards' old names."""
-    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current)]
-
-
 async def query_names(interaction: Interaction, current: str) -> list:
     """Autocomplete for /query: card names, then the rulebook chapters too."""
     return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, chapters=True)]
-
-
-async def card_list_names(interaction: Interaction, current: str) -> list:
-    """Autocomplete for a comma-separated list: the last name typed."""
-    head, comma, last = current.rpartition(",")
-    head = f"{head}, " if comma else ""
-    return [Choice(name=shown, value=head + value) for shown, value in card_repo.name_choices(last)
-            if len(head + value) <= 100]
 
 
 # Slash Commands
@@ -369,48 +351,6 @@ async def slash_query_rulebook(
     await query_rulebook(interaction, search_text, limit)
 
 
-set_match_ratio = to_thread(set_match_ratio)
-@tree.command(name="set_ratio", description="View/set tolerance for unexact matches when searching.")
-@app_commands.describe(
-    value='If empty, posts the current tolerance. Otherwise sets it to this.',
-)
-async def slash_set_ratio(interaction: Interaction,
-                          value: Optional[float]):
-    await set_match_ratio(interaction, value)
-
-
-set_repository = to_thread(set_repository)
-@tree.command(name="set_repo", description="View/set the repo that the bot looks at for cards (admin only).")
-@app_commands.describe(
-    new_repo='If empty, posts the current repository. Otherwise sets it to this.',
-)
-async def slash_set_repo(interaction: Interaction,
-                         new_repo: Optional[str]):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await set_repository(interaction, new_repo)
-
-
-frankenstein = to_thread(frankenstein)
-@tree.command(name="frankenstein", description="Tie a bunch of cards together.")
-@app_commands.describe(
-    cards='The cards that you want to frankenstein together, separated by commas.',
-    blend_mode='How to blend: slice, or average. Default = slice.',
-)
-@app_commands.choices(blend_mode=[
-    Choice(name="slice", value="slice"),
-    Choice(name="average", value="average"),
-])
-@app_commands.autocomplete(cards=card_list_names)
-async def slash_frankenstein(
-    interaction: Interaction,
-    cards: str,
-    blend_mode: Optional[Choice[str]]):
-    await interaction.response.defer()
-    await frankenstein(interaction, cards, blend_mode.value if blend_mode else "slice")
-
-
 ####################
 #   STAT COMMANDS  #
 ####################
@@ -450,21 +390,6 @@ export_rulebook_to_file = to_thread(export_rulebook_to_file)
 async def slash_export_rulebook(interaction: Interaction):
     await interaction.response.defer()
     await export_rulebook_to_file(interaction)
-
-
-view_old_metadata = to_thread(view_old_metadata)
-@tree.command(name="view_old_metadata", description="View old metadata versions for a card.")
-@app_commands.describe(
-    query='The card to view old metadata for.',
-    version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions. Default = 0.'
-)
-@app_commands.autocomplete(query=card_names)
-async def slash_view_old_metadata(
-    interaction: Interaction,
-    query: str,
-    version: int = 0):
-    await interaction.response.defer()
-    await view_old_metadata(interaction, query, version)
 
 
 list_orphans = to_thread(list_orphans)
@@ -534,16 +459,6 @@ list_all_music = to_thread(list_all_music)
 @tree.command(name="list", description="List all songs in the current directory.")
 async def slash_list(interaction: Interaction):
     await list_all_music(interaction)
-
-
-set_volume = to_thread(set_volume)
-@tree.command(name="volume", description="Changes the volume.")
-@app_commands.describe(
-    multiplier='The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.',
-)
-async def slash_volume(interaction: Interaction,
-                       multiplier: float = 1.0):
-    await set_volume(interaction, multiplier)
 
 
 shuffle_music = to_thread(shuffle_music)

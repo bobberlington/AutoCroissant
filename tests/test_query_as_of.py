@@ -115,7 +115,7 @@ def test_an_old_version_says_what_its_reading_could_not_know(db):
     old = cm.stats_db.old_stats["Tainted Bethany"]
     old[0].types, old[0].ability, old[0].problems = ["fire"], None, ["NO ABILITY LAYER", "NO STATS FOUND: no bars read"]
     old[1].types, old[1].parser_version = ["dark"], 2
-    first = _old("Tainted Bethany", -1)[0]
+    first = _texts("Tainted Bethany", "2026-02-01")[0]
     assert "types: unknown (read before parser 2, 2026-10-21)" in first and "fire" not in first
     assert "ability: unknown (no ability layer)" in first
     assert "stats: unknown (no stats found)" in first and "hp: " not in first
@@ -237,27 +237,3 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     subprocess.run(["git", "-C", str(tmp_path / "history.git"), "fetch", "-q", str(work), "+main:main"], check=True)
     assert rh.commit_before(qc.card_repo.repository, f"{BETHANY}.png", _at(2026, 10, 23))[0] == second
 
-
-# ========================
-# /view_old_metadata finds the same cards
-# ========================
-def _old(query, version=0):
-    import commands.psd_analyzer as pa
-    utils.dispatch_queue.clear()
-    pa.view_old_metadata(SimpleNamespace(), query, version)
-    return [kw["content"] for _, kw in utils.dispatch_queue]
-
-
-def test_view_old_metadata_reaches_archived_and_case_named_cards(db, monkeypatch):
-    """ZOEY!!!!! (archived, an alias of Z!!!!! claims its name) shows its own history and says it is archived; omori
-    (omori.psd, Omori.png) its own; a listed card as before."""
-    monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
-    monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
-    monkeypatch.setitem(qc.card_repo.git_files, "omori.png", "Creatures/Omori/5 Stars/Omori.png")
-    monkeypatch.setitem(cm.stats_db.stats, "omori", _card("omori", "Creatures/Omori/5 Stars/omori", 2.0, "Now."))
-    monkeypatch.setitem(cm.stats_db.old_stats, "omori", [_card("omori", "Creatures/Omori/5 Stars/omori", 1.0, "Then.")])
-    zoey = _old("ZOEY!!!!!")[0]
-    assert zoey.startswith("Old metadata for **ZOEY!!!!!** (most recent old version of 2), archived on 2026-06-18 "
-                           "(PSD deleted in 35adb38):") and "Zoey last." in zoey
-    assert _old("omori")[0].startswith("Old metadata for **omori** (most recent old version of 1):")
-    assert _old("Tainted Bethany", -1)[0].startswith("Old metadata for **Tainted Bethany** (oldest of 4):")

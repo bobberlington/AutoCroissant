@@ -34,7 +34,6 @@ TIME_SEMANTICS = "when: Pacific wall time with that instant's offset (America/Lo
 ZONE_LABEL = "Pacific time"
 RUN_AS_CREATOR = True                       # a reminder's command runs with its creator's permissions
 ALLOW_POSITIONAL = True                     # commands may give values by position before name:value options
-ON_LOAD_ERROR = "off"                       # an unreadable store: reminders off, the bot keeps running ("raise": exit)
 CHANNEL_RETRY = timedelta(hours=1)          # a one-shot whose channel is gone waits this long and tries again
 
 
@@ -826,8 +825,6 @@ def _load_locked():
         return
 
     print(f"ERROR: {_load_error}. Reminders are OFF.")
-    if ON_LOAD_ERROR == "raise":
-        raise StoreError(_load_error)
 
 
 def _save_after_load():

@@ -207,8 +207,8 @@ validator problems: NONE
   called before, was deleted 2026-11-06 in 3bf99d74 and they crashed until then), so the stoogedings vocabulary
   (Types/ and Types/Stars/ names, manifest aliases and codepoints) matches what the build reads from the
   GitHub tree (`_icons_from_response`; card_check's `vocabulary` reads paths the same way), and cards typed in the
-  font parse as in production. gap_trace.py calls `_process_layer`, whose signature did
-  not change with the icon-font work.
+  font parse as in production. gap_trace.py calls `_process_layer` with the parser's titles, header and psd
+  (since 2026-11-12).
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
   fresh parse showing no `author:`/`series:` line is normal, not a bug.
@@ -241,60 +241,75 @@ Did my parser edit change this card's output (run before/after and diff the two 
 ## 3. gap_trace.py — why a [type] landed where it did
 
 **Purpose**: trace the type-injection pipeline (the project's hardest recurring problem) step by
-step: raw text layers, sorted order, gaps, below-midline icon bboxes, the prune decision, the
+step: raw text layers, their join, gaps, below-midline icon bboxes, the prune and span decisions, the
 gap-vs-type count, and the final injected text. It re-drives the REAL `PSDParser` methods
-(`_process_layer`, `_sort_by_position`, `_prune_type_bboxes`, `_process_abilities`) — only the
-orchestration mirrors `PSDParser._extract_from_layers`.
+(`title_layers`, `_process_layer`, `_rows`, `_labels`, `_join_parts`, `_sort_by_position`, `_prune_type_bboxes`,
+`_in_span`, `_process_abilities`) — only the orchestration mirrors `PSDParser._extract_from_layers` and
+`_process_abilities`. A last `DRIFT:` line says when `[6]` differs from `parser.parse()`'s ability (the mirror is stale).
 
-**Invocation** (a card that still injects from an icon layer; The Lich King uses a font token since 2026-10-22):
+**Invocation** (no card injects from an icon layer on 2026-11-12: every inline type is a font token, Nebulous
+Precipice's `[darkmatter]` too; Twin Emperors shows the join of several Ability layers):
 
 ```bash
 $P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py \
-  "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
+  "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"
 ```
 
-**Annotated output** (Nebulous Precipice, measured 2026-10-23 at TTSCardMaker a7d1fe56 with `~/.venvs/ac-py314-fork`):
+**Annotated output** (Twin Emperors, measured 2026-11-12 at TTSCardMaker 47815232 with `~/.venvs/ac-py314-fork`):
 
 ```
-PSD 1200x1800; TYPE_REGION_RATIO=0.5 -> card_mid_y=900   <- the real imported constant
-relative path: Field/3 Stars/Nebulous_Precipice.psd
+PSD 1200x2400; TYPE_REGION_RATIO=0.5 -> card_mid_y=1200   <- the real imported constant
+relative path: Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd
 
-[1] creature-types collected ABOVE midline: ['field']
+[1] creature-types collected ABOVE midline: []
         ^- these go to card.types; they are NOT injection candidates
 
-[2] ability text layers found: 1
-    at (x=26, y=1229): 'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'
-        ^- raw text + bbox of each text layer, pre-cleanup
+[2] ability text layers found: 5
+    at (x=117, y=1758..1890): 'This is 2 entities that share HP.\nIf both attack the same creature, heal 2 HP.\n'
+    at (x=18, y=1951..1997): "Vek'nilash:\n"
+    at (x=231, y=1958..2110): '            Immune to 3 star and below debuffs.\n(2CD) Attacks inflict 3T3 Softened.\n'
+    at (x=159, y=2157..2206): "Vek'lor:\n"
+    at (x=364, y=2165..2203): 'Attacks inflict 2T1 Enfeebled.\n'
+        ^- raw text + span (top..bottom) of each Ability layer, pre-cleanup
 
 [3] joined ability text with gaps marked (3+ spaces = injection slots):
-Friendly<GAP:5>gain +0.5 DEF and +1 SPD.
-...
-        ^- every run of 3+ spaces becomes <GAP:n>. n=5 here: five literal spaces.
-           No <GAP> where you expect one => the text layer lacks 3+ spaces there.
+This is 2 entities that share HP.
+If both attack the same creature, heal 2 HP.
+Vek'nilash: Immune to 3 star and below debuffs.
+(2CD) Attacks inflict 3T3 Softened.
+Vek'lor: Attacks inflict 2T1 Enfeebled.
+        ^- joined as the parser joins them: a one-line layer with another after it in its row is that one's
+           label (_labels); a layer starting in lowercase continues the line before (_join_parts: Bulborb Larva).
+           Every run of 3+ spaces becomes <GAP:n> (n literal spaces). No <GAP> where you expect one => the
+           text layer lacks 3+ spaces there.
 
-[4] type icons BELOW midline (candidate inline types): 1
-    darkmatter      at (x=269, y=1207)
-    prune threshold = max(last_y//3=402, card_mid_y=900)
-    kept after prune: ['darkmatter']   dropped: []
-        ^- icons with y above the threshold are dropped as "too high to be inline".
-           threshold = max(last-icon-y // 3, card_mid_y); here max(402,900)=900.
+[4] type icons BELOW midline (candidate inline types): 0
+    kept after prune: []   dropped: []
+    in an Ability layer's span (+-80 px): []   dropped: []
+        ^- with icons: a "prune threshold = max(last_y//3=..., card_mid_y=...)" line; icons with y above it
+           are dropped as "too high to be inline". Then the span step (below).
 
-[5] gap count = 1 vs kept types = 1   (match)
+[5] gap count = 0 vs kept types = 0   (match)
         ^- MISMATCH here is the classic wrong-injection signature: more types than
            gaps => leftovers get APPENDED to the last line; more gaps than types
            => some gaps stay as raw runs of spaces.
 
 [6] FINAL ability text after injection + punctuation cleanup:
 ========================================
-Friendly [darkmatter] gain +0.5 DEF and +1 SPD.
-...
+This is 2 entities that share HP.
+If both attack the same creature, heal 2 HP.
+Vek'nilash: Immune to 3 star and below debuffs.
+(2CD) Attacks inflict 3T3 Softened.
+Vek'lor: Attacks inflict 2T1 Enfeebled.
 ========================================
 ```
 
-Nebulous Precipice is due to become a `[darkmatter:glow]` token once the glow font lands (owner, 2026-10-23); then
-pick another icon-layer card (`psd_details.json`'s `icons` field `images` or `mixed`). The Lich King today is the
-token case: `[2]` one layer at y=1767 reading "Minions inherit [undead].", `[3]` no GAP, `[4]` 0 icons, kept []
-dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
+Before 2026-11-12 the trace joined the layers by position alone: Twin Emperors' `[3]` showed `Vek'nilash:` and
+`Vek'lor:` on lines of their own and `<GAP:12>` before "Immune" (`[5]` a false MISMATCH, 1 vs 0), Bulborb Larva's
+continued line split in two, and Tomato's `[1]` read `['food', 'food']` (its card-sized 'Food' frame; the parser
+reads `['food']`). Layout gaps with no icon (Michael's Blessing's arrows, Warcraftian Hunter's pet list, Pile Of
+Swords' "Uses: ∞") show `[5]` MISMATCH with 0 types: the gaps stay as spaces, as stored. The Lich King is the token
+case: `[2]` one layer reading "... Minions inherit [undead].", `[3]` no GAP, `[4]` 0 icons, `[5]` 0 vs 0 (match).
 
 Since 2026-11-09 `[2]` prints each layer's span (`y=top..bottom`) and `[4]` adds the span step (`_in_span`): an icon
 more than `ICON_SPAN_PAD` (80 px) above or below every Ability layer is dropped before injection. Tainted Lazarus
@@ -308,16 +323,16 @@ creature 2's header icon), `[5]` 0 vs 0 (match); before, `[5]` was a MISMATCH an
 |---|---|
 | header | `card_mid_y` — is the icon you care about really below it? (compare bboxes from dump_psd_layers) |
 | [1] | Types that ended up as creature types instead of inline candidates. An icon "missing" from injection is often sitting above the midline. |
-| [2] | Multiple text layers? `_sort_by_position` orders them top-to-bottom, then left-to-right with 40px row grouping — a mis-ordered join scrambles which line each gap is on. |
+| [2] | Multiple text layers? `_rows` orders them top-to-bottom, then left-to-right with 40px row grouping — a mis-ordered join scrambles which line each gap is on. |
 | [3] | The `<GAP:n>` markers are the injection slots, per line. Whitespace is load-bearing: never "clean up" multiple spaces in card text (incident 3bbaa2b). |
 | [4] | The prune step. An icon dropped here (listed under `dropped:`) was judged too high; an icon kept that shouldn't be usually means the PSD has a stray icon layer below midline. Then the span step: an icon outside every Ability layer's span (80 px margin) is dropped too. |
 | [5] | The count comparison. `(match)` is what you want. On MISMATCH the script prints an explicit warning that leftovers append to the last line. |
-| [6] | Byte-exact final text — compare against the stored entry (`inspect_card_data.py "Name"`). |
+| [6] | Byte-exact final text — compare against the stored entry (`inspect_card_data.py "Name"`). A `DRIFT:` line after it: the script no longer mirrors the parser; trust parse_one.py and update gap_trace.py. |
 
 **MAINTENANCE NOTE** (from the script's docstring — keep it true): the extraction loop mirrors
-`PSDParser._extract_from_layers` (commands/psd_parser.py:404 as of 2026-10-23): effect layers
+`PSDParser._extract_from_layers` (grep below): effect layers
 (`EFFECT_LAYER_TAG`, " FX: ") set aside (hidden Ability layers read last until 2026-11-12, when the parser stopped
-reading them), with
+reading them), the parser's `title_layers`, a header list and the PSD passed to `_process_layer` (2026-11-12), with
 `stars_from_psd()` (the mirror gained the effect-layer skip, `RULEBOOK_DIR` and that on 2026-10-23, the rule-page skip and `RULEBOOK_DIR` removed 2026-11-04; before,
 it fed "Ability FX: ..." pixel layers to `_process_layer` and hardcoded the folders). If that method changes shape,
 update gap_trace to match; the one-line check is to compare against that method's body.
@@ -741,9 +756,8 @@ $P $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd
 # golden: The Freezer ability text matches stats.pkl character-for-character
 $P $S/parse_one.py ~/Desktop/TTSCardMaker/"Field/1 Stars/The_Freezer.psd"
 
-# golden: Nebulous Precipice trace (<GAP:5>, darkmatter @ x=269,y=1207, prune max(402,900)=900, 1 vs 1 match,
-#   "Friendly [darkmatter] gain +0.5 DEF and +1 SPD.")
-$P $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
+# golden: Twin Emperors trace (5 layers, "Vek'nilash: Immune to 3 star and below debuffs.", 0 vs 0 match, no DRIFT line)
+$P $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"
 # token case: The Lich King (no GAP, 0 icons, 0 vs 0 match, "Minions inherit [undead].")
 $P $S/gap_trace.py "$HOME/Desktop/TTSCardMaker/Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"
 
@@ -763,7 +777,7 @@ Cited code locations (line numbers drift; re-find with these):
 grep -n "TYPE_REGION_RATIO = " commands/psd_parser.py               # 0.5 (psd_parser.py since the 2026-10-20 split)
 grep -n "_extract_from_layers" commands/psd_parser.py               # gap_trace's mirrored method (404)
 grep -n "EFFECT_LAYER_TAG\|stars_from_psd" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py   # the mirror's skip and folders (RULEBOOK_DIR removed 2026-11-04)
-grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
+grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it with titles, header, psd (2026-11-12)
 grep -n "Preserve author and series" commands/psd_parser.py         # parse_one --with-db semantics
 git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # the 2026-10-19 local-path fix; local mode archived 2026-10-20
 grep -n "clone_vocabulary" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-11-09)
@@ -771,7 +785,7 @@ grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/
 grep -n "def to_dict" commands/card_models.py                      # field-omission behavior in output
 ```
 
-If `_extract_from_layers` changes shape, update gap_trace.py (its docstring says so). If
+If `_extract_from_layers` or `_process_abilities` changes shape, update gap_trace.py (its docstring says so; its DRIFT line shows it). If
 TTSCardMaker grows a new top-level folder, update inspect_card_data.py's known-top-folders tuple.
 If a script is added, this document must gain a routing row, a section, and a provenance line.
 
@@ -818,3 +832,5 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-11-12 (fork release): the fork venv's pin is `cards-20261112c` (75264966).
 
 2026-11-11 (nocython): the stale-.so note for old checkouts only (no setup.py clean).
+
+2026-11-12 (asks-1112, owner: keep gap_trace and fix it): gap_trace.py passes the parser's titles, header and psd to `_process_layer`, joins `[3]` with `_rows`/`_labels`/`_join_parts` and counts `[5]` on `_inject_type_names`' lines, calls `_process_abilities` with the raw icons, and prints a DRIFT line when `[6]` differs from `parser.parse()`; the walk-through moved to Twin Emperors (no card injects from an icon layer now). Checked on Twin Emperors, Bulborb Larva, Tomato, Nebulous Precipice, The Lich King, Tainted Lazarus, Irithyll, Dark Bramble, Michael's Blessing, Warcraftian Hunter and Pile Of Swords: no DRIFT.

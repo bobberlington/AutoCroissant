@@ -17,7 +17,7 @@ DATA_BRANCH     = "data"                       # the card repo's branch holding 
 CARD_DATA_DIR   = "card_data"                  # the bot's copy of that db/ (gitignored)
 CARD_TREE_JSON  = "card_tree.json"             # the card repo's last tree, its ETag and Card Edits.json (gitignored)
 
-# The card repo (TTSCardMaker) and where things live in it. /set_repo overrides CARD_REPO at runtime (card_repo.repository).
+# The card repo (TTSCardMaker) and where things live in it.
 CARD_REPO       = "MichaelJSr/TTSCardMaker"
 CARD_BRANCH     = "main"
 API_BASE        = "https://api.github.com/repos/"

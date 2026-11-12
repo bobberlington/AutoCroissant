@@ -702,7 +702,7 @@ Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower()
 (`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
 "luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
-`DEFAULT_MATCH_RATIO` query_card.py:34; runtime-settable via `/set_ratio`, resets on restart — see
+`DEFAULT_MATCH_RATIO` in query_card.py; `/set_ratio`, which set it until the next restart, was deleted 2026-11-12 — see
 autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so.
 A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
 link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
@@ -833,7 +833,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | DSL internals | `grep -n 'FIELD_PATTERN\|_FIELDS = \|SYNONYMS = \|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
 | Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = " commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
-| Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
+| Defaults (repo, match ratio) | `grep -n "DEFAULT_MATCH_RATIO\|repository: str" commands/query_card.py` (the repo: global_config `CARD_REPO`) |
 | Clone location | `grep -n LOCAL_DIR_LOC global_config.py` |
 | Slash surface + update_stats defaults | `grep -n 'tree.command(name="query\|name="alias\|name="update_stats' main.py` and `sed -n '359,365p' main.py` |
 | Folder tree | `ls ~/Desktop/TTSCardMaker ~/Desktop/TTSCardMaker/Auxiliary ~/Desktop/TTSCardMaker/Items` |
@@ -892,3 +892,5 @@ change, sections 4-5 are stale until rewritten.
 2026-11-01 (chapters): §4.1's old tags, §7.2's `rulebook_dff`, and the Photoshop pages' move to `MDW/Old Rules/`, against TTSCardMaker c6b1e144.
 
 2026-11-09 (site rounds): §7.2 gotcha 7: the fuzzy pass runs only when no card has the text.
+
+2026-11-12 (asks-1112, owner G4): /set_ratio deleted (match_ratio is DEFAULT_MATCH_RATIO only); query_card's DEFAULT_REPOSITORY folded into CARD_REPO.

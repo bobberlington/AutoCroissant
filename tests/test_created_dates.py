@@ -157,7 +157,7 @@ def test_query_embed_says_created(monkeypatch):
 
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
-    """to_dict's created: the metadata view (/query as_of, /view_old_metadata) lists it after timestamp, both exports
+    """to_dict's created: the metadata view (/query as_of) lists it after timestamp, both exports
     carry it (CSV: a created column)."""
     import csv
     import commands.psd_analyzer as pa

@@ -12,11 +12,12 @@ Usage:
 Read-only; nothing is saved (no config.py needed).
 
 MAINTENANCE NOTE: the extraction loop below deliberately re-drives the REAL
-PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes, _in_span,
-_process_abilities, which injects the types) instead of copying their logic, but the orchestration
-mirrors PSDParser._extract_from_layers (effect layers set aside). If _extract_from_layers changes shape
-in commands/psd_parser.py, update this script to match (one-line check:
-compare against that method's body).
+PSDParser methods (title_layers, _process_layer, _rows, _labels, _join_parts, _sort_by_position,
+_prune_type_bboxes, _in_span, _process_abilities, which injects the types) instead of copying their
+logic, but the orchestration mirrors PSDParser._extract_from_layers (effect layers set aside; titles,
+header and psd passed to _process_layer) and _process_abilities. If either changes shape in
+commands/psd_parser.py, update this script to match: a DRIFT line says when [6] differs from
+parser.parse()'s ability.
 """
 import sys
 from os.path import expanduser, relpath
@@ -51,7 +52,7 @@ def main() -> int:
         relative_path = psd_path.name
 
     from commands.card_check import clone_vocabulary
-    from commands.card_models import CardInfo, CardType
+    from commands.card_models import CardInfo, CardType, card_name
     from commands.psd_parser import (
         EFFECT_LAYER_TAG,
         ICON_SPAN_PAD,
@@ -71,19 +72,22 @@ def main() -> int:
 
     # --- mirror PSDParser._extract_from_layers ---
     card_dict = CardClassifier.classify(relative_path)
-    card = CardInfo(name=psd_path.stem.replace("_", " "),
+    card = CardInfo(name=card_name(relative_path),
                     card_type=card_dict.get("type", CardType.UNKNOWN.value))
     num_stars = MutableValue(0)
     stat_trackers = StatTrackers()
     type_bboxes: list = []
     abilities: list = []
     get_stars_from_psd = stars_from_psd(relative_path)
+    header: list = []
+    titles = parser.title_layers(psd, [layer for layer in psd.descendants() if layer.kind == "type"
+                                       and EFFECT_LAYER_TAG not in layer.name], card.name)
     for layer in psd.descendants():
         if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
             continue        # an effect layer: a pixel copy of a text layer's words, nothing to parse
         parser._process_layer(layer, card, num_stars, stat_trackers,
                               type_bboxes, abilities,
-                              get_stars_from_psd, card_mid_y)
+                              get_stars_from_psd, card_mid_y, titles, header, psd)
     # --- end mirror ---
 
     print(f"\n[1] creature-types collected ABOVE midline: {card.types}")
@@ -92,8 +96,8 @@ def main() -> int:
     for text, bbox in abilities:
         print(f"    at (x={bbox.x}, y={bbox.y}..{bbox.bottom}): {text!r}")
 
-    sorted_abilities = parser._sort_by_position(abilities)
-    joined = "\n".join(text.strip("\n") for text, _ in sorted_abilities)
+    rows = parser._rows(abilities)
+    joined = parser._join_parts(parser._labels(rows))       # as _process_abilities joins them
     print("\n[3] joined ability text with gaps marked (3+ spaces = injection slots):")
     print(visualize_gaps(joined, parser._gap_pattern))
 
@@ -108,20 +112,24 @@ def main() -> int:
         print(f"    prune threshold = max(last_y//3={last_y // 3}, card_mid_y={card_mid_y})")
     dropped = [t for t in sorted_bboxes if t not in pruned]
     print(f"    kept after prune: {[t for t, _ in pruned]}   dropped: {[t for t, _ in dropped]}")
-    spanned = parser._in_span(pruned, [bbox for _, bbox in abilities])
+    spanned = parser._in_span(pruned, [bbox for row in rows for _, bbox in row])
     print(f"    in an Ability layer's span (+-{ICON_SPAN_PAD} px): {[t for t, _ in spanned]}   "
           f"dropped: {[t for t, b in pruned if (t, b) not in spanned]}")
     pruned = spanned
 
-    n_gaps = sum(len(parser._gap_pattern.findall(line)) for line in joined.splitlines())
+    lines = [line.rstrip(" '\n") for line in joined.rstrip(" ").splitlines()]   # _inject_type_names' lines
+    n_gaps = sum(len(parser._gap_pattern.findall(line)) for line in lines)
     print(f"\n[5] gap count = {n_gaps} vs kept types = {len(pruned)}"
           + ("   <-- MISMATCH, leftover types get appended to last line!" if n_gaps != len(pruned) else "   (match)"))
 
-    final = parser._process_abilities(sorted_abilities, list(pruned), card_mid_y)
+    final = parser._process_abilities(abilities, type_bboxes, card_mid_y) if abilities else ""
     print("\n[6] FINAL ability text after injection + punctuation cleanup:")
     print("=" * 40)
     print(final)
     print("=" * 40)
+    parsed = parser.parse(psd, relative_path).ability
+    if parsed != final:
+        print(f"DRIFT: parser.parse() reads {parsed!r}: this script no longer mirrors the parser (update it)")
     return 0
 
 

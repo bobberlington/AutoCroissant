@@ -4,11 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from discord import File, Interaction, Object
 from functools import wraps
 from inspect import iscoroutinefunction
-from io import BytesIO
-from numpy import ndarray, array, asarray
 from os import listdir
 from os.path import join, isdir
-from requests import get
 from typing import Callable, TypeVar, Awaitable, Any, Optional
 
 import config
@@ -135,23 +132,6 @@ def to_threadpool(func: Callable[..., T], executor: Optional[ThreadPoolExecutor]
     async def wrapper(*args, **kwargs) -> T:
         return await get_running_loop().run_in_executor(executor, func, *args, **kwargs)
     return wrapper
-
-
-# ===================================================================
-# Image utilities
-# ===================================================================
-def url_to_cv2image(url: str, readFlag: Optional[int] = None) -> ndarray:
-    """Fetch an image from a URL and convert it to a cv2 image array (readFlag defaults to IMREAD_COLOR)."""
-    from cv2 import imdecode, IMREAD_COLOR     # lazy: only /frankenstein needs cv2 (~50 ms, 25 MB)
-    if readFlag is None:
-        readFlag = IMREAD_COLOR
-    return imdecode(asarray(bytearray(get(url, timeout=30).content), dtype="uint8"), readFlag)
-
-
-def cv2discordfile(img: ndarray, filename: str = "image.png") -> File:
-    """Convert a cv2 image (ndarray) to a Discord File."""
-    from cv2 import imencode
-    return File(BytesIO(array(imencode('.png', img)[1]).tobytes()), filename=filename)
 
 
 # ===================================================================

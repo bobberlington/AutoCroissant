@@ -17,7 +17,7 @@ from global_config import EDITS_PATH
 from commands.card_edits import CardEdits
 from commands.card_history import UNKNOWN_IF, unknown
 from commands.card_models import CardInfo, card_name, get_stats_as_dict, stats_db
-from commands.query_card import BAN_LIST, archived_text, ban_list_text, card_repo, history_match, init_query
+from commands.query_card import BAN_LIST, ban_list_text, card_repo, init_query
 from commands.rulebook import label as chapter_label
 from commands.utils import queue_message, queue_file, queue_long_message
 
@@ -115,69 +115,6 @@ def list_orphans(interaction: Interaction) -> None:
         return
 
     queue_long_message(interaction, '\n'.join(orphans))
-
-
-def view_old_metadata(interaction: Interaction,
-                     query: str,
-                     version: int = 0) -> None:
-    """
-    View old metadata for a card from the history.
-
-    Args:
-        interaction: Discord interaction
-        query: Card name query
-        version: Version index (-1 for oldest, 0 for most recent old version,
-                1 for second most recent, etc.)
-    """
-    found = history_match(query)                # archived names too, before an alias that claims them
-    if not found:
-        queue_message(interaction, f"No card found matching '{query}'.")
-        return
-
-    name = found[1]
-
-    # Check if card has old versions
-    if name not in stats_db.old_stats or not stats_db.old_stats[name]:
-        queue_message(interaction, f"No old versions found for **{name}**.")
-        return
-
-    old_versions = stats_db.old_stats[name]
-
-    # Handle version indexing
-    # -1 means oldest (first in list)
-    # 0 means newest old version (last in list)
-    # positive numbers count back from most recent
-    if version == -1:
-        index = 0
-    elif version >= 0:
-        index = len(old_versions) - 1 - version
-    else:
-        # Negative numbers other than -1: count from beginning
-        index = abs(version) - 1
-
-    # Validate index
-    if index < 0 or index >= len(old_versions):
-        queue_message(
-            interaction,
-            f"Invalid version index. **{name}** has {len(old_versions)} old version(s).\n"
-            f"Use -1 for oldest, 0 for most recent old version, or 1-{len(old_versions)-1} for older versions."
-        )
-        return
-
-    card = old_versions[index]
-
-    # Add version info
-    version_text = "oldest" if index == 0 else f"version {len(old_versions) - index - 1}"
-    if index == len(old_versions) - 1:
-        version_text = "most recent old version"
-    tag = getattr(card, "archived", None)
-    archived = f", {archived_text(tag)}" if tag and name not in stats_db.stats else ""
-
-    queue_message(
-        interaction,
-        f"Old metadata for **{name}** ({version_text} of {len(old_versions)}){archived}:\n"
-        f"```{_format_metadata(card, name)}```"
-    )
 
 
 def export_stats_to_file(interaction: Interaction,
@@ -317,7 +254,6 @@ __all__ = [
     'stats_db',
     'get_stats_as_dict',
     'list_orphans',
-    'view_old_metadata',
     'export_stats_to_file',
     'export_rulebook_to_file',
     'init_psd',

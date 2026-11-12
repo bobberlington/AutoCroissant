@@ -51,8 +51,7 @@ CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_
 REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
 ERRORS_SHOWN = 10                                    # error lines in the /fonts reply
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
-    "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "query", "query_ability",
-    "query_rulebook", "view_old_metadata"})
+    "export_cards", "export_rulebook", "fonts", "list_orphans", "query", "query_ability", "query_rulebook"})
 
 # ========================
 # Global State
@@ -415,12 +414,12 @@ def check() -> bool:
 def _refresh_cards(interaction) -> None:
     """After a sync: the query tables (the new data searchable at once), the card list (a 304 when the tree is unchanged;
     seconds of network), then the type emojis over it."""
-    from commands.query_card import DEFAULT_REPOSITORY, card_repo
+    from commands.query_card import card_repo
     from commands.type_emojis import sync_changed_emojis
     card_repo.prep_dataframes()
     card_repo.populate_files()
-    tree = card_repo._tree                           # emojis follow the card repo, never a /set_repo one
-    if tree is not None and not tree.get("truncated") and card_repo.repository == DEFAULT_REPOSITORY:
+    tree = card_repo._tree
+    if tree is not None and not tree.get("truncated"):
         shas = {item.get("path", ""): item.get("sha") for item in tree.get("tree", [])}
         queue_command(sync_changed_emojis, interaction, card_repo.repository, shas)
 

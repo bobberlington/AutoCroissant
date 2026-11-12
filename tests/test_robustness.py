@@ -334,37 +334,6 @@ def test_populate_files_keeps_the_last_good_tree(github, capsys):
         assert repo.populate_files() == 200 and repo.git_files == before
 
 
-def test_set_repo_typo_keeps_the_old_repo(github, monkeypatch):
-    repo = qc.CardRepository()
-    github.replies[:] = [Reply(200, TREE)]
-    repo.populate_files()
-    monkeypatch.setattr(qc, "card_repo", repo)
-    github.replies[:] = [Reply(404, {"message": "Not Found"})]
-    sent = []
-    async def defer(**kw):
-        sent.append("defer")
-    async def send(content):
-        sent.append(content)
-    inter = SimpleNamespace(response=SimpleNamespace(defer=defer), followup=SimpleNamespace(send=send))
-    asyncio.run(qc.set_repository(inter, "MichaelJSr/TTSCardMakr"))
-    assert repo.repository == qc.DEFAULT_REPOSITORY and len(repo.git_files) == 2
-    assert sent == ["defer", f"Error 404 when connecting to MichaelJSr/TTSCardMakr; still using {qc.DEFAULT_REPOSITORY}."]
-
-
-def test_set_repo_switches_only_after_the_new_tree_loads(github, monkeypatch):
-    repo = qc.CardRepository()
-    github.replies[:] = [Reply(200, TREE, etag='"e1"')]
-    repo.populate_files()
-    seen = []
-    def get(url, **kw):
-        seen.append((repo.repository, kw["headers"].get("If-None-Match")))
-        return Reply(200, {"tree": [{"path": "Items/Other.png", "sha": "o1"}]}, etag='"e2"')
-    monkeypatch.setattr(ga, "get", get)
-    assert repo.populate_files("someone/Other") == 200
-    assert seen == [(qc.DEFAULT_REPOSITORY, None)]                       # old repo while fetching, no stale ETag
-    assert repo.repository == "someone/Other" and repo.git_files == {"other.png": "Items/Other.png"}
-
-
 def test_emoji_listing_falls_back_to_the_card_tree(github, monkeypatch, capsys):
     repo = qc.CardRepository()
     monkeypatch.setattr(qc, "card_repo", repo)
@@ -512,7 +481,7 @@ def test_help_covers_every_command():
     documented = {re.match(r"/(\w+)", key).group(1) for d in (help_module.general_commands, help_module.text_commands,
                   help_module.card_commands, help_module.stats_commands, help_module.music_commands)
                   for key in d if key.startswith("/")}
-    assert documented == set(_registered()) and len(documented) == 47
+    assert documented == set(_registered()) and len(documented) == 42
 
 
 def test_a_space_named_png_takes_the_underscore_lookups():

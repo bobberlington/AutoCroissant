@@ -104,10 +104,10 @@ add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 
 ## 3. Known drift (audited 2026-07-11, re-audited and fixed 2026-10-20)
 
-### 3.1 Coverage drift: none (0 of 47 missing, 2026-11-09)
+### 3.1 Coverage drift: none (0 of 42 missing, 2026-11-12)
 
-The four missing entries (`/view_old_metadata`, `/list_guild_channels`, `/get_channel_messages`, and
-`/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
+The four missing entries (`/view_old_metadata`, deleted 2026-11-12, `/list_guild_channels`, `/get_channel_messages`,
+and `/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
 asserts help.py covers exactly the registered commands. Nothing in help.py refers to a nonexistent command.
 **Extraction trap**: do NOT grep for bare `name=` — `Choice(name=...)`
 lines (e.g. main.py:141-145) will pollute the list. Use the anchored pattern:
@@ -139,12 +139,12 @@ stated in every describe string. Discord caps a command description and each des
 
 | Convention | Real example (verified 2026-10-20) |
 |---|---|
-| State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:379); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:703) |
-| State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:625) |
+| State the default, in the string | `'Should we output the file as a csv? Default = True.'` (/export_cards); `'How many recent messages to search (-1 = all). Default = 100.'` (/purge) |
+| State units and scale | `"Delay added to the first run (s/m/h/d/w, e.g. 30m or 1d). Default = none."` (/set_reminder's `offset`) |
 | Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (every `lacks_admin`-gated command carries it; the list is autocroissant-config-and-flags' gate table; `tests/test_admin_gates.py` checks both surfaces) |
-| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146), `blend_mode` (main.py:359-362) |
+| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
-| "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:324; same shape for /set_repo, main.py:334) |
+| "Leave blank to view" pattern for getter/setter commands | `"Turn the votes on or off. Default = unchanged."` (/forum_votes: with no options it shows its settings; /set_ratio and /set_repo had the shape until 2026-11-12) |
 | Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:694, 734, 752-753): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
 | Sentence case, trailing period | pervasive; keep it |
 
@@ -515,3 +515,5 @@ lines re-pointed (help.py 99 lines).
 
 2026-11-11 (nocython): 5.4 says nothing is compiled (x[-1] fine in new code, no sweep); help.py no longer called
 cythonized; the new-module reminder names the bot's import closure; the setup.py census lines.
+
+2026-11-12 (asks-1112, owner G4): /volume, /set_ratio, /set_repo, /view_old_metadata and /frankenstein deleted (help.py and main.py together): 42 commands; §4's examples that quoted them re-pointed.

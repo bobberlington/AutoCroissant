@@ -743,8 +743,8 @@ github_api reads it inside a try/except and takes the token from the environment
 - **Moves are not versions** either (the path is not data); they become a `moved` event. `_update_old_stats_paths` (rewriting
   every old path to the current one) is removed from both modes (legacy too, 2026-10-23), so each version keeps the path it
   was parsed at. Both readers key history by
-  name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/view_old_metadata` shows the
-  version's own path.
+  name: build_site reads only `ability` and `timestamp` of old versions (build_site.py:1485), and `/query as_of` shows the
+  version's own path (`/view_old_metadata` did until 2026-11-12).
 - **Duplicates** (`duplicate_of`) get no versions; they are copies of their original. A duplicate is a numbered PNG beside
   its original's PSD, or (2026-10-23) a card PNG with no PSD whose Card Edits.json entry has `dup_of` (build_site's rule;
   Stubborn Queen, Gust of Trees). One whose PNG or original leaves is archived like any card (its tag at its own PNG,
@@ -769,7 +769,7 @@ github_api reads it inside a try/except and takes the token from the environment
 |---|---|---|
 | `db/manifest.json` | What was built from what (below) | everyone: freshness, staleness, the gate, the bot's change check |
 | `db/stats.json` | `{"schema": 1, "cards": {name: record}}`, one card per line, sorted by name; current cards including duplicates | site, the save, bot, tests, diagnostics |
-| `db/old_stats.json` | `{"schema": 1, "cards": {name: [record, ...]}}`, one name per line: history plus archived cards | site (history), bot (`/view_old_metadata`, `as_of`) |
+| `db/old_stats.json` | `{"schema": 1, "cards": {name: [record, ...]}}`, one name per line: history plus archived cards | site (history), bot (`/query as_of`) |
 | `db/psd_details.json` | Unchanged: schema v1 `{version, cards: {blob sha: record}}`, one record per line (`psd_details.text_of`) | site Details, bot `/fonts` |
 | `db/changelog/YYYY-MM.jsonl` | One event per line, appended by each build | site Changes tabs, the post stage |
 | `db/changelog/posted.json` | `{"seq": 120, "push": "<after sha>"}`: the last posted event and its push | post stage, gate (e) |

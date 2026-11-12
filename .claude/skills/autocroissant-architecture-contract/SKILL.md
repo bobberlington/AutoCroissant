@@ -308,11 +308,10 @@ main.py  (registration + queue loops; imports every commands module)
  |                            admins' Card sync runs, /fonts from the manifest's fonts report: no psd_details or font_check since
  |                            2026-11-11). main imports it; psd_analyzer LAZILY (init_psd) [2026-10-22]
  |- commands.psd_analyzer  -> the three above, query_card, utils, pandas: the FACADE. Re-exports what the bot takes (CardInfo,
- |                            CardEdits, card_name, get_stats_as_dict, stats_db, EDITS_PATH), holds the metadata/export
- |                            commands and init_psd; other card classes come from card_models.
+ |                            CardEdits, card_name, get_stats_as_dict, stats_db, EDITS_PATH), holds the export commands,
+ |                            /list_orphans and init_psd; other card classes come from card_models.
  |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
  |                            [2026-10-25; no discord]
- |- commands.frankenstein  -> utils, query_card (card_repo)
  |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create and
  |                            on_raw_thread_delete, the /reminders panel's read-only entries, the
  |                            5-minute loop)
@@ -365,8 +364,8 @@ updated and line numbers re-checked 2026-10-20; items 1, 7, 8 updated and 10-11 
 optimization pass.
 
 1. **(Fixed 2026-10-20) `main.py` used to define two function names twice.** The second `slash_set_ratio`
-   (the `/set_repo` handler) is now `slash_set_repo`, and the second `slash_delete_song` (`/delete_all_music`)
-   is `slash_delete_all_music`. Registration never depended on the names (`@tree.command` captures each
+   (the `/set_repo` handler) became `slash_set_repo` (both commands deleted 2026-11-12), and the second
+   `slash_delete_song` (`/delete_all_music`) is `slash_delete_all_music`. Registration never depended on the names (`@tree.command` captures each
    function at `def` time and `slash_registry` keys on `cmd.name`); `tests/test_robustness.py` asserts every
    top-level def is unique. Changing `name=` is still not safe (invariant 4). Archaeology Entry 10.25.
 2. **`shuffle(music_queue)` shuffles a deque** (music_player.py:338; `music_queue` is a `deque`,
@@ -576,3 +575,6 @@ open posts on the loop (read-only).
 2026-11-11 (nocython): invariant 11 (the bot never imports the card toolchain, even lazily; tests/test_bot_env.py);
 invariant 10's fork remark dropped; the module map loses its compiled/NOT compiled tags (nothing is compiled), gains
 psd_remote and card_sync's /fonts from the manifest; the outside-the-bot list names the card-side modules.
+
+2026-11-12 (asks-1112, owner G4): /frankenstein (module and its cv2 helpers in utils), /volume, /set_ratio, /set_repo and
+/view_old_metadata deleted; the module map loses commands.frankenstein, the facade holds no metadata command.

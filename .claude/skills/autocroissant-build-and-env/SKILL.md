@@ -72,8 +72,8 @@ top-level ones below, their dependencies pinned beside them):
 | discord.py (`>=2.5` since 2026-10-19) | The Discord API library (2.7.1 on the Mac). Its only hard dependency is aiohttp. The floor exists because `commands/type_emojis.py` uses `Client.fetch_application_emojis` / `create_application_emoji`, both `versionadded:: 2.5`; on an older install the emoji sync fails with "Emoji sync failed: ... has no attribute ..." while everything else works. Upgrade with `pip install -U "discord.py>=2.5"` |
 | fonttools (cards) | Font files: `commands/font_check.py` (the guards' missing-fonts check, the data build's fonts report), reached by `psd_details` and the bake. The bot never imports it since 2026-11-11: `/fonts` reads the report the data build writes (the manifest's `fonts`). |
 | GitPython | The bot's self-update commands (`/pull`, `/update`; `/push` until 2026-10-25), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
-| numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
-| opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
+| numpy | The card name index in `commands/query_card.py` (`_NameIndex`: the closest-name guesses); the card code's pixel checks too. |
+| opencv-python | Removed 2026-11-12 with /frankenstein, its only user (`commands/frankenstein.py` and utils' `url_to_cv2image`/`cv2discordfile`; owner). TTSCardMaker's font build keeps its own opencv-python-headless. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`, `card_grid.py` (/query_ability's grids; `ImageFont.load_default(size)` wants Pillow >= 10.1 with FreeType: the wheels have it); lazily in `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (`commands/psd_remote.py`, section 4). Not on the jetson since 2026-11-11. Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b` and `cards-20261112c`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
@@ -336,3 +336,5 @@ python-dateutil 4.0.0, tzdata 2026.6, fonttools 4.68.0, uharfbuzz 0.57.0, Cython
 stale-.so trap for old checkouts); requirements-bot.txt (the jetson's pinned bot packages, tests/test_bot_env.py) and
 requirements.txt = cards + bot; the jetson's venv `autocroissant-bot-3.14.10` without the card toolchain; davey and
 yt-dlp pinned; the setup.py re-verify rows replaced.
+
+2026-11-12 (asks-1112, owner G4): /frankenstein deleted, and opencv-python with it (requirements-bot.txt 28 pins); the numpy row names its bot use.

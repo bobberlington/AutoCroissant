@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of every AutoCroissant setting, its default and where it lives (config.py field names, global_config.py, module constants, TTSCardMaker repo settings). Use for config, flag, setting, default, where is X configured, why did my setting reset (/set_* do not persist), TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_GUARDS, SITE_URL, LOCAL_DIR_LOC, ICON_* and EFFECT_* constants, /set_ratio, /set_repo.
+description: Catalog of every AutoCroissant setting, its default and where it lives (config.py field names, global_config.py, module constants, TTSCardMaker repo settings). Use for config, flag, setting, default, where is X configured, why did my setting reset (nothing set at runtime persists), TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_GUARDS, SITE_URL, LOCAL_DIR_LOC, ICON_* and EFFECT_* constants.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -26,7 +26,7 @@ grep -rn "getattr(config" --include="*.py" .
 | Secrets + per-machine knobs | `config.py` (repo root) | NO — gitignored, mode 0700 | on restart only (read once at import) |
 | Shared constants | `global_config.py` | yes | on restart (code edit) |
 | Module constants | the `# Configuration` block at the top of each `commands/*.py` | yes | on restart (code edit) |
-| Runtime setters | `/set_ratio`, `/set_repo` (admin only since 2026-10-22; the four AI setters are on branch `archive/ai-generation`) | n/a | immediately — and LOST on restart |
+| Runtime setters | none on main since 2026-11-12 (`/set_ratio` and `/set_repo` deleted, owner; the four AI setters are on branch `archive/ai-generation`) | n/a | immediately — and LOST on restart |
 
 Mental model: `config.py` is read ONCE, at import time, into module-level constants via
 `getattr(config, "field", default)`. Nothing in the codebase ever re-reads it, and nothing ever
@@ -100,8 +100,8 @@ user is NOT an admin** (`interaction.user.id not in ADMINS`). Every call site re
 `if lacks_admin(...): send "You do not have permission"; return`. The invariant is owned by
 **autocroissant-architecture-contract**.
 
-Commands gated by `lacks_admin` in main.py (all 15 call sites, verified 2026-10-25 after /push went; line numbers
-drift — re-derive with `grep -n "lacks_admin" main.py`):
+Commands gated by `lacks_admin` in main.py (15 call sites: verified 2026-10-25 after /push went, then /forum_votes
+added 2026-11-09 and /set_repo deleted 2026-11-12; line numbers drift — re-derive with `grep -n "lacks_admin" main.py`):
 
 | Slash command | main.py line |
 |---|---|
@@ -109,7 +109,6 @@ drift — re-derive with `grep -n "lacks_admin" main.py`):
 | `/pull` | 232 |
 | `/update` | 258 |
 | `/set_reminder` | 288 |
-| `/set_repo` (added 2026-10-22) | 392 |
 | `/update_stats`, only with `force_update` or `cards` given (2026-10-22: a Card sync run costs API budget; a reminder's run is checked as its creator) | 434 |
 | `/delete_song` (added 2026-10-22) | 604 |
 | `/delete_all_music` (added 2026-10-22) | 613 |
@@ -122,7 +121,7 @@ drift — re-derive with `grep -n "lacks_admin" main.py`):
 | `/get_channel_messages` | 718 |
 | `/forum_votes` (added 2026-11-09; its view mode too) | `grep -n "slash_forum_votes" -A3 main.py` |
 
-The 2026-10-22 gates are whole, view modes included (`/set_repo` with no arguments). `/update_metadata`, `/mass_replace`,
+The 2026-10-22 gates are whole, view modes included. `/update_metadata`, `/mass_replace`,
 `/alias`, `/bake_cards` and `/update_tts_save` (all admin only) were retired 2026-10-25 (branch `archive/discord-edits`).
 `/purge` cannot be scheduled by a reminder: its `user` option has no default. Tests: `tests/test_admin_gates.py`.
 
@@ -187,7 +186,7 @@ went with the pickle seed on 2026-10-25. Modules also read a few environment var
 | `CARD_TREE_JSON` (2026-10-25) | `"card_tree.json"` | the card repo's last tree, its ETag and Card Edits.json's text (query_card `load_saved`/`_save_tree`): the card list at startup before any request; gitignored, per machine; a corrupt one is ignored and rewritten |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). No content diffs or renames run there (they would download blobs): repo_history runs rev-list/ls-tree/merge-base/fetch, and since 2026-10-22/23 `card_history.GitIndex.from_git` runs `git log --raw --no-abbrev --no-renames` with `GIT_NO_LAZY_FETCH=1` (the archive dates, the history recovery); `mailmap_args` fetches head's `.mailmap` blob, the one lazy fetch. It must be a full (non-shallow) clone, else the index raises ValueError and the dates wait for the next run |
-| `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, kept as an alias), repo_history (`REPOSITORY`, alias) and tts_save; /set_repo still overrides `card_repo.repository` at runtime |
+| `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, an alias until 2026-11-12), repo_history (`REPOSITORY`, alias) and tts_save; seeds `card_repo.repository` |
 | `API_BASE`, `RAW_BASE` (2026-10-20) | `"https://api.github.com/repos/"`, `"https://raw.githubusercontent.com/"` | URL prefixes used by commands/github_api.py (API) and repo_history/tts_save (raw links) |
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages' folder; since 2026-11-12 `RULEBOOK_DIR` only keeps card_data's rule-page credits (the pages are under MDW, never cards) |
 | `RULEBOOK_SRC`, `RULEBOOK_PAGES` (2026-10-29) | `"site/rulebook"`, `"TTS/Rulebook"` | the rulebook's chapters (card_data writes them into `db/rulebook.json`) and their TTS PDF (`commands.rulebook_pages` prints `Rulebook.pdf` + `pages.json`; tts_save puts the PDF in the Rulebooks bag) |
@@ -260,11 +259,10 @@ extraction" goal). Their semantics and the validation rules live in
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `DEFAULT_REPOSITORY` | `"MichaelJSr/TTSCardMaker"` | GitHub repo the bot queries for card images; seeds `card_repo.repository` |
 | `DEFAULT_MATCH_RATIO` | `0.6` | difflib fuzzy-match cutoff; seeds `card_repo.match_ratio` |
 
-Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo`
-(query_card.py:990) — which is exactly why `/set_ratio` and `/set_repo` don't persist (below).
+It seeds a field of the `CardRepository` dataclass whose singleton is `card_repo`; its `repository` field is
+global_config's `CARD_REPO` (query_card's `DEFAULT_REPOSITORY` alias went 2026-11-12 with `/set_repo`).
 `card_repo.repository` is also the repo `/update_stats` traverses and, since 2026-10-19, the repo
 `/sync_emojis` lists icons from.
 
@@ -413,8 +411,8 @@ for the jetson went on 2026-10-25: nothing there bakes).
 
 The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
 (`REMIND_JSON`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
-`RUN_AS_CREATOR = True`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
-store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
+`RUN_AS_CREATOR = True`, `ALLOW_POSITIONAL = True`, `CHANNEL_RETRY` and `is_admin`. An unreadable store turns
+reminders off (`ON_LOAD_ERROR`, whose "raise" nothing set, deleted 2026-11-12).
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -455,7 +453,7 @@ autocroissant-run-and-operate §9.
 | `LANE_RUNS` (2026-10-25) | `5` | notes: the runs whose jobs are read for each lane's last outcome (one request a run) |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
 | `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |
-| `READERS` (2026-10-25) | 12 slash command names | the commands that read card data, so look on use (autocomplete always does) |
+| `READERS` (2026-10-25) | 7 slash command names | the commands that read card data, so look on use (autocomplete always does) |
 | `ERRORS_SHOWN` (2026-11-11, from font_check) | `10` | error lines in the /fonts reply, from the manifest's fonts report (`fonts`: `checked`, `missing` {font: {path: [layers]}}, `errors`; written by the data build, font_check.fonts_report) |
 
 No clock in the bot since 2026-10-24: card-sync.yml starts itself on a card push (its `push` trigger). Since 2026-10-25
@@ -608,29 +606,19 @@ A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an Aut
 ### requirements-bot.txt (2026-11-11) — the jetson's packages
 
 The bot's packages with their dependencies, `==` pins from the jetson's `pip freeze` of 2026-11-11 without the card
-toolchain (29 lines). The jetson-deploy skill's deploy.sh installs it (`--only-binary :all:`) on every deploy; nothing
-else is installed there. `davey==0.1.7` stays until discord.py supports 0.2's transition API (voice breaks).
+toolchain (29 lines; 28 since opencv-python went with /frankenstein, 2026-11-12). The jetson-deploy skill's deploy.sh
+installs it (`--only-binary :all:`) on every deploy; nothing else is installed there.
+`davey==0.1.7` stays until discord.py supports 0.2's transition API (voice breaks).
 To move a pin (yt-dlp first when downloads break): edit the line, run `tests/test_bot_env.py` (every package the
 bot's import closure reaches has a pin, none of the toolchain, davey at 0.1.7), push, deploy. setup.py and its
 `INCLUDE_FILES`/`COMPILER_DIRECTIVES` went that day: nothing is compiled (autocroissant-build-and-env §5).
 
 ## Runtime-settable vs restart-required
 
-THE classic confusion in this bot. Two facts, verified by reading every setter:
-
-1. The two `/set_*` commands on main assign to `card_repo` attributes in memory. **Neither
-   writes config.py** — no file write exists in either. Changes evaporate on restart. And
-   restarts are routine: every `/update` restarts the bot,
-   silently resetting anything set at runtime.
-2. `config.py` is the ONLY persistence, and only for the fields it has (tokens/ADMINS/music
-   flags). `match_ratio` and `repository` are NOT config.py fields at all — they reset to their
-   hardcoded defaults on every restart, and there is no way to persist a change short of editing
-   `commands/query_card.py`.
-
-| Slash command | Mutates (verified location) | After restart becomes |
-|---|---|---|
-| `/set_ratio` | `card_repo.match_ratio` (`set_match_ratio`, query_card.py:945-963; validates 0.0-1.0) | `0.6` (`DEFAULT_MATCH_RATIO`) — always |
-| `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:965-988) | `"MichaelJSr/TTSCardMaker"` — always |
+`config.py` is the ONLY persistence, and only for the fields it has (tokens/ADMINS/music flags). `match_ratio` and
+`repository` are NOT config.py fields at all: they are `DEFAULT_MATCH_RATIO` and `CARD_REPO`, changed only by editing
+the code. Their runtime setters `/set_ratio` and `/set_repo` (in memory only, lost on every restart) were deleted on
+2026-11-12 (owner).
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`, `ACTIONS_TOKEN`,
 `browser_cookies`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
@@ -640,15 +628,8 @@ Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`
 > values on restart). Each calls `_clear_pipelines()`, so the next generation re-runs `init_pipeline()`.
 > Details: autocroissant-ai-boundary.
 
-Each `/set_*` command called with no argument is the read path: it replies with the current
-value without changing anything — the cheapest way to inspect live
-state.
-
 `/forum_votes` (2026-11-09) is the exception that persists: its settings are saved in `forum_votes.json` (per machine)
 and survive restarts; with no options it shows them.
-
-The `/set_repo` handler is `slash_set_repo` (it shared the name `slash_set_ratio` until 2026-10-20, C5).
-Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fetch keeps the old repository and card list and says so.
 
 ## Defaults-mismatch traps
 
@@ -725,7 +706,7 @@ table with its command before quoting it in the future.
 | card-module constants (psd_analyzer split 2026-10-20; moved 2026-10-22) | `grep -n "^UPDATE_RATE\|^EXCLUDE_FOLDERS\|_WORKERS =" commands/card_data.py`; build constants: `grep -n "^BUDGET\|^RATE_FLOOR\|^MIN_CARDS\|^ARCHIVE_\|^REPARSE_MAX\|^QUALITY_\|^DETAILS_SHARE" commands/card_data.py`; `grep -n "TYPE_REGION_RATIO\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
 | PARSER_VERSION | `grep -n "^PARSER_VERSION" commands/psd_parser.py` |
 | UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/card_data.py` |
-| query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
+| query_card defaults | `grep -n "DEFAULT_MATCH_RATIO\|repository: str" commands/query_card.py` |
 | BREAK_LEN | `grep -n "BREAK_LEN = " commands/utils.py` |
 | music constants + browser_cookies + ydl_opts | `grep -n "MUSIC_BASE_DIR\|SKIP_FILES\|browser_cookies\|cookiesfrombrowser\|keepvideo\|postprocessors\|preferredquality" commands/music_player.py` |
 | No AI code on main | `ls commands/diffusion.py` fails; `grep -n "set_model\|set_lora\|set_scheduler\|set_device" main.py` is empty |
@@ -830,3 +811,5 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone; section headers lose "not compiled".
 
 2026-11-11 (ratings off the site): `RATINGS_PATH`: only TTS sessions add ratings, the website shows none.
+
+2026-11-12 (asks-1112, owner G4): `/set_ratio` and `/set_repo` deleted (no runtime setters on main; 15 lacks_admin call sites), query_card's `DEFAULT_REPOSITORY` folded into `CARD_REPO`, analytics' `ON_LOAD_ERROR` deleted, card_sync's `READERS` 7 names (/frankenstein and /view_old_metadata deleted).

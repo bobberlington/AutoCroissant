@@ -935,6 +935,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `tests/test_font_check.py::test_freetype_loads_before_harfbuzz`). Not taken: skipping the autohinter (changes every
   raster), `sys.setdlopenflags(RTLD_LOCAL)` around uharfbuzz (process-wide flags, same first-import problem).
 
+### 10.37 Five bot commands deleted: /volume, /set_ratio, /set_repo, /view_old_metadata, /frankenstein (owner, 2026-11-12)
+
+- **Symptom**: the dead-code sweep (deadcode-1111) found commands nobody used since 10-29 or that could not work:
+  /volume always refused (all playback is `FFmpegOpusAudio` since 366c8d9, so its `PCMVolumeTransformer` branch never
+  ran); /set_ratio and /set_repo were lost on every restart, and /set_repo mixed another repo's pictures with
+  TTSCardMaker's card data (the card data comes from the data branch whatever `card_repo.repository` says);
+  /view_old_metadata duplicated `/query as_of` (same `_format_metadata`, archived cards, plus that day's picture);
+  /frankenstein was the bot's only opencv-python user (123 MB on the jetson).
+- **Decision**: owner, 2026-11-12 (G4): delete all five, /frankenstein entirely (not ported to PIL). With them went
+  main.py's `card_list_names` and `card_names` autocompletes, utils' `url_to_cv2image`/`cv2discordfile`,
+  opencv-python's pin, query_card's `DEFAULT_REPOSITORY` (now `CARD_REPO`), `populate_files`' repository switch and
+  card_sync's "never a /set_repo tree" guard, and analytics' unused `ON_LOAD_ERROR` ("raise" was never set;
+  `RUN_AS_CREATOR`, `ALLOW_POSITIONAL` and `FakeUser` stay as OJWikibot twin markers, 10-24 ruling).
+- **Status**: deleted on work/asks-1112 (lane asks-1112); 42 commands. History: `git log -S slash_frankenstein`.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
@@ -1014,3 +1029,5 @@ from `ring-sweep-final/go/b1/`-`b3/`.
 2026-11-11 (nocython): Entry 6 records the reversal of the cythonization with the jetson measurement (22.6-23.3 ms
 compiled, 21.9-22.0 ms plain for 58 real queries; 70 replayed queries identical); index row 6 and the setup.py
 re-verify row reads setup.py from before its deletion.
+
+2026-11-12 (asks-1112): Entry 10.37 (five bot commands deleted by the owner's G4 answer).
