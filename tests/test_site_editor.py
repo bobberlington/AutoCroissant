@@ -158,3 +158,27 @@ process.stdout.write(JSON.stringify(r));
     assert out["page"] == out["open"] == [True, True, True, False]          # #toast (its Undo) stays reachable
     assert out["closed"] == out["shut"] == [False] * 4                      # at once: a focus() right after a close works
     assert (out["at"], out["tab"], out["back"]) == ("dialog", "dialog", "tile")
+
+
+def test_card_dialog_loads_wait_for_their_slots(tmp_path):
+    """app.js nearby: each load runs once, when the first of its slots nears; two loads on one slot (history.json and
+    analytics.json on #card-changes) both run; disconnect drops the pending ones."""
+    app = (ASSETS / "app.js").read_text(encoding="utf-8")
+    start = app.index("const nearby = (() => {")
+    code = app[start:app.index("})();", start) + 5]
+    out = node(tmp_path, r"""
+let io; const modal = {}, $ = sel => sel, ran = [];
+globalThis.IntersectionObserver = class { constructor(f) { io = this; this.f = f; this.seen = new Set(); }
+  observe(el) { this.seen.add(el); } unobserve(el) { this.seen.delete(el); } disconnect() { this.seen.clear(); } };
+const near = (...els) => io.f(els.filter(el => io.seen.has(el)).map(target => ({ target, isIntersecting: true })));
+""" + code + r"""
+const r = {};
+nearby.on(["changes", "history"], () => ran.push("history"));
+nearby.on(["balance", "changes"], () => ran.push("analytics"));
+near("changes"); r.shared = [...ran]; near("balance", "history", "changes"); r.once = [...ran]; r.left = [...io.seen];
+nearby.on(["balance", "changes"], () => ran.push("late")); near("balance", "changes"); r.both = [...ran];
+nearby.on(["balance"], () => ran.push("dropped")); nearby.disconnect(); r.end = [...ran];
+process.stdout.write(JSON.stringify(r));
+""")
+    assert out["shared"] == out["once"] == ["history", "analytics"] and out["left"] == []
+    assert out["both"] == out["end"] == ["history", "analytics", "late"]
