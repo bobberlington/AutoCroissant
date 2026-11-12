@@ -760,7 +760,7 @@ def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> 
     if psd_edit.STATUS_CHART in tree:
         try:
             chart = psd_edit.status_fills(png_export.open_psd(source.blob(tree[psd_edit.STATUS_CHART][1])))
-        except Exception as error:              # R5 reports every overlay without the chart
+        except Exception as error:              # the status fixes run without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
     context = standards.Context(frozenset(vocab.all_types), chart,
                                 frozenset(path.lower() for path in tree if path.lower().endswith(".png")),   # R12's pictures
@@ -1110,10 +1110,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             refused = []
             for path, (data, why) in sorted(found.numbered.items()):
                 if data:
-                    tagged = path not in numbered or path in drawn or png_export.picture_number(path) in found.pictures
                     result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
-                                          "line": "made by the bot's render of its picture (variant tags)" if tagged
-                                          else "updated with the same change (delta transfer)"})
+                                          "line": "made by the bot's render of its picture (variant tags)"})
                     shown[path] = png_export.open_png(data)
                 elif data is None:              # its picture unchanged
                     if path in numbered:

@@ -41,7 +41,7 @@ the workflow facts were re-checked.
 - **Effects on digits (idea 12).** 107 cards carry an enabled effect (GradientOverlay 379 layers, InnerShadow 45, ...) on one
   digit per row, the one visible when styled (Mettaton_EX `Atk Dark/6` styled, `7` visible). The `cards` tree skips effects on
   adjustment layers (`composite.py` `Compositor.apply` L1474; psd-research `RENDER_STATUS.md` class A, 87 cards 33-84% bad).
-- **Above 10 (idea 13).** Sonic spd 20 = half-height `spd top`/`spd bottom` bars with all digits hidden plus a renamed `20`
+- **Above 10 (idea 13; the bake's two-row support deleted 2026-11-12, both cards on layer-comp bars since 11-06).** Sonic spd 20 = half-height `spd top`/`spd bottom` bars with all digits hidden plus a renamed `20`
   that changes 0 pixels; Royal Eradicator Main Cannon atk 12 = `atk dark/Top/10` at opacity 0 + `Bottom/2`. Canonical
   encoding since 2026-10-21 (question 3): top row 10 + bottom row N-10. `EXCESSIVE_STAT_EXCLUSIONS` is gone; `allow_high_stats`
   in the edits file silences STATS TOO HIGH for Sonic and the Cannon (`commands/psd_parser.py:1031-1033`).
@@ -114,8 +114,8 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | Field | Kind | Pipeline (round 1) | After the bake |
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
-| `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count). Several layers: edited box by box (`parts`, PARTS_EDITOR.md; the joined `set_ability_layers` splice was deleted 2026-10-25, a plain edit there refuses as impossible); a plain edit of one layer with copies (SOMETHING's) or a relaid hidden one goes through `set_parts`, the copies following | field removed |
-| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renames it after the new title, as Photoshop renames a layer it named (`Edit.renamed`; `gate_bytes` allows exactly that name), so the parser still reads it; refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
+| `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count). Several layers: edited box by box (`parts`, PARTS_EDITOR.md; the joined `set_ability_layers` splice was deleted 2026-10-25, a plain edit there refuses as impossible); a plain edit of one layer with copies (SOMETHING's) goes through `set_parts`, the copies following (a relaid hidden one too until 2026-11-12) | field removed |
+| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renamed it after the new title, as Photoshop renames a layer it named (`Edit.renamed`), until 2026-11-12 (owner: deleted; such a name edit now refuses at the read-back until the layer is named Name); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
 | `creatures` | PSD on a bar per creature (the 2 and 3 creature templates, since 2026-11-07; digit rows per creature since 2026-11-08: Pix, Tainted Lazarus, Twin Emperors, Computer Virus), else website only, as any value the bars can't print (`_site`) | each creature's comp bar set, or its own rows (`set_creatures`, `set_stat(creature=n)`), a shared bar once, moving every creature on it | field removed (website only: stays) |
@@ -255,13 +255,12 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `lfx2`/`lrFX` blocks move onto the shown digit's record, replacing a block whose effects are all off (the block flag is not
    enough: Mini_Doomer `Hp Dark/2` has `effects.enabled` True over an InnerShadow and a GradientOverlay both `enabled=False`);
    a shown digit with its own enabled effect keeps it and the hidden one's is cleared; to 10 nothing moves; from 10 the one
-   hidden styled digit's block comes back, several such digits refuse `unsupported-card`; a hidden styled digit beside a visible
+   hidden styled digit's block comes back (several such digits refused `unsupported-card`, and a tiling style traded fxrp,
+   until 2026-11-12); a hidden styled digit beside a visible
    unstyled one (Mettaton_EX Atk 6) is left alone, so the path matters (7 -> 10 -> 4 styles 4 with the 6's effect, 7 -> 4 moves
-   nothing). Two rows (idea 13): Top shows the value and Bottom 0 up to 10, then Top none
-   and Bottom value - 10 (`psd_edit.set_stat`). A bar with a digit mask wholly off the canvas (or empty) refuses
-   `unsupported-card` before anything toggles, naming the digits or the whole bar (2026-10-23: Green_Mage's four bars sit
-   below its 2400 px canvas and its printed cells are pixel layers; the empty render region was a `ValueError`, an
-   `error` that failed the run). A mask that starts on the canvas and reaches past it (Pure_Vessel) bakes.
+   nothing). Two rows (idea 13), a missing digit (moved there), a bar off the canvas and a tall mask over other rows: support
+   and refusals deleted 2026-11-12 (owner: old layouts go; a row without the digit refuses naming it). A mask that starts
+   on the canvas and reaches past it (Pure_Vessel) bakes.
    Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
@@ -545,7 +544,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   toggles, the Cannon's one-row hp (mean 1.06) and Z.O.M.G.'s title (1.28) pass the baseline; the 0.5% bad-pixel bar still refuses
   a row the fork renders wrong (the Cannon before round 4: 5-7% bad). **Revised again (the owner, 2026-10-23):** the bar
   no longer refuses; a miss bakes with a note, only past 25% bad (`PARITY_FLOOR`) is a render broken (section 5 step 3).
-- **13. Stats above 10.** Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
+- **13. Stats above 10.** Deleted 2026-11-12 (owner: old layouts go; Sonic and the Cannon on layer-comp bars since 11-06).
+  Code done 2026-10-21 (`psd_edit.template_rows`): a `<Stat> Dark` group holding two template rows named
   Top and Bottom (the Cannon's `atk dark`), Top also holding a `10` marker: an eleventh exposure digit visible at opacity 0. The
   marker is load-bearing, not a stray: the parser's `StatTracker.total` skips a row with no visible digit, so Top none + Bottom 2
   reads 2 (measured on a /tmp copy with the marker hidden); with it, Top none + Bottom 0 reads 10, Top 7 + Bottom 0 reads 7, Top
@@ -562,7 +562,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the recipe; no fork change: the glyph pixels come from the JSX's own key-copy technique over the engine's public `model`,
   `layout` and `raster` modules, `PlacedGlyph` still has no cluster index). Derived state: every `<Ability> FX: ...` layer goes
   and one comes back per styled status word (`Ability FX: Blazing`, `#n` for a repeat), above `Text`, the chart's `lfx2`/`lrFX`
-  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse. Since
+  copied; the hand-made overlay word layers naming a styled chart status are hidden (question 6), the others refuse (since
+  2026-11-12 any overlay word layer refuses the edit). Since
   2026-10-22 an FX layer that is no styled chart status (a badge or token run, an unstyled word) refuses the edit too: it
   would be dropped (19 queue A cards carry badge layers; the FX tests run on Mini Doomer from before its `Ability FX: (BOT)`). Proof
   against `Effect Layers.jsx` (Convert overlays, the 2026-10-20 trial copies under `/private/tmp/fontexplore/fx/mig/out/`) on the
@@ -914,7 +915,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   (`font_map`: FontMap policy "substitute"; a whole redraw in a stand-in still hits the 25% floor), saved pixels in
   another font, new validator problems. An FX layer whose style can't follow (follow_fx's refusals, a phrase the ability
   lacks, words now in a badge) is deleted, told, its words plain (styled status words get the chart's layer from
-  `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for is hidden, told;
+  `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for was hidden, told
+  (until 2026-11-12: any overlay word layer refuses since);
   a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. A stale
   Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
   tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
@@ -1069,7 +1071,8 @@ the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes a
 past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
 the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
-carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (FX
+carry enabled effects (which one the row shows is ambiguous; until 2026-11-12) and the overlay word layers the chart has
+no style for (any overlay word layer since 2026-11-12) (FX
 layers in no chart style were refused too until 2026-10-23: rebuilt in their own style since; since BUG 2, 2026-10-23,
 also an FX layer whose words would fall in a badge, a styled or own-style FX layer whose JSX name would move to other
 words, two FX layers renumbered onto one name, a styled status word a digit touches beside a whole-word one, an FX
@@ -1077,7 +1080,7 @@ layer that is no pixel layer; letters left in the icon font it draws no badge of
 badge or token under a tint that is no overlay (a non-Normal blend, opacity, a clipped layer; under an overlay it takes
 the one-colour shape since 2026-10-25: `the Ability's look (its Pin Light blending) changes the typed badge's
 colours`), letters a deletion leaves in the icon font, an edit inside an own-style or styled FX phrase, an FX
-layer phrase the ability lacks; the badge-layer notes went with the badge layers, 2026-10-25), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
+layer phrase the ability lacks; the badge-layer notes went with the badge layers, 2026-10-25), from 2026-10-23 until 2026-11-12 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
 `hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`), `font` also a typed character its font has no glyph
 for (`ability: '☃' has no glyph in its font (drawn as a box)`), `unsupported-card` also an icon-font glyph whose colours a tinted Ability
 now changes, not drawn in one colour on purpose (`ability: (1cd): under the ability's look (its Pin Light blending), which changes their colours`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),

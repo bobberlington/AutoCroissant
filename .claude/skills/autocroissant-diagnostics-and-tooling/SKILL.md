@@ -316,7 +316,8 @@ creature 2's header icon), `[5]` 0 vs 0 (match); before, `[5]` was a MISMATCH an
 
 **MAINTENANCE NOTE** (from the script's docstring — keep it true): the extraction loop mirrors
 `PSDParser._extract_from_layers` (commands/psd_parser.py:404 as of 2026-10-23): effect layers
-(`EFFECT_LAYER_TAG`, " FX: ") set aside, hidden Ability layers read last, with
+(`EFFECT_LAYER_TAG`, " FX: ") set aside (hidden Ability layers read last until 2026-11-12, when the parser stopped
+reading them), with
 `stars_from_psd()` (the mirror gained the effect-layer skip, `RULEBOOK_DIR` and that on 2026-10-23, the rule-page skip and `RULEBOOK_DIR` removed 2026-11-04; before,
 it fed "Ability FX: ..." pixel layers to `_process_layer` and hardcoded the folders). If that method changes shape,
 update gap_trace to match; the one-line check is to compare against that method's body.

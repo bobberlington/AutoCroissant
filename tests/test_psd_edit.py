@@ -43,10 +43,10 @@ OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card
 SHELL_SHOCK = "Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd"
 MISMATCHED_SHOCK = "8af07bcd^"  # Shell_Shock before its re-save: its PNG another session's than its preview
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"   # digit masks start on the canvas and reach past it
-AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 10 with 6, 8 and 9 styled: ambiguous
+AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # its title split over 2 layers
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
 NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",)   # Text/Name + one visible Text/Ability, fonts in MDW/Fonts
-CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
+CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # atk 12 on idea 13's two rows (gone 11-12); hp 9 styled
 GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # layer effects (OuterGlow): an lfx2 block
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
@@ -305,10 +305,7 @@ def test_classify_table():
     assert out.redundant == ["def", "ability"]
     assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("unsupported-card", "stars"), ("unsupported-card", "types"),
                                                                      ("unsupported-card", "no PSD to find the title layer in")]
-    assert out.site == {"atk": "atk 11: the bar's one row prints up to 10"}     # past what the rows print: website only
-    two_rows = {"card": {"type": "creature", "atk": 12}}                      # a parse above 10 means Top + Bottom rows (idea 13)
-    assert pe.classify(two_rows, {"atk": 15}).jobs == {"atk": 15} and pe.classify(two_rows, {"atk": 12}).redundant == ["atk"]
-    assert pe.classify(two_rows, {"atk": 21}).site == {"atk": "atk 21: the bar's rows print up to 20"}
+    assert out.site == {"atk": "atk 11: the bar's one row prints up to 10"}     # past what the row prints: website only
     assert pe.classify(parsed, {"ability": "Die.\n(BOT) Die."}).jobs == {"ability": "Die.\n(BOT) Die."}
     assert pe.shown_name(parsed) == "" and pe.shown_name({"card": {"display_name": "Y"}}) == "Y"
     with pytest.raises(ValueError):                                 # not a stat: the card's "error", not stat>10
@@ -596,14 +593,13 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
     row, = pe.template_rows(psd, "hp")
-    assert row.group.name == "Hp Dark" and sorted(row.digits) == sorted(pe.DIGITS) and row.visible == [5]
+    assert row.group.name == "Hp Dark" and sorted(row.digits) == sorted(map(str, range(10))) and row.visible == [5]
 
 
 def test_non_template_rows_and_titles_refuse(clone):
     cannon = PSDImage.open(_card(clone, CANNON)[0])
-    assert len(pe.template_rows(cannon, "atk")) == 2
-    split = pe.split_rows(PSDImage.open(_card(clone, "Creatures/Other/4 Stars/Sonic.psd")[0]), "spd")
-    assert (split.marker.name, split.top.group.name, split.bottom.group.name) == ("20", "1", "2")   # a renamed 9 under two half rows
+    with pytest.raises(pe.Refused, match="2 bar rows"):                      # idea 13's Top and Bottom (gone 2026-11-12)
+        pe.template_rows(cannon, "atk")
     twins = PSDImage.open(_card(clone, "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")[0])
     with pytest.raises(pe.Refused) as refused:
         pe.ability_layer(twins)
@@ -613,7 +609,6 @@ def test_non_template_rows_and_titles_refuse(clone):
 
 # the card makers' own bars (LAYOUT_SUPPORT.md): one card per family
 LAYOUT_BARS = [
-    ("Creatures/Kirby/3 Stars/Spinni.psd", "hp", 5, "had no digit 5"),             # A: no 5: its 4 moved and renamed
     ("Auxiliary/Minions/Bulborb Larva.psd", "hp", 2, None),                         # A: each digit a picture of the row
     ("Creatures/Isaac/3 Stars/Tainted_Isaac.psd", "hp", 7, None),                   # C: lit hearts masked to the value
     ("Auxiliary/Minions/Dark_Esau.psd", "hp", 6, None),                             # C: that mask too short to move whole
@@ -787,7 +782,7 @@ def test_numbered_cells_bake(clone, parser, tmp_path):
         assert {stat: card[stat] for stat in want} == want, rel
 
 
-# Lane 2 (owner 2026-10-26): a stat's several rows, split cells, numbered layers, moved edges, two half rows
+# Lane 2 (owner 2026-10-26): a stat's several rows, split cells, numbered layers, moved edges
 LANE2_BARS = [
     ("Creatures/Kirby/3 Stars/Pix.psd", "def", 7),                          # creature 1's row "1" (R3)
     ("Creatures/Kirby/3 Stars/Pix.psd", "hp", 3),                           # its one HP mask over three creatures' rows (R1)
@@ -796,7 +791,6 @@ LANE2_BARS = [
     ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", "spd", 9),              # Light and Spd Dark named 1-10 (numbered layers)
     ("Items/Active/2 Stars/Dirty_Bed.psd", "def", 3),                       # lit by look, cell 1 copied from its HP row (R6)
     ("Creatures/Other/2 Stars/Slugcat.psd", "hp", 10),                      # an edge moved to the bar's end (R4)
-    ("Creatures/Other/4 Stars/Sonic.psd", "spd", 9),                        # two half rows: the top shows it, the second empty
 ]
 
 
@@ -828,15 +822,13 @@ LANE2_CHAINS = [
     ("Creatures/Kirby/3 Stars/Pix.psd", "hp", (3, 10, 6)),                          # the moved tall mask found again
     ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "hp", (5, 10, 2)),    # an edge moved to the bar's end and back
     ("Creatures/Other/2 Stars/Slugcat.psd", "def", (0, 5)),                         # from 0
-    ("Creatures/Other/4 Stars/Sonic.psd", "spd", (10, 5, 20)),                      # the half rows after their own edits
     ("Items/Active/2 Stars/Dirty_Bed.psd", "def", (3, 0)),                          # one dark picture per cell again
 ]
 
 
 def test_lane2_bars_edit_again(clone, parser, tmp_path):
     """A Lane 2 bar edited again from its own output (review 2026-10-26: Pix, Twin Emperors and Slugcat refused every next
-    value; Sonic's half rows went unseen and its covered row changed instead): each step reads back, the bar's art stays
-    where it is, Sonic's top row shows the value, Dirty Bed's cell 1 shows one dark picture."""
+    value): each step reads back, the bar's art stays where it is, Dirty Bed's cell 1 shows one dark picture."""
     art = lambda psd: sorted(tuple(layer.bbox) for layer in psd.descendants() if layer.kind == "pixel"
                              and layer.bbox[2] - layer.bbox[0] > psd.width / 3)
     for rel, stat, values in LANE2_CHAINS:
@@ -848,9 +840,6 @@ def test_lane2_bars_edit_again(clone, parser, tmp_path):
             assert parsed["card"][stat] == value, (rel, value)
             path = out
         assert art(psd) == drawn, rel           # the bar's art stays (at 10 Pix's and Twin Emperors' moved off the bar)
-        if stat == "spd":
-            split = pe.split_rows(PSDImage.open(str(tmp_path / "Sonic1.psd")), "spd")
-            assert split.top.visible == [5] and split.bottom.visible == [0] and not split.marker.is_visible()
     cell1 = [layer for layer in stat_rows(psd)["def"][0][0] if layer.is_visible() and layer.kind == "smartobject"
              and layer.bbox[0] < 440]
     assert len(cell1) == 1
@@ -1085,7 +1074,6 @@ def test_a_title_named_after_its_own_text(clone, parser):
         psd = PSDImage.open(psd_path)
         layer = pe.name_layer(psd, card_name(rel))
         assert _layer_path(layer) == "Text/" + title and pe.read_name(psd, card_name(rel)) == title
-        assert pe.own_text_title(layer, card_name(rel))
         parsed = pe.parse_card(parser, psd_path, rel)
         assert parsed["card"]["display_name"] == pe.shown_name(parsed) == title
         assert pe.classify(parsed, {"name": title}, psd).redundant == ["name"]
@@ -1150,17 +1138,13 @@ def test_titles_by_place(clone, parser):
     assert found(_Fake("Layer 1", 500)) == [] and found(_Fake("Ability", 20, text="Deal 2.")) == [] and found(_Fake("Layer 1", 20, text=" ")) == []
 
 
-def test_gate_bytes_allows_only_the_declared_rename(monkeypatch):
-    """A title named after its text is renamed after the new title (Edit.renamed): that name and no other."""
+def test_gate_bytes_refuses_a_renamed_title(monkeypatch):
+    """A text edit never renames its layer (the rename-along of a title named after its text: gone 2026-11-12)."""
     files = {"old": [_record("Text"), _record("snas.")],
              "new": [_record("Text"), _record("sans.", channels=((-1, 5), (0, 5), (1, 5), (2, 5)))]}
     monkeypatch.setattr(pe, "layer_records", lambda path: [dict(r) for r in files[path]])
-    records, flag_bytes, _ = pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None, renamed="sans.")])
-    assert records == [(1, "snas.", ["channels", "name"])] and flag_bytes == 0
     with pytest.raises(pe.Refused, match="changed channels, name"):
         pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None)])
-    with pytest.raises(pe.Refused, match="renamed 'sans.', not 'sans'"):
-        pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None, renamed="sans")])
 
 
 def test_a_title_or_ability_printed_twice_refuses(clone):
@@ -1202,92 +1186,31 @@ def test_name_redundancy_uses_the_printed_title(clone, parser):
     assert pe.classify(parsed, {"name": "Computer Virus"}, PSDImage.open(path)).jobs == {"name": "Computer Virus"}
 
 
-def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
-    """Idea 13 on the one 10+ card. `atk dark` holds Top ("0".."9" plus the parser's "10" marker: visible at opacity 0, so the
-    parser adds a full top row; hidden, it reads Bottom alone: 2) and Bottom ("0".."9", 2 visible with ColorOverlay + BevelEmboss).
-    12 -> 7 shows Top 7 + Bottom 0 and moves 2's effect onto 0, the two trading fxrp; 12 -> 15 shows Bottom 5; 12 -> 10 Bottom 0;
-    20 refuses (no Bottom marker); the parser reads each result; gate bytes sees one flag byte per digit plus the moved blocks;
-    hp (one row) refuses 11."""
+def test_a_styled_digit_replaces_an_unstyled_block(clone, parser, tmp_path):
+    """Idea 12's replace path on the Cannon's hp (9 styled with ColorOverlay + BevelEmboss) -> 2 (a block with nothing
+    enabled): 2's block goes, 9's lands; gate bytes sees one flag byte per digit plus the moved blocks."""
     path = _card(clone, CANNON)[0]
-    psd = PSDImage.open(path)
     parsed = pe.parse_card(parser, path, CANNON)
-    assert parsed["card"]["atk"] == 12 and parsed["validator"] == []
-    assert parsed["card"].get("display_name") is None and pe.read_name(psd) == "Main Cannon"
-    assert sorted((group.name.strip(), digits) for group, digits, _ in stat_rows(psd)["atk"]) == [("Bottom", [2]), ("Top", [10])]
-    top, bottom = pe.template_rows(psd, "atk")
-    assert (top.group.name, top.visible, top.marker.name, top.marker.opacity, top.reads()) == ("Top", [], "10", 0, 10)
-    assert (bottom.group.name, bottom.visible, bottom.marker, bottom.reads()) == ("Bottom", [2], None, 2)
-    assert pe.stat_value([top, bottom]) == 12 and sorted(top.digits) == sorted(bottom.digits) == sorted(pe.DIGITS)
-    assert pe.classify(parsed, {"atk": 15}, psd).jobs == pe.classify(parsed, {"atk": 15}).jobs == {"atk": 15}
-    assert pe.classify(parsed, {"atk": 12}, psd).redundant == ["atk"] and pe.classify(parsed, {"atk": 7}).jobs == {"atk": 7}
-    assert [r.why for r in pe.classify(parsed, {"atk": 21, "hp": 11}, psd).refusals] == [   # old bars: refused (owner 11-08)
-        "atk 21: its bars show up to 20", "hp 11: its bars show up to 10"]
-    for value, shows, names in ((7, ([7], [0]), ["7", "0", "2"]), (15, ([], [5]), ["5", "2"]), (10, ([], [0]), ["0", "2"])):
-        psd = PSDImage.open(path)
-        edit = pe.set_stat(psd, parsed, "atk", value)
-        top, bottom = pe.template_rows(psd, "atk")
-        assert (top.visible, bottom.visible) == shows and pe.stat_value([top, bottom]) == value and (edit.old, edit.new) == (12, value)
-        assert [layer.name for layer in edit.layers] == names
-        shown = str(shows[1][0])                                              # the Bottom digit now visible
-        two, new_digit = pe._record_index(bottom.digits["2"]), pe._record_index(bottom.digits[shown])
-        assert edit.moves == [(two, new_digit, b"lfx2"), (two, new_digit, b"lrFX"), (two, new_digit, b"fxrp"), (new_digit, two, b"fxrp")]
-        saved = str(tmp_path / f"cannon_{value}.psd")
-        psd.save(saved, update_preview=False)
-        records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
-        assert flag_bytes == len(names) and block_bytes == 6360 + 2 * 28 and sorted(name for _, name, _ in records) == sorted(names)
-        assert {name: fields for _, name, fields in records} == {shown: STAT_RECORD, "2": STAT_RECORD, **({"7": ["flags"]} if value == 7 else {})}
-        reopened = PSDImage.open(saved)
-        reparsed = pe.gate_reparse(parser, parsed, saved, CANNON, {"atk": value}, reopened, [], [])
-        assert reparsed["card"]["atk"] == value and reparsed["validator"] == []
-        again = pe.template_rows(reopened, "atk")[1]
-        assert sorted(pe._enabled_effects(again.digits[shown])) == ["BevelEmboss", "ColorOverlay"] and pe._enabled_effects(again.digits["2"]) == []
-        assert pe.classify(reparsed, {"atk": value}, reopened).redundant == ["atk"]
-    with pytest.raises(pe.Refused, match="10 marker") as refused:
-        pe.set_stat(PSDImage.open(path), parsed, "atk", 20)
-    assert refused.value.code == "stat>10"
-    with pytest.raises(pe.Refused, match="ledger L3") as refused:
-        pe.set_stat(PSDImage.open(path), parsed, "hp", 11)
-    assert refused.value.code == "stat>10"
-    # the replace path: hp 9 (styled) -> 2 (a block with nothing enabled): 2's block goes, 9's lands, the two trade fxrp
     psd = PSDImage.open(path)
     edit = pe.set_stat(psd, parsed, "hp", 2)
     row = pe.template_rows(psd, "hp")[0]
     two, nine = pe._record_index(row.digits["2"]), pe._record_index(row.digits["9"])
-    assert edit.moves == [(two, None, b"lfx2"), (two, None, b"lrFX"), (nine, two, b"lfx2"), (nine, two, b"lrFX"),
-                          (nine, two, b"fxrp"), (two, nine, b"fxrp")]
+    assert edit.moves == [(two, None, b"lfx2"), (two, None, b"lrFX"), (nine, two, b"lfx2"), (nine, two, b"lrFX")]
     saved = str(tmp_path / "cannon_hp2.psd")
     psd.save(saved, update_preview=False)
     records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
-    assert (flag_bytes, block_bytes) == (2, 6360 + 2 * 28) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
+    assert (flag_bytes, block_bytes) == (2, 6360) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
     assert sorted(pe._enabled_effects(pe.template_rows(PSDImage.open(saved), "hp")[0].digits["2"])) == ["BevelEmboss", "ColorOverlay"]
-    # a raise from <= 10 onto two rows bakes (STATS TOO HIGH only past 20 since 11-06)
-    seven = str(tmp_path / "cannon_7.psd")
-    at_seven = pe.parse_card(parser, seven, CANNON)
-    assert at_seven["card"]["atk"] == 7 and at_seven["validator"] == []
-    for value in (15, 11):
-        psd = PSDImage.open(seven)
-        assert pe.classify(at_seven, {"atk": value}, psd).jobs == {"atk": value}
-        edit = pe.set_stat(psd, at_seven, "atk", value)
-        raised = str(tmp_path / f"cannon_7_to_{value}.psd")
-        psd.save(raised, update_preview=False)
-        reparsed = pe.gate_reparse(parser, at_seven, raised, CANNON, {"atk": value}, PSDImage.open(raised), [edit], [])
-        assert reparsed["card"]["atk"] == value and reparsed["validator"] == []
-    # the marker is load-bearing: hidden, the parser reads Bottom alone and the shape refuses
-    psd = PSDImage.open(path)
-    pe.template_rows(psd, "atk")[0].marker.visible = False
-    with pytest.raises(pe.Refused, match="10 marker"):
-        pe.template_rows(psd, "atk")
-    hidden = str(tmp_path / "cannon_no_marker.psd")
-    psd.save(hidden, update_preview=False)
-    assert pe.parse_card(parser, hidden, CANNON)["card"]["atk"] == 2
+    with pytest.raises(pe.Refused, match="ledger L3") as refused:
+        pe.set_stat(PSDImage.open(path), parsed, "hp", 11)
+    assert refused.value.code == "stat>10"
 
 
 def test_effect_rules_on_styled_rows(clone, tmp_path):
     """Idea 12's rule on real rows: Mettaton atk 7 -> 8 moves nothing (7 is unstyled; the hidden styled 6 stays); 7 -> 6 keeps 6's
     own effect; hp 5 -> 10 moves nothing (5 keeps its block, hidden) and 10 -> 3 then takes it from 5; Green Mage before its fix
-    (OFF_CANVAS_MAGE) atk 10 -> 4 takes the one hidden styled digit's (7) (its row's toggle: set_stat refuses its bars, below the
-    canvas); the live Green Mage (atk 6, its 6 styled) 6 -> 4 takes 6's; Azamoth the Forgotten King's hp (10; 6, 8 and 9 styled)
-    refuses as ambiguous."""
+    (OFF_CANVAS_MAGE) atk 10 -> 4 takes the one hidden styled digit's (7) (its row's toggle); the live Green Mage (atk 6, its 6
+    styled) 6 -> 4 takes 6's."""
     path = _card(clone, METTATON)[0]
     parsed = {"card": {"hp": 5, "atk": 7}}
     psd = PSDImage.open(path)
@@ -1306,12 +1229,12 @@ def test_effect_rules_on_styled_rows(clone, tmp_path):
     assert pe._enabled_effects(row.digits["5"]) == ["GradientOverlay"] and pe.stat_value([row]) == 10
     edit = pe.set_stat(psd, {"card": {"hp": 10}}, "hp", 3)
     five, three = pe._record_index(row.digits["5"]), pe._record_index(row.digits["3"])
-    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX")]                 # a gradient tiles nothing: no fxrp trade
+    assert edit.moves == [(five, three, b"lfx2"), (five, three, b"lrFX")]
     assert [layer.name for layer in edit.layers] == ["3", "5"]
     assert row.visible == [3] and pe._enabled_effects(row.digits["3"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["5"]) == []
     green = PSDImage.open(_at(clone, tmp_path, OFF_CANVAS_MAGE, GREEN_MAGE)[0])
     row = pe.template_rows(green, "atk")[0]
-    changed, moves, _ = pe._toggle_row(row, 4, "atk")
+    changed, moves, _ = pe._toggle_row(row, 4)
     assert [layer.name for layer in changed] == ["4", "7"] and [bytes(key) for _, _, key in moves] == [b"lfx2", b"lrFX"]
     assert pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["7"]) == []
     green = PSDImage.open(_card(clone, GREEN_MAGE)[0])
@@ -1319,26 +1242,11 @@ def test_effect_rules_on_styled_rows(clone, tmp_path):
     row = pe.template_rows(green, "atk")[0]
     assert [layer.name for layer in edit.layers] == ["4", "6"] and [bytes(key) for _, _, key in edit.moves] == [b"lfx2", b"lrFX"]
     assert row.visible == [4] and pe._enabled_effects(row.digits["4"]) == ["GradientOverlay"] and pe._enabled_effects(row.digits["6"]) == []
-    with pytest.raises(pe.Refused, match="6, 8, 9") as refused:
-        pe.set_stat(PSDImage.open(_card(clone, AZAMOTH_KING)[0]), {"card": {"hp": 10}}, "hp", 3)
-    assert refused.value.code == "unsupported-card"
 
 
-def test_a_bar_outside_the_card_refuses(clone, tmp_path):
-    """Green Mage before its fix (OFF_CANVAS_MAGE): its four bars lay below its 2400 px canvas (the printed cells were pixel
-    layers): a toggle there would change nothing on the card, so every stat refuses `unsupported-card` before a layer changes
-    (it was a ValueError from the empty render region: an `error` that failed the run). The live card's bars are on the canvas:
-    every stat toggles. Pure Vessel's masks start on the canvas and reach past it: it toggles (its bake: test_card_bake's
-    test_a_bar_outside_the_card_is_a_final_refusal)."""
-    path = _at(clone, tmp_path, OFF_CANVAS_MAGE, GREEN_MAGE)[0]
-    parsed = {"card": {"hp": 7, "def": 4, "atk": 10, "spd": 7}}
-    for stat, value in (("hp", 3), ("def", 5), ("atk", 6), ("spd", 10)):
-        psd = PSDImage.open(path)
-        before = [layer.visible for layer in pe.template_rows(psd, stat)[0].digits.values()]
-        with pytest.raises(pe.Refused, match=rf"^unsupported-card: {stat}: the bar '{stat.capitalize()} Dark' lies outside the "
-                                             r"card \(digit masks \(960, \d+, 1773, \d+\) on the 1200x2400 canvas\)"):
-            pe.set_stat(psd, parsed, stat, value)
-        assert [layer.visible for layer in pe.template_rows(psd, stat)[0].digits.values()] == before
+def test_a_toggles_region_stays_on_the_canvas(clone):
+    """Green Mage's bars toggle inside the canvas; Pure Vessel's masks start on the canvas and reach past it: its region
+    stops at the canvas edge."""
     parsed = {"card": {"hp": 7, "def": 4, "atk": 6, "spd": 7}}
     for stat, value in (("hp", 3), ("def", 5), ("atk", 4), ("spd", 10)):
         psd = PSDImage.open(_card(clone, GREEN_MAGE)[0])
@@ -1417,22 +1325,6 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert pe.stale_stories(saved) == []
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
-
-
-@pytest.mark.parametrize("rel", [PAPYRUS])
-def test_name_edit_on_a_title_named_after_its_text(clone, parser, chart, rel, tmp_path):
-    """Papyrus's and Sans's titles bake through every gate; the layer takes the new title as its name, as Photoshop
-    renames a layer it named, so the parser reads it back and nothing is left to bake."""
-    psd_path = _card(clone, rel)[0]
-    title = pe.read_name(PSDImage.open(psd_path), card_name(rel))
-    new = _typo_fix(title)
-    parsed, baked = _bake(clone, parser, rel, {"name": new}, tmp_path, chart)
-    assert [name for _, name, _ in baked.records] == [title] and [e.renamed for e in baked.edits] == [new]
-    assert {"blocks", "channels", "name"} <= set(baked.records[0][2]) <= set(TEXT_RECORD + ["name"])
-    assert baked.reparse["card"]["display_name"] == new and baked.reparse["validator"] == parsed["validator"]
-    saved = PSDImage.open(baked.psd_path)
-    assert _layer_path(pe.name_layer(saved, card_name(rel))) == "Text/" + new and pe.stale_stories(saved) == []
-    assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
 
 
 def test_a_bake_runs_the_untouched_gate(clone, parser, chart, tmp_path, monkeypatch):
@@ -2772,7 +2664,7 @@ PARTS = Path(__file__).resolve().parent / "fixtures" / "parts"
 
 def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     """PARTS_EDITOR.md §11 cases 6 and 9: an Enter in Warcraftian Druid's second title box makes its layer two lines
-    (one record, renamed as named after its text) and the name reads one line; a plain ability edit bakes on a card
+    (one record, its name kept) and the name reads one line; a plain ability edit bakes on a card
     printing it over one layer (SOMETHING's two copies follow it: set_parts), and is refused as impossible on Miracle
     Matter's five."""
     fixture = json.loads((PARTS / "card_edits.parts.json").read_text(encoding="utf-8"))["cards"]["Warcraftian Druid"]
@@ -2783,9 +2675,9 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     assert jobs == {"parts": fixture["parts"]}              # the plain name is derived: never baked on its own
     baked = pe.apply_jobs(psd_path, png, DRUID, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
                           psd=psd)
-    assert [(name, fields) for _, name, fields in baked.records] == [("Druid ", TEXT_RECORD[:2] + ["name", "rect"])]
+    assert [(name, fields) for _, name, fields in baked.records] == [("Druid ", TEXT_RECORD[:2] + ["rect"])]
     saved = {layer.layer_id: layer for layer in PSDImage.open(baked.psd_path).descendants()}
-    assert saved[1034].text == "Druid of\rthe Claw\r" and saved[1034].name == "Druid of the Claw"
+    assert saved[1034].text == "Druid of\rthe Claw\r" and saved[1034].name == "Druid "
     assert pe.part_text(parser, saved[1034]) == "Druid of\nthe Claw"
     assert " ".join(pe.title_text(saved[k].text) for k in (422, 1034)) == fixture["name"]
     assert not [note for note in baked.fx_notes if "runs onto" in note]     # the typed break is no overflow

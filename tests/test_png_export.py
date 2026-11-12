@@ -105,17 +105,8 @@ def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path, monkeypatch):
     assert np.asarray(pe.open_png(beside.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
     composed = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "composed")
     assert not pe.export(old, composed, card()).unchecked                                   # with a stored image: checked
-    # G8 on this path too: a numbered duplicate takes the change when clear of its own title, else is told
-    clear, touching = card(), card()
-    ImageDraw.Draw(clear).rectangle((40, 70, 55, 85), fill=(0, 0, 0))
-    ImageDraw.Draw(touching).rectangle((25, 25, 40, 40), fill=(0, 0, 0))
-    found = pe.export(old, new, card(), {"X/A2.png": clear, "X/A3.png": touching})
-    assert found.unchecked and set(found.numbered) == {"X/A2.png", "X/A3.png"}
-    data, why = found.numbered["X/A2.png"]
-    expected = np.asarray(card(colour=(0, 255, 0))).copy()
-    expected[70:86, 40:56] = 0
-    assert why == "" and np.asarray(pe.open_png(data)).tolist() == expected.tolist()
-    assert found.numbered["X/A3.png"] == (b"", "A3.png not updated: re-export it in Photoshop")
+    found = pe.export(old, new, card(), {"X/A2.png": card()})                # a numbered PNG of no tag: told, never made
+    assert found.unchecked and found.numbered == {"X/A2.png": (b"", "A2.png not updated: tag its picture in the PSD")}
 
 
 def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
@@ -391,20 +382,16 @@ def test_g6_a_composite_that_lies(tmp_path):
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_UNSEEN)
 
 
-def test_numbered_pngs_take_the_change_when_clear_of_their_titles(tmp_path):
-    old = fixture_psd(tmp_path, card(), "old")
-    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+def test_duplicates_follow_the_change_when_clear_of_their_titles():
+    """follow(): a picture-only duplicate takes the card's change when clear of its own title, else stays as it is."""
     clear = card()
     ImageDraw.Draw(clear).rectangle((40, 70, 55, 85), fill=(0, 0, 0))       # its own title, far from the change
     touching = card()
     ImageDraw.Draw(touching).rectangle((25, 25, 40, 40), fill=(0, 0, 0))    # overlaps the changed square
-    found = pe.export(old, new, card(), {"X2.png": clear, "X3.png": touching})
-    data, why = found.numbered["X2.png"]
-    assert why == "" and data
+    out = pe.follow(card(), card(colour=(0, 255, 0)), {"X2.png": clear, "X3.png": touching})
     expected = np.asarray(card(colour=(0, 255, 0))).copy()
     expected[70:86, 40:56] = 0
-    assert np.asarray(pe.open_png(data)).tolist() == expected.tolist()
-    assert found.numbered["X3.png"] == (b"", "X3.png not updated: re-export it in Photoshop")
+    assert list(out) == ["X2.png"] and np.asarray(pe.open_png(out["X2.png"])).tolist() == expected.tolist()
 
 
 def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):

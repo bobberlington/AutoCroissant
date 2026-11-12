@@ -364,9 +364,6 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
                  and layer.name.strip().lower() not in STAT_LABELS | {"ability"}]
     found["name"] += [_box(layer, width, height, pad) for layer in named]
     abilities = [layer for layer in texts if layer.name.strip().lower() == "ability"]
-    if not abilities:   # a hidden "Ability" re-laid out in separate text layers (Butterfly, Bulborb Larva)
-        abilities = [layer for layer in texts if layer.bbox[1] >= TYPE_REGION_RATIO * height
-                     and layer.name.strip().lower() not in STAT_LABELS | {"name"}]
     found["ability"] += [_box(layer, width, height, pad) for layer in abilities]
     found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                              if layer.name.strip().lower() in STAT_LABELS]

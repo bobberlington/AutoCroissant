@@ -100,7 +100,7 @@ Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 - **Empty-string abilities**: cards with `ability == ""` (an Ability text layer exists but is blank).
   Today 20 = every ABILITY_EXCLUSIONS name except `Shadow Duelist` (the 3 WoW minions included). Shadow Duelist had
   text from its hidden Ability layer; since 2026-10-22 a hidden Ability layer counts only when its words are printed
-  (`PSDParser._relaid`), so it parses to "" and the exclusion is live, but its stored text waits for
+  (`PSDParser._relaid`; since 2026-11-12 a hidden Ability layer never counts), so it parses to "" and the exclusion is live, but its stored text waits for
   `/update_stats cards:Shadow Duelist` (it prints no ability).
 - **Residual-gap cards**: cards whose STORED ability still contains a 3+ space run (a gap that
   received no icon). Today 10 (unchanged until the `cards:` re-parse of the padding fix): 00 Table of Contents,

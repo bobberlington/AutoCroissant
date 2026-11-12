@@ -208,7 +208,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     by = {Path(c["psd"]).stem: c for c in data["cards"]}
     snack = by["Snack"]
     assert snack["export"]["outcome"] == "re-exported" and snack["export"]["writer"] == "tool"
-    assert [w["path"] for w in snack["writes"]] == [f"{FOLDER}/Snack.png", f"{FOLDER}/Snack2.png"]
+    assert [w["path"] for w in snack["writes"]] == [f"{FOLDER}/Snack.png"]     # Snack2.png has no tag: refused
     for write in snack["writes"]:
         assert blob_sha((out / write["file"]).read_bytes()) == write["sha"]
     assert snack["expect"] == {f"{FOLDER}/Snack.psd": cg.Source(str(root)).tree(bot)[f"{FOLDER}/Snack.psd"][1],
@@ -222,13 +222,13 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     # report mode makes nothing, so the PNGs the bot would make are told (with CARD_GUARDS=on they land instead)
     assert by["New_Name"]["told"] == ["PNG not renamed with the PSD: rename it too"]
     assert by["New_Name"]["notes"] == ["Old_Name.png is left at the PSD's old name"]
-    assert snack["told"][:2] == ["PNG not exported with the PSD: export it in Photoshop",
-                                 "Snack2.png not updated with the PSD: re-export it in Photoshop"]
+    assert snack["told"][:2] == ["Snack2.png not updated: tag its picture in the PSD",
+                                 "PNG not exported with the PSD: export it in Photoshop"]
     assert by["New_Card"]["told"][0] == "no PNG pushed with the new PSD: export it in Photoshop"
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 8, "normalise": 4,
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 7, "normalise": 4,
                        "errors": 0, "card_errors": 0} and summary["told"] >= 1     # 4 merged images stripped later (Q2)
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
@@ -243,7 +243,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
     assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
-    assert "Alice pushed Snack: PNG not exported with the PSD: export it in Photoshop; Snack2.png" in payload["content"]
+    assert "Alice pushed Snack: Snack2.png not updated: tag its picture in the PSD; PNG not exported with the PSD" in payload["content"]
     # what changed inside each PSD pushed over an older one (psd_diff): a new PSD or a PNG alone has none
     assert snack["changes"] == by["Bread"]["changes"] == by["Dropped"]["changes"] == ["Square pixels changed"]
     assert by["New_Card"]["changes"] == by["Lonely"]["changes"] == by["New_Name"]["changes"] == []
@@ -684,6 +684,7 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     root, base, alice, bot = cards
     _psd(root, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(0, 0, 200)))
     _psd(root, tmp_path / "psds", "MDW/Templates/Item_Template.psd", card())
+    (root / FOLDER / "Snack2.png").unlink()     # an untagged NameN.png is refused, never made (owner 11-12)
     head = _commit(root, "Alice again", author="Alice")
     _links_module(monkeypatch)
     monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [psd], None, None))
@@ -716,8 +717,7 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     assert snack["MDW/Linked/Snack - art.png"]["kind"] == "file" and snack["MDW/Linked/Snack - art.png"]["silent"]
     report = cg.land(plan, local=str(root))
     assert report["sha"] and not report["error"] and report["told"] == {e["psd"]: [] for e in after["cards"]}
-    assert {(e["kind"], e["path"]) for e in report["events"]} == {("guard-png", f"{FOLDER}/Snack.png"),
-                                                                 ("guard-png", f"{FOLDER}/Snack2.png")}   # guard 1's alone
+    assert {(e["kind"], e["path"]) for e in report["events"]} == {("guard-png", f"{FOLDER}/Snack.png")}   # guard 1's alone
     landed = _git(root, "show", "--name-only", "--format=%B", report["sha"])
     assert "1 linked file added" in landed and "MDW/Linked/Snack - art.png" in landed
     assert _git(root, "show", f"{report['sha']}:MDW/Linked/Snack - art.png") == "art"
@@ -1122,9 +1122,9 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
     cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
     report = cg.land(str(out / "plan.json"), local=str(root))
     assert report["sha"] and report["sha"] == _git(root, "rev-parse", "HEAD")              # the checkout moved to it
-    assert _git(root, "log", "-1", "--format=%an %s", report["sha"]).startswith("AutoCroissant Card guards: 4 PNGs re-exported")
+    assert _git(root, "log", "-1", "--format=%an %s", report["sha"]).startswith("AutoCroissant Card guards: 3 PNGs re-exported")
     changed = set(_git(root, "show", "--name-only", "--format=", report["sha"]).splitlines())
-    assert changed == {f"{FOLDER}/Snack.png", f"{FOLDER}/Snack2.png", f"{FOLDER}/New_Card.png", "Creatures/Other/3 Stars/New_Name.png"}
+    assert changed == {f"{FOLDER}/Snack.png", f"{FOLDER}/New_Card.png", "Creatures/Other/3 Stars/New_Name.png"}
     again = cg.check(str(root), report["sha"], bot, mode="on", out=str(tmp_path / "again"), workers=1)
     assert again["cards"] == []                                                             # the bot's commit is never guarded
 

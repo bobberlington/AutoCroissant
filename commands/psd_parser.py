@@ -712,7 +712,6 @@ class PSDParser:
 
         effect_layers = []
         text_layers = []
-        hidden_abilities = []
         header: list = []                       # the header's type icons (name, layer); a font icon's: its text layer
         titles = self.title_layers(psd, [layer for layer in psd.descendants() if layer.kind == "type"
                                          and EFFECT_LAYER_TAG not in layer.name], card.name)
@@ -722,16 +721,10 @@ class PSDParser:
                 continue
             if layer.kind == "type":
                 text_layers.append(layer)
-                if base_name(layer).lower() == "ability" and not layer.is_visible():
-                    hidden_abilities.append(layer)      # read once every text layer is known (_relaid)
-                    continue
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
                 get_stars_from_psd, card_mid_y, titles, header, psd)
-        for layer in hidden_abilities:
-            self._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
-                                     self._relaid(layer, text_layers))
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
         card.display_name = self._printed_title(psd, text_layers, card.name)
@@ -1114,10 +1107,10 @@ class PSDParser:
             card.problems.append(f"MISSPELT TYPE: {base_name(layer).lower()}")
 
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
-                            get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False,
+                            get_stars_from_psd: bool, card_mid_y: int,
                             title: bool = False, header: Optional[list] = None) -> None:
         """
-        Process text layer. A hidden Ability layer is the ability only when relaid (_relaid): only printed text counts.
+        Process text layer. A hidden Ability layer is no ability: only printed text counts.
 
         Text set in the stoogedings font is read as icons: [fire]-style tokens (any case, spacing or alias) become
         canonical [fire] tokens, and icon characters typed from the Glyphs panel become tokens too. Header text in
@@ -1126,7 +1119,7 @@ class PSDParser:
         Layers without the font take the original path unchanged.
         """
         engine_text = layer.engine_dict["Editor"]["Text"]
-        is_ability = base_name(layer).lower() == "ability" and (relaid or layer.is_visible())
+        is_ability = base_name(layer).lower() == "ability" and layer.is_visible()
         icon_spans = self._icon_font_spans(layer, engine_text.value)
         self._flag_misplaced_tokens(engine_text.value, icon_spans, card)
         if icon_spans:
@@ -1145,25 +1138,6 @@ class PSDParser:
 
         if is_ability:
             abilities.append((layer_text, BoundingBox(layer.bbox[0], layer.bbox[1], layer.bbox[3])))
-
-    @staticmethod
-    def _relaid(hidden, text_layers: list) -> bool:
-        """
-        Whether a hidden Ability layer's words are printed: the visible text layers over it, in reading order, say
-        exactly them (Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator, until their pieces are named Ability:
-        _join_parts). Shadow Duelist prints none of its hidden text: not its ability.
-        """
-        pieces = PSDParser._pieces(hidden, text_layers)
-        words = " ".join((layer.text or "") for layer in pieces).replace("\x03", " ").replace("\ufeff", "").split()
-        return bool(words) and words == (hidden.text or "").replace("\x03", " ").replace("\ufeff", "").split()
-
-    @staticmethod
-    def _pieces(hidden, text_layers: list) -> list:
-        """The visible text layers over a hidden one, in reading order (top, then left): _relaid's."""
-        x0, y0, x1, y1 = hidden.bbox
-        return sorted((layer for layer in text_layers if layer is not hidden and layer.is_visible()
-                       and layer.bbox[0] < x1 and x0 < layer.bbox[2] and layer.bbox[1] < y1 and y0 < layer.bbox[3]),
-                      key=lambda layer: (layer.bbox[1], layer.bbox[0]))
 
     # ------------------------
     # The parts: what the website edits, one box per layer (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2.2)
@@ -1216,19 +1190,10 @@ class PSDParser:
         return (parts, copies)
 
     @staticmethod
-    def ability_parts(text_layers: list) -> tuple:
-        """
-        (parts, hidden): the visible Ability text layers in reading order; with none, the visible layers laying a hidden
-        Ability out again (_pieces of the first _relaid one: Butterfly) and that hidden layer, else ([], None).
-        """
+    def ability_parts(text_layers: list) -> list:
+        """The visible Ability text layers in reading order."""
         texts = [layer for layer in text_layers if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
-        shown = [layer for layer in texts if layer.is_visible() and base_name(layer).lower() == "ability"]
-        if shown:
-            return (PSDParser.reading(shown), None)
-        for layer in texts:
-            if not layer.is_visible() and base_name(layer).lower() == "ability" and PSDParser._relaid(layer, texts):
-                return (PSDParser._pieces(layer, texts), layer)
-        return ([], None)
+        return PSDParser.reading([layer for layer in texts if layer.is_visible() and base_name(layer).lower() == "ability"])
 
     @staticmethod
     def _icon_font_spans(layer, text: str) -> list[tuple[int, int]]:

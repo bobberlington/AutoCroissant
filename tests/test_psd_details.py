@@ -71,7 +71,7 @@ def test_record_shape_and_size(records, clone):
     assert _size(records[LAZARUS]) < 21_000                                         # 234 layers, 93 with effects; loose stars
     caps = {rel: record.get("stat_caps") for rel, record in records.items()}     # VERSION 4: own displays (old rows then)
     assert caps[LAZARUS] == dict.fromkeys(("hp", "def", "atk", "spd"), [10, 10]) and caps[VIRUS] is None
-    assert caps[CANNON] == {"hp": [10], "def": [10], "atk": [20], "spd": [10]}                  # Top and Bottom rows: 20
+    assert caps[CANNON] == dict.fromkeys(("hp", "def", "atk", "spd"), [10])
 
 
 def test_how_text_is_set(clone):

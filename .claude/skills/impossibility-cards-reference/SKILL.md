@@ -289,7 +289,7 @@ value only when creature 1's shown digit reaches over it (Pix's tall HP mask), e
 2026-11-08; it read 4 before). Since 2026-11-08 every creature's rows bake too (`creatures`, `psd_edit.set_creatures` ->
 `set_stat(creature=n)` on `bar_rows(psd, stat, n)`), and the details record their `creature_bars`. A card whose stats
 are not on the template's layer-comp bars (own icons, pictures, shapes, digit rows) has `psd_edit.stat_caps`: 10 per
-creature, a counted row's room (Computer Virus: HP 5, DEF 4, ATK 6, SPD 5), 20 on Top and Bottom rows; more is refused
+creature, a counted row's room (Computer Virus: HP 5, DEF 4, ATK 6, SPD 5); more is refused
 when typed on the website and by the bake, never a hand note (owner 2026-11-08; details `stat_caps`). A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
 bottom row N-10) is the problem "STATS TOO HIGH" unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20,
 Royal Eradicator Main Cannon atk 12; `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21). A digit-named group that holds digit layers is a row,
@@ -299,7 +299,7 @@ value defaults to **10**: that is how maxed stats are encoded in the template. N
 −1 (only seeded for creatures/minions), which the validator reports.
 The parser never checks where a row lies: Green Mage's four bars sit below its canvas (they darken
 nothing; its printed cells are pixel layers), so its stored ATK is 10 while the card prints 6
-(BUGS D8, 2026-10-23); the bake refuses its stat edits (`... lies outside the card`).
+(BUGS D8, 2026-10-23; its bars moved onto the card 10-23, and the bake's off-canvas refusal went 2026-11-12).
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
@@ -453,9 +453,9 @@ Some cards give a word or phrase in the ability text a glow, stroke or gradient,
   the word underneath, and the word always also in the `Ability` text. 27 of them use a different color from the
   word underneath. Overlays sit outside the `Text` group 50 times out of 63 (13 inside), because that group's own
   Stroke and Drop Shadow (on 652 of 765 cards) would otherwise outline the glow. Four more cards (Bulborb Larva,
-  Butterfly, Empress Bulblax, Apex Predator) hide `Ability` and lay the text out again in separately styled
-  layers. The hidden `Ability` is what gets parsed only while those visible layers over it print exactly its words
-  (`PSDParser._relaid`, 2026-10-22: only printed text counts); otherwise the card has no ability. Overlays go stale
+  Butterfly, Empress Bulblax, Apex Predator) hid `Ability` and laid the text out again in separately styled
+  layers, read while they printed exactly its words (`PSDParser._relaid`, 2026-10-22); on 11-09 their pieces were named
+  Ability, and since 2026-11-12 a hidden `Ability` is never read (the card has no ability). Overlays go stale
   silently when the text is edited.
 - **New way: effect layers.** TTSCardMaker `MDW/Scripts/Effect Layers.jsx` makes a pixel layer named
   `<text layer> FX: <words>`, e.g. `Ability FX: Blazing` or `Ability FX: Overkill DMG carries over | Frozen`
@@ -525,9 +525,9 @@ no longer reads `ABILITY_EXCLUSIONS`; card_standards' R3 waiver was its last rea
 - **Shadow Duelist is not stale** (BUGS D3): its PNG prints no ability, and its hidden `Ability` layer ("Heals the
   creature this is summoned on by 2 HP at the end of its turn.") is laid out nowhere, so since 2026-10-22 (owner: hidden
   Ability layers don't count, only what is printed) it parses to an empty ability (its hidden
-  layer deleted on 2026-11-09). A hidden `Ability` layer counts only when visible text layers over it print exactly its words (the four
-  relaid-out cards of §4.2); the 7 cards with only a hidden one on 2026-10-22: those four keep their text, Shadow
-  Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_rulebook_hidden.py` pins the rule.
+  layer deleted on 2026-11-09). A hidden `Ability` layer counted only when visible text layers over it printed exactly
+  its words (the four relaid-out cards of §4.2, renamed into Ability pieces 11-09) until 2026-11-12: now it never
+  counts. `tests/test_rulebook_hidden.py` pins the rule.
 
 ## 6. Data schemas: CardInfo and the card data
 

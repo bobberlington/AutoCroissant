@@ -46,10 +46,11 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 **The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
 group or not) and which layer holds the title (`Text/Name`, one named after the card or, since title-own-text, after its
 own text) are the developers' freedom, and
-the bake handles those layouts. The ruling was first applied as dropping both rules whole (2ada357); R3 and R4 are back
+the bake handles those layouts (2026-11-12, owner: the bake's rename of a title named after its own text deleted; the
+parser still reads one). The ruling was first applied as dropping both rules whole (2ada357); R3 and R4 are back
 for the real issues only (section 6.1), with their waivers and `card_guards.added()` (R4's new-card rules): a hidden
-Ability layer with words the parser reads nowhere (an empty one, on a card with no ability, or one laid out again in
-visible pieces is not told), several visible Ability layers (the bake can't pick one), and a hidden or rasterized Name
+Ability layer with words the parser reads nowhere (an empty one, on a card with no ability, or until 2026-11-12 one laid
+out again in visible pieces is not told), several visible Ability layers (the bake can't pick one), and a hidden or rasterized Name
 layer the title can't be read from. Bringing them back was an unattended call during the release's finalize, **not an
 owner ruling**: the owner confirms it, and R3's told list, before `CARD_GUARDS=report` (section 15).
 
@@ -191,7 +192,8 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 
 - **Modules (AutoCroissant, Discord-free, no config.py).** Each is runnable as `python -m`, as card_check is.
   - `commands/png_export.py`: guard 1. The bake's render of the changed layers merged into the old PNG (ruling 1), the
-    change detection, the gates with the composite as a cross-check, delta transfer for numbered PNGs.
+    change detection, the gates with the composite as a cross-check (delta transfer for numbered PNGs until 2026-11-12:
+    an untagged NameN.png is refused since, "tag its picture in the PSD").
   - `commands/card_standards.py`: guard 2. The rules over an open PSD (`check`), the safe fixes (`fix`), the badge
     vocabulary and the waivers.
   - `commands/card_guards.py`: the driver. Push range, downloads, plan, the reports and the Discord payload, `land`, `--local`
@@ -239,7 +241,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 | PSD deleted, PNG left | report "PNG without PSD" (never deleted; comment only, review 3) | none |
 | PNG modified or added, PSD untouched | none | R10 only: the pushed PNG against the PSD's composite ("push the PSD too?"; comment only); with no stored image, a PNG gone back to an earlier picture is put back (11-10, silent) |
 | PNG deleted, PSD kept | report only (deliberate or not, it is the author's) | none |
-| Numbered PNGs (A_Snack2.png) of a stale PSD | delta transfer or refuse per file (5.4) | none |
+| Numbered PNGs (A_Snack2.png) of a stale PSD | a tagged picture drawn as its picture; an untagged one refused (5.4) | none |
 | Case-only stem mismatch (Dark_matter.psd, Dark_Matter.png) | paired; nothing to do (L12) | none |
 
 **4.3 Bot commits and loops.**
@@ -334,7 +336,7 @@ one ends "export it in Photoshop").
 | G4 | ICC mode | `icc_vote` over the old composite and the old PNG gives a mode | none |
 | G5 | the old PNG | (the **burst anchor**: the PSD as of the PNG's last change, when every PSD commit since is within 2 hours of the push, `ANCHOR_WINDOW`; when the old PNG shows it rather than the PSD before the push, `png_export.shows`, the export is made against it, its refusal kept; else a G5 or G6 refusal is retried once against it; so two quick PSD pushes, the first superseded, still get their PNG) outside R and D, the old PNG matches the new PSD's composite within the parity bar (bad <= 0.5%, mean <= 2.0): the merge keeps the old PNG there. Inside R, when the baseline (G6) fails and the old composite disagrees with the old PNG there too, the PNG was stale already | "PNG not made: the PSD and its old PNG already disagreed outside your change (2.4% of pixels); export it in Photoshop" (today: Dark_Mind_Eye, Kel); "... already disagreed where you changed it (...)" (Restrained in the replay) |
 | G6 | the bot's drawing | (a) the bake's parity gate: the fork's render of the old PSD over R matches the old PNG within the bar; (b) the cross-check: wherever the render or Photoshop's image moved (F and D), the new PNG matches the new composite within the bar; F empty while D is not: refused. Since 2026-10-23 (a) and (b) refuse only past the floor (more than 25% bad); a miss of the bar under it is written and told (section 18). D outside every changed layer that disagrees still refuses | (a) "PNG not made: the bot cannot draw this part of the card as its old PNG shows it (1.4% of pixels differ); export it in Photoshop"; (b) "PNG not made: the bot's drawing of your change does not match the PSD's own image (...)"; D outside every changed layer: "PNG not made: the PSD's own image changed where the bot sees no layer change; export it in Photoshop"; a tool save whose composite is stale: "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in Photoshop with Maximize Compatibility, or export it in Photoshop" |
-| G8 | numbered PNGs | per numbered file, the delta transfer's condition (5.4) | "A_Snack2.png not updated: re-export it in Photoshop" (the base PNG still lands) |
+| G8 | numbered PNGs | per numbered file, the delta transfer's condition (5.4); since 2026-11-12 an untagged one is refused | "A_Snack2.png not updated: tag its picture in the PSD" (the base PNG still lands) |
 | G9 | quiet | at land, no later push touched the PSD or PNG, and their blobs at the head are still the pushed ones | none: dropped as superseded, and the newer push's run decides |
 
 - `writer` ("photoshop" when the PSD has a new xmpMM:InstanceID and a later xmp:MetadataDate, else "tool") only words a G6
@@ -359,6 +361,9 @@ one ends "export it in Photoshop").
   are in the comment only.
 
 **5.4 Numbered PNGs (delta transfer).** A numbered PNG is the base export with other title layers shown (ledger L12).
+2026-11-12 (owner): the delta transfer below is gone for numbered PNGs (every NameN.png is a tagged picture, drawn as
+its picture); an untagged one is refused ("tag its picture in the PSD"). Picture-only duplicates still follow by it
+(`png_export.follow`).
 - The pixels where it differs from the old base PNG by more than 2 levels, dilated by 8 px, are the toggled area.
 - When D stays clear of that area, the new numbered PNG is the old one with D's pixels taken from the new base PNG.
 - When D touches the toggled area, that file is refused and reported. The base PNG lands regardless.
@@ -413,11 +418,11 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 
 | Rule | Standard (ledger) | Class | Scope | At 6e50c3ee | After waivers |
 |---|---|---|---|---|---|
-| R1 | timing tags in every ability layer the parser reads (`card_standards.ability_layers`: the visible Ability layers in every picture, else the visible pieces laying a hidden one out again, Empress Bulblax's "text 4"; since 2026-10-26) and in a visible layer named Ability give or take outer spaces are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
+| R1 | timing tags in every ability layer the parser reads (`card_standards.ability_layers`: the visible Ability layers in every picture, until 2026-11-12 else the visible pieces laying a hidden one out again, Empress Bulblax's "text 4"; since 2026-10-26) and in a visible layer named Ability give or take outer spaces are set in stoogedings, so they draw as badges (L1, companion §1.2); any letter case | report (a pixel change; the fork draws badges in one colour until colour glyphs) | cards | 129 cards / 226 tags: 85 creatures, 16 items, 9 field, 8 minions, 5 N.M.E., 4 aux, 1 aux creature, 1 status. Top tags (Action) 35, (1GCD) 33, (1CD) 26, (ENDGT) 18 | 129 (B2's backlog, including the cards held until the fork draws colour glyphs) |
 | R2 | no inline icon image layers: `Types/` icons below the midline become `[token]` runs (L1; the parser's own rule, stat-bar layers skipped) | report | cards | 16 cards (7 status, 6 field, Tainted_Lazarus, Zess_T_Deluxe, Electric_Dart) and 6 rule pages | 15 (Tainted_Lazarus waived: its header icon) |
-| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at a7d1fe56 | 0: Shadow_Duelist is waived (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"); the 5 several-Ability cards are waived (Q2) |
+| R3 | at most one visible text layer named `Ability`, in any group (`card_standards.rule_ability`; what `psd_edit.ability_layer` bakes), and none hidden with words the parser reads nowhere: several visible are told, and none visible only when a hidden one holds words ("the Ability layer is hidden (the bot reads no ability)"); a hidden empty one (Abyss_Watcher, Warrior_Dee: no ability), one laid out again in visible pieces (`PSDParser._relaid`: Bulborb Larva, Butterfly, Empress Bulblax, Apex_Predator; gone 2026-11-12, their pieces named Ability since 11-09) or none at all (the ability named otherwise; the parser's NO ABILITY LAYER goes out through card-check) is the developer's | report | 651 cards | 6: hidden Shadow_Duelist; several Lit_Bob-omb, Tainted_Lazarus, Miracle_Matter, Twin_Emperors, Warcraftian_Druid; the same at a7d1fe56 | 0: Shadow_Duelist is waived (in the parser's `ABILITY_EXCLUSIONS` since 2026-01-18: "prints no ability"); the 5 several-Ability cards are waived (Q2) |
 | R4 | the title is not lost in a hidden or rasterized `Name` layer (`card_standards.title_problem`: told only when the parser reads no title, `PSDParser.title_layers`, and a layer named Name is hidden or not a text layer; a title named otherwise is layout) | report | 651 cards, **new cards and regressions only** (owner: "Leave the 45 Name layers") | 5: hidden Sonic, Baba, Man_Serpent_Shield; rasterized Tyler (smart object), Pandanoko; the same at a7d1fe56 | 0 (every existing one is waived; a new PSD, or a push that hides or rasterizes its title's Name layer, is reported) |
-| R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
+| R5 | status words styled by `Ability FX:` layers, not overlay text layers (L7; since 2026-11-12 every overlay word, the chart-less waiver gone) | report | cards | 23 cards / 29 layers | 15 cards / 18 layers (the 16 chart-less layers on 10 cards waived, decision 2026-10-21): Ancient_Fuelweaver, Skullord, Doctor_Zomboss, Oryx, Pontiff_Sulyvahn, Undyne, Infected_Crossroads, Pananda Peel, Dark_Ritual, Snow_Bunny, Flower_Of_Decay, Freeze_Spell, Crimson_Flag, Pandora's_Box, Standstill |
 | R6 | minions, auxiliary items, N.M.E. items: a visible group whose name holds "stars" (L14; the parser's contract, any case) | report (grouping needs `create_group`, which writes no layer id yet) | those 3 folders (165) | 2: Nasty_Patty, Shell_Shield (stars counted from loose layers) | 2 |
 | R7 | every font a visible text layer asks for is in `MDW/Fonts` (rule 1, `font_check`) | **dropped 2026-10-24** (decision 3): font-check.yml alone reports missing fonts (its role ping, the standards channel); the guard has no R7, no `--fonts` and no fonts cache | (cards) | 1: Baba (BabaUI) | 0: BabaUI is in `MDW/Fonts` since 2026-10-23 (TTSCardMaker 92b5ae6b), and `font_check --all` finds nothing missing on 812 PSDs |
 | R8 | Single-line composer on visible Ability, Name and stat text layers (L10) | **auto-fix, never told** (owner 2026-10-25: "auto fix this and not report it"; `card_standards.single_line`: TySh and the Txt2 story's key 29, gated byte for byte; since work/clean (2026-10-25) every such layer is set; box text whose fork Single-line layout inks a line under `LINE_IOU` 0.9 of the stored one rewraps: the layer is redrawn whole by the fork with the stored preview patched (`card_standards.redraw`, gated: only its pixels, rectangle, TySh and the preview change) and its PNG re-exported by guard 1's `png_export.export` (pushed PSD -> fixed one), a silent PNG write; when the PNG can't follow (no PNG that shows the PSD, a refusal) or the redraw fails a gate, the PSD lands set but not redrawn, plan.json only (so is a render or font failure); box text's fonts: the clone's MDW/Fonts, else only the files its faces look to be in, fetched (`FONT_FETCH_MAX` 12 a run); the guards' changes leave the composer out; only the commit message says "Single-line Composer on N cards") | cards | 0 | 0 (4 at 86733bd2: PoD08/09/10/12's Name) |
@@ -445,7 +450,7 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stal
   - cards in the parser's `ABILITY_EXCLUSIONS` (R3: Shadow_Duelist prints no ability; unattended, 2026-10-23; gone
     2026-11-09 with the list: no live card has a hidden Ability layer left);
   - Tainted_Lazarus's header icon;
-  - the 16 chart-less overlays;
+  - the 16 chart-less overlays (gone 2026-11-12: none left; R5 tells every overlay word);
   - "leave the Name layers" (R4 existing).
 - **No font waiver:** BabaUI (R7) was waived until the owner added the font on 2026-10-23 (TTSCardMaker 92b5ae6b); R7
   itself is gone since 2026-10-24.

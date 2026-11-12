@@ -384,12 +384,13 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   of an edited box past 24 levels), a blank render or a read-back that differs from the edit refuses; a smaller miss is
   baked and written in the bake report and the commit note. The bake also takes the layers it used to refuse
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) or, failing
-  those, after its own text (title-own-text: Papyrus, Sans; a bake renames it after the new title), and a single
+  those, after its own text (title-own-text: Papyrus, Sans; the bake's rename after the new title went 2026-11-12, so
+  such a name edit refuses at the read-back until the layer is named Name), and a single
   visible Ability layer under another name; since 2026-10-25 an ability over several layers is edited box by box
   (`parts`, `psd_edit.set_parts`, copies following; a plain edit there refuses at bake time: "N title layers", "N ability layers"). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
-  A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
-  as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
+  A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refused `unsupported-card`
+  from 2026-10-23 until 2026-11-12 (the check deleted: no card has one).
 - **Census fixes (2026-10-25, 1b17aba; deployed at 8b0ce02):** a stars edit moves a card out of any "N Stars" folder,
   debuffs too (`psd_edit.STAR_PATH`), except the folders whose stars come from the PSD; a copied smart object's star
   IDs are derived, so star edits on a PSD with several pictures bake; a type icon touching the title at the template's
@@ -433,7 +434,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   "In general I do not want to refuse bakes": the editor
   previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
   the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the canvas,
-  more title lines, past the design below: `ink_beyond`), typed badges and tokens, FX layers that can't follow (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  more title lines, past the design below: `ink_beyond`), typed badges and tokens, FX layers that can't follow (deleted, told), font stand-ins (`font`: a face no
   file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
   a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`head-moved`,
   `edit-changed`, `blob`, `capped`; `recent` removed 2026-11-04), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the

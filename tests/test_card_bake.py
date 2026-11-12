@@ -258,7 +258,7 @@ def test_website_only_field_lands_beside_a_refusal(github, tmp_path):
     text, commits = cb.run()
     assert len(commits) == 1, text
     commit = github.commits[commits[0]]
-    assert commit["message"] == "Card edits: 1 website only\n\n- The Freezer: website only: hp 25: the bar's rows print up to 20"
+    assert commit["message"] == "Card edits: 1 website only\n\n- The Freezer: website only: hp 25: the bar's one row prints up to 10"
     files = github.files_at(commits[0])
     assert files[FREEZER] == psd and files["Field/1 Stars/The_Freezer.png"] == github.files_at(commit["parents"][0]["sha"])["Field/1 Stars/The_Freezer.png"]
     assert _edits_at(github)["cards"]["The Freezer"] == {"stars": 2, "hp": 25, "_site": ["hp"], "_by": "web", "_at": AT}
@@ -267,7 +267,7 @@ def test_website_only_field_lands_beside_a_refusal(github, tmp_path):
     verdicts, events = _records(tmp_path)
     assert list(verdicts["cards"]) == ["the freezer"] and verdicts["landed"] == {} and events["landed"] == []
     assert [e["kind"] for e in events["events"]] == ["bake-refused"]
-    assert "## Refused (1)" in text and f"website only: hp 25: the bar's rows print up to 20; committed `{commits[0][:8]}`" in text
+    assert "## Refused (1)" in text and f"website only: hp 25: the bar's one row prints up to 10; committed `{commits[0][:8]}`" in text
     assert cb.pending() == []                                                   # final: no re-bake loop
     text, commits = cb.run()                                                    # a dispatch re-checks it
     assert commits == [] and _records(tmp_path)[0]["cards"] == {} and _records(tmp_path)[1]["events"] == []

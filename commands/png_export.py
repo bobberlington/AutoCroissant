@@ -70,7 +70,7 @@ TOL = 2                                         # |diff| a pixel may show and st
 BESIDE_CUT = 8                                  # new PSD beside its PNG: within this, the PNG is current (owner)
 KEPT_PX = 300                                   # G2 beside: px past BESIDE_CUT up to which the PNG is kept (fork noise)
 VOLATILE = (b"shmd", b"SoLd", b"SoLE", b"PlLd", b"TySh", b"lnsr", b"luni")   # rewritten by saves or linking; luni: a name
-DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
+DILATE = 8                                      # px around a duplicate PNG's toggled area (5.4)
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
 OUTCOMES = ("re-exported", "current", "refused", "error")
 EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
@@ -91,6 +91,7 @@ G6_BOX = "PNG not made: the bot's drawing of {what} does not match the PSD's own
 G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own image shows; " + EXPORT
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
+UNTAGGED = "{name} not updated: tag its picture in the PSD"   # a NameN.png of no variant tag
 HIDDEN = "picture {n} can't show {layers}: the hidden {groups} no tag"   # R12 (psd_parser.hidden_tags)
 MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
 RECOMPRESS_MIN = 0.03                           # a pushed PNG is banded when this much smaller (ours; 10% kept 30 of oxipng's 45)
@@ -809,8 +810,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
     it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only; a
     picture-only duplicate in numbered is the picture psd_parser.picture_numbers says), a tagged picture without its PNG
-    beside main (NameN.png) rendered whole (new_picture). Numbered PNGs of no tag keep
-    G8's delta transfer. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
+    beside main (NameN.png) rendered whole (new_picture). A numbered PNG of no tag is refused (UNTAGGED) when the card's
+    PNG is made. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
     fonts: gives MDW/Fonts for faces (card_guards.Source.fonts_for): _restyled lays out the restyled text in them.
     kept: picture PNG paths a push brought (kept as pushed): no PNG made for their tags.
     data: False leaves Export.data empty (the caller encodes the image only when it keeps it).
@@ -821,16 +822,18 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     tags = set(psd_edit.variants_of(new))
     tagged = picture_numbers(new, [*(numbered or {}), *kept])   # a drawn duplicate's own name too (owner 11-09)
     held = {tagged.pop(path) for path in kept if path in tagged}
-    rest = {p: i for p, i in (numbered or {}).items() if p not in tagged}
     hidden = _hidden(new, 1)
     if hidden:                                  # R12: picture 1 can't show a layer tagged for it
         found = Export("refused", f"PNG not made: {hidden}; {EXPORT}", "R12")
     elif len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
-        found = _as_picture(old, new, old_png, rest, 1, fonts)
+        found = _as_picture(old, new, old_png, 1, fonts)
     else:
-        found = _export(old, new, old_png, rest, fonts)
+        found = _export(old, new, old_png, fonts)
     if data and found.outcome == "re-exported":
         found.data = encode(found.image, old_png)
+    for path in sorted(numbered or {}) if found.outcome == "re-exported" else ():
+        if path not in tagged:
+            found.numbered[path] = (b"", UNTAGGED.format(name=path.rsplit("/", 1)[-1]))
     for path, n in sorted(tagged.items()):
         found.numbered[path] = render_picture(old, new, numbered[path], n, fonts)
     if main and len(tags) > 1:
@@ -839,12 +842,6 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
             found.numbered[f"{stem}{n}.png"] = new_picture(new, n)
     found.pictures = sorted(tags - {1}) if len(tags) > 1 else []
     return found
-
-
-def picture_number(path: str) -> Optional[int]:
-    """The picture a numbered PNG is (A_Snack2.png -> 2), or None."""
-    found = search(r"(\d{1,2})\.png$", path.lower())
-    return int(found.group(1)) if found else None
 
 
 def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: int,
@@ -856,7 +853,7 @@ def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: 
     what = _undrawn(old, new)
     if what:
         return b"", G2_DRAW.format(what=what)
-    found = _as_picture(old, new, png, None, n, fonts)
+    found = _as_picture(old, new, png, n, fonts)
     if found.outcome == "re-exported":
         return encode(found.image, png), ""
     return (None, "") if found.outcome == "current" else (b"", found.why)
@@ -867,7 +864,7 @@ def _saved_as_one(old: Optional[PSDImage], new: PSDImage) -> bool:
     return psd_edit.saved_view(new) == 1 and (old is None or psd_edit.saved_view(old) == 1)
 
 
-def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, numbered: Optional[dict], n: int,
+def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: int,
                 fonts: Optional[Callable] = None) -> Export:
     """_unchecked drawn as picture n (variant_view): the stored image shows the saved picture, so nothing is
     cross-checked. numbers["picture"]: n and the picture the PSD was saved showing."""
@@ -881,7 +878,7 @@ def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, number
         return Export("refused", f"PNG not made: {hidden}; {EXPORT}", "R12")
     saved = psd_edit.saved_view(new)
     with variant_view(new, n), (variant_view(old, n) if old is not None else nullcontext()):
-        found = _unchecked(old, new, png, numbered, fonts)
+        found = _unchecked(old, new, png, fonts)
     found.numbers["picture"] = {"drawn": n, "saved": saved}
     return found
 
@@ -901,7 +898,7 @@ def new_picture(new: PSDImage, n: int) -> tuple:
     return encode(out, None), ""
 
 
-def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
+def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image,
             fonts: Optional[Callable] = None) -> Export:
     """
     Guard 1 on a PSD pushed without its PNG: the bake's render of the changed layers' box (R), merged into the old PNG.
@@ -910,7 +907,6 @@ def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, number
         old: The PSD before the push (None: a new PSD beside an existing PNG)
         new: The pushed PSD
         old_png: The PNG in the tree (as opened)
-        numbered: {path: opened PNG} of the numbered duplicates (A_Snack2.png)
 
     Returns:
         Export: re-exported (image, data), current (numbers["png_ahead"]: the PNG already shows the new PSD; beside, no
@@ -925,9 +921,9 @@ def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, number
         return Export("refused", G7, "G7")
     composed = composite(new)
     if composed is None:                        # nothing to cross-check the render against: the bake's gates alone
-        return _no_composite(new) or _unchecked(old, new, old_png, numbered, fonts)
+        return _no_composite(new) or _unchecked(old, new, old_png, fonts)
     if old is None:
-        return _beside(new, old_png, composed, result, numbered)
+        return _beside(new, old_png, composed, result)
     before = composite(old)
     # G4: how the old PNG was exported (raw or converted), from the old pair
     result.vote = psd_edit.icc_vote(old, old_png)
@@ -993,13 +989,10 @@ def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, number
             why = G6 if result.writer == "photoshop" else G6_STALE
             return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     result.outcome, result.image = "re-exported", merged
-    # G8: numbered duplicates take F's pixels when F stays clear of their toggled titles
-    for path, image in sorted((numbered or {}).items()):
-        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
-def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
+def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: Export) -> Export:
     """
     A new PSD beside an existing PNG (no old PSD, so no baseline). D is where Photoshop's image differs from the PNG past
     TOL. No pixel past BESIDE_CUT: the PNG already shows the PSD (pushed first), current, nothing rendered.
@@ -1028,8 +1021,6 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     if not _boxes_drawn(result, new, merged, render, truth, icc):
         return result
     result.outcome, result.image = "re-exported", merged
-    for path, image in sorted((numbered or {}).items()):
-        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
@@ -1135,7 +1126,7 @@ def _texts_drawn(result: Export, psd: PSDImage, render: Image.Image, icc: bool) 
     return True
 
 
-def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict],
+def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image,
                fonts: Optional[Callable] = None) -> Export:
     """
     G2 rendered anyway (owner, 2026-10-24): a PSD saved without Maximize Compatibility has no stored image, so nothing is
@@ -1159,7 +1150,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     """
     result = Export("current", unchecked=True)
     if old is None:
-        return _beside_unchecked(new, old_png, result, numbered)
+        return _beside_unchecked(new, old_png, result)
     if psd_edit.foreign_profile(old) != psd_edit.foreign_profile(new):
         return _refuse(result, G2_PROFILE, "G6")
     result.vote = psd_edit.icc_vote(old, old_png)
@@ -1204,8 +1195,6 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     except Refused:
         return _refuse(result, G7, "G7")
     result.outcome, result.image = "re-exported", merged
-    for path, image in sorted((numbered or {}).items()):
-        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
@@ -1256,7 +1245,7 @@ def _shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     return not psd_edit._past_floor(near) and near["mean"] < far["mean"]
 
 
-def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
+def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export) -> Export:
     """_unchecked for a new PSD beside an existing PNG. No old PSD, so no baseline: the render of the whole card against
     the PNG (png_vs_render) holds the author's change too, so it only finds where the PNG takes the render; it is never a
     drawing miss and never refuses. Up to KEPT_PX px past BESIDE_CUT the PNG is kept (numbers["kept"]). The gate is
@@ -1284,8 +1273,6 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
     if not _texts_drawn(result, new, render, icc):
         return result
     result.outcome, result.image = "re-exported", merged
-    for path, image in sorted((numbered or {}).items()):
-        result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
 
 
@@ -1317,7 +1304,8 @@ def miss_notes(found: Export) -> list:
 def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image.Image, moved: np.ndarray,
                    path: str) -> tuple:
     """
-    A numbered PNG (the base export with other title layers shown) updated with D's pixels from the new base PNG.
+    A duplicate PNG (the base export with other title layers shown) updated with D's pixels from the new base PNG
+    (follow).
 
     Returns:
         (PNG bytes, "") or (b"", refusal line) when D touches its toggled area (or it is another size)
@@ -1338,7 +1326,7 @@ def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image
 def follow(old_main: Image.Image, new_main: Image.Image, dups: dict) -> dict:
     """
     A PSD's picture-only duplicates (card_edits.dup_pictures; owner 11-07: silent) after its main PNG changed: each takes
-    the change as G8's delta transfer does; one whose own drawing the change touches (drawn apart from the PSD:
+    the change (delta_transfer); one whose own drawing the change touches (drawn apart from the PSD:
     card_checks flags it) stays as it is.
 
     Args:

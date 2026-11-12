@@ -14,8 +14,7 @@ Read-only; nothing is saved (no config.py needed).
 MAINTENANCE NOTE: the extraction loop below deliberately re-drives the REAL
 PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes, _in_span,
 _process_abilities, which injects the types) instead of copying their logic, but the orchestration
-mirrors PSDParser._extract_from_layers (effect layers set aside, hidden Ability
-layers read last). If _extract_from_layers changes shape
+mirrors PSDParser._extract_from_layers (effect layers set aside). If _extract_from_layers changes shape
 in commands/psd_parser.py, update this script to match (one-line check:
 compare against that method's body).
 """
@@ -79,21 +78,12 @@ def main() -> int:
     type_bboxes: list = []
     abilities: list = []
     get_stars_from_psd = stars_from_psd(relative_path)
-    texts, hidden = [], []
     for layer in psd.descendants():
         if EFFECT_LAYER_TAG in layer.name and layer.kind != "group":
             continue        # an effect layer: a pixel copy of a text layer's words, nothing to parse
-        if layer.kind == "type":
-            texts.append(layer)
-            if layer.name.lower() == "ability" and not layer.is_visible():
-                hidden.append(layer)        # read only when its words are printed (relaid)
-                continue
         parser._process_layer(layer, card, num_stars, stat_trackers,
                               type_bboxes, abilities,
                               get_stars_from_psd, card_mid_y)
-    for layer in hidden:
-        parser._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
-                                   parser._relaid(layer, texts))
     # --- end mirror ---
 
     print(f"\n[1] creature-types collected ABOVE midline: {card.types}")

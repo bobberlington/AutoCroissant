@@ -94,7 +94,6 @@ WAIVED = {                                      # the owner's class waivers (sec
                      "bulborb larva", "butterfly", "empress bulblax", "apex predator"},     # relaid in pieces (11-09)
            "why": "several-Ability and multi-creature cards stay deviations (question 2, 2026-10-21)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
-    "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
     "R15": {"why": "text already off the card's edge is left as it is (as R4); new cards and regressions are reported"},
 }
 
@@ -125,7 +124,7 @@ class Issue:
 class Context:
     """What the rules need beside the PSD."""
     types: frozenset = frozenset()              # Types/ stems, lowercased (card_check.Vocabulary.all_types)
-    chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
+    chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (the status pixel fixes)
     pngs: Optional[frozenset] = None            # the tree's PNG paths, lowercased (R12's pictures); None: not checked
     cards: Optional[tuple] = None               # ((title, key, kind), ...) of the shown cards (R14); None: not checked
     art: Optional[dict] = None                  # {linked file, lowercased: ((PSD path, blob), ...)} of the PSDs linking it
@@ -381,13 +380,13 @@ def _list(items, quote: bool = False) -> str:
 # ========================
 def ability_layers(psd: PSDImage) -> list:
     """The layers the parser reads as the card's ability, in every picture: psd_parts' selection (ability_parts: the
-    visible Ability layers, else the pieces laying a hidden one out again, Empress Bulblax's "text 4")."""
+    visible Ability layers)."""
     texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
     pictures = variants_of(psd)
     out: dict = {}
     for n in (pictures if len(pictures) > 1 else [None]):
         with variant_view(psd, n):
-            for layer in PSDParser.ability_parts(texts)[0]:
+            for layer in PSDParser.ability_parts(texts):
                 out.setdefault(id(layer), layer)
     return list(out.values())
 
@@ -445,15 +444,15 @@ def rule_icons(psd: PSDImage, types) -> Optional[Issue]:
 
 
 def _words(layer) -> list:
-    """A text layer's words, split as PSDParser._relaid splits them."""
+    """A text layer's words (breaks and byte-order marks as spaces)."""
     return (layer.text or "").replace("\x03", " ").replace("\ufeff", "").split()
 
 
 def rule_ability(psd: PSDImage) -> Optional[Issue]:
     """
     R3: one visible Ability text layer, in any group (the standard; a bake takes several too). Several are told; none only
-    when a hidden Ability layer holds words the parser reads nowhere. An empty one (a card with no ability), one laid
-    out again in visible pieces (PSDParser._relaid) or none at all (the ability named otherwise) is the developer's.
+    when a hidden Ability layer holds words (the parser reads no ability). An empty one (a card with no ability) or none
+    at all (the ability named otherwise) is the developer's.
     """
     named = [layer for layer in psd.descendants()
              if psd_edit._is_text_layer(layer) and base_name(layer).strip().lower() == "ability"]
@@ -462,9 +461,6 @@ def rule_ability(psd: PSDImage) -> Optional[Issue]:
         return Issue("R3", f"not standardized yet: {count} ability layers (a box each on the website)",
                      (f"{count} visible Ability layers",))
     if count or not any(_words(layer) for layer in named):
-        return None
-    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    if any(PSDParser._relaid(layer, texts) for layer in named):
         return None
     return Issue("R3", "the Ability layer is hidden (the bot reads no ability)", ("hidden ability layer",))
 
@@ -495,22 +491,13 @@ def rule_name(psd: PSDImage, card: str) -> Optional[Issue]:
                         "rasterized name layer": "the Name layer is rasterized"}[why], (why,))
 
 
-def rule_overlays(psd: PSDImage, chart: Optional[dict]) -> list:
-    """R5: status words styled by Ability FX: layers, not overlay text layers (L7); chart-less ones are waived."""
-    report, waived = [], []
-    for layer in overlay_words(psd):
-        word = psd_edit.collapse(layer.text)
-        styled = chart is None or getattr(chart.get(word.lower()), "styled", False)
-        (report if styled else waived).append(word)
-    out = []
-    if report:
-        words = _unique(report)
-        out.append(Issue("R5", f"{_list(words, quote=True)} {'is an overlay text layer' if len(words) == 1 else 'are overlay text layers'}, "
-                               f"not an Ability FX: layer", words))
-    if waived:
-        words = _unique(waived)
-        out.append(Issue("R5", f"overlay text {_list(words, quote=True)} (no chart style)", words, waived=WAIVED["R5"]["why"]))
-    return out
+def rule_overlays(psd: PSDImage) -> Optional[Issue]:
+    """R5: status words styled by Ability FX: layers, not overlay text layers (L7)."""
+    words = _unique([psd_edit.collapse(layer.text) for layer in overlay_words(psd)])
+    if not words:
+        return None
+    return Issue("R5", f"{_list(words, quote=True)} {'is an overlay text layer' if len(words) == 1 else 'are overlay text layers'}, "
+                       f"not an Ability FX: layer", words)
 
 
 def rule_stars(psd: PSDImage) -> Optional[Issue]:
@@ -552,7 +539,7 @@ def rule_part_names(psd: PSDImage, card: str) -> Optional[Issue]:
     """R11's suggestion: a title or ability part (a box on the website) whose layer is not named Name or Ability."""
     texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
     titles = PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
-    abilities = PSDParser.ability_parts(texts)[0]
+    abilities = PSDParser.ability_parts(texts)
     tagged = lambda layer, target: target + (layer.name[len(base_name(layer)):] if layer_tag(layer.name)[1] else "")
     pairs = tuple(f"{layer.name!r} -> {tagged(layer, target)!r}" for layers, target in ((titles, "Name"), (abilities, "Ability"))
                   for layer in layers if base_name(layer).strip().lower() != target.lower())   # case: rule_names'
@@ -802,7 +789,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
                 regression = False
             if not regression:
                 name.waived = WAIVED["R4"]["why"]
-    run("R5", rule_overlays, psd, context.chart)
+    run("R5", rule_overlays, psd)
     if kind in STARS_KINDS:
         run("R6", rule_stars, psd)
     run("R9", rule_stories, psd)
