@@ -336,7 +336,7 @@ def mock_misses(image: Image.Image, psd: PSDImage, card: dict, kinds: dict, sure
 
 
 def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, stat: str, value: int,
-              icc: bool, creature: int = 1) -> Optional[Image.Image]:
+              icc: bool, creature: int = 1, caps=...) -> Optional[Image.Image]:
     """
     The card's PNG after a website edit of one stat, as the bake makes it (psd_edit._apply_jobs' steps for a stat job:
     classify, set_stat on a copy, gate_dirty, baseline, the merge), or None when the bake refuses it or the re-parse
@@ -344,13 +344,14 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
     saving every value is too slow here, and no stat value only they refuse is known (Chef, Computer Virus HP 0-20).
     creature: past 1, that creature's stat on a card of several (a `creatures` job, set_creatures); None when the job
     moves another creature too (a shared bar: creature 1's picture).
+    caps: stat_caps(psd) when read already (bar_changes), else classify reads it.
     """
     if creature == 1:
-        job = psd_edit.classify(parsed, {stat: value}, psd, parser).jobs.get(stat)
+        job = psd_edit.classify(parsed, {stat: value}, psd, parser, caps=caps).jobs.get(stat)
     else:
         wanted = [dict(one) for one in parsed["card"]["creatures"]]
         wanted[creature - 1][stat] = value
-        job = psd_edit.classify(parsed, {"creatures": wanted}, psd, parser).jobs.get("creatures")
+        job = psd_edit.classify(parsed, {"creatures": wanted}, psd, parser, caps=caps).jobs.get("creatures")
         if job is not None and any(one for n, one in enumerate(job) if n != creature - 1):
             return None
     if job is None:
@@ -442,11 +443,12 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
     was = np.asarray(view(png).convert("RGBA"))
     out, at = {}, {**{stat: card[stat] for stat in stats}, **_creature_stats(card)}
     with psd_edit.render_cache(shared=True):
+        caps = psd_edit.stat_caps(psd)          # once: each value edits its own copy
         for key, now_at in at.items():
             stat, _, n = key.partition("@")
             for value in range(BAR_TOP + 1):
-                merged = None if value == now_at else bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc,
-                                                                 int(n or 1))
+                merged = None if value == now_at else \
+                    bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc, int(n or 1), caps)
                 moved = _moved(was, merged) if merged is not None else None
                 if moved:
                     out.setdefault(key, {})[value] = moved

@@ -129,6 +129,22 @@ def test_creature_pictures_are_the_bakes(clone, tmp_path):
     assert cp.bar_sheet({"def@2": {9: _moved(png, ours)}}, at)["bars"]["def@2"]["at"] == 8 and at["def@3"] == 2
 
 
+def test_bar_changes_read_caps_once(clone, monkeypatch):
+    """bar_changes reads stat_caps once for all its values; a value's picture is bar_value's own (classify reading them)."""
+    raw = (clone / PUZZLED).read_bytes()
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / PUZZLED.replace(".psd", ".png"))
+    png.load()
+    parser = _bare_parser()
+    parsed = psd_edit.parse_card(parser, str(clone / PUZZLED), PUZZLED, psd)
+    calls, read = [], psd_edit.stat_caps
+    monkeypatch.setattr(psd_edit, "stat_caps", lambda p: calls.append(p) or read(p))
+    monkeypatch.setattr(cp, "BAR_TOP", 1)
+    changes = cp.bar_changes(psd, raw, png, parsed, parser, PUZZLED)
+    assert len(calls) == 1 and calls[0] is psd and sorted(changes) == sorted(psd_edit.STAT_FIELDS)
+    alone = _moved(png, cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 0, psd_edit.export_icc(psd, png)))
+    assert len(calls) == 2 and all(np.array_equal(a, b) for a, b in zip(changes["def"][0], alone))
+
+
 def _moved(png, merged):
     """bar_changes' entry of one value."""
     was, now = (np.asarray(cp.view(image).convert("RGBA")) for image in (png, merged))

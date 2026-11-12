@@ -2253,7 +2253,7 @@ def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
 
 
 def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
-             template: Optional[tuple] = None, chart: Optional[dict] = None) -> Classification:
+             template: Optional[tuple] = None, chart: Optional[dict] = None, caps=...) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is a job only on a two-row card (idea 13), above 20 never; on a layer-comp bar, up to its top comp
@@ -2267,6 +2267,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             and the stars and type icons (not changed)
         parser: offline_parser(): its icon vocabulary reads a types edit (types compare in any order and spelling)
         template: template_icon() of the card's template: where a card with no type icon takes its first one
+        caps: stat_caps(psd) when the caller has read it (bar_changes: once for all its values); ... reads it here
 
     Returns:
         Classification
@@ -2274,7 +2275,9 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
     card = parsed["card"]
     out = Classification()
     derived = _classify_parts(out, parsed, edits, psd, parser)
-    caps = stat_caps(psd) if psd is not None and any(edits.get(k) is not None for k in (*STAT_FIELDS, "creatures")) else None
+    if caps is ...:
+        asked = psd is not None and any(edits.get(k) is not None for k in (*STAT_FIELDS, "creatures"))
+        caps = stat_caps(psd) if asked else None
     for name, value in edits.items():
         if name in ("parts", "colors") or name in derived:
             continue
