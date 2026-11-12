@@ -1,7 +1,7 @@
 """
 TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors), site/Card Edits.json (CardEdits),
-site/Card Creation Dates.json (CardDates) and site/Card Ratings.json (CardRatings), and the layout the website writes
-them in (dump_edits, dump_ratings: the edit.js editsFile and ratingsFile ports). No Discord, network or psd-tools.
+site/Card Creation Dates.json (CardDates) and site/Card Ratings.json (CardRatings), and their layout (dump_edits: the
+edit.js editsFile port; dump_ratings). No Discord, network or psd-tools.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -392,8 +392,8 @@ class CardRatings:
     """
     TTSCardMaker's site/Card Ratings.json: dated ratings per card, whole numbers 1-10 (owner, 2026-10-26), oldest first.
     {"about": ..., "cards": {"Card Name": [{"date", "scale", "value", "by", "source"}]}}; names match like the authors
-    file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` and the website's
-    Rate it (edit.js ratingsFile); read by the website only (never the bot, the card sync or the checks).
+    file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` (the website's Rate it
+    until 2026-11-11); read by the website build only, which shows none (never the bot, the card sync or the checks).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> (name as written, [entry])
 
@@ -402,7 +402,7 @@ class CardRatings:
     KEYS = ("date", "scale", "value", "by", "source")
     ABOUT = ("Card ratings, whole numbers 1 to 10. favorability: how much players like the card; power: 1 weak, 10 too "
              "strong; the middle (5.5) is balanced. Keyed by card file name; entries oldest first. by: \"group\" (a TTS "
-             "session) or a GitHub login. Read by the website only.")      # edit.js RATINGS_ABOUT
+             "session) or a GitHub login. Read by the website only.")
 
     @classmethod
     def valid(cls, entry) -> bool:
@@ -429,7 +429,7 @@ class CardRatings:
 
     @classmethod
     def order(cls, entries: list) -> list:
-        """Oldest first: date, then source (TTS sessions first), then by, then scale (edit.js ratingsFile, build_site)."""
+        """Oldest first: date, then source (TTS sessions first), then by, then scale (build_site rating_order)."""
         rank = lambda seq, v: seq.index(v) if v in seq else len(seq)
         return sorted(entries, key=lambda e: (str(e.get("date", "")), rank(cls.SOURCES, e.get("source")),
                                               str(e.get("by", "")).lower(), rank(cls.SCALES, e.get("scale"))))
@@ -448,7 +448,7 @@ class CardRatings:
 
 
 # ========================
-# The files' layout (edit.js editsFile, ratingsFile)
+# The files' layout (edit.js editsFile)
 # ========================
 def _json(value) -> str:
     """JSON.stringify: compact, UTF-8 as is."""
@@ -526,7 +526,7 @@ def dump_edits(data: dict) -> str:
 
 def dump_ratings(data: dict) -> str:
     """
-    Card Ratings.json as edit.js ratingsFile writes it: dump_edits' layout, each card's line its list of entries.
+    Card Ratings.json in dump_edits' layout, each card's line its list of entries.
 
     Args:
         data: The parsed file

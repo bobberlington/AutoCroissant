@@ -76,8 +76,8 @@ def test_build_merges_automatic_flags(tmp_path):
 
 def test_search_lines_and_file(tmp_path):
     """flag: searches; the reason's rules; the batch's lines; a set flag sits in ORDER, the last one cleared unsets it; a
-    form draft's tick and reason read back from the card; flags as labels alone (owner 11-11: no notes); names_ok holds
-    while the names are as marked."""
+    form draft's tick and reason read back from the card; flags as labels, the hand flag's issue behind an info mark, its
+    note and a person's reason (owner 11-11 evening); names_ok holds while the names are as marked."""
     out = node(tmp_path, r"""
 const cards = [{ name: "A", flags: { hand: "why" } }, { name: "B", flags: { bars: "" } }, { name: "C", flags: { hand: "", bars: "x" } }, { name: "D" }, { name: "E", checks: { hand: "note" } }, { name: "F", checks: { name: "note" } }];
 const hits = q => cards.filter(S.compile(q)).map(c => c.name).join("");
@@ -87,7 +87,7 @@ const file = E.editsFile(JSON.stringify({ cards: { X: { creatures: null, note: "
 const lines = op => E.describeItems(op, { flags: { hand: "why", bars: "" }, edited: ["flags"] }).map(x => x.text);
 process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars", "flag:name"].map(hits),
   clean: [F.cleanFlags({ bars: "", hand: 1, other: "x" }), F.cleanFlags({}), F.withFlag({ hand: "" }, "hand", null), F.withFlag({ hand: "", psd: "0" }, "bars", "", "1a2b3c4d"), F.withFlag({ hand: "", psd: "0" }, "hand", null, "1a2b3c4d")],
-  note: F.flagsHtml(cards[4]), own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) }), F.flagError({ hand: "" }), F.flagError({ bars: "" })],
+  note: [F.flagsHtml({ ...cards[4], id: "e" }), F.flagsHtml({ id: "g", checks: { hand: "Bars <1>" }, flags: { hand: `Hive's "bars"` } }), F.flagsHtml(cards[1]), F.flagsHtml(cards[2])], own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) }), F.flagError({ hand: "" }), F.flagError({ bars: "" })],
   file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"), nulled: E.editsFile(file, [{ key: "X", set: { flags: null }, unset: [] }], "T", "web"),
   lines: [lines({ set: { flags: { hand: "new" } }, unset: [] }), lines({ set: {}, unset: ["flags"] })],
   raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }),
@@ -95,7 +95,14 @@ process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any
 """)
     assert out["hits"] == ["ACE", "BC", "ABCEF", "D", "C", "F"]
     assert out["clean"] == [{"bars": ""}, None, None, {"hand": "", "bars": "", "psd": "1a2b3c4d"}, None]
-    assert out["note"] == '<div class="card-flags"><div class="card-flag"><b>Needs doing by hand</b></div></div>' and out["own"] == [True, False]
+    assert out["note"][0] == ('<div class="card-flags"><div class="card-flag"><b>Needs doing by hand</b><button type="button" class="flag-i" '
+                              'data-action="flag-issue" data-tip="Automatic check: note" aria-label="What the issue is" aria-expanded="false" '
+                              'aria-controls="flag-issue-e" aria-describedby="flag-issue-e">i</button></div></div>'
+                              '<div class="flag-issue" id="flag-issue-e" hidden><p>Automatic check: note</p></div>') and out["own"] == [True, False]
+    both = ["Automatic check: Bars &lt;1&gt;", "Reason given: Hive&#39;s &quot;bars&quot;"]           # both, the note first
+    assert f'data-tip="{" · ".join(both)}"' in out["note"][1] and "".join(f"<p>{t}</p>" for t in both) in out["note"][1]
+    assert out["note"][2] == '<div class="card-flags"><div class="card-flag"><b>Special stat bars</b></div></div>'
+    assert "flag-i" not in out["note"][3] and "flag-issue" not in out["note"][3]                 # no issue to show: no mark
     assert out["error"] == ["", "Special stat bars: at most 300 characters", "Needs doing by hand: say what the issue is", ""]
     assert out["file"] == dump_edits(json.loads(out["file"]))
     entry = json.loads(out["file"])["cards"]["X"]

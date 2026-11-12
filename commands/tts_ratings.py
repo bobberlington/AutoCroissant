@@ -12,7 +12,7 @@ rounded the same way, so a re-run matches them).
 Every entry is a group one ("by": "group", "source": "TTS session"), dated the session's evening. Skipped: TS_Save_3's
 joke "Double Pain" column, the Forbidden Tier, TS_Save_10 power placements left where TS_Save_8 had them.
 Re-running replaces the sessions' group entries and keeps every other one (idempotent). It also writes a review table
-(PREFIX.csv, one row per card, and PREFIX.md). The bot never reads the file; the website does.
+(PREFIX.csv, one row per card, and PREFIX.md). The bot never reads the file; the website build does (it shows none).
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
@@ -79,7 +79,7 @@ def _span(labels: tuple) -> tuple:
 
 
 def tier_of(value: float) -> int:
-    """The category a value falls in, 0-4 (edges 2.5, 4.5, 6.5, 8.5): ratings.js tierOf too."""
+    """The category a value falls in, 0-4 (edges 2.5, 4.5, 6.5, 8.5)."""
     return max(0, min(4, floor((value - 0.5) / 2)))
 
 

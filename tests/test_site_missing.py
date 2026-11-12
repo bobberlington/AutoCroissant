@@ -19,9 +19,9 @@ def test_missing_options_and_sorts_last(tmp_path):
     script = tmp_path / "probe.mjs"
     script.write_text(f"""const G = await import({json.dumps(GRID_JS.as_uri())});
 const cards = [
-  {{ name: "Bob", type: "creature", series: "Kirby", subseries: "Dream", types: ["fire"], ability: "Hit.", author: "Ann", stars: 3, hp: 5, def: 1, atk: 2, spd: 3, ratings: [{{ value: 5 }}], art: "https://x.com/1", ability_art: "Ann" }},
+  {{ name: "Bob", type: "creature", series: "Kirby", subseries: "Dream", types: ["fire"], ability: "Hit.", author: "Ann", stars: 3, hp: 5, def: 1, atk: 2, spd: 3, art: "https://x.com/1", ability_art: "Ann" }},
   {{ name: "Al", type: "creature", series: "", types: [], ability: " ", author: "", hp: 4, def: 1, atk: 2, art: " ", ability_art: null }},
-  {{ name: "Cy", type: "minion", series: null, subseries: null, types: null, ability: null, stars: 0, hp: 9, def: 1, atk: 2, spd: 3, ratings: [] }},
+  {{ name: "Cy", type: "minion", series: null, subseries: null, types: null, ability: null, stars: 0, hp: 9, def: 1, atk: 2, spd: 3 }},
   {{ name: "Di", type: "item", series: "Kirby", types: ["support"], ability: "Heal.", author: "Ann", stars: 2, art: "Kirby Super Star" }},
   {{ name: "Ed", type: "item", series: "Kirby", subseries: "Air", subtype: "heal", ability: "Heal.", author: "Ann", stars: 1, hp: 3 }},
 ];
@@ -37,7 +37,7 @@ process.stdout.write(JSON.stringify({{ missing, x, hp: [order(c => c.hp ?? null,
     out = json.loads(done.stdout)
     assert out["missing"] == {"series": ["Al", "Cy"], "subseries": ["Al", "Cy", "Di"], "types": ["Al", "Cy", "Ed"],
                               "ability": ["Al", "Cy"], "author": ["Al", "Cy"], "stars": ["Al", "Cy"], "stats": ["Al"],
-                              "itemtype": ["Di"], "ratings": ["Al", "Cy", "Di", "Ed"], "art": ["Al", "Cy", "Ed"]}
+                              "itemtype": ["Di"], "art": ["Al", "Cy", "Ed"]}
     assert out["x"] == ["Bob", "Di"]                                      # the anti-filter: those with a source
     assert out["hp"] == [["Ed", "Al", "Bob", "Cy", "Di"], ["Cy", "Bob", "Al", "Ed", "Di"]]
     # by series, then subseries: no series last, and in a series no subseries last, either way

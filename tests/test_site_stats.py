@@ -1,7 +1,7 @@
 """
 The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node; build/analytics.py): stat
 distributions paged past 10, the cooldown update gone, timing tags only left out of the changes by month, short chart
-texts, which Ratings and History charts show, power creep, subseries under their series, and the charts' links to the
+texts, which History charts show (Ratings off the site, owner 11-11), power creep, subseries under their series, and the charts' links to the
 Cards grid. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a stats.js
 with cardsHref (2026-10-25).
 """
@@ -53,7 +53,7 @@ function render(cards, A, q = "", { banned = new Map(), distPage = {} } = {}) {
   const byId = new Map(cards.map(c => [c.id, c])), ctx = { cards, byId, banned, icons: {}, mentions: new Map(), distPage };
   const root = { innerHTML: "" }, p = new URLSearchParams(q);
   st.renderStats(root, ctx, p);
-  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", ratings: ins.ratingsHtml(ctx, p), history: ins.historyHtml(ctx, p) };
+  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", history: ins.historyHtml(ctx, p) };
 }
 const hrefs = html => [...html.matchAll(/<a class="go" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));
 const params = href => { const p = Object.fromEntries(new URLSearchParams(href.split("?")[1])); if (p.nodup !== "1") throw new Error(`no nodup: ${href}`); delete p.nodup; return p; };
@@ -81,15 +81,16 @@ def an():
 
 def test_power_creep(tmp_path):
     """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items. The removed charts stay
-    gone: series strength, ban reasons, last change by month, top subseries."""
+    gone: series strength, ban reasons, last change by month, top subseries, ratings."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards), r = render(cards, A), all = r.top + r.balance + r.ratings + r.history;
-out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep"),
+const cards = fixture(), A = analytics(cards), r = render(cards, A), all = r.top + r.balance + r.history;
+const rated = fixture(); rated[0].ratings = [{ date: "2025-04-28", scale: "power", value: 7, by: "group", source: "TTS session" }];
+out({ ratings: [typeof ins.ratingsHtml, render(rated, A).top.includes("stats-ratings")], creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep"),
   gone: ["bal-series", "bans", "timeline", "subseries"].filter(id => all.includes(`id="chart-${id}"`)) });
 """)
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
-    assert not out["item"] and out["gone"] == []
+    assert not out["item"] and out["gone"] == [] and out["ratings"] == ["undefined", False]   # no Ratings section or jump
 
 
 
