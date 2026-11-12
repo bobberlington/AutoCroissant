@@ -48,7 +48,7 @@ from psd_tools import PSDImage
 import commands.card_bake as card_bake
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
+from commands.card_bake import Card, Snapshot, local_snapshot, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
 from commands.card_edits import NAMES_OK, CardAuthors, CardEdits
 from commands.card_models import RAID_STARS, card_name, file_stem, small_case
@@ -732,10 +732,7 @@ def check_card(ctx: Context, rel: str) -> dict:
 def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
     """{linked path: [layer, why]} of the linked layers Card sync cannot draw again when their file changes (a warp, smart
     filters: psd_links.why_not_redrawn); a fact of the blob, worded only once its file changed (link_notes)."""
-    try:
-        from commands.psd_links import why_not_redrawn
-    except ImportError:                         # the links module not checked out: none known
-        return {}
+    from commands.psd_links import why_not_redrawn
     paths = {item["uuid"]: item["path"] for item in linked_items(psd, rel, tree) if item["path"]}
     out: dict = {}
     for layer in psd.descendants():

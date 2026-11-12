@@ -43,9 +43,9 @@ guards do not).
     normalise(path, out_path, fonts, rel) -> Normalised           the big pass's rewrite (fix(only="normalise"))
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
-    standard_folders(path, out_path, fonts, rel, parser) -> Foldered  the templates' folders, gated
+    standard_folders(path, out_path, rel, parser) -> Foldered    the templates' folders, gated
     folder_issues(psd, rel, parser) -> [str]                     what keeps the folders off the templates'
-    BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
+    WAIVED                                                        the owner's class waivers
 
 No Discord, network or config.
 """
@@ -56,7 +56,7 @@ from functools import lru_cache
 from hashlib import sha1
 from io import BytesIO
 from os import makedirs, remove, replace as move_file
-from os.path import basename, getsize, join, splitext
+from os.path import basename, getsize, join
 from re import DOTALL, IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -69,12 +69,12 @@ from psd_tools.constants import BlendMode, Resource, SheetColorType, Tag
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.card_models import APOSTROPHE, straight
-from commands.font_check import _get, _value, layer_fonts
-from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
+from commands.font_check import _get, _value, is_card_psd, layer_fonts
+from commands.psd_edit import ICON_FONT, Refused, badge_spans
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, hidden_tags,
-                                 layer_tag, picture_numbers, shown_in, star_icon_name, variant_view, variants_of)
-from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
-                                  stat_rows, union_box)
+                                 layer_tag, picture_numbers, shown_in, variant_view, variants_of)
+from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, bar_box, clip, comp_bars, comp_stat, comp_value,
+                                  fx_pad, overlay_words, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -256,7 +256,6 @@ def composer_layers(psd: PSDImage) -> list:
 
 
 def _ink(rgba, bbox, shape: tuple):
-    import numpy as np
     out = np.zeros(shape, bool)
     if rgba is None or bbox is None:
         return out
@@ -991,7 +990,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
     if folders:                                 # the templates' folders (owner 11-09): silent, no PNG
         out = join(folder, "folders.psd")
         try:
-            done = standard_folders(base, out, fonts, rel, parser, isolated=False)
+            done = standard_folders(base, out, rel, parser, isolated=False)
         except Exception as error:              # best effort, never told
             result.pixel_left.append(("folders", f"{type(error).__name__}: {error}"))
         else:
@@ -1052,7 +1051,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         skip: tuple = ()) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, the folders (standard_folders,
-    with a parser; skip "folders" to leave them), then R8's Single-line Composer
+    with a parser), then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
     refusal leaves that fix out (and reports it). Box text that rewraps is
     redrawn (redraw, gated again: data, the result without it in plain), then the pixel fixes (PIXEL_FIXES, each gated;
@@ -1079,7 +1078,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None),
                                                  getattr(fonts, "links", None), getattr(fonts, "hidden", None))
                    if kind not in skip)
-    folders = not only and parser is not None and "folders" not in skip and _folders_in(data, rel, parser)
+    folders = not only and parser is not None and _folders_in(data, rel, parser)
     if not (wanted or composer or pixels or folders):
         return result
     makedirs(work, exist_ok=True)
@@ -1183,7 +1182,6 @@ def _fonts_of(layer, fonts: Optional[Callable[[list], Optional[str]]]):
 
 def _premultiplied(rgba, bbox, window: tuple):
     """Straight RGBA at bbox, premultiplied on the window (transparent elsewhere)."""
-    import numpy as np
     x0, y0, x1, y1 = window
     out = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
     if rgba is not None and bbox is not None and rgba.size:
@@ -1201,7 +1199,6 @@ def _off_share(stored, drawn, box: tuple, dx: int = 0) -> float:
     pixel matched to the nearest of its 3x3 (the oldfont census' score); 0.0 for too little ink. box: in window pixels,
     at least OLD_GLYPH_SHIFT + 1 inside it; dx: the stored ink read that many px to the right.
     """
-    import numpy as np
     x0, y0, x1, y1 = box
     a = stored[y0:y1, x0 + dx:x1 + dx]
     m = OLD_GLYPH_SHIFT + 1
@@ -1233,8 +1230,9 @@ def _icon_face(face) -> bool:
 
 
 def _drawn_old(layer, fonts) -> Optional[tuple]:
-    """old_glyphs with what it compared: (capture, window, stored, drawn: premultiplied on the window, the old glyphs'
-    indices); None without stored pixels."""
+    """The icon font glyphs Photoshop drew with an older version of the font (stored pixels against the current font's
+    render: _off_share past OLD_GLYPH_BAD) with what it compared: (capture, window, stored, drawn: premultiplied on the
+    window, the old glyphs' indices into the layout's glyphs); None without stored pixels."""
     found = _glyph_offs(layer, fonts)
     return None if found is None else (*found[:4], [i for i, share in found[4].items() if share > OLD_GLYPH_BAD])
 
@@ -1266,21 +1264,6 @@ def _glyph_offs(layer, fonts) -> Optional[tuple]:
         if x1 > x0 and y1 > y0:
             out[index] = _off_share(stored, mine, (x0, y0, x1, y1))
     return before, window, stored, mine, out
-
-
-def old_glyphs(layer, fonts) -> list:
-    """
-    The icon font glyphs Photoshop drew with an older version of the font: their stored pixels against the current
-    font's render (_off_share past OLD_GLYPH_BAD).
-
-    Args:
-        fonts: A FontMap (psd_edit.font_map)
-
-    Returns:
-        Indices into the layout's glyphs (capture(layer, fonts).layout)
-    """
-    drawn = _drawn_old(layer, fonts)
-    return drawn[4] if drawn else []
 
 
 def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list] = None, fonts: tuple = ()) -> None:
@@ -1354,7 +1337,7 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
 def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]],
                       seen: Optional[list] = None) -> list:
     """
-    Icon font glyphs Photoshop drew with an older font (old_glyphs) drawn again with the current one, those glyphs alone
+    Icon font glyphs Photoshop drew with an older font (_drawn_old) drawn again with the current one, those glyphs alone
     (a splice; refused when it would redraw the layer whole), the stored preview patched; gated (_only_pixels). Refused
     when one of them has another advance in the layout it may have been laid out with (laid_advances: Photoshop's view,
     an earlier icon font's, fonts.earlier): the splice would set it at its new width in the old layout (badge widths,
@@ -1523,7 +1506,6 @@ def _recut_fx(psd: PSDImage, layer, moved: set, faces) -> list:
 def _ink_off(layer, faces) -> float:
     """The share of the layer's ink (stored or drawn) off the fork's render of it as it stands, unshifted: how far the
     fork's layout is from Photoshop's (1.0 when either has none)."""
-    import numpy as np
     from psd_tools.composite.text import capture, render
     stored, drawn = capture(layer, faces), render(layer, fonts=faces)
     if stored.rgba is None or stored.bbox is None or drawn.rgba is None or drawn.bbox is None:
@@ -1879,7 +1861,6 @@ def _off_beside(drawn: tuple, marks: set) -> float:
     """_drawn_old's share of the layer's ink (stored or drawn) off the render, unshifted, outside the marked glyphs' boxes
     and pen cells (1.0 with no ink)."""
     from math import ceil, floor
-    import numpy as np
     from psd_tools.composite.text.geometry import _cell, _map_box
     from psd_tools.composite.text.splice import _glyph_box
     before, window, stored, mine, _ = drawn
@@ -2210,7 +2191,7 @@ def font_cause(layer, faces, earlier: tuple = ()) -> Optional[Whole]:
 def laid_plan(layer, faces, earlier: tuple = ()):
     """
     Whether the layer's stored pixels show its icon font glyphs laid out at other advances: some glyph laid_advances
-    finds is drawn old (old_glyphs, or in an earlier icon font: _drawn_earlier) and the layer drawn at one of its ways is
+    finds is drawn old (_drawn_old, or in an earlier icon font: _drawn_earlier) and the layer drawn at one of its ways is
     its pixels, those glyphs and the ones drawn old there aside (_off_beside within LAID_OFF; the nearest way). None when the pixels show the current font's
     (re-laid already, or drawn in it) or no advance differs. When no way is, a Whole when a font explains the pixels
     (font_cause: an older stoogedings build, another file of a text font's name; owner 2026-11-10), else raises Refused
@@ -2353,7 +2334,6 @@ EDGE_NEAR = 24                                  # px: ink this near the canvas e
 
 def _ink_box(layer) -> tuple:
     """The layer's ink (alpha past psd_edit.INK_ALPHA) as a canvas bbox: a faint fringe (a halo's tail) left out."""
-    import numpy as np
     bbox, alpha = tuple(layer.bbox), psd_edit._alpha(layer)
     if alpha is None or not (alpha > psd_edit.INK_ALPHA).any():
         return bbox
@@ -2845,10 +2825,6 @@ BOX_LO, BOX_HI, BOX_TIGHT = 0.003, 0.018, 1.02   # the box-width rule (a redo): 
                                                  # the next word; a box this tight keeps its width
 
 
-def _v(value):
-    return getattr(value, "value", value)
-
-
 def _runs(layer):
     from psd_tools.composite.text.model import TextModel
     return TextModel.from_layer(layer)
@@ -2874,16 +2850,16 @@ def _leading_ratio(layer) -> Callable[[int], float]:
     from psd_tools.api import text_edit
     engine, resources = layer.engine_dict, layer.resource_dict
     try:
-        sheet = resources["ParagraphSheetSet"][int(_v(resources.get("TheNormalParagraphSheet", 0)))]["Properties"]
-        base = float(_v(sheet.get("AutoLeading", AUTO_LEADING)))
+        sheet = resources["ParagraphSheetSet"][int(_value(resources.get("TheNormalParagraphSheet", 0)))]["Properties"]
+        base = float(_value(sheet.get("AutoLeading", AUTO_LEADING)))
     except Exception:
         base = AUTO_LEADING
     runs = engine.get("ParagraphRun", {})
     ends, values, unit = [], [], 0
     for item, n in zip(runs.get("RunArray", []), runs.get("RunLengthArray", [])):
-        unit += int(_v(n))
+        unit += int(_value(n))
         ends.append(unit)
-        values.append(float(_v(item.get("ParagraphSheet", {}).get("Properties", {}).get("AutoLeading", base))))
+        values.append(float(_value(item.get("ParagraphSheet", {}).get("Properties", {}).get("AutoLeading", base))))
     units = text_edit.utf16_prefix(text_edit._editor_text(layer))
     return lambda i: values[min(bisect_right(ends, units[i]), len(values) - 1)] if values else base
 
@@ -2900,7 +2876,7 @@ def script_plan(layer) -> list:
         style = run.style
         if run.end <= run.start or style.baseline not in SCRIPT_RATIOS:
             continue
-        k, p = (float(_v(resources.get(key, default)))
+        k, p = (float(_value(resources.get(key, default)))
                 for key, default in zip(SCRIPT_RATIOS[style.baseline], SCRIPT_DEFAULT))
         sign = 1.0 if style.baseline == 2 else -1.0
         leading = ratio(run.start) * style.size if style.auto_leading else style.leading
@@ -3281,7 +3257,7 @@ def _status_gate(path: str, out_path: str, edits: list, stories: list) -> None:
     before, after = PSDImage.open(path), PSDImage.open(out_path)
     part = psd_edit.changed_part(before, after, ("header", "color_mode_data"))
     added = any(edit.fx for edit in edits)
-    if part or _resources(before, after.has_preview(), added) != _resources(after, after.has_preview(), added):
+    if part or _resources(before, added) != _resources(after, added):
         raise Refused("bytes", f"{part or 'image_resources'} changed")
     psd_edit.gate_stories(before, after, stories)
 
@@ -3290,14 +3266,14 @@ ADDED_RESOURCES = (Resource.IDS_SEED_NUMBER, Resource.LAYER_STATE_INFO, Resource
                    Resource.LAYER_GROUPS_ENABLED_ID)    # a layer added moves the id seed and the per-record lists (the fork)
 
 
-def _resources(psd: PSDImage, preview: bool, added: bool) -> list:
-    """The image resources, with no preview the merged image flag off (save_psd strips it); added: an FX layer made,
-    ADDED_RESOURCES left out."""
+def _resources(psd: PSDImage, added: bool) -> list:
+    """The image resources, the merged image flag off (save_psd strips it); added: an FX layer made, ADDED_RESOURCES
+    left out."""
     out = []
     for key, value in psd._record.image_resources.items():
         if added and key in ADDED_RESOURCES:
             continue
-        if key == Resource.VERSION_INFO and not preview:
+        if key == Resource.VERSION_INFO:
             value = deepcopy(value)
             value.data.has_composite = False
         out.append((key, psd_edit._raw(value)))
@@ -3377,19 +3353,6 @@ def _clean_kind(layer, psd: PSDImage) -> Optional[str]:
     if any(STAR_GROUP.search(name) for name in groups) or "star" in sub(r"[^a-z]+", " ", base_name(layer).lower()).split():
         return "star"
     return None
-
-
-def _clipped_on(layer) -> list:
-    """The clipping layers right above a base layer in its group (they draw nothing once it is hidden)."""
-    if layer.is_group() or layer.clipping:
-        return []
-    siblings = list(layer.parent)
-    out = []
-    for above in siblings[siblings.index(layer) + 1:]:
-        if not above.clipping:
-            break
-        out.append(above)
-    return out
 
 
 def _layer_ink(layer):
@@ -3481,23 +3444,9 @@ def _leftover(layer, psd: PSDImage, keys: set, hidden: Hidden) -> Optional[str]:
     return "a copy shown on another PSD" if key.startswith("file:") and key[5:] in hidden.elsewhere else None
 
 
-def _clip_base(layer):
-    """The layer a clipping layer clips onto (None for an orphan clip)."""
-    siblings = list(layer.parent)
-    return next((one for one in reversed(siblings[:siblings.index(layer)]) if not one.clipping), None)
-
-
 def _clips(layer) -> list:
     """The clipping layers right above a base, a group's too."""
-    if layer.clipping:
-        return []
-    siblings = list(layer.parent)
-    out = []
-    for above in siblings[siblings.index(layer) + 1:]:
-        if not above.clipping:
-            break
-        out.append(above)
-    return out
+    return [] if layer.clipping else psd_edit._clip_chain(layer)
 
 
 def _isolating(layer) -> bool:
@@ -3505,7 +3454,7 @@ def _isolating(layer) -> bool:
     clips onto as a styled one: without the clip it draws differently; Matterling, The Puppet)."""
     if not layer.clipping:
         return False
-    base = _clip_base(layer)
+    base = psd_edit._clip_base(layer)
     return base is not None and base.is_group() and base.blend_mode == BlendMode.PASS_THROUGH
 
 
@@ -3544,7 +3493,7 @@ def _leftovers(psd: PSDImage, shown: set, taken: set, hidden: Hidden) -> list:
         if id(layer) in going or not why(layer):
             continue
         if layer.clipping:
-            base = _clip_base(layer)
+            base = psd_edit._clip_base(layer)
             if not _isolating(layer) and (base is None or id(base) not in going):
                 out.append((layer, why(layer)))
                 going.add(id(layer))
@@ -3579,13 +3528,13 @@ def clean_plan(psd: PSDImage, hidden: Optional[Hidden] = None) -> list:
             continue
         kind = _clean_kind(layer, psd)
         if kind:
-            clipped = _clipped_on(layer)
+            clipped = _clips(layer)
             out += [(layer, f"hidden {kind}")] + [(one, "clipped onto it") for one in clipped]
             taken |= {id(layer)} | {id(one) for one in clipped}
     visible = [layer for layer in psd.descendants() if layer.kind in ("pixel", "smartobject") and layer.is_visible()]
     keys: dict = {}
     for layer in unseen:
-        if id(layer) in taken or layer.kind not in ("pixel", "smartobject") or _clipped_on(layer) \
+        if id(layer) in taken or layer.kind not in ("pixel", "smartobject") or _clips(layer) \
                 or comp_value(layer) is not None or any(STAT_GROUP.search(name) for name in _groups(layer)):
             continue
         ink = _layer_ink(layer)
@@ -3606,30 +3555,26 @@ def clean_plan(psd: PSDImage, hidden: Optional[Hidden] = None) -> list:
     going = {id(layer) for layer, _ in out}
     out = [(layer, why) for layer, why in out if all(id(one) in going for one in _clips(layer))]  # a base with its clips
     planned = {id(layer) for layer, _ in out if layer.is_group()}
-    return [(layer, why) for layer, why in out if not any(id(group) in planned for group in _ancestors_of(layer))]
+    return [(layer, why) for layer, why in out if not any(id(group) in planned for group in _ancestors(layer))]
 
 
 def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
     """Data that draws nothing, {kind: bytes}: pixel sources (PxSD, a layer's PxSc: video frames), XMP
     DocumentAncestors, and (data: the file's bytes) patterns and filter-effect items nothing else in the file names;
     apply: removed."""
-    def written(block) -> bytes:
-        out = BytesIO()
-        block.write(out)
-        return out.getvalue()
-
     def named(blob: bytes, key: str) -> int:
         return blob.count(key.encode("ascii", "ignore")) + blob.count(key.encode("utf-16-be"))
     found: dict = {}
     blocks = psd._record.layer_and_mask_information.tagged_blocks
     if blocks is not None and Tag.PIXEL_SOURCE_DATA2 in blocks:
-        found["pixel source"] = len(written(blocks[Tag.PIXEL_SOURCE_DATA2]))
+        found["pixel source"] = len(psd_edit._raw(blocks[Tag.PIXEL_SOURCE_DATA2]))
         if apply:
             del blocks[Tag.PIXEL_SOURCE_DATA2]
     for layer in psd.descendants():
         tagged = layer._record.tagged_blocks
         if tagged is not None and Tag.PIXEL_SOURCE_DATA1 in tagged:
-            found["layer pixel sources"] = found.get("layer pixel sources", 0) + len(written(tagged[Tag.PIXEL_SOURCE_DATA1]))
+            found["layer pixel sources"] = (found.get("layer pixel sources", 0)
+                                            + len(psd_edit._raw(tagged[Tag.PIXEL_SOURCE_DATA1])))
             if apply:
                 del tagged[Tag.PIXEL_SOURCE_DATA1]
     for tags, kind, ident in ((PATTERN_TAGS, "patterns", "pattern_id"), (FX_TAGS, "filter effects", "uuid")):
@@ -3637,7 +3582,7 @@ def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
             items = blocks.get_data(tag) if blocks is not None and tag in blocks else None
             unused = []
             for item in items or []:
-                key, own = str(getattr(item, ident, "") or "").strip("\x00"), written(item)
+                key, own = str(getattr(item, ident, "") or "").strip("\x00"), psd_edit._raw(item)
                 if key and named(data, key) <= named(own, key):
                     unused.append(item)
                     found[kind] = found.get(kind, 0) + len(own)
@@ -3659,7 +3604,6 @@ def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
 def clean_layers(psd: PSDImage) -> list:
     """clean()'s finds on a card (psd.repo_path; templates and other files never; psd.clean_hidden: the leftovers'
     Hidden): its deletions, and the PSD itself when it holds pixel sources (XMP ancestors go only with something else)."""
-    from commands.font_check import is_card_psd
     if not is_card_psd(getattr(psd, "repo_path", "") or ""):
         return []
     plan = clean_plan(psd, getattr(psd, "clean_hidden", None))
@@ -3782,7 +3726,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
                 names = apply(current, out, fonts, whole=True)
             elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
                 names = apply(current, out, fonts, seen=result.stale_glyphs)
-            elif apply in (normalise, clean, restyle_status):
+            elif apply in (normalise, restyle_status):
                 names = apply(current, out, fonts, rel)
             else:
                 names = apply(current, out, fonts)
@@ -4215,7 +4159,6 @@ def _extract(psd: PSDImage, types, stars, done: list, counts: Counter, art: froz
 def _boxes(unit) -> list:
     """The drawn boxes of a unit's shown layers, their effects' reach added; None for an adjustment (it changes what
     lies under it everywhere)."""
-    from commands.psd_regions import fx_pad
     out = []
     for layer in unit:
         leaves = [layer] if not layer.is_group() else [l for l in layer.descendants() if not l.is_group()]
@@ -4547,13 +4490,12 @@ def _by_id(psd: PSDImage) -> dict:
 
 
 def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict] = None,
-                 allow: Optional[dict] = None, tol: int = FOLDER_TOL, spots: bool = False,
-                 memo: Optional[dict] = None) -> dict:
+                 allow: Optional[dict] = None, spots: bool = False, memo: Optional[dict] = None) -> dict:
     """
     Gate: every layer's record as it was (a folder's name and colour aside; allow: layer id -> the record parts that
     may change too, an isolated folder's blend and the clips moved into it), gone only a hidden Curves layer or a
     folder whose layers stay, new only plain folders, no smart object's data left unused; every picture renders
-    within tol and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
+    within FOLDER_TOL and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
     may change; spots: the bake's star and type spots too, which follow the stars filed in Stars). Raises Refused;
     returns base's reads (made when None; memo["base"] keeps them, a refusal too).
     """
@@ -4594,8 +4536,8 @@ def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Op
     if len(base["renders"]) != len(now["renders"]):
         raise Refused("render", "the pictures changed")
     for n, (a, b) in enumerate(zip(base["renders"], now["renders"]), 1):
-        if a.shape != b.shape or int(np.abs(a - b).max()) > tol:
-            off = int((np.abs(a - b).max(axis=2) > tol).sum()) if a.shape == b.shape else -1
+        if a.shape != b.shape or int(np.abs(a - b).max()) > FOLDER_TOL:
+            off = int((np.abs(a - b).max(axis=2) > FOLDER_TOL).sum()) if a.shape == b.shape else -1
             raise Refused("render", f"picture {n} draws differently ({off} px)")
     gone_ids = {str(lid) for lid in old if lid not in new}
     renamed = {_icon_key(items[0][1].name): _icon_key(new[lid][0][1].name) for lid, items in old.items()
@@ -4658,13 +4600,13 @@ def _folder_details(was: dict, now: dict, ids: set, renamed: dict) -> dict:
     return was
 
 
-def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser: Optional[PSDParser] = None,
-                     base: Optional[dict] = None, isolated: bool = True) -> Foldered:
+def standard_folders(path: str, out_path: str, rel: str = "", parser: Optional[PSDParser] = None,
+                     isolated: bool = True) -> Foldered:
     """
     The card's folders as the templates' (arrange), at the first FOLDER_LEVELS level folders_gate lets through, then
     the adjustments clipped to a folder moved into it (isolate, gated on its own; isolated False: not, nor hidden Curves
     clipped to a folder deleted, the guards' call: the owner wants each proven in Photoshop), written to out_path; nothing ([]) where the folders are standard,
-    the card is no card or nothing holds (Foldered.tried says why). fonts is unused. base: the card's folder_reads.
+    the card is no card or nothing holds (Foldered.tried says why).
     """
     result = Foldered()
     if parser is None or folder_kind(rel) is None:
@@ -4676,7 +4618,7 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
     left = folder_issues(card, rel, parser, art)
     if not left:
         return result
-    found, memo, refused = None, {"base": base}, {}     # the card read once; a refused file's sha1 -> why
+    found, memo, refused = None, {"base": None}, {}     # the card read once; a refused file's sha1 -> why
     for level in FOLDER_LEVELS:
         psd = PSDImage.open(path)
         done, counts = arrange(psd, rel, types, stars, level, isolated, art)
@@ -4806,8 +4748,8 @@ def art_icons(psd: PSDImage, rel: str, parser: PSDParser) -> frozenset:
     return frozenset(out)
 
 
-def mid_icons(psd: PSDImage, rel: str, types=(), stars=None, done: Optional[list] = None,
-              counts: Optional[Counter] = None, art: frozenset = frozenset()) -> list:
+def mid_icons(psd: PSDImage, rel: str, done: Optional[list] = None, counts: Optional[Counter] = None,
+              art: frozenset = frozenset()) -> list:
     """
     Linked star and type icons (Types/Stars, Types) loose in images, with what clips to them, to the bottom of Stars or
     the card's type folder (made as the templates' when missing), bottom to top (owner 2026-11-09), in place. One stays
@@ -4852,7 +4794,7 @@ def _icons(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional
     psd = PSDImage.open(out_path if found else path)
     psd.repo_path = rel
     done, counts = [], Counter()
-    mid_icons(psd, rel, frozenset(parser.all_types), parser.star_names(), done, counts, art)
+    mid_icons(psd, rel, done, counts, art)
     if not done:
         return
     trial = out_path + ".icons"
@@ -4951,8 +4893,6 @@ def _isolated(path: str, out_path: str, rel: str, parser: PSDParser, base: Optio
 # ========================
 __all__ = [
     'AUTO_FIX',
-    'BADGE_KEYS',
-    'BADGE_TAGS',
     'Context',
     'FIXABLE',
     'Fixed',
@@ -4961,7 +4901,6 @@ __all__ = [
     'STARS_KINDS',
     'WAIVED',
     'Whole',
-    'badge_tags',
     'card_key',
     'check',
     'clean',
@@ -4988,7 +4927,6 @@ __all__ = [
     'normalise',
     'Normalised',
     'miscased_names',
-    'old_glyphs',
     'one_colour_badges',
     'plain_tags',
     'PIXEL_FIXES',

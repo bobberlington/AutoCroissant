@@ -154,11 +154,10 @@ def test_push_range_resolves_before(cards):
 
 
 def test_bot_writers():
-    assert cg.Writer("x", "AutoCroissant", "a@b", "anything").bot
-    assert cg.Writer("x", "Someone", gc.AUTHOR["email"], "anything").bot
-    assert cg.Writer("x", "github-actions[bot]", cg.BOT_EMAILS[0], "anything").bot
-    for subject in ("Card guards: 1 PNG", "Card edits: 2 baked", "Card edit: Foo", "TTS save: 3 cards", "Card sync: x"):
-        assert not cg.Writer("x", "Alice", "a@b", subject).bot          # a person's commit named like a bot's is guarded
+    assert cg.Writer("x", "AutoCroissant", "a@b").bot
+    assert cg.Writer("x", "Someone", gc.AUTHOR["email"]).bot
+    assert cg.Writer("x", "github-actions[bot]", cg.BOT_EMAILS[0]).bot
+    assert not cg.Writer("x", "Alice", "a@b").bot          # a person's commit named like a bot's is guarded
 
 
 def _plumb(root, files, message, author="Alice"):
@@ -682,7 +681,7 @@ def test_housekeeping_reads_no_pushed_psd_its_check_read(cards, tmp_path, monkey
 
 def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     """G1 (owner 11-07): a card and a template pushed with what the normalise fix finds are converted after the check
-    (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG
+    (summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG
     (its redrawn picture re-exported in it), its new MDW/Linked file beside it, the template with nothing else checked;
     one landing, no Discord line, no guard-event for the conversion, the commit message alone says it."""
     root, base, alice, bot = cards
@@ -707,7 +706,7 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
         return SimpleNamespace(data=data + b"linked", files={}, redrawn={cg.NORMALISE: ["art"]}, left=[], pixel_left=[])
     monkeypatch.setattr(cg.standards, "fix", fix)
     out = tmp_path / "out"
-    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1, convert="later")
+    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1)
     by = {Path(e["psd"]).name: e for e in data["cards"]}
     assert by["Snack.psd"]["convert"] == [cg.NORMALISE] and by["Item_Template.psd"]["case"] == "convert"
     assert data["summary"]["normalise"] == 2 and data["summary"]["writes"] >= 3 and not converted
@@ -2962,9 +2961,10 @@ def test_kept_icon_layers_skip_their_layouts(cards, tmp_path, monkeypatch):
     monkeypatch.setattr(cg.standards, "pixel_kinds", lambda psd, kinds=(), *a, **k: () if kinds else
                         (*cg.ICON_LAYOUTS, "status words"))
     monkeypatch.setattr(cg.standards, "fix", lambda *a, skip=(), **k: skips.append(skip) or cg.standards.Fixed())
+    monkeypatch.setattr(cg, "convert_plan", lambda *a, **k: None)
     for after, shown in ((head, "Base"), (head, "Square"), (refont, "Base")):
         icons[:] = [shown]
-        cg.check(str(root), after, before, out=str(tmp_path / f"out-{len(skips)}"), workers=1, convert="off")
+        cg.check(str(root), after, before, out=str(tmp_path / f"out-{len(skips)}"), workers=1)
     assert skips == [(cg.NORMALISE, *cg.ICON_LAYOUTS), (cg.NORMALISE,), (cg.NORMALISE,)]
 
 

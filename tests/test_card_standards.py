@@ -54,6 +54,12 @@ def _codes(issues, waived: bool) -> set:
     return {i.code for i in issues if bool(i.waived) == waived and not i.fix}
 
 
+def old_glyphs(layer, fonts) -> list:
+    """The icon glyphs drawn with an older font (_drawn_old's indices), [] without stored pixels."""
+    drawn = cs._drawn_old(layer, fonts)
+    return drawn[4] if drawn else []
+
+
 # ========================
 # Vocabulary and classes
 # ========================
@@ -67,7 +73,7 @@ def test_badge_tags_are_the_fonts_glyphs():
         pytest.skip("no stoogedings.ttf")
     glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_") and "." not in n]   # not .salt
     tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs if "_cost_" not in n}
-    assert tags == set(cs.BADGE_TAGS) and len(cs.BADGE_TAGS) == len(set(cs.BADGE_TAGS)) == 1139
+    assert tags == set(psd_edit.BADGE_TAGS) and len(psd_edit.BADGE_TAGS) == len(set(psd_edit.BADGE_TAGS)) == 1139
     costs = {n for n in glyphs if "_cost_" in n}      # badge_cost_<kind>_<number, "." as "p">: one per number and kind
     kinds = {"point": "points", "brick": "bricks", "sp": "sp", "star point": "sp", "soul": "souls", "counter": "counters"}
     assert costs == {f"badge_cost_{kinds[w.lower().rstrip('s')]}_{n.replace('.', 'p')}"
@@ -380,7 +386,7 @@ def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
     found = psd_edit.font_map(fonts([]))
     psd = PSDImage.open(BytesIO(at_rev(clone, CURLY, MINI_DOOMER)))
     layer = psd_edit.ability_layer(psd)
-    assert cs.old_glyphs(layer, found) == []
+    assert old_glyphs(layer, found) == []
     before = capture(layer, found)
     index = next(i for i, g in enumerate(before.layout.glyphs) if g.face.ft.postscript_name.startswith(b"stoogedings"))
     x0, y0, x1, y1 = _glyph_box(before.layout.glyphs[index], before.model.transform, 0)
@@ -390,10 +396,10 @@ def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
     layer._store_raster(rgba, before.bbox)
     old = tmp_path / "old.psd"
     psd.save(str(old), update_preview=False)
-    assert cs.old_glyphs(psd_edit.ability_layer(PSDImage.open(str(old))), found) == [index]
+    assert old_glyphs(psd_edit.ability_layer(PSDImage.open(str(old))), found) == [index]
     assert cs.redraw_old_glyphs(str(old), str(tmp_path / "new.psd"), fonts) == ["Ability"]
     after = capture(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found)
-    assert cs.old_glyphs(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found) == []
+    assert old_glyphs(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found) == []
     assert after.bbox == before.bbox
     outside = np.ones(rgba.shape[:2], bool)
     outside[y0 - by - 2:y1 - by + 2, x0 - bx - 2:x1 - bx + 2] = False
@@ -481,7 +487,7 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
     assert fixed.redrawn == {"old glyphs": ["Ability"]} and fixed.pixel_left == []
     new = PSDImage.open(BytesIO(fixed.data))
-    assert cs.old_glyphs(psd_edit.ability_layer(new), found) == []
+    assert old_glyphs(psd_edit.ability_layer(new), found) == []
     story = psd_edit.story_index(psd_edit.ability_layer(new))
     assert psd_edit.gate_stories(PSDImage.open(str(old)), new, [story]) == [story]
     followed = psd_edit.ability_layer(new).topil()
@@ -640,7 +646,7 @@ def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts,
     assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
     old, new = _ability(data), _ability(fixed.data)
     faces = psd_edit.font_map(fonts([]), new)
-    assert cs.laid_plan(new, faces) is None and cs.old_glyphs(new, faces) == []
+    assert cs.laid_plan(new, faces) is None and old_glyphs(new, faces) == []
     assert new.text == old.text and psd_edit.stories(new._psd) == psd_edit.stories(old._psd)
     assert cs.fix(fixed.data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths").redrawn == {}
 
@@ -764,7 +770,7 @@ def test_badge_widths_relaid_whole_when_a_font_explains_it(clone, tmp_path, ring
         assert any(why in note and "laid out again whole" in note for note in fixed.notes), fixed.notes
         new = _ability(fixed.data)
         faces = psd_edit.font_map(earlier([]), new)
-        assert cs.laid_plan(new, faces, earlier.earlier) is None and cs.old_glyphs(new, faces) == []
+        assert cs.laid_plan(new, faces, earlier.earlier) is None and old_glyphs(new, faces) == []
 
 
 @pytest.mark.parametrize("wider, told", [
@@ -847,7 +853,7 @@ def test_guards_fixes_compose_with_the_ring_font(clone, tmp_path, ring_fonts):
         faces = psd_edit.font_map(fonts([]), new)
         assert cs.salt_layers(new._psd) == [] and [new.text[a:b] for a, b in psd_edit.stylistic_alternates(new)] == ["(2CD)"]
         assert cs.laid_plan(new, faces, earlier.earlier) is None and cs.curly_layers(new._psd) == []
-        assert cs.rule_tags(new._psd) is None and cs.old_glyphs(new, faces) == []
+        assert cs.rule_tags(new._psd) is None and old_glyphs(new, faces) == []
 
 
 # ========================
@@ -1054,14 +1060,14 @@ def test_folders_mid_images_icons(clone, tmp_path, monkeypatch):
     rel = "Auxiliary/Minions/Armored_Squit.psd"
     path = _card(clone, rel)[0]
     assert "'Offensive_Minion' in 'images'" in cs.folder_issues(PSDImage.open(path), rel, parser)
-    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), rel, parser)
     types = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Creature Types")
     assert "'Offensive_Minion' out of 'images' into Creature Types" in done and not done.left
     assert [layer.name for layer in types][0] == "Offensive_Minion"
     rel = "Auxiliary/Items/Hero_Cap.psd"
     path = _card(clone, rel)[0]
     assert not [line for line in cs.folder_issues(PSDImage.open(path), rel, parser) if "Mother" in line]
-    done = cs.standard_folders(path, str(tmp_path / "hero.psd"), None, rel, parser)
+    done = cs.standard_folders(path, str(tmp_path / "hero.psd"), rel, parser)
     assert not [line for line in done if "Mother" in line]
 
 
@@ -1071,19 +1077,19 @@ def test_folders_as_the_templates(clone, tmp_path):
     and read as before (folders_gate); a second run has nothing to do."""
     rel = "Auxiliary/Minions/Abyss_Watcher.psd"
     parser = clone_vocabulary(str(clone)).parser()
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
     psd = PSDImage.open(tmp_path / "out.psd")
     assert done.level == "template" and not done.left and done.counts["types renamed"] == 1
     assert [(g.name, g.sheet_color.name) for g in psd] == [
         ("images", "BLUE"), ("Stars", "YELLOW"), ("Creature Types", "GREEN"), ("Stats Bars", "ORANGE"), ("Text", "RED")]
     assert [g.name for g in psd[3]][-1] == "Lines" and "Adjustments" in [g.name for g in psd[0]]
-    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), rel, parser)
     fixed = cs.fix(open(_card(clone, rel)[0], "rb").read(), rel, [], str(tmp_path / "work"), parser)     # the guards'
     assert fixed.folders == list(done) and fixed.data and not fixed.redrawn
     psd[2].move_to(psd, index=1)                # Creature Types under Stars: the order alone (The Farlands' gap)
     psd.save(str(tmp_path / "order.psd"))
     assert cs.folder_issues(PSDImage.open(tmp_path / "order.psd"), rel) == ["folders out of the templates' order"]
-    done = cs.standard_folders(str(tmp_path / "order.psd"), str(tmp_path / "ordered.psd"), None, rel, parser)
+    done = cs.standard_folders(str(tmp_path / "order.psd"), str(tmp_path / "ordered.psd"), rel, parser)
     assert list(done) == ["folders in the templates' order"] and not done.left
 
 
@@ -1100,7 +1106,7 @@ def test_folders_file_linked_stars(clone, tmp_path, monkeypatch):
         layer.move_to(psd[0])
     psd.save(str(tmp_path / "in.psd"))
     assert "'top right' in 'images'" in cs.folder_issues(PSDImage.open(tmp_path / "in.psd"), rel)
-    done = cs.standard_folders(str(tmp_path / "in.psd"), str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(str(tmp_path / "in.psd"), str(tmp_path / "out.psd"), rel, parser)
     out = PSDImage.open(tmp_path / "out.psd")
     stars = next(group for group in out if group.name == "Stars")
     assert done.level == "template" and not done.left
@@ -1114,7 +1120,7 @@ def test_folders_refusals_read_once(clone, tmp_path, monkeypatch):
     parser = clone_vocabulary(str(clone)).parser()
     reads, real = [], cs.folder_reads
     monkeypatch.setattr(cs, "folder_reads", lambda *args: reads.append(args) or real(*args))
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser, isolated=False)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser, isolated=False)
     why = [line for _, line in done.tried]
     assert not done and why.count(why[0]) == 5 and why[0].startswith("reparse") and len(reads) == 2
 
@@ -1127,7 +1133,7 @@ def test_folders_overlay_text_and_art(clone, tmp_path):
     parser = clone_vocabulary(str(clone)).parser()
     path = _card(clone, rel)[0]
     assert len(cs.hidden_curves(PSDImage.open(path))) == 2
-    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), rel, parser)
     psd = PSDImage.open(tmp_path / "out.psd")
     assert done.level == "template" and not done.left and not cs.hidden_curves(psd)
     assert [g.name for g in psd][-3:] == ["Text", "Overlay Text", "Overlay"] and [l.name for l in psd[-1]] == ["Layer 8"]
@@ -1138,11 +1144,11 @@ def test_folders_name_off_a_styled_stat_folder(clone, tmp_path):
     Text over Text, not into that folder; template level, the picture the same; a second run has nothing to do."""
     rel = "Creatures/Kirby/5 Stars/Butterfly.psd"
     parser = clone_vocabulary(str(clone)).parser()
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
     psd = PSDImage.open(tmp_path / "out.psd")
     assert done.level == "template" and not done.left and "'Name' into Overlay Text" in done
     assert [g.name for g in psd][-2:] == ["Text", "Overlay Text"] and [l.name for l in psd[-1]] == ["Name"]
-    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), rel, parser)
 
 
 def test_folders_name_under_a_styled_text(clone, tmp_path):
@@ -1151,12 +1157,12 @@ def test_folders_name_under_a_styled_text(clone, tmp_path):
     template level, the picture the same; a second run has nothing to do."""
     rel = "Creatures/Kirby/3 Stars/Mega_Titan.psd"
     parser = clone_vocabulary(str(clone)).parser()
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
     text = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Text")
     stat = next(g for g in text if g.name == "Stat Text and Name")
     assert done.level == "template" and not done.left and "'Stat Txt' named 'Stat Text' in it" in done
     assert cs._plain(stat) and [l.name for l in stat] == ["Stat Text", "Name"] and stat[0].has_effects()
-    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), rel, parser)
 
 
 def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
@@ -1164,7 +1170,7 @@ def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
     same (folders_gate, its blend and clip allowed)."""
     rel = "Auxiliary/Creatures/Mettaton_EX.psd"
     parser = clone_vocabulary(str(clone)).parser()
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
     stars = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Stars")
     assert done.counts["folders isolated"] >= 1 and stars.blend_mode.name == "NORMAL"
     assert any(l.kind == "gradientmap" and not l.clipping for l in stars)
@@ -1177,6 +1183,6 @@ def test_folders_may_move_the_website_regions(clone, tmp_path):
     rel = "Creatures/Omori/3 Stars/Kel.psd"
     parser = clone_vocabulary(str(clone)).parser()
     path = _card(clone, rel)[0]
-    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), rel, parser)
     before, after = (regions(PSDImage.open(p), parser.all_types)["stars"] for p in (path, tmp_path / "out.psd"))
     assert "'star' named 'Stars'" in done and len(after) < len(before)

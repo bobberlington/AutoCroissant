@@ -55,7 +55,8 @@ import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.card_bake import Snapshot
-from commands.card_guards import Job, LinkContext, Source, build_context, card_name, earlier_fonts, whole_tree_jobs
+from commands.card_guards import Job, LinkContext, Source, build_context, earlier_fonts, whole_tree_jobs
+from commands.card_models import card_name
 from commands.github_api import blob_sha
 from commands.psd_parser import variant_view
 
