@@ -383,7 +383,6 @@ def test_cursor_moves_only_after_each_message(tmp_path):
     assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
 
 
-
 def test_past_misread_stat_lines_dropped(tmp_path):
     """drop_misread (png_changes backfill --events): Tyler's 'HP 7 -> 23 (buff)' beside DEF, ATK, SPD none goes art; a
     bars-gone side beside a text change keeps the text; an allowed 23, a raid boss's 30, a real step, an edit, a kind

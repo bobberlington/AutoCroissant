@@ -4,7 +4,7 @@ data/fonts.json from site/build/build_site.py): the rendered preview's request, 
 messages against card-preview.yml's contract (commands/card_preview.py's result.json), and the quick mock-up's layout,
 erase, wrapping and stat cells on drawn pixel arrays; the build reads font names as font_check does (fontTools) and maps
 the PSD fonts to MDW/Fonts files, with WOFF2 copies (web_woff2). Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without
-it, node, or a site before preview.js.
+it or a site before preview.js.
 """
 import importlib.util
 import json

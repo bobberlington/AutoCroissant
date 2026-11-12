@@ -92,7 +92,6 @@ def _icons(bs, monkeypatch, root, tree, out):
     return bs.build_icons(tree)
 
 
-
 def test_icons_get_a_68_px_copy(bs, tmp_path, monkeypatch):
     """Each icon is a 96 px WebP plus <name>.<stamp>.68.webp beside it (grid.js iconSet's srcset), both from the PNG; a
     cache with only the 96 px one (before 11-11) gets the 68 px one alone."""
