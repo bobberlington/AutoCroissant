@@ -267,7 +267,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
    the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
    `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; with the line splice, `rasterize(keep=capture(...))`
-   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers
+   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere. Then the FX layers
    (idea 14, 2026-10-21; BUG 2, 2026-10-23): the bake does what `Effect Layers.jsx`'s Update all does. The model, from the
    JSX: an FX layer is a pixel layer `<base> FX: <phrase>[ | <phrase>...]` ("#n" after a phrase: only its nth occurrence)
    holding the base text layer's own raster under a key mask: a copy of the text with the phrases' runs white and every
@@ -470,9 +470,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `classify` calls such an edit redundant; a colon with no variant, "[fire:]", which the font prints as letters and
    the parser reads as [fire], stays as typed since review 2026-10-24, so the gate no longer shares that rule);
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
-   `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
-   every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
-   2026-10-21 review). FX layers back as declared after the reopen: the names in order, the new ones
+   `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` (above
+   20 since 2026-11-06) like any other new problem (the two-row exemption deleted 2026-11-12). FX layers back as declared after the reopen: the names in order, the new ones
    visible, styled, directly above the ability's top-level group, no overlay word layer showing. Gate `gate_fx` (BUG 2,
    2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
    the new layout): every FX layer inks only inside its phrases' glyph boxes padded
@@ -551,8 +550,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   reads 2 (measured on a /tmp copy with the marker hidden); with it, Top none + Bottom 0 reads 10, Top 7 + Bottom 0 reads 7, Top
   none + Bottom 5 reads 15. Writing: value <= 10 shows Top = value (10: none) and Bottom = 0; 11-19 Top none and Bottom = value - 10;
   20 needs a Bottom marker too (none on the Cannon: refused `stat>10`); `classify` refuses > 20, and 11-20 on a one-row card
-  (`stat>10`, "a second row is standardization work (ledger L3)"); gate `reparse` accepts `STATS TOO HIGH` only for a stat above
-  10 on two rows (also when the raise from <= 10 adds it: 7 -> 15 passes, review fix 2026-10-21). Measured on the Cannon (12 -> 7, 15, 10; hp 9 -> 2 as the replace case): 3/2/2/2 flag bytes, 6360 block bytes
+  (`stat>10`, "a second row is standardization work (ledger L3)"); gate `reparse` accepted `STATS TOO HIGH` only for a stat above
+  10 on two rows (also when the raise from <= 10 adds it: 7 -> 15 passes, review fix 2026-10-21; since 11-06 STATS TOO HIGH
+  is above 20 and the gate treats it like any new problem). Measured on the Cannon (12 -> 7, 15, 10; hp 9 -> 2 as the replace case): 3/2/2/2 flag bytes, 6360 block bytes
   (Bottom 2's ColorOverlay + BevelEmboss follows the shown digit), the parser reads each value back; the render gates refuse it
   (idea 12 above). Earlier 2026-10-21: `EXCESSIVE_STAT_EXCLUSIONS` deleted (STATS TOO HIGH unless the edits file says
   `allow_high_stats`: Sonic, Royal Eradicator Main Cannon; goldens refreshed). Still open: Sonic's conversion (L3: two rows under

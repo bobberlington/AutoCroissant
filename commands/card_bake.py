@@ -73,7 +73,7 @@ from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from commands.psd_parser import name_key, picture_numbers, shown_in
+from commands.psd_parser import name_key, picture_numbers, shown_in, variant_view
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, EDITS_PATH, FONT_DIRS_ENV,
                            ICON_MANIFEST_PATH, LOCAL_DIR_LOC, RATINGS_PATH, RULES_PATH, STARS_DIR, TYPES_DIR)
 
@@ -1035,7 +1035,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
                   jobs: Optional[dict] = None, target: str = "", template: Optional[tuple] = None,
                   ability_from: Optional[tuple] = None) -> psd_edit.Baked:
     """
-    A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
+    A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (variant_view)
     onto its own PNG, the saved picture's first (its run writes the PSD); every run's PSD must
     hold the same layer records. A stars, types or stat edit whose value differs by picture is impossible; a name edit
     with another field showing in a picture of its own title bakes alone (OWN_TITLE): next run, or now if the rest is
@@ -1048,7 +1048,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
     jobs, numbers = card.jobs if jobs is None else jobs, sorted(card.pictures)
     parses, titles = {}, {}
     for n in numbers:
-        with psd_edit.variant(psd, n):
+        with variant_view(psd, n):
             parses[n] = psd_edit.parse_card(parser, old_psd, card.rel, psd)
             titles[n] = psd_edit.read_name(psd, psd_edit._card_name(parses[n]), getattr(parser, "linked", None),
                                            card.rel) if "name" in jobs else None

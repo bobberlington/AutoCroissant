@@ -4530,7 +4530,7 @@ def folder_reads(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     tags = variants_of(psd)
     renders, parses = [], []
     for n in tags if len(tags) > 1 else [None]:
-        with psd_edit.variant(psd, n):
+        with variant_view(psd, n):
             drawn = psd.composite(ignore_preview=True, apply_icc=False, text_preview=False)
             renders.append(np.asarray(drawn.convert("RGBA"), np.int16))
         card = parser.parse(psd, rel, variant=n)

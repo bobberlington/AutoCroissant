@@ -57,6 +57,7 @@ from commands.card_edits import CardAuthors
 from commands.card_bake import Snapshot
 from commands.card_guards import Job, LinkContext, Source, build_context, card_name, earlier_fonts, whole_tree_jobs
 from commands.github_api import blob_sha
+from commands.psd_parser import variant_view
 
 # ========================
 # Configuration
@@ -243,11 +244,11 @@ def sweep_card(job) -> dict:
 
 
 def _drawings(psd) -> list:
-    """K1's renders of every picture (psd_edit.variant): the fork's, no ICC, every text in the gamma, uint8 RGBA."""
+    """K1's renders of every picture (variant_view): the fork's, no ICC, every text in the gamma, uint8 RGBA."""
     tags = sorted(psd_edit.variants_of(psd))
     out = []
     for n in tags if len(tags) > 1 else [None]:
-        with psd_edit.variant(psd, n):
+        with variant_view(psd, n):
             drawn = psd.composite(ignore_preview=True, apply_icc=False, text_preview=False)
             out.append(np.asarray(drawn.convert("RGBA")))
     return out
@@ -294,7 +295,7 @@ def _picture(psd, path: str, main: str) -> Optional[int]:
 
 def _png_ok(psd, image, path: str, main: str) -> bool:
     """png_check (R10) of a PNG against the picture it shows."""
-    with psd_edit.variant(psd, _picture(psd, path, main)):
+    with variant_view(psd, _picture(psd, path, main)):
         return png_export.png_check(psd, image).get("ok") is True
 
 

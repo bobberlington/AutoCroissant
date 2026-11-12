@@ -32,8 +32,7 @@ import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _merge_twins,
-    _moved_box, _outside_units, _reading, _star_count, _star_layouts, _star_units, _stars_total, _texts, offline_parser,
-    plan_stars, type_row,
+    _moved_box, _outside_units, _reading, _star_layouts, _star_units, _texts, offline_parser, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -447,7 +446,7 @@ def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     """A header without one Stars group drawing them: the stars the bake lays out loose (plan_stars' _loose_units:
     layers named star, several groups; R2, R3), each count's centres (its plan's) and the counts it refuses."""
     types, stars = parser.all_types, parser.star_names()
-    total = _stars_total(psd, types=types, stars=stars)
+    total = PSDParser.stars_drawn(psd, types, stars)
     parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
     at, refused, scale = {}, {}, {}
     for n in range(1, HEADER_STARS + 1):
@@ -458,7 +457,7 @@ def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
                 scale[str(n)] = plan.scaled[0][1]
         except Refused as e:
             refused[str(n)] = _why(e)
-    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
+    groups = [group for group in PSDParser._star_groups(psd) if PSDParser.stars_in(group, types)]
     outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)) if groups else []
     loose = _loose_units(psd, groups, not groups, types, stars)[0] if at else []
     shown = _merge_twins(loose + outside) if loose else []
@@ -481,10 +480,10 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     """
     parser = parser or _icon_parser(vocab)
     types = parser.all_types
-    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
+    groups = [group for group in PSDParser._star_groups(psd) if PSDParser.stars_in(group, types)]
     if len(groups) != 1:
         return _kept_stars(psd, rel, parser)
-    total = _stars_total(psd, types=types, stars=parser.star_names())
+    total = PSDParser.stars_drawn(psd, types, parser.star_names())
     container = _star_container(groups[0], types)
     outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), parser.star_names()))
     shown = _merge_twins(_star_units(container, types)[0] + outside)     # as plan_stars lays them out (R2, R3)

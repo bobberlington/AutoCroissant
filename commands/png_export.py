@@ -58,7 +58,7 @@ from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.psd_edit import Refused
-from commands.psd_parser import TITLE_REGION_RATIO, hidden_tags, layer_tag, picture_numbers
+from commands.psd_parser import TITLE_REGION_RATIO, hidden_tags, layer_tag, picture_numbers, variant_view
 from commands.psd_regions import fx_pad, stat_rows
 
 # ========================
@@ -821,7 +821,7 @@ def picture_number(path: str) -> Optional[int]:
 
 def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: int,
                    fonts: Optional[Callable] = None) -> tuple:
-    """A tagged PSD's picture n onto its own PNG: _unchecked drawn as that picture (psd_edit.variant).
+    """A tagged PSD's picture n onto its own PNG: _unchecked drawn as that picture (variant_view).
 
     Returns:
         (bytes, "") made, (None, "") unchanged, (b"", why) refused"""
@@ -841,7 +841,7 @@ def _saved_as_one(old: Optional[PSDImage], new: PSDImage) -> bool:
 
 def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, numbered: Optional[dict], n: int,
                 fonts: Optional[Callable] = None) -> Export:
-    """_unchecked drawn as picture n (psd_edit.variant): the stored image shows the saved picture, so nothing is
+    """_unchecked drawn as picture n (variant_view): the stored image shows the saved picture, so nothing is
     cross-checked. numbers["picture"]: n and the picture the PSD was saved showing."""
     if png.size != (new.width, new.height) or png.mode not in ("RGB", "RGBA"):
         return Export("refused", G7, "G7")
@@ -852,7 +852,7 @@ def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, number
     if hidden:
         return Export("refused", f"PNG not made: {hidden}; {EXPORT}", "R12")
     saved = psd_edit.saved_view(new)
-    with psd_edit.variant(new, n), (psd_edit.variant(old, n) if old is not None else nullcontext()):
+    with variant_view(new, n), (variant_view(old, n) if old is not None else nullcontext()):
         found = _unchecked(old, new, png, numbered, fonts)
     found.numbers["picture"] = {"drawn": n, "saved": saved}
     return found
@@ -863,7 +863,7 @@ def new_picture(new: PSDImage, n: int) -> tuple:
     hidden = _hidden(new, n)
     if hidden:
         return b"", f"PNG not made: {hidden}; {EXPORT}"
-    with psd_edit.variant(new, n):
+    with variant_view(new, n):
         out = _render(new, (0, 0, new.width, new.height), True, {})
         result = Export("current", unchecked=True)
         if out.mode == "RGBA" and int(np.asarray(out)[..., 3].min()) == 255:
@@ -1208,7 +1208,7 @@ def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     """
     if _undrawn(psd, other):
         return False
-    with psd_edit.variant(psd, 1), psd_edit.variant(other, 1):     # the PNG is picture 1 (untagged: no change)
+    with variant_view(psd, 1), variant_view(other, 1):     # the PNG is picture 1 (untagged: no change)
         return _shows(png, psd, other)
 
 
@@ -1408,7 +1408,7 @@ def png_check(psd: PSDImage, png: Image.Image, keep: Optional[dict] = None) -> d
         if _no_composite(psd) is not None:
             return {"ok": None, "why": "not 8-bit RGB"}
         scratch = Export("current")
-        with psd_edit.variant(psd, 1):          # Name.png is picture 1 (untagged: as saved)
+        with variant_view(psd, 1):          # Name.png is picture 1 (untagged: as saved)
             icc, render = _render_voted(psd, (0, 0, psd.width, psd.height), psd_edit.export_icc(psd, png),
                                         psd_edit.icc_vote(psd, png), png, scratch, png)
         render = like_mode(render, png.mode)

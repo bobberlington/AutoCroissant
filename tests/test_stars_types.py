@@ -157,9 +157,9 @@ def test_layouts_rows_of_two_and_lines():
     assert pe._zigzag(zigzag2, size) == ((1130, 70), (1020, 180), (0, 220))
     assert pe._pyramid([_unit(1080, 20), _unit(970, 60)], size) is None               # a pair askew: no row
     column = [_unit(1080, 20), _unit(1080, 160)]
-    assert pe._pyramid(column, size) is None and pe._line(column, size, True) == ((1130, 70), (0, 140))
+    assert pe._pyramid(column, size) is None and pe._line(column, size) == ((1130, 70), (0, 140))
     ell = [_unit(1080, 20), _unit(970, 20), _unit(1080, 300)]
-    assert pe._pyramid(ell, size) is None and pe._line(ell, size, True) is None and pe._zigzag(ell, size) is None
+    assert pe._pyramid(ell, size) is None and pe._line(ell, size) is None and pe._zigzag(ell, size) is None
     lone = pe._Unit([SimpleLayer("Star", (1080, 20, 1190, 130))], (1085, 25, 1185, 125))
     assert pe._pyramid([lone], size) == (1135, 1025, 75, 110, False)
     assert [how for how, _ in pe._star_layouts([lone], size, 2)] == ["rows of two", "a column"]
@@ -464,13 +464,13 @@ def test_real_star_layouts(clone, parser, tmp_path):
     assert mettaton.how == "a zigzag" and [(dx, dy) for _, dx, dy, _ in mettaton.copies] == [(77, 90)]
     springtrap = _clone_card(clone, SPRINGTRAP, tmp_path)[0]
     assert len(_plan(parser, springtrap, SPRINGTRAP, "stars", 4).hide) == 1
-    six = _plan(parser, springtrap, SPRINGTRAP, "stars", 6)        # no room to grow its top row: laid out again, told
-    assert six.how == "rows of two, laid out again" and len(six.copies) == 1 and "does not go on to 6" in six.notes[0]
+    six = _plan(parser, springtrap, SPRINGTRAP, "stars", 6)        # no room to grow its top row: laid out again
+    assert six.how == "rows of two, laid out again" and len(six.copies) == 1
 
 
 LAYOUT_STARS = [   # LAYOUT_SUPPORT.md's star rules, one card each: (card, stars, how, notes)
     ("Auxiliary/Minions/Lorian.psd", 6, "its rows carried on", 0),             # 2 over 3: the top row grows
-    ("Auxiliary/Minions/God_Tamer.psd", 6, "rows of two, laid out again", 1),  # a dice five: its six, told
+    ("Auxiliary/Minions/God_Tamer.psd", 6, "rows of two, laid out again", 0),  # a dice five: its six
     ("Auxiliary/Minions/Cat.psd", 2, "1 hidden", 0),                           # a group drawing two beside a group of one
     ("Auxiliary/Items/Nasty_Patty.psd", 4, "rows of two", 0),                  # no Stars group: Patrick Stars in a group
     ("Auxiliary/Minions/Paint_Warrior.psd", 3, "rows of two", 0),              # two Stars groups, one star each
@@ -504,7 +504,7 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
         path = _clone_card(clone, rel, tmp_path)[0]
         psd = PSDImage.open(path)
         parsed = pe.parse_card(parser, path, rel, psd)
-        assert parser._count_stars(psd) == stars == pe._stars_total(psd, types=parser.all_types, stars=parser.star_names()), rel
+        assert parser._count_stars(psd) == stars == pe.PSDParser.stars_drawn(psd, parser.all_types, parser.star_names()), rel
         for value in (stars - 1, stars + 1):
             if refused is None:
                 assert pe.plan_stars(psd, parsed, value, parser).how, (rel, value)
@@ -541,7 +541,7 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     #   outside are stars of the column
     assert "5" not in header["refused"] and header["at"]["5"][4][1] == 1054      # 539 px under its spot, past the moss
     tyler = "Creatures/Other/5 Stars/Tyler.psd"             # its six laid out again run off the top: all go down
-    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser).notes[1:] == [
+    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser).notes == [
         "stars: the stars placed 20 px lower to fit: check it"]
 
 
@@ -602,17 +602,16 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     bolts = pe.plan_stars(*_open(parser, clone, "Items/Heal/1 Stars/Bolts_and_Screws.psd", tmp_path), 2, parser)
     assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
     spiky = pe.plan_stars(*_open(parser, clone, "Items/Counter/3 Stars/Spiky_Ball_Trap.psd", tmp_path), 5, parser)
-    assert spiky.how == "rows of two, laid out again" and len(spiky.notes) == 1          # no step down, no banner note
+    assert spiky.how == "rows of two, laid out again" and not spiky.notes          # no step down, no banner note
     prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser)
     assert prize.how == "a row on its banner, every star at 95%"        # a lone star's banner too (option B)
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
-    assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told
+    assert row.how == "a row on its banner" and len(row.copies) == 1
     assert _centres(row) == [(1127, 98), (1063, 98), (999, 98)]         # tightened from its pitch of 74 to fit
     magolor = pe.plan_stars(*_open(parser, clone, "Creatures/Kirby/5 Stars/Crowned_Magolor.psd", tmp_path), 6, parser)
     assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
-    assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
-    assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
+    assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)] and not magolor.notes
 
 
 def test_stars_shrink_to_fit_their_banner(clone, parser, tmp_path):
@@ -772,8 +771,8 @@ def test_copied_smart_stars_bake_alike(clone, parser, tmp_path):
     assert records[0] == records[1]
 
 
-def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
-    """John Ward has no type icon; Creature_Template's spot touches its Name: the icon is made there, told."""
+def test_a_first_type_icon_on_the_title_bakes(clone, parser, tmp_path):
+    """John Ward has no type icon; Creature_Template's spot touches its Name: the icon is made there."""
     rel = "Creatures/Other/3 Stars/John_Ward.psd"
     path = _clone_card(clone, rel, tmp_path)[0]
     template = clone / "MDW/Templates/Creature_Template.psd"
@@ -781,7 +780,7 @@ def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
     spot = pe.template_icon(PSDImage.open(str(template)), psd, parser, "Creature_Template")
     plan = pe.plan_types(psd, pe.parse_card(parser, path, rel), ["fire"], parser, spot)
     edit = pe.set_icons(psd, plan, _types_dir(tmp_path))
-    assert any("at Creature_Template's spot touches 'Name'" in note for note in edit.notes), edit.notes
+    assert plan.first == "Creature_Template" and [done[0] for done in plan.done].count("made") == 1 and not edit.notes
 
 
 def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):

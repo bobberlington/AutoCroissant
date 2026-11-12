@@ -472,9 +472,7 @@ def test_blobs_of_templates():
 def test_soft_notes():
     """The old list's "bakes with flag" kinds are told nowhere; real problems and layouts stay."""
     soft = ["overflow: name reaches the stars or type icons", "overflow: name: moved +12 px to stay on the card",
-            "types: the first type icon is placed at Creature_Template's spot: check it", "ability: also printed by Ability copy",
-            "stars: Star (the card's own layout does not go on to 6)",
-            "font: name: set in OMORI_GAME, the face its pixels show"]
+            "types: 1 made from Types/, the first at Creature_Template's spot: check it", "ability: also printed by Ability copy"]
     real = ["stars not baked: unsupported-card: stars: x", "font: not resolved exactly, drawn in a stand-in: A", "stars: rows of two"]
     assert real_notes(soft + real) == real and all(SOFT_NOTE.search(note) for note in soft)
 

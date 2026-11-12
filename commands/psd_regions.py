@@ -54,12 +54,8 @@ def fx_pad(layer) -> int:
     """
     total = 0
     for owner in (layer, *_ancestors(layer)):
-        try:
-            effects = list(owner.effects)
-        except Exception:                       # no effects block, or one psd-tools can't read
-            effects = []
         stroke = shadow = 0
-        for effect in effects:
+        for effect in owner.effects:
             if not effect.enabled:
                 continue
             kind = type(effect).__name__

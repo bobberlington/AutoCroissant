@@ -47,7 +47,6 @@ AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 1
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
 NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",)   # Text/Name + one visible Text/Ability, fonts in MDW/Fonts
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
-GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # an overlay "Blazing" type layer over the ability (OuterGlow)
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
@@ -62,11 +61,8 @@ PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                # its title l
 SANS = "Creatures/Undertale/5 Stars/Sans.psd"                      # likewise 'Text/snas.'
 LORIAN = "Auxiliary/Minions/Lorian.psd"                            # smart objects with smart filters
 KNIGHT = "Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd"        # 'Knight', 'Lost', 'A', 'Lot' stacked: two in the title region
-FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                    # four lines of plain ability text: an edit to one keeps three
 PIZZA = "Creatures/Other/3 Stars/Pizza.psd"                        # three lines in three colours, each after a badge
 COLOURED = "7fd2aa30"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
-OVERLAID = {GASOLINE: "3b06f803bb0abf57859297e271177dd82855402b^",    # the last versions with the overlay word: these
-            CANNON: "587d38b401102b13d06733a5f62b01ebeb674d3f^"}      # commits hid it under the JSX's FX layer (2026-10-22)
 STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted Blood", "Curse", "Cursed Inferno", "Frozen",
           "Frozen In Time", "Glued", "Hemorrhaging", "Hexed", "Infected", "Spirit Flame", "Withering"]   # the chart's styled statuses
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
@@ -84,15 +80,6 @@ def _ink(layer, psd) -> np.ndarray:
     x0, y0, x1, y1 = layer.bbox
     out[y0:y1, x0:x1] = layer.numpy("shape")[..., 0] > 0.5
     return out
-
-
-def _overlaid(clone, rel: str, tmp_path) -> str:
-    """OVERLAID[rel]'s PSD from the clone's history, in tmp_path/overlaid/."""
-    data = at_rev(clone, OVERLAID[rel], rel)
-    path = tmp_path / "overlaid" / Path(rel).name
-    path.parent.mkdir()
-    path.write_bytes(data)
-    return str(path)
 
 
 def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)), blocks=(), rect=(0, 0, 1, 1)) -> dict:
@@ -327,7 +314,6 @@ def test_classify_table():
     assert out.redundant == ["def", "ability"]
     assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("unsupported-card", "stars"), ("unsupported-card", "types"),
                                                                      ("unsupported-card", "no PSD to find the title layer in")]
-    assert out.other == ["spd", "note", "series", "creatures", "hidden"]
     assert out.site == {"atk": "atk 11: the bar's one row prints up to 10"}     # past what the rows print: website only
     two_rows = {"card": {"type": "creature", "atk": 12}}                      # a parse above 10 means Top + Bottom rows (idea 13)
     assert pe.classify(two_rows, {"atk": 15}).jobs == {"atk": 15} and pe.classify(two_rows, {"atk": 12}).redundant == ["atk"]
@@ -1580,7 +1566,7 @@ def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
     base = SimpleNamespace(name="Ability")
     names = ["Ability FX: (1CD) | (3U) | (OYT) | (ENDT)", "Ability FX: [fire]", "Ability FX: Blazing", "Ability FX: Frozen#2",
              "Ability FX: Smoldering", "Ability FX: +2/4/6 ATK", "Ability FX: 1#1"]
-    fx = [SimpleNamespace(name=name, kind="pixel") for name in names]
+    fx = [SimpleNamespace(name=name, kind="pixel", tagged_blocks=None) for name in names]
     assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["own", "own", "status", "status", "own", "own", "own"]
     assert [pe.fx_kind(layer, base, None) for layer in fx] == ["own"] * 7
     goofy = SimpleNamespace(name="Ability FX: 1#1", kind="pixel", tagged_blocks=chart["become back money"].blocks)
@@ -1936,7 +1922,7 @@ def test_bare_icons_under_a_tinted_ability(clone, tmp_path):
     at = layer.text.index("(1GCD)")
     layer.set_span_style(at, at + 6, StylisticAlternates=True)
     assert pe.bare_icons(psd, fonts) == Counter()
-    edit = SimpleNamespace(field="ability", fx_names=[])
+    edit = SimpleNamespace(field="ability", fx_names=[], several=False)
     assert pe.gate_fx(psd, [edit], fonts_dir, None) == [] and pe.gate_fx(old, [edit], fonts_dir, None) == []
     bomb = PSDImage.open(_card(clone, BLOOD_BOMB)[0])
     assert pe.bare_icons(bomb, fonts) == Counter({"[machine]": 1}) and pe.gate_fx(bomb, [edit], fonts_dir) == []
@@ -1971,7 +1957,7 @@ def test_gate_fx_tells_letters_in_the_icon_font(clone):
     pe.splice_text(layer, text, pe.edit_parts(layer.text, text, *pe.changed_range(layer.text, text)))
     layer.rasterize(fonts=fonts)
     assert pe.lettered_icons(psd, fonts) == Counter("[fire:]")
-    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old) == [
+    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], fonts_dir, None, old) == [
         "unsupported-card: ability: ':[]efir': the icon font draws them as letters, no badge or icon"]
 
 
@@ -1990,8 +1976,8 @@ def test_gate_fx_tells_a_token_not_shaped_as_one_icon(clone, parser):
     layer.rasterize(fonts=fonts)
     assert not any(pe._char_styles(layer)[1][i] for i in range(text.index("[fire]"), text.index(" any")))
     assert pe.unshaped_icons(psd, fonts, parser.icons) == Counter({"[fire]": 1})
-    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old) == []   # no vocabulary
-    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old, parser.icons) == [
+    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], fonts_dir, None, old) == []   # no vocabulary
+    assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], fonts_dir, None, old, parser.icons) == [
         "unsupported-card: ability: [fire]: not drawn as one badge or icon"]
 
 
@@ -2054,7 +2040,7 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
             layer.set_span_style(title.index("["), len(title), Font=pe.ICON_FONT)
         layer.rasterize(fonts=fonts)
         titles = (layer, pe.name_layer(old, Path(rel).stem.replace("_", " ")))
-        assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, None, old, parser.icons) == []
+        assert pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], fonts_dir, None, old, parser.icons) == []
         notes = pe.gate_fx(psd, edits, fonts_dir, None, old, parser.icons, titles)
         if why is None:
             assert notes == []
@@ -2241,9 +2227,10 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
         psd_path = _card(clone, rel)[0]
         psd = PSDImage.open(psd_path)
         old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
+        size = _runs(pe.ability_layer(psd))[0][2]
         edit = pe.set_text_layer(psd, "ability", old + more, fonts, chart, parser=parser)
         notes = [note for note in edit.notes if note.startswith("ability: ")]
-        fit = [note for note in edit.notes if search(r"^overflow: ability: set at [4-9]\d% of its size to stay on", note)]
+        fit = _runs(edit.layers[0])[0][2] < size
         assert (bool(notes), bool(fit)) == (want == "told", want == "fit"), (rel, edit.notes)
         assert all(note.endswith("; check the card") for note in notes)
 
@@ -2281,7 +2268,7 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
     text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) + "\nDraw a card."
     parsed, baked = _bake(clone, parser, rel, {"ability": text}, tmp_path, chart)
     new = PSDImage.open(baked.psd_path)
-    up = int(search(r"ability: moved up (\d+) px to stay on the card", " ".join(baked.fx_notes)).group(1))
+    up = next(edit.lifted for edit in baked.edits if edit.field == "ability")
     a, b = pe.ability_layer(old), pe.ability_layer(new)
     assert up > 0 and b._data.transform[5] == a._data.transform[5] - up
     assert not pe._ink_off_canvas(b, new.width, new.height)
@@ -2363,7 +2350,7 @@ def test_gate_fx_refuses_an_own_style_layer_over_a_new_colour(clone, chart):
     with pytest.raises(pe.Refused, match=why):
         pe.gate_fx_colours(psd, old, chart)
     with pytest.raises(pe.Refused, match=why):
-        pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], str(clone / pe.FONTS_DIR), chart, old)
+        pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], str(clone / pe.FONTS_DIR), chart, old)
 
 
 def test_the_bakes_vocabulary_knows_only_the_fonts_icons():
@@ -2680,8 +2667,7 @@ def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart,
         other = "OMORI_GAME" if font == "OMORI_GAME2" else "OMORI_GAME2"
         layer = pe.name_layer(psd, card)
         assert pe.shown_faces(layer, fonts) == {font: other} and pe.font_map(fonts, layer).aliases == {font: other}
-        edit = pe.set_text_layer(psd, "name", layer.text + "s", fonts, chart, card, parser=parser)
-        flagged(edit.notes, rf"^font: name: set in {other}, the face its pixels show \(the PSD named {font}\)$")
+        pe.set_text_layer(psd, "name", layer.text + "s", fonts, chart, card, parser=parser)
         assert {run.style.font for run in TextModel.from_layer(layer).runs} == {other} and pe.shown_faces(layer, fonts) == {}
     psd = PSDImage.open(_card(clone, RED_KNIFE)[0])     # OMORI_GAME2, drawn in it
     assert not [n for n in pe.set_text_layer(psd, "name", "Red Knifes", fonts, chart, "Red Knife", parser=parser).notes
@@ -2745,7 +2731,7 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path):
     jobs = pe.classify(parsed, edits, psd, parser).jobs
     assert pe.template_for(parsed["card"]["type"], WATCHER) == "MDW/Templates/Creature_Template.psd"
     baked = pe.apply_jobs(path, png, WATCHER, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
-                          psd=psd, ability_from=(PSDImage.open(clone / pe.TEMPLATES_DIR / "Creature_Template.psd"),
+                          psd=psd, ability_from=(PSDImage.open(clone / pe.TEMPLATE_DIR / "Creature_Template.psd"),
                                                  "Creature_Template"))
     saved = PSDImage.open(baked.psd_path)
     added = [layer for layer in saved.descendants() if pe._is_text_layer(layer) and layer.text]
@@ -2757,7 +2743,7 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path):
     assert first > max(b[3] for b in stats) and ink[3] <= saved.height and 0 <= ink[0] < ink[2] <= saved.width
     # its Txt2 frame: the template's Bezier scaled to the new BoxBounds (Photoshop's point order), every strike rect
     # that was the template's box now the new one (review 2026-10-25)
-    template = PSDImage.open(clone / pe.TEMPLATES_DIR / "Creature_Template.psd")
+    template = PSDImage.open(clone / pe.TEMPLATE_DIR / "Creature_Template.psd")
     was = _frame(template, next(l for l in template.descendants() if pe._is_text_layer(l) and l.name == "Ability"))
     now = _frame(saved, added[0])
     (_, _, w0, h0), (_, _, w1, h1) = was[0], now[0]
@@ -2797,7 +2783,7 @@ def test_plus_ability_on_an_item_starts_at_its_panels_top(clone, parser, chart):
     for fx in pe.fx_layers(psd, layer):
         fx.parent.remove(fx)
     pe.remove_layer(psd, layer)
-    template = PSDImage.open(clone / pe.TEMPLATES_DIR / "Item_Template.psd")
+    template = PSDImage.open(clone / pe.TEMPLATE_DIR / "Item_Template.psd")
     edit = pe.add_ability(psd, "+2 ATK while below half HP.", template, "Item_Template", str(clone / pe.FONTS_DIR), chart,
                           "Adrenaline", parser, None, ADRENALINE)
     added = next(l for l in psd.descendants() if pe._record_index(l) in edit.added)
