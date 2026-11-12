@@ -8,6 +8,7 @@ need the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray):
 """
 import json
 from math import cos, pi, sin
+from os import environ
 from pathlib import Path
 from shutil import copy
 from types import SimpleNamespace
@@ -824,6 +825,39 @@ def test_real_type_rows(clone, parser, tmp_path, monkeypatch):
                   if layer.name == "Defensive_Minion")
     core = pe._core(shield)
     assert stem == "fire" and box[0] == core[0] and box[1] > core[3]       # under the row's first icon, not by the title
+
+
+@pytest.mark.parametrize("rel, value", [("Auxiliary/Minions/Sigma.psd", 4),
+                                        ("Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd", 5)])
+def test_a_clipped_adjustment_stays_in_its_icons_box(clone, parser, tmp_path, rel, value):
+    """A stars edit's dirty box stays the stars' though they carry a clipped adjustment (Sigma's Black & White;
+    Warcraftian Druid's in pass-through groups) the fork counts as the whole canvas; PSD_DIRTY_VERIFY renders whole."""
+    path = _clone_card(clone, rel, tmp_path)[0]
+    old, raw = PSDImage.open(path), Path(path).read_bytes()
+    new = pe.edit_copy(old, raw)
+    edit = pe.set_icons(new, pe.plan_stars(new, pe.parse_card(parser, path, rel, old), value, parser, split=True), None, rel)
+    box = pe.dirty_box(old, new)
+    assert (box[2] - box[0]) * (box[3] - box[1]) < old.width * old.height / 10 and environ["PSD_DIRTY_VERIFY"] == "1"
+    pe.gate_dirty(old, new, [edit], icon=True)
+
+
+def test_a_clip_layer_falling_to_another_base(tmp_path):
+    """B2 removed: C (clipped, the whole canvas) falls onto B1. The box holds both bases, so the gate sees B1's change."""
+    from psd_tools.constants import Tag
+    psd = PSDImage.new("RGB", (600, 400), color=(120, 90, 60))
+    for n, (name, colour, (w, h), (left, top)) in enumerate((("B1", 200, (60, 60), (20, 20)),
+                                                            ("B2", 50, (60, 60), (500, 300)),
+                                                            ("C", 250, (600, 400), (0, 0))), 1):
+        psd.append(PixelLayer.fromarray(np.full((h, w, 3), colour, np.uint8), psd, name=name, top=top, left=left))
+        psd[-1]._record.tagged_blocks.set_data(Tag.LAYER_ID, n)
+    psd[-1].clipping = True
+    psd.save(str(tmp_path / "clip.psd"))
+    old = PSDImage.open(str(tmp_path / "clip.psd"))
+    new = pe.edit_copy(old, (tmp_path / "clip.psd").read_bytes())
+    new.remove(new[1])
+    assert pe.dirty_box(old, new) == (20, 20, 560, 360)
+    with pytest.raises(pe.Refused, match="outside the edited boxes"):
+        pe.gate_dirty(old, new, [pe.Edit("stars", 1, 2, [], [], (500, 300, 560, 360))])
 
 
 def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path):

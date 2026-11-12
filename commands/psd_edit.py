@@ -9213,13 +9213,35 @@ def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
             box = _join(box, (max(x0 - margin, 0), max(y0 - margin, 0), min(x1 + margin, n._psd.width),
                               min(y1 + margin, n._psd.height)))
         else:
-            box = _join(_join(box, o is not None and do.change(o) or None), n is not None and dn.change(n) or None)
-    for seq, indices, doc in ((oc, touched[0], do), (nc, touched[1], dn)):
-        for i in indices:               # the clip layers above a changed one
-            for layer in seq[i + 1:]:
-                if not layer.clipping:
+            box = _join(_join(box, o is not None and _change_reach(do, o, oc, oi[lid]) or None),
+                        n is not None and _change_reach(dn, n, nc, ni[lid]) or None)
+    for seq, indices, doc, other, at, odoc in ((oc, touched[0], do, nc, ni, dn), (nc, touched[1], dn, oc, oi, do)):
+        for i in indices:               # the clip layers above a changed one, both sides' (their base may differ)
+            for k in range(i + 1, len(seq)):
+                if not seq[k].clipping:
                     break
-                box = _join(box, doc.change(layer))
+                j = at.get(seq[k].layer_id)
+                box = _join(_join(box, _change_reach(doc, seq[k], seq, k)),
+                            None if j is None else _change_reach(odoc, other[j], other, j))
+    return box
+
+
+def _change_reach(doc: _DirtyDoc, layer, seq: list, i: int):
+    """doc.change(layer), but a clipped layer's met with its clip base's (it draws only inside it) and a pass-through
+    group's from its children so: the fork counts any adjustment, clipped too, as the whole canvas."""
+    if layer.clipping:
+        j = next((j for j in range(i - 1, -1, -1) if not seq[j].clipping), None)
+        if j is not None:
+            base = _change_reach(doc, seq[j], seq, j)
+            return base and clip_to(doc.change(layer), base)
+    if not (layer.is_group() and layer.blend_mode == BlendMode.PASS_THROUGH):
+        return doc.change(layer)
+    from psd_tools.api.layers import AdjustmentLayer
+    C, memo = doc.composite, doc.cache.content_bboxes
+    box, kids = _join(C._effect_reach(layer, memo), C._content_bbox(layer, memo)), list(layer)
+    for k, child in enumerate(kids):
+        if isinstance(child, AdjustmentLayer) or child.is_group():
+            box = _join(box, _change_reach(doc, child, kids, k))
     return box
 
 
@@ -9268,9 +9290,10 @@ def dirty_box(old: PSDImage, new: PSDImage, lines: Optional[dict] = None) -> Opt
     """
     Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
     per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
-    group's effect reach. The whole canvas on a reorder, a document-level change (but links added: _links_grown), an
-    external link, or when the walk fails (raised under PSD_DIRTY_VERIFY). lines: {layer id: Edit.lines}
-    (_lines): such a type layer, its look the same (_same_look), counts as its lines and its effects' reach.
+    clipped layer's met with its clip base's (_change_reach: a clipped adjustment on a star or type icon stays in its
+    icon's box), a group's effect reach. The whole canvas on a reorder, a document-level change (but links added:
+    _links_grown), an external link, or when the walk fails (raised under PSD_DIRTY_VERIFY). lines: {layer id:
+    Edit.lines} (_lines): such a type layer, its look the same (_same_look), counts as its lines and its effects' reach.
 
     Returns:
         The bbox on the canvas, None when nothing differs
