@@ -1,6 +1,6 @@
 #target photoshop
 // custom_bars.py's Photoshop half. PLAN: {"log", "step": "build"|"finish", "margin", "cards": [plan.json, ...]}.
-// build: each stat's Dark and Light rows (its row documents merged, cut to its band if it has one) become one smart
+// build: each stat's Dark and Light rows (its row documents merged) become one smart
 // object in the stat's group, the old layers deleted; inside it the Light group's mask, unlinked, moved per value
 // with a layer comp "0".."10"; the comp set to the value. finish: each bar redrawn by Photoshop at its value, saved;
 // every comp saved as a PNG copy.
@@ -74,11 +74,6 @@ function row(card, T, stat, state, s) {
   R.activeLayer = find(R, s.group);            // Merge Visible needs a visible layer selected
   executeAction(sT('mergeVisible'), new ActionDescriptor(), DialogModes.NO);
   var m = R.activeLayer; m.name = state === "F" ? "Light" : "Dark";
-  if (s.band) {                                // only the stat's band of the card
-    var b = s.band;
-    R.selection.select([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]], SelectionType.REPLACE, 0, false);
-    R.selection.invert(); R.selection.clear(); R.selection.deselect();
-  }
   var dup = m.duplicate(T, ElementPlacement.PLACEATBEGINNING);
   R.close(SaveOptions.DONOTSAVECHANGES);
   app.activeDocument = T;
@@ -97,7 +92,6 @@ function bar(card, T, stat) {
   light.move(G, ElementPlacement.PLACEATEND);
   dark.move(G, ElementPlacement.PLACEATEND);
   for (i = 0; i < old.length; i++) old[i].remove();
-  if (s.extra) find(T, s.extra, true).remove();
   selectId(light.id, false); selectId(dark.id, true);
   executeAction(sT('newPlacedLayer'), undefined, DialogModes.NO);
   var so = T.activeLayer; so.name = s.name;
@@ -143,8 +137,6 @@ function buildCard(card) {
   try {
     var order = ["hp", "def", "atk", "spd"];
     for (var i = 0; i < order.length; i++) bar(card, T, order[i]);
-    for (i = 0; i < card["delete"].length; i++) find(T, card["delete"][i]).remove();
-    for (i = 0; i < card.empty.length; i++) { var e = find(T, card.empty[i]); if (e.layers.length === 0) e.remove(); else note(card.stem, "kept", card.empty[i]); }
     save(T, card.folder + "/built.psd");
     note(card.stem, "built", "ok");
   } finally { T.close(SaveOptions.DONOTSAVECHANGES); }

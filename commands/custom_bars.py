@@ -37,21 +37,15 @@ SEEN = 2                    # a column differs past this premultiplied level (th
 PAD = 16                    # px round a stat group's box for its row renders
 NEAR = 400                  # px a straight cut may take from the wrong row at a value the card does not show
 
-# Each card: its stat groups (paths from the root), extra layers a row draws (Green Mage's dark overlay bars), layers
-# deleted with the old bars, its recipe for the stat at n when AC's own edit is not the card's look, and bands: each
-# bar holds everything drawn in its own band of the card (rows whose glows reach the next row, under its dark overlay).
+# Each card: its stat groups (paths from the root) and its recipe for the stat at n when AC's own edit is not the card's
+# look. Chris & Jordi, Green Mage, Uumuu and Zigg: Croissant's own (TC b5a4c9ba).
 CARDS = {
     "Hive_Knight": {"groups": "Stats Bars/Bars/{Hp,Def,Atk,Spd}"},
     "False_Knight": {"groups": "Stats Bars/Darks/{Hp,DEF,ATK,SPD}", "recipe": "false_knight"},
-    "Chris_&_Jordi": {"groups": "Stats Bars/Bars/{hp,def,atk,spd}", "recipe": "chris"},
-    "Green_Mage": {"groups": "Stats Bars/Bars/{hp,Def,ATK,SPD}", "bands": True,
-                   "extra": "Stats Bars/Darks/{Health,Defense,Attack,Speed}", "empty": ["Stats Bars/Darks"]},
     "Grimora": {"groups": "Text/bars/{hp,def,atk,spd}"},
     "Skeleton_Mate": {"groups": "Text/Darks/{HP,DEF,ATK,SPD}"},
     "Minecraft_Panda": {"groups": "Stats Bars/Darks/{HP,DEF,ATK,SPD}"},
     "Tainted_Keeper": {"groups": "Stats Bars/Bars/{HP,DEF,ATK,SPD}"},
-    "Uumuu": {"groups": "Stats Bars/Bars/{hp,Def,ATK,SPD}", "delete": ["Stats Bars/Darks"]},
-    "Zigg": {"groups": "Stats Bars/Bars/{hp,Def,ATK,SPD}"},
 }
 
 
@@ -128,42 +122,21 @@ def _false_knight(psd, parsed, stat, n, groups):
             _strip(e)
 
 
-def _chris(psd, parsed, stat, n, groups):
-    """AC's edit, and cells 1 and 10's pictures (clipped to the bar base, not the cell) follow them."""
-    _plain(psd, parsed, stat, n, groups)
-    group = find(psd, groups[stat])
-    find(group, "Layer 14", False).visible = n >= 1
-    find(group, "Layer 14 copy", False).visible = n >= 10
-
-
-RECIPES = {"plain": _plain, "false_knight": _false_knight, "chris": _chris}
+RECIPES = {"plain": _plain, "false_knight": _false_knight}
 
 
 # ========================
 # plan
 # ========================
-def _row_doc(psd, groups: dict, extra: dict, stats) -> None:
-    """psd edited to draw only `stats`' layers: the rest hidden, the stat groups' and their ancestors' effects off."""
-    keep, chain = set(), set()
-    for stat in stats:
-        for layer in [find(psd, groups[stat])] + ([find(psd, extra[stat], False)] if stat in extra else []):
-            keep |= _subtree(layer)
-            for owner in ancestors(layer):
-                chain.add(id(owner))
-                _strip(owner)
-            if layer.is_group():
-                _strip(layer)
+def _row_doc(psd, path: str) -> None:
+    """psd edited to draw only the stat group at path: the rest hidden, the group's and its ancestors' effects off."""
+    group = find(psd, path)
+    keep, chain = _subtree(group), {id(owner) for owner in ancestors(group)}
+    for owner in [*ancestors(group), group]:
+        _strip(owner)
     for layer in psd.descendants():
         if id(layer) not in keep and id(layer) not in chain and not any(id(a) in keep for a in ancestors(layer)):
             layer.visible = False
-
-
-def _bands(psd, groups: dict) -> dict:
-    """{stat: (0, y0, width, y1)}: the card cut across halfway between the stat groups' rows, top to bottom."""
-    order = sorted(STATS, key=lambda stat: find(psd, groups[stat]).bbox[1])
-    cuts = [0] + [(find(psd, groups[a]).bbox[3] + find(psd, groups[b]).bbox[1]) // 2
-                  for a, b in zip(order, order[1:])] + [psd.height]
-    return {stat: (0, cuts[i], psd.width, cuts[i + 1]) for i, stat in enumerate(order)}
 
 
 def _render(psd, box) -> np.ndarray:
@@ -265,14 +238,11 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
     stem = splitext(basename(path))[0]
     config = CARDS[stem]
     groups = _paths(config["groups"])
-    extra = _paths(config["extra"]) if "extra" in config else {}
     recipe = RECIPES[config.get("recipe", "plain")]
     raw = open(path, "rb").read()
     base = PSDImage.open(BytesIO(raw))
     parsed = psd_edit.parse_card(parser, path, rel, base)
     values = {stat: parsed["card"][stat] for stat in STATS}
-    bands = _bands(base, groups) if config.get("bands") else {}
-    shown = lambda stat: STATS if bands else [stat]     # a band's rows draw every stat's layers
     folder = join(out, stem)
     makedirs(folder, exist_ok=True)
     with open(join(folder, "T.psd"), "wb") as fh:
@@ -280,19 +250,13 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
     stats = {}
     for stat in STATS:
         group = find(base, groups[stat])
-        layers = [group] + ([find(base, extra[stat], False)] if stat in extra else [])
-        x0 = min(l.bbox[0] for l in layers if l.bbox[2] > l.bbox[0])
-        y0 = min(l.bbox[1] for l in layers if l.bbox[2] > l.bbox[0])
-        x1 = max(l.bbox[2] for l in layers if l.bbox[2] > l.bbox[0])
-        y1 = max(l.bbox[3] for l in layers if l.bbox[2] > l.bbox[0])
+        x0, y0, x1, y1 = group.bbox
         box = (max(0, x0 - PAD), max(0, y0 - PAD), min(base.width, x1 + PAD), min(base.height, y1 + PAD))
-        if stat in bands:
-            box = (box[0], max(box[1], bands[stat][1]), box[2], min(box[3], bands[stat][3]))
         rows = {}
         for n in VALUES:
             psd = PSDImage.open(BytesIO(raw))
             recipe(psd, parsed, stat, n, groups)
-            _row_doc(psd, groups, extra, shown(stat))
+            _row_doc(psd, groups[stat])
             rows[n] = _render(psd, box)
         cuts = _cuts(rows)
         edge = _profile(cuts, box[3] - box[1], box[2] - box[0], values[stat])
@@ -301,18 +265,17 @@ def plan_card(parser, path: str, rel: str, out: str) -> dict:
         else:
             edge["offsets"] = {n: box[0] + o for n, o in edge["offsets"].items()}
             edge["top"] = box[1]
-        stats[stat] = {"group": groups[stat], "extra": extra.get(stat), "name": SO_NAMES[stat], "value": values[stat],
-                       "box": box, "edge": edge, "band": bands.get(stat),
+        stats[stat] = {"group": groups[stat], "name": SO_NAMES[stat], "value": values[stat], "box": box, "edge": edge,
                        "cuts": {n: ({"lo": c["lo"], "hi": c["hi"]} if "lo" in c else {"best": c["best"], "bad": c["bad"]})
                                 for n, c in cuts.items()}}
     for state, n in (("F", 10), ("E", 0)):
         for stat in STATS:
             psd = PSDImage.open(BytesIO(raw))
             recipe(psd, parsed, stat, n, groups)
-            _row_doc(psd, groups, extra, shown(stat))
+            _row_doc(psd, groups[stat])
             psd.save(join(folder, f"R{state}_{stat}.psd"))
     card = {"stem": stem, "rel": rel, "path": abspath(path), "folder": abspath(folder), "values": values,
-            "stats": stats, "delete": config.get("delete", []), "empty": config.get("empty", [])}
+            "stats": stats}
     with open(join(folder, "plan.json"), "w") as fh:
         json.dump(card, fh, indent=1)
     return card
