@@ -12,9 +12,7 @@ words in the chart's colours and effects and status cards in Krabby Patty: no ch
 11-09),
 the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
 only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
-(owner 2026-11-04: OLD_FONT; a re-lay a font explains lands instead, owner 2026-11-10: card_standards.font_cause);
-so are a creature's or minion's stats the parser read before the push and no longer reads (R16, owner 2026-11-11:
-lost_stats, "HP and SPD no longer read"; a card renamed with changes against its own before, changed_renames).
+(owner 2026-11-04: OLD_FONT; a re-lay a font explains lands instead, owner 2026-11-10: card_standards.font_cause).
 One report per push: the job summary and commit comment (report.md), one Discord post for the standards channel
 (discord.json: no mentions, no previews), and a plan of the writes (plan.json) that `land` commits once, right after
 the check. Each card pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing",
@@ -226,7 +224,6 @@ class Job:
     before: str = ""                            # the push's before (R10's earlier PNGs: Source.older_pngs)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
-    was: tuple = ()                             # R16: a card renamed with changes, (its PSD path, blob) before the push
 
 
 @dataclass
@@ -624,7 +621,6 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             deleted.setdefault(c.old, []).append(c.path)
     renamed_new = {c.path: deleted[c.new].pop(0) for c in psds if c.status == "A" and deleted.get(c.new)}
     renamed_old = set(renamed_new.values())
-    was = changed_renames([c for c in psds if c.path not in renamed_old and c.path not in renamed_new], pngs)
     png_deleted = {_key(p) for p, c in pngs.items() if c.status == "D"}
     notes, jobs = [], []
 
@@ -674,8 +670,6 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
                 jobs.append(Job(change.path, "convert", "", change.new, login=login, commit=commit))
             continue
         job.dups, job.dups_pushed = dups.get(change.path, {}), dups_pushed.get(change.path, {})
-        if change.path in was:
-            job.was = (was[change.path].path, was[change.path].old)
         if png and png in pngs and pngs[png].status in "AM":
             job.case, job.png, job.png_new, job.numbered = "pair", png, pngs[png].new, numbered(change.path)
             job.base_png = pngs[png].old if pngs[png].status == "M" else ""
@@ -739,24 +733,6 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
         job.font_kept = job.psd in kept and job.psd_old == olds.get(job.psd)
         job.before = before
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
-
-
-def changed_renames(psds: list, pngs: dict) -> dict:
-    """{added card PSD: the deleted one's Change} for a card renamed with changes (R16's before): the same name in
-    another folder (a stars move), else its PNG renamed unchanged (card_history's rule)."""
-    gone = [c for c in psds if c.status == "D"]
-    png_gone = {c.old: splitext(path)[0] for path, c in pngs.items() if c.status == "D"}
-    out = {}
-    for change in psds:
-        if change.status != "A":
-            continue
-        found = [c for c in gone if _key(c.path)[1] == _key(change.path)[1]]
-        png = pngs.get(splitext(change.path)[0] + ".png")
-        if len(found) != 1 and png is not None and png.status == "A" and png.new in png_gone:
-            found = [c for c in gone if splitext(c.path)[0] == png_gone[png.new]]
-        if len(found) == 1:
-            out[change.path] = found[0]
-    return out
 
 
 def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None) -> list:
@@ -1181,8 +1157,6 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         return
     # guard 2
     issues = standards.check(new, job.psd, context, old=old, added=added(job))
-    lost = lost_stats(source, job, new, old, parser)
-    issues += [lost] if lost is not None else []
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
@@ -1231,18 +1205,6 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
             result.shown[path] = {"file": write["file"]} if write else {"blob": source.checked.get(path, ("", ""))[1]}
         result.shows = "fixed" if any(w.get("composer") for w in result.writes if w["kind"] == "png") else "pushed"
-
-
-def lost_stats(source: Source, job: Job, new, old, parser) -> Optional[standards.Issue]:
-    """R16 (card_standards.rule_lost_stats), told only: against the PSD before the push, a card renamed with changes
-    against its own; an error is a comment line, as check's rules."""
-    try:
-        was, was_rel = (old, job.psd) if old is not None or not job.was else (
-            png_export.open_psd(source.blob(job.was[1]), job.was[0]), job.was[0])
-        return standards.rule_lost_stats(new, job.psd, was, was_rel, parser)
-    except Exception as error:                  # never stops the card
-        return standards.Issue("error", f"R16 could not be checked ({type(error).__name__}: {error})", ("R16",),
-                               discord=False)
 
 
 def _rgba(image) -> np.ndarray:

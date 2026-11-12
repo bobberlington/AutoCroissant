@@ -11,8 +11,7 @@ Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers are a n
 split over several layers is standard (owner 2026-11-08: every part named Name, read in reading order). R11 also
 suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
 duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only); R15 the
-ability's or title's text run off the card's edge (report only; existing cards waived as R4); R16 (owner 2026-11-11,
-card_guards runs it: rule_lost_stats) the stats the parser read before the push and no longer reads (told only).
+ability's or title's text run off the card's edge (report only; existing cards waived as R4).
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). The pixel fixes (PIXEL_FIXES,
 silent, owner 2026-10-25) run on every card, in this order: badges laid out at older widths laid out again
@@ -72,9 +71,8 @@ from commands.card_edits import CardAuthors
 from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
-from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, STAT_KINDS, TAG, CardClassifier, CardValidator,
-                                 PSDParser, base_name, hidden_tags, layer_tag, picture_numbers, shown_in, star_icon_name,
-                                 variant_view, variants_of)
+from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, hidden_tags,
+                                 layer_tag, picture_numbers, shown_in, star_icon_name, variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
                                   stat_rows, union_box)
 
@@ -111,7 +109,7 @@ WAIVED = {                                      # the owner's class waivers (sec
 @dataclass
 class Issue:
     """One standards finding on one PSD."""
-    code: str                                   # R1..R16
+    code: str                                   # R1..R15
     text: str                                   # for card makers: "the Name layer is hidden"
     items: tuple = ()                           # what it is about (tags, layer names): "(new)" compares these
     fix: bool = False                           # AUTO_FIX and fixable here
@@ -792,21 +790,6 @@ def rule_off_card(psd: PSDImage, card: str) -> list:
         layers.setdefault(id(layer), layer)
     return [Issue("R15", f"{layer.name.strip()}'s text runs off the card's edge (cut in the PNG and TTS)",
                   (layer.name.strip(),)) for layer in layers.values() if _off_card(layer, psd.width, psd.height)]
-
-
-def rule_lost_stats(psd: PSDImage, rel: str, old: Optional[PSDImage], old_rel: str, parser: PSDParser) -> Optional[Issue]:
-    """R16 (owner 2026-11-11): the stats the parser read on the card before the push (old at old_rel: a renamed card's
-    own) that it no longer reads (Hive Knight's and omori's bars, 11-10); creatures and minions on both sides, a
-    multi-creature card left out. Told, never fixed."""
-    if old is None or any(CardClassifier.classify(path).get("type") not in STAT_KINDS for path in (rel, old_rel)):
-        return None
-    before, after = [parser.parse(one, path, variant=1 if len(variants_of(one)) > 1 else None)
-                     for one, path in ((old, old_rel), (psd, rel))]
-    if before.creatures or after.creatures:
-        return None
-    now = after.stats.to_dict()
-    lost = [name.upper() for name, value in before.stats.to_dict().items() if value >= 0 > now[name]]   # HP DEF ATK SPD
-    return Issue("R16", f"{_list(lost)} no longer read{'s' if len(lost) == 1 else ''}", tuple(lost)) if lost else None
 
 
 def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = None, added: bool = False) -> list:

@@ -868,33 +868,6 @@ def test_text_off_the_card(clone, context):
     assert not [i for i in cs.check(PSDImage.open(clone / clean), clean, context, added=True) if i.code == "R15"]
 
 
-def _without(psd, *path):
-    """psd with the layer at path (names, outermost first) deleted."""
-    group = psd
-    for name in path[:-1]:
-        group = next(layer for layer in group if layer.name == name)
-    group.remove(next(layer for layer in group if layer.name == path[-1]))
-    return psd
-
-
-def test_stats_that_no_longer_read(clone):
-    """R16 (owner 2026-11-11): the stats read before the push that no longer read are told (omori: the bars the parser
-    read deleted; Hive Knight: its Darks redrawn as pictures), a renamed card against its own before; nothing for a
-    card moved out of the stat kinds, an unchanged card or stats already unread."""
-    parser = clone_vocabulary(str(clone)).parser()
-    before, gone = _open(clone, MINI_DOOMER), _without(_open(clone, MINI_DOOMER), "Stats Bars")
-    lost = cs.rule_lost_stats(gone, MINI_DOOMER, before, MINI_DOOMER, parser)
-    assert (lost.code, lost.line(), cs.reported([lost])) == ("R16", "HP, DEF, ATK and SPD no longer read", [lost])
-    spd = _without(_open(clone, MINI_DOOMER), "Stats Bars", "Darks", "Spd Dark")
-    assert cs.rule_lost_stats(spd, MINI_DOOMER, before, MINI_DOOMER, parser).line() == "SPD no longer reads"
-    renamed = "Auxiliary/Minions/Doomer.psd"
-    assert cs.rule_lost_stats(spd, renamed, before, MINI_DOOMER, parser).items == ("SPD",)
-    assert cs.rule_lost_stats(spd, "Items/Active/2 Stars/Doomer.psd", before, MINI_DOOMER, parser) is None
-    assert cs.rule_lost_stats(_open(clone, MINI_DOOMER), MINI_DOOMER, before, MINI_DOOMER, parser) is None
-    assert cs.rule_lost_stats(spd, MINI_DOOMER, None, MINI_DOOMER, parser) is None
-    assert cs.rule_lost_stats(gone, MINI_DOOMER, spd, MINI_DOOMER, parser).items == ("HP", "DEF", "ATK")   # SPD not again
-
-
 # ========================
 # Normalise (the big pass, owner 2026-11-07)
 # ========================
