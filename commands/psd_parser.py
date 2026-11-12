@@ -1095,7 +1095,7 @@ class PSDParser:
                                      title=any(layer is title for title in titles), header=header)
 
         # Stat layers
-        elif self._is_stat_layer(layer):
+        elif self._is_stat_layer(layer) or comp_stat(layer):
             self._process_stat_layer(layer, stat_trackers)
 
         # Type layers

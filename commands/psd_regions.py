@@ -205,13 +205,67 @@ def comp_value(layer) -> Optional[int]:
     return int(names[chosen]) if chosen in names else None
 
 
-def comp_stat(layer) -> Optional[str]:
-    """The stat a layer-comp bar draws: named on it or within ROW_ANCESTORS - 1 groups, under a *dark*/*bars* group."""
-    chain = [layer, *_ancestors(layer)][:ROW_ANCESTORS]
-    if not any(search(r"dark|bars", owner.name, IGNORECASE) for owner in chain[1:]):
-        return None
-    return next((k for owner in chain for k, pattern in STATS.items()
+def _named_stat(layer) -> Optional[str]:
+    """The stat named on the layer or within ROW_ANCESTORS - 1 groups."""
+    return next((k for owner in [layer, *_ancestors(layer)][:ROW_ANCESTORS] for k, pattern in STATS.items()
                  if search(rf"\b({pattern})\b", owner.name, IGNORECASE)), None)
+
+
+def _comp_bar(layer) -> bool:
+    """A smart object whose layer comps are all named by numbers."""
+    placed = placed_data(layer)
+    names = comp_names(placed) if placed is not None else {}
+    return bool(names) and all(name.isdigit() for name in names.values())
+
+
+def _placed_box(layer) -> tuple:
+    """A smart object's placed transform bbox (the whole bar), else its bbox."""
+    corners = [float(v) for v in (placed_data(layer) or {}).get(b"Trnf") or []]
+    return (round(min(corners[0::2])), round(min(corners[1::2])), round(max(corners[0::2])),
+            round(max(corners[1::2]))) if len(corners) == 8 else tuple(layer.bbox)
+
+
+def _twinned(layer, stat: str) -> bool:
+    """Another comp bar of the layer's block (its nearest *dark*/*bars* group, else its group) and creature names the
+    same stat."""
+    block = next((g for g in _ancestors(layer) if search(r"dark|bars", g.name, IGNORECASE)), layer.parent)
+    return any(other is not layer and _comp_bar(other) and _named_stat(other) == stat
+               and comp_creature(other) == comp_creature(layer) for other in block.descendants())
+
+
+def _label_stat(layer) -> Optional[str]:
+    """The stat whose printed label (a visible text layer reading Health, Defense, ...) centres in the bar's rows."""
+    _, y0, _, y1 = _placed_box(layer)
+    found = set()
+    for label in layer._psd.descendants():
+        if label.kind != "type" or not label.is_visible():
+            continue
+        word = label.name.strip() if label.name.strip().lower() in STAT_LABELS else (label.text or "").strip()
+        stat = next((k for k, pattern in STATS.items() if fullmatch(pattern, word, IGNORECASE)), None)
+        if stat and y0 <= (label.bbox[1] + label.bbox[3]) / 2 <= y1:
+            found.add(stat)
+    return found.pop() if len(found) == 1 else None
+
+
+def comp_stat(layer) -> Optional[str]:
+    """
+    The stat a layer-comp bar draws: named on it or within ROW_ANCESTORS - 1 groups, under a *dark*/*bars* group. A
+    name another bar of its block and creature shares (Chris & Jordi's "Health copy 2" on the Attack row, 11-11) gives
+    way to the label printed on its row, when one is. A comp bar in no such group (Pizza's 'Group 1') is its row's when
+    its name says nothing else.
+    """
+    chain = [layer, *_ancestors(layer)][:ROW_ANCESTORS]
+    grouped = any(search(r"dark|bars", owner.name, IGNORECASE) for owner in chain[1:])
+    if not _comp_bar(layer):
+        return _named_stat(layer) if grouped else None
+    named = _named_stat(layer)
+    own = named is not None and not _twinned(layer, named)
+    if own and grouped:
+        return named
+    label = _label_stat(layer)
+    if own:
+        return named if label == named else None
+    return label or (named if grouped else None)
 
 
 def linked_items(psd: PSDImage, psd_path: str, tree=None) -> list:
@@ -253,17 +307,12 @@ def comp_bars(psd: PSDImage) -> dict:
     """
     out = {key: [] for key in STATS}
     for layer in psd.descendants():
-        placed = placed_data(layer)
-        names = comp_names(placed) if placed is not None else {}
-        if not names or not all(name.isdigit() for name in names.values()):
+        if not _comp_bar(layer):
             continue
         key = comp_stat(layer)
         if key is None:
             continue
-        corners = [float(v) for v in placed.get(b"Trnf") or []]
-        box = (round(min(corners[0::2])), round(min(corners[1::2])), round(max(corners[0::2])),
-               round(max(corners[1::2]))) if len(corners) == 8 else tuple(layer.bbox)
-        out[key].append((layer, comp_value(layer), box))
+        out[key].append((layer, comp_value(layer), _placed_box(layer)))
     return out
 
 

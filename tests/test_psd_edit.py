@@ -589,6 +589,38 @@ def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path, monkeypatch):
         pe.comp_render(comp_bars(PSDImage.open(path))["hp"][0][0], 4)
 
 
+CROISSANT_BARS = {"cf80568654aa0785af7de45a698d36a0e73c8c6b": "Creatures/Everhood/5 Stars/Chris_&_Jordi.psd",
+                  "90b2f475f6dd704dc92f6ae5ff835b0bfcb63554": "Creatures/Other/3 Stars/Pizza.psd"}  # his 11-11, guards' pass
+
+
+def test_croissants_bars_read_by_their_rows(clone, parser, tmp_path):
+    """Chris & Jordi's four bars are all named Health ("Health copy 2" on the Attack row; they added up to hp 26) and
+    Pizza's lie in 'Group 1', in no bars group (no stats): each reads as its row's label says, and an Attack edit sets
+    the Attack row's bar."""
+    from commands.card_checks import swapped
+    found = {}
+    for rev, rel in CROISSANT_BARS.items():
+        path = str(tmp_path / Path(rel).name)
+        Path(path).write_bytes(at_rev(clone, rev, rel))
+        psd = PSDImage.open(path)
+        found[rel] = {k: [(layer.name, v) for layer, v, _ in bars] for k, bars in comp_bars(psd).items()}
+        assert swapped(psd) == []
+        parsed = pe.parse_card(parser, path, rel, psd)
+        assert pe.set_comp(psd, parsed, "atk", 8).layers[0].name == found[rel]["atk"][0][0]
+        saved = str(tmp_path / "new.psd")
+        psd.save(saved, update_preview=False)
+        stats = [parsed["card"][s] for s in pe.STAT_FIELDS]
+        assert [pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"][s] for s in pe.STAT_FIELDS] == \
+            stats[:2] + [8] + stats[3:], rel
+        found[rel]["stats"] = stats
+    assert found == {
+        "Creatures/Everhood/5 Stars/Chris_&_Jordi.psd": {"hp": [("Health", 7)], "def": [("Health copy", 6)],
+                                                         "atk": [("Health copy 2", 7)], "spd": [("Health copy 3", 6)],
+                                                         "stats": [7, 6, 7, 6]},
+        "Creatures/Other/3 Stars/Pizza.psd": {"hp": [("Health", 6)], "def": [("Defense copy", 4)],
+                                              "atk": [("Attack copy", 4)], "spd": [("Speed copy", 4)], "stats": [6, 4, 4, 4]}}
+
+
 def test_alt_parts_rows_decide(clone):
     """The digits' row decides a bar's place (the Pandas' def and atk art are named for each other's rows) and a split
     row's halves are one bar (Royal Eradicator's "atk top" and "atk bottom")."""
