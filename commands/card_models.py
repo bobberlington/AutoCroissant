@@ -91,7 +91,7 @@ class CardInfo:
     art: Optional[list] = None                # artwork sources (Card Edits.json; a string in older records); each entry its own
     ability_art: Optional[str] = None         # retired: older records' second source (card_edits.art_list reads it last)
     version = None                            # card_history's {from, to, cause...}; no field (card_db.EXTRA_KEYS)
-    created = None                            # CardDates: {date, from[, provisional]}; no field either
+    created = None                            # CardDates: {date, from}; no field either
 
     def to_dict(self) -> dict:
         """Convert card info to dictionary."""

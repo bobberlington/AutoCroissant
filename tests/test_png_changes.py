@@ -1,21 +1,16 @@
 """png_changes: the per-pixel rule (colour over black or alpha off by more than 2 of 255, inside a 7x7 patch), the card
-PNG change pairs git gives (the website's), the record Card sync and the backfill keep (resumable, a missing pair
-visible), and card_data's minor art and text events."""
+PNG change pairs git gives (the website's), the record Card sync keeps (resumable, a missing pair visible), and
+card_data's minor art and text events."""
 import io
-import json
-import shutil
 import subprocess
 from os import environ
-from sys import executable
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 from PIL import Image
 
 import commands.png_changes as pc
 from commands.card_data import mark_minor, picture_pairs
-from conftest import REPO, SITE_SRC
 
 
 def _png(pixels) -> bytes:
@@ -169,57 +164,3 @@ def test_minor_art_and_text_events():
         e.pop("minor", None)
     mark_minor(events, shown, record)
     assert [e.get("minor") for e in events] == [None, None, "text", None]
-
-
-def test_past_events_marked_at_their_build(tmp_path):
-    """backfill --events: past art events with no mark, each paired at its own build's head (a later PNG change is not
-    theirs): a PNG byte-identical or measured under VISIBLE is minor, one at VISIBLE or more is not; seqs, the other
-    events' lines and the posted cursor stay."""
-    from commands.card_db import stats_text
-    repo, db = tmp_path / "repo", tmp_path / "db"
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    (repo / "C").mkdir()
-    for name in "ABD":
-        (repo / f"C/{name}.psd").write_bytes(name.encode())
-        (repo / f"C/{name}.png").write_bytes(_png(_card(100)))
-    _commit(repo, "Cards")
-    small = _card(100)
-    small[10:30, 10:30, 0] = 110                                     # 4% of the card
-    for name, picture in (("A", None), ("B", small), ("D", _card(160))):
-        (repo / f"C/{name}.psd").write_bytes(name.encode() * 2)
-        if picture is not None:
-            (repo / f"C/{name}.png").write_bytes(_png(picture))
-    build = _commit(repo, "Art")
-    (repo / "C/A.png").write_bytes(_png(_card(30)))                  # after that build: not its event's
-    _commit(repo, "Later")
-    (db / "changelog").mkdir(parents=True)
-    (db / "stats.json").write_text(stats_text({}))
-    lines = [json.dumps({"kind": "art", "card": n, "path": f"C/{n}.psd", "seq": i + 1, "card_commit": build,
-                         "blob": [_blob(repo, "HEAD~2", f"C/{n}.psd"), _blob(repo, build, f"C/{n}.psd")]}, sort_keys=True)
-             for i, n in enumerate("ABD")] + [json.dumps({"kind": "edited", "card": "B", "seq": 4}, sort_keys=True)]
-    (db / "changelog/2026-11.jsonl").write_text("".join(f"{line}\n" for line in lines))
-    (db / "changelog/posted.json").write_text('{"seq": 4, "push": null}\n')
-    assert pc.main(["backfill", "--checkout", str(repo), "--db", str(db), "--events"]) == 0
-    events = [json.loads(line) for line in (db / "changelog/2026-11.jsonl").read_text().splitlines()]
-    assert [(e["seq"], e.get("minor")) for e in events] == [(1, "picture"), (2, "picture"), (3, None), (4, None)]
-    assert (db / "changelog/2026-11.jsonl").read_text().splitlines()[2:] == lines[2:]
-    assert (db / "changelog/posted.json").read_text() == '{"seq": 4, "push": null}\n'
-    assert sorted(v[0] for v in pc.read_record(str(db))["pairs"].values()) == [0.04, 1.0]     # A: the same blob
-
-
-def test_the_workflow_checks_out_what_its_clis_import(tmp_path):
-    """png-changes.yml's bot checkout: png_changes and card_data (its venv's --help, the backfill's events) run from
-    exactly its sparse list (psd_remote joined it on 2026-11-11)."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "png-changes.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    steps = [s for job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].values() for s in job["steps"]]
-    files = next(s["with"]["sparse-checkout"] for s in steps if s.get("with", {}).get("path") == "bot").split()
-    for rel in files:
-        (tmp_path / "bot" / rel.lstrip("/")).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / rel.lstrip("/"), tmp_path / "bot" / rel.lstrip("/"))
-    for cli in ("png_changes", "card_data"):
-        done = subprocess.run([executable, "-m", f"commands.{cli}", "--help"], cwd=tmp_path / "bot", capture_output=True,
-                              text=True, timeout=120)
-        assert done.returncode == 0, done.stderr

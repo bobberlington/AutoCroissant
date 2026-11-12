@@ -31,7 +31,7 @@ ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json"   # icon alias
 # The website's hand-kept files in the card repo's site/
 AUTHORS_PATH    = "site/Card Authors.txt"      # who made each card; wins over the database
 EDITS_PATH      = "site/Card Edits.json"       # website fixes; win over the PSD
-CREATED_PATH    = "site/Card Creation Dates.json"   # when each card was made (python -m commands.card_dates created)
+CREATED_PATH    = "site/Card Creation Dates.json"   # when each card was made (kept by hand)
 RATINGS_PATH    = "site/Card Ratings.json"     # card ratings 1-10, TTS sessions only (python -m commands.tts_ratings); not on the website since 2026-11-11; the bot never reads it
 MAILMAP_PATH    = ".mailmap"                   # git's: one person's several git names as one (%aN)
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save

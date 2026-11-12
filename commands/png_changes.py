@@ -4,11 +4,8 @@ change of a card's PNG (its blob before and after), the share of the card's pixe
 website lists an image version at VISIBLE or more (or with a data change) and folds the rest as minor; a changelog art
 event under it is minor (no Discord post). A pair the record lacks counts as visible (owner 11-09).
 
-Card sync measures the changes its run brings (card_data.build, in a child process beside its PSD reads: Beside); the
-backfill measures history's, in batches that are fetched into scratch stores and dropped (never the whole history on
-disk), and resumes where the record stops.
-
-CLI: python -m commands.png_changes backfill --checkout <clone with main's history> --db <db dir> [--minutes N] [--events]
+Card sync measures the changes its run brings (card_data.build, in a child process beside its PSD reads: Beside), in
+batches that are fetched into scratch stores and dropped.
 """
 from argparse import ArgumentParser
 from collections import deque
@@ -25,7 +22,7 @@ from time import time
 from typing import Optional
 from weakref import finalize
 
-from commands.card_models import RENAMED, rename_trailer      # stdlib only: the backfill's sparse copy is this and it
+from commands.card_models import RENAMED, rename_trailer      # stdlib only
 
 # ========================
 # Configuration
@@ -43,8 +40,7 @@ FETCHES = 4                  # batches fetched at a time, ahead of the one compa
 WORKERS = 4                  # pictures compared at a time
 JOIN_WAIT = 600              # s card_data waits for Beside at most (then measured in the build, as before)
 RUN_MAX = 300                # pairs a Card sync run measures beside its PSD reads, and of its own events after
-                             # them; the rest wait for the next run or the backfill
-EXIT_LEFT = 3                # backfill: pairs left when the time ran out
+                             # them; the rest wait for the next run
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 BOT = "AutoCroissant"        # git_commit.AUTHOR: its Recompressed trailers name PNGs with the same pixels
 RECOMPRESSED = "Recompressed"
@@ -253,15 +249,14 @@ def _fetch(checkout: str, store: str, shas: list) -> None:
         capture_output=True, env={**environ, **NO_LAZY, **_auth(checkout)})
 
 
-def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = None, deadline: Optional[float] = None,
-            log=print) -> tuple:
+def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = None, log=print) -> tuple:
     """
     Measure the pairs the record lacks (or has by another RULE), BATCH at a time: blobs from the checkout's store, else
     fetched into a scratch store dropped after its batch (FETCHES batches ahead). A picture that can't be read is
     recorded None (visible, not tried again); one not fetched stays unmeasured.
 
     Returns:
-        (pairs measured, pairs left: over limit, past deadline or not fetched)
+        (pairs measured, pairs left: over limit or not fetched)
     """
     todo = [p for p in dict.fromkeys(map(tuple, pairs)) if not _measured(record, p)]
     left = todo[limit:] if limit is not None else []
@@ -284,9 +279,6 @@ def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = Non
     local_reader = _Reader(checkout)
     try:
         for i in range(0, len(todo), BATCH):
-            if deadline is not None and time() > deadline:
-                left = todo[i:] + left
-                break
             while len(ahead) < FETCHES and (following := next(chunks, None)) is not None:
                 ahead.append(start(following))
             chunk, shas, here, tmp, store, task = ahead.popleft()
@@ -414,47 +406,20 @@ class Beside:
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.png_changes", description="The card PNGs' picture changes.")
     sub_parsers = parser.add_subparsers(dest="command", required=True)
-    back = sub_parsers.add_parser("backfill", help="measure every card PNG change in head's history the record lacks")
-    back.add_argument("--checkout", required=True, help="a clone with main's history (blobless is enough)")
-    back.add_argument("--db", required=True)
-    back.add_argument("--head", default="HEAD")
-    back.add_argument("--minutes", type=float, default=0, help="stop after this long (0: no limit); exit 3 with pairs left")
-    back.add_argument("--events", action="store_true", help="also db/changelog's past events: misread stat lines dropped "
-                      "(changelog.drop_misread), their pairs first, then marked minor as Card sync marks new ones "
-                      "(psd-tools: card_data)")
     side = sub_parsers.add_parser("measure", help="measure the pairs of a JSON file (card_data's Beside)")
     side.add_argument("--checkout", required=True)
     side.add_argument("--pairs", required=True, help="a JSON file: [[old blob, new blob], ...]")
     side.add_argument("--out", required=True, help="written when done: {done, left, pairs, seconds}")
     side.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
-    if args.command == "measure":
-        with open(args.pairs, encoding="utf-8") as fh:
-            pairs = loads(fh.read())
-        record, began = {"rule": RULE, "pairs": {}, "pending": []}, time()
-        done, left = measure(args.checkout, pairs, record, limit=args.limit)
-        with open(args.out + ".tmp", "w", encoding="utf-8") as fh:
-            fh.write(dumps({"done": done, "left": [list(p) for p in left], "pairs": record["pairs"], "seconds": time() - began}))
-        replace(args.out + ".tmp", args.out)
-        return 0
-    record = read_record(args.db)
-    events, shown = [], {}
-    if args.events:
-        from commands.card_data import mark_past, past_pairs
-        from commands.changelog import drop_misread
-        print(f"past events: {drop_misread(args.db)} misread stat lines dropped.")
-        events, shown = past_pairs(args.checkout, args.db, args.head)
-    pairs = card_pairs(args.checkout, args.head)
-    deadline = time() + args.minutes * 60 if args.minutes else None
-    done, left = 0, []
-    try:
-        done, left = measure(args.checkout, list(shown.values()) + pairs, record, deadline=deadline)
-    finally:
-        write_record(args.db, record)                   # what was measured stays, whatever stopped the run
-    print(f"png changes: {len(pairs)} pairs in history, {done} measured now, {len(left)} left, {len(record['pairs'])} recorded.")
-    if args.events:
-        print(f"past events: {mark_past(args.db, events, shown, record)} of {len(events)} unmarked marked minor.")
-    return EXIT_LEFT if left else 0
+    with open(args.pairs, encoding="utf-8") as fh:
+        pairs = loads(fh.read())
+    record, began = {"rule": RULE, "pairs": {}, "pending": []}, time()
+    done, left = measure(args.checkout, pairs, record, limit=args.limit)
+    with open(args.out + ".tmp", "w", encoding="utf-8") as fh:
+        fh.write(dumps({"done": done, "left": [list(p) for p in left], "pairs": record["pairs"], "seconds": time() - began}))
+    replace(args.out + ".tmp", args.out)
+    return 0
 
 
 # ========================

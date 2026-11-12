@@ -1,8 +1,8 @@
 """
 Card history from git, without Discord, network or psd-tools: one `git log --raw` of the card repo gives the newest
-commit, first author, deletions and PNG commits per path, each blob's intro (the oldest commit that added it at any
-path) and exact renames. On that index: the version rules (a version only when a card's data changes; from/to dates
-and a cause from git; versions without a blob cause legacy) and the archive tags' dates. Design:
+commit, first author and deletions per path, each blob's intro (the oldest commit that added it at any path) and
+exact renames. On that index: the version rules (a version only when a card's data changes; start dates and a cause
+from git; versions without a blob cause legacy) and the archive tags' dates. Design:
 docs/Campaigns/DATA_BUILD_ACTION.md section 7.4.
 """
 from copy import deepcopy
@@ -56,8 +56,6 @@ class GitIndex:
     intro: dict = field(default_factory=dict)         # blob -> (oldest Commit that added it at any path, that path)
     intro_at: dict = field(default_factory=dict)      # (blob, path) -> oldest Commit that added it there
     paths_of: dict = field(default_factory=dict)      # blob -> {path: oldest Commit that added it there}
-    pngs: dict = field(default_factory=dict)          # PNG path -> Commits that changed it, newest first
-    pngs_lower: dict = field(default_factory=dict)    # the same by lower-cased path (a PNG named in another case)
     renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact (or told) rename
     renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact (or told) rename into it
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
@@ -114,9 +112,6 @@ class GitIndex:
             self.at_path.setdefault(path, []).append((commit, dst))
             if status == "A":
                 added[dst] = path
-        if path.lower().endswith(".png"):
-            self.pngs.setdefault(path, []).append(commit)
-            self.pngs_lower.setdefault(path.lower(), []).append(commit)
 
     @classmethod
     def from_git(cls, repo: str, head: str = "HEAD") -> "GitIndex":
@@ -204,18 +199,6 @@ class GitIndex:
                 if any(folder in RETIRED for folder in old.split("/")):
                     return (None, old, step) if old.lower().endswith(".psd") else (None, None, None)
         return (None, None, None)
-
-    def png_commit(self, psd_path: str, before: Optional[Commit] = None, before_at: Optional[float] = None) -> Optional[str]:
-        """The newest commit of the card's PNG older than `before` (else older than before_at; else the newest); a PNG
-        named in another letter case counts (build_site pairs them so)."""
-        png = splitext(psd_path)[0] + ".png"
-        for commit in self.pngs.get(png) or self.pngs_lower.get(png.lower(), []):
-            if before is not None:
-                if commit.order > before.order:
-                    return commit.sha
-            elif before_at is None or commit.at < before_at:
-                return commit.sha
-        return None
 
 
 def mailmap_args(repo: str, head: str = "HEAD") -> list:
@@ -346,20 +329,8 @@ def carry_to(holder: CardInfo, at: float, commit: Optional[str]) -> None:
 
 
 def meta(start: Optional[Commit], start_at: float, cause: str) -> dict:
-    """A version's `version` record, open-ended until close() sets its end."""
-    return {"from": start.at if start else start_at, "from_commit": start.sha if start else None, "to": None,
-            "to_commit": None, "cause": cause, "png_commit": None}
-
-
-def close(card: CardInfo, index: GitIndex, end_at: Optional[float], end: Optional[Commit] = None) -> None:
-    """End a version at the next one's start (or its deleting commit) and pin the PNG of that moment (by log order
-    when the end is in the index, else by time: an edits commit is no PSD or PNG commit)."""
-    info = getattr(card, "version", None)
-    if info is None:
-        return
-    info["to"], info["to_commit"] = (end.at if end else end_at), (end.sha if end else None)
-    listed = end if end is not None and index.by_sha.get(end.sha) is end else None
-    info["png_commit"] = index.png_commit(card.path, listed, info["to"]) if info["to"] is not None else None
+    """A version's `version` record: its start and cause."""
+    return {"from": start.at if start else start_at, "from_commit": start.sha if start else None, "cause": cause}
 
 
 def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], others=()) -> dict:
@@ -467,8 +438,8 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
                     edits: Optional[Commit] = None, authors: Optional[Commit] = None) -> list:
     """
     A build's versions, after its parse, edits, authors and archive: a card whose data changed has its card before
-    appended to its history (at its own path), closed where the new version starts (never before that version's own
-    start: a held PSD change or a re-read after an edit); an art-only change or a move keeps the version going; a
+    appended to its history (at its own path); the new version never starts before the one it ends (a held PSD change
+    or a re-read after an edit); an art-only change or a move keeps the version going; a
     re-read of the same PSD (same blob and path: a parser change) replaces its reading, its start kept; a re-read PSD
     whose own data did not change (psd_changed) is an edit or authors version, the edit landing in the same build; a
     card restored with the same data drops its archived record. A reading that knew less (unknown: a parse that failed
@@ -487,12 +458,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     Returns:
         (name, cause) of each new version
     """
-    known = {c.sha: c for c in (edits, authors) if c is not None}
     others = set(db.stats) | set(db.old_stats)          # a rename's new name starts where its archive ends (intro_of)
-
-    def end_of(start: dict) -> Optional[Commit]:
-        sha = start["from_commit"] or ""
-        return index.by_sha.get(sha) or known.get(sha)
     made = []
     for name, card in db.stats.items():
         variant = bool(getattr(card, "variant_of", None))     # a variant picture duplicate: its own versions
@@ -508,9 +474,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
                 card.version = start_of(card, index, None, others)
             continue
         if knows(card, old, ignore):                  # the new reading knew all the old one did: no version
-            info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None, others)
-            info["to"], info["to_commit"], info["png_commit"] = None, None, None
-            card.version = info
+            card.version = deepcopy(getattr(old, "version", None)) or start_of(card, index, None, others)
             if name in restored:                      # back with the same data: its archived record is no version
                 versions = db.old_stats.get(name) or []
                 if versions and versions[len(versions) - 1] is old and getattr(old, "archived", None):
@@ -521,9 +485,8 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
         psd = name in reparsed and psd_changed(old, card)     # else an edit in the same build as an art change
         if psd and name not in restored and old.path == card.path and unknown(card) <= unknown(old) and \
                 getattr(old, "blob_sha", None) and getattr(old, "blob_sha", None) == getattr(card, "blob_sha", None):
-            info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None, others)   # read again:
-            info["to"], info["to_commit"], info["png_commit"] = None, None, None            # the reading is replaced
-            card.version = info
+            # read again: the reading is replaced
+            card.version = deepcopy(getattr(old, "version", None)) or start_of(card, index, None, others)
             made.append((name, "reparse"))
             continue
         if psd:
@@ -536,22 +499,18 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
         if prior.get("from") is not None and start["from"] is not None and start["from"] < prior["from"]:
             start["from"], start["from_commit"] = prior["from"], prior.get("from_commit")   # never before the one it ends
         card.version = start
-        if name in restored:
-            close(old, index, start["from"], end_of(start))
-        else:
+        if name not in restored:
             previous = deepcopy(old)
             vars(previous).pop("created", None)               # the card's date: the card (or its archive) keeps it
             if getattr(previous, "version", None) is None:
                 previous.version = start_of(previous, index, None, others)
-            close(previous, index, start["from"], end_of(start))
             db.old_stats.setdefault(name, []).append(previous)
         made.append((name, start["cause"]))
     return made
 
 
-def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
-    """The last version of each card archived this build ends at its deleting commit (the tag's at and commit), its
-    PNG pinned to that moment."""
+def start_archived(old_stats: dict, names: list, index: GitIndex) -> None:
+    """The last version of each card archived this build gets its start record if it has none."""
     for name in names:
         versions = old_stats.get(name) or []
         last = versions[len(versions) - 1] if versions else None
@@ -560,7 +519,6 @@ def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
             continue
         if getattr(last, "version", None) is None:
             last.version = start_of(last, index, versions[len(versions) - 2] if len(versions) > 1 else None)
-        close(last, index, tag.get("at"), index.by_sha.get(tag.get("commit") or ""))
 
 
 # ========================
@@ -575,8 +533,6 @@ __all__ = [
     'allows_high',
     'carry',
     'carry_to',
-    'close',
-    'close_archived',
     'data_of',
     'date_archive',
     'kept_values',
@@ -588,6 +544,7 @@ __all__ = [
     'record_versions',
     'same_series',
     'start',
+    'start_archived',
     'start_of',
     'unchecked',
     'unknown',

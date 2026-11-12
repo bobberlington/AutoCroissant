@@ -270,8 +270,7 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   a full bar (10). `psd_regions.comp_bars`; the bake sets it with `psd_edit.set_comp` (renders equal
   Photoshop's at 0, 3, 5, 7, 10); the details call it "template". Since 2026-11-06 the bar shows 0-20 (comps
   11-20: a full top row and a bottom half row of darks, `comp_render` draws every layer of the bar doc), and
-  cards move onto the template with `card_sweep run --kind alt-template` (card_standards.alt_template: the
-  darks; the bar art, text layout and clip bases too where the card renders the same; sweep only, never the guards).
+  356 cards moved onto the template on 2026-11-06 (a one-time sweep, deleted 2026-11-12; the guards never convert).
   `Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).
   `2_Creature_Template.psd` and `3_Creature_Template.psd` (2026-11-07): a bar per creature and stat in
   `Darks > Creature n` (`psd_regions.comp_creature`), comps "0".."20" on every bar, and `Shared Health` in `Darks`, read by

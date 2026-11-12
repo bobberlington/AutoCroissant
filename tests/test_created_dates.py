@@ -1,14 +1,12 @@
-"""Creation dates: site/Card Creation Dates.json (CardDates), the cards' created, the data build, /query_ability's
-created>=2025 and `python -m commands.card_dates created`."""
+"""Creation dates: site/Card Creation Dates.json (CardDates), the cards' created, the data build and /query_ability's
+created>=2025."""
 import json
-import os
 from types import SimpleNamespace
 
 import pytest
 
 import commands.card_data as cd
 import commands.card_models as cm
-import commands.card_dates as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
 
@@ -28,19 +26,19 @@ def _card(name="Foo Bar", **kw):
 # The file
 # ========================
 def test_parse_keeps_valid_entries_only():
-    d = _dates({"Foo_Bar": {"date": "2023-10-13", "from": "discord", "provisional": True, "extra": 1},
-                "Plain": {"date": "2020-01-02", "from": "git", "provisional": False},
+    d = _dates({"Foo_Bar": {"date": "2023-10-13", "from": "discord", "extra": 1},
+                "Plain": {"date": "2020-01-02", "from": "git"},
                 "Hand": {"date": "2019-12-31", "from": "hand"},
                 "Bad day": {"date": "2023-02-30", "from": "discord"}, "Short": {"date": "2023-1-3", "from": "git"},
                 "Stamp": {"date": "2023-10-13T05:00:00Z", "from": "git"}, "Who": {"date": "2023-10-13", "from": "chat"},
-                "Flag": {"date": "2023-10-13", "from": "git", "provisional": "yes"}, "Str": "2023-10-13", "None": None})
-    assert d.cards == {"foo bar": {"date": "2023-10-13", "from": "discord", "provisional": True},
+                "Str": "2023-10-13", "None": None})
+    assert d.cards == {"foo bar": {"date": "2023-10-13", "from": "discord"},
                        "plain": {"date": "2020-01-02", "from": "git"}, "hand": {"date": "2019-12-31", "from": "hand"}}
 
 
 def test_apply_sets_changes_and_clears():
-    d, card = _dates({"Foo Bar": {"date": "2023-10-13", "from": "discord", "provisional": True}}), _card()
-    assert d.apply("Foo Bar", card) and card.created == {"date": "2023-10-13", "from": "discord", "provisional": True}
+    d, card = _dates({"Foo Bar": {"date": "2023-10-13", "from": "discord"}}), _card()
+    assert d.apply("Foo Bar", card) and card.created == {"date": "2023-10-13", "from": "discord"}
     assert not d.apply("foo_bar", card)                          # the same: no change
     d.cards["foo bar"]["date"] = "2023-10-01"
     assert d.apply("Foo Bar", card) and card.created["date"] == "2023-10-01"
@@ -51,11 +49,11 @@ def test_apply_sets_changes_and_clears():
 
 def test_the_websites_rule_with_the_first_upload():
     """build_site.py apply_created's rule: the entry, unless the first upload is earlier and the entry isn't a hand one;
-    no entry: the first upload ("from": "git", never provisional); neither: undated."""
-    d = _dates({"Posted": {"date": "2023-10-13", "from": "discord", "provisional": True},
-                "Late": {"date": "2024-02-02", "from": "discord", "provisional": True},
+    no entry: the first upload ("from": "git"); neither: undated."""
+    d = _dates({"Posted": {"date": "2023-10-13", "from": "discord"},
+                "Late": {"date": "2024-02-02", "from": "discord"},
                 "Hand": {"date": "2025-01-01", "from": "hand"}})
-    assert d.created("Posted", "2023-11-05") == {"date": "2023-10-13", "from": "discord", "provisional": True}
+    assert d.created("Posted", "2023-11-05") == {"date": "2023-10-13", "from": "discord"}
     assert d.created("Posted", "2023-10-13")["from"] == "discord" and d.created("Posted")["from"] == "discord"
     assert d.created("Late", "2024-01-30") == {"date": "2024-01-30", "from": "git"}
     assert d.created("Hand", "2020-01-01") == {"date": "2025-01-01", "from": "hand"}
@@ -125,10 +123,10 @@ def repo(monkeypatch):
     return make
 
 
-def _dated(name, day, provisional=False):
+def _dated(name, day):
     card = _card(name)
     if day:
-        card.created = {"date": day, "from": "discord", **({"provisional": True} if provisional else {})}
+        card.created = {"date": day, "from": "discord"}
     return card
 
 
@@ -149,65 +147,13 @@ def test_query_embed_says_created(monkeypatch):
                                                     "kirby.png": "Creatures/Kirby/2 Stars/Kirby.png"})
     monkeypatch.setattr(qc.card_repo, "site_ids", {})
     monkeypatch.setattr(qc.card_repo, "ambiguous_names", {})
-    goombella = _dated("Goombella", "2023-10-13", provisional=True)
+    goombella = _dated("Goombella", "2023-10-13")
     goombella.series, goombella.subseries = "mario", "Paper Mario"
     monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": goombella, "Kirby": _dated("Kirby", "2020-07-22")})
     qc.query_name(SimpleNamespace(), "Goombella")
-    assert sent[0][1]["embed"].description == "mario · Paper Mario\nCreated about 2023-10-13"
+    assert sent[0][1]["embed"].description == "mario · Paper Mario\nCreated 2023-10-13"
     qc.query_name(SimpleNamespace(), "Kirby")                   # a plain link stays one
     assert "embed" not in sent[1][1]
-
-
-# ========================
-# python -m commands.card_dates created
-# ========================
-ARCHIVE = {
-    "A Snack": {"date": "2023-10-13", "source": "discord", "confidence": "high", "provisional": True,
-                "first_discord": "2023-10-13", "id": "a-snack", "waits_on": ["A173"]},
-    "Abigail": {"date": "2020-08-13", "source": "discord", "confidence": "confident", "provisional": False,
-                "first_discord": "2020-08-13", "id": "abigail"},
-    "Exposed": {"date": "2023-11-06", "source": "git-first-upload", "confidence": "discord-later", "provisional": False,
-                "first_discord": "2023-12-08", "id": "exposed"},
-    "Nothing": {"date": None, "source": None, "confidence": None, "provisional": False, "first_discord": None, "id": "nothing"},
-}
-
-
-def test_dates_file_carries_dates_only_and_keeps_hand_entries():
-    text, report = de.dates_file(ARCHIVE, None)
-    data = json.loads(text)
-    assert data["cards"] == {"A Snack": {"date": "2023-10-13", "from": "discord", "provisional": True},
-                             "Abigail": {"date": "2020-08-13", "from": "discord"}, "Exposed": {"date": "2023-11-06", "from": "git"}}
-    assert text.splitlines()[3] == '    "A Snack": {"date":"2023-10-13","from":"discord","provisional":true},'   # dump_edits' layout
-    assert report == ["3 creation dates: 2 first Discord post, 1 first git upload, 0 by hand; 1 provisional", "a new file: 3 cards"]
-    assert de.dates_file(ARCHIVE, text) == (text, [report[0], "vs the file: 0 new, 0 changed, 0 gone"])
-    hand = json.loads(text)
-    hand["cards"]["exposed"] = hand["cards"].pop("Exposed") | {"date": "2023-11-01", "from": "hand"}
-    hand["cards"]["Gone"] = {"date": "2021-01-01", "from": "git"}
-    moved = dict(ARCHIVE, Abigail=dict(ARCHIVE["Abigail"], date="2020-08-01"), **{"A Snack": dict(ARCHIVE["A Snack"], provisional=False)})
-    text2, report2 = de.dates_file(moved, json.dumps(hand))
-    assert json.loads(text2)["cards"] == {"A Snack": {"date": "2023-10-13", "from": "discord"},
-                                          "Abigail": {"date": "2020-08-01", "from": "discord"},
-                                          "exposed": {"date": "2023-11-01", "from": "hand"}}
-    assert report2[1:] == ["vs the file: 0 new, 2 changed, 1 gone", "- A Snack: 2023-10-13 no longer provisional",
-                           "- Abigail: 2020-08-13 -> 2020-08-01", "- gone: Gone"]
-    assert "waits_on" not in text and "a-snack" not in text and "confident" not in text
-
-
-def test_created_command(tmp_path, capsys):
-    archive, repo = tmp_path / "archive", tmp_path / "cards"
-    archive.mkdir()
-    (archive / "created_dates.json").write_text(json.dumps(ARCHIVE), encoding="utf-8")
-    assert de.main(["created", "--archive", str(archive), "--repo", str(repo)]) == 1      # no site/ yet: written below
-    (repo / "site").mkdir(parents=True)
-    assert de.main(["created", "--archive", str(archive), "--repo", str(repo)]) == 0
-    out = repo / FILE
-    assert "Wrote" in capsys.readouterr().out and CardDates.parse(out.read_text(encoding="utf-8")).cards["a snack"]["provisional"]
-    assert de.main(["created", "--archive", str(archive), "--repo", str(repo)]) == 0 and "Unchanged:" in capsys.readouterr().out
-    (archive / "matches.json").write_text("{}", encoding="utf-8")
-    os.utime(archive / "created_dates.json", (1, 1))
-    assert de.main(["created", "--archive", str(archive), "--out", str(tmp_path / "x.json")]) == 1
-    assert "review_pages.py" in capsys.readouterr().out and not (tmp_path / "x.json").exists()
-    assert de.main(["created", "--archive", str(tmp_path / "none"), "--repo", str(repo)]) == 1
 
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
@@ -215,7 +161,7 @@ def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     carry it (CSV: a created column)."""
     import csv
     import commands.psd_analyzer as pa
-    goombella, kirby = _dated("Goombella", "2023-10-13", provisional=True), _dated("Kirby", None)
+    goombella, kirby = _dated("Goombella", "2023-10-13"), _dated("Kirby", None)
     monkeypatch.setattr(pa, "get_card_aliases", lambda name=None: [] if name else {})
     lines = pa._format_metadata(goombella, "Goombella").split("\n")
     assert lines[lines.index("created: 2023-10-13") - 1].startswith("timestamp: ")

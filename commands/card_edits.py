@@ -327,18 +327,17 @@ def as_parsed(card: CardInfo) -> CardInfo:
 class CardDates:
     """
     TTSCardMaker's site/Card Creation Dates.json: when each card was made, the earlier of its first Discord post and
-    its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord", "provisional": true}}};
-    names match like the authors file. Written by `python -m commands.card_dates created`, which keeps "from": "hand"
-    entries (the owner's). The website and /update_stats read it, each with its own first upload for the cards it
-    misses (created()); it is no edit (never in Card Edits.json).
+    its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord"}}}; names match like
+    the authors file. Kept by hand ("from": "hand" for a new one). The website and /update_stats read it, each with its
+    own first upload for the cards it misses (created()); it is no edit (never in Card Edits.json).
     """
-    cards: dict = field(default_factory=dict)       # normalized card name -> {"date", "from"[, "provisional"]}
+    cards: dict = field(default_factory=dict)       # normalized card name -> {"date", "from"}
 
     FROM = ("discord", "git", "hand")               # its first Discord post, first git upload, or set by hand
 
     @classmethod
     def valid(cls, entry) -> bool:
-        if not isinstance(entry, dict) or entry.get("from") not in cls.FROM or not isinstance(entry.get("provisional", False), bool):
+        if not isinstance(entry, dict) or entry.get("from") not in cls.FROM:
             return False
         try:
             return isinstance(entry.get("date"), str) and date.fromisoformat(entry["date"]).isoformat() == entry["date"]
@@ -353,8 +352,7 @@ class CardDates:
         dates = cls()
         for name, entry in (cards if isinstance(cards, dict) else {}).items():
             if cls.valid(entry):
-                dates.cards[CardAuthors.key(name)] = {"date": entry["date"], "from": entry["from"],
-                                                      **({"provisional": True} if entry.get("provisional") else {})}
+                dates.cards[CardAuthors.key(name)] = {"date": entry["date"], "from": entry["from"]}
         return dates
 
     def created(self, name: str, upload: Optional[str] = None) -> Optional[dict]:
@@ -367,7 +365,7 @@ class CardDates:
             upload: Its first upload (UTC day, YYYY-MM-DD), or None when unknown
 
         Returns:
-            {date, from[, provisional]}, or None (undated)
+            {date, from}, or None (undated)
         """
         found = self.cards.get(CardAuthors.key(name))
         if found and (found["from"] == "hand" or not upload or found["date"] <= upload):

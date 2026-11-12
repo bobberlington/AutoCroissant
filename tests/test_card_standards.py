@@ -495,23 +495,13 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
-def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path, monkeypatch):
-    """A sweep's whole: Restrained (the splice misses its pill's 1 px edge) is redrawn whole, its lines kept; drawn off
-    its pixels, it refuses. The guards never redraw whole. Wendy, which the fork laid out off Photoshop's pixels until it
-    spaced tracked badges as Photoshop (cards-20261104), is spliced by glyph."""
-    fonts, faces = _fonts(clone), psd_edit.font_map(_fonts(clone)([]))
+def test_badges_by_glyph_only(clone, tmp_path):
+    """Restrained (the splice misses its pill's 1 px edge) refuses: never redrawn whole. Wendy, which the fork laid out
+    off Photoshop's pixels until it spaced tracked badges as Photoshop (cards-20261104), is spliced by glyph."""
+    fonts = _fonts(clone)
     rel = "Auxiliary/Status Effects/Debuffs/2 Stars/Restrained.psd"
     data = at_rev(clone, RESAVE, rel)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
-    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
-    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
-    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
-    (tmp_path / "fit.psd").write_bytes(fixed.data)
-    assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
-    lines = [cs._lines(psd_edit.ability_layer(PSDImage.open(BytesIO(d))), faces) for d in (data, fixed.data)]
-    assert lines[0] == lines[1]
-    monkeypatch.setattr(cs, "_ink_off", lambda layer, faces: cs.WHOLE_OFF * 2)
-    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
     assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
     wendy = "Creatures/DST/3 Stars/Wendy.psd"
     fixed = cs.fix(at_rev(clone, RESAVE, wendy), wendy, [], str(tmp_path / "work"), None, fonts, only="badges")

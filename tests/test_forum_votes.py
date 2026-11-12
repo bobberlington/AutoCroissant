@@ -3,7 +3,6 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from itertools import count
-from os.path import exists
 from types import SimpleNamespace
 
 import pytest
@@ -78,9 +77,9 @@ class Starter:
 
 
 class Thread:
-    def __init__(self, forum, created, tags=(), name="Bigger hands", archived=False, locked=False, owner=PERSON):
-        self.id, self.parent_id, self.forum, self.guild, self.owner_id = next(_ids), forum.id, forum, forum.guild, owner
-        self.created_at, self.name, self.archived, self.locked = created, name, archived, locked
+    def __init__(self, forum, created, tags=(), archived=False, locked=False):
+        self.id, self.parent_id, self.forum, self.guild = next(_ids), forum.id, forum, forum.guild
+        self.created_at, self.name, self.archived, self.locked = created, "Bigger hands", archived, locked
         self.applied_tags = [forum.tag(n) for n in tags]
         self.jump_url = f"https://discord.com/channels/1/{self.id}"
         self.starter, self.messages, self.edits = Starter(self, "Please change this."), [], []
@@ -154,11 +153,6 @@ class Forum:
     async def archived_threads(self, limit=None):
         for thread in list(self.archived):
             yield thread
-
-    async def create_thread(self, name, content, applied_tags=(), allowed_mentions=None):
-        thread = Thread(self, T0, name=name, owner=BOT)
-        thread.applied_tags, thread.starter.content = list(applied_tags), content
-        return SimpleNamespace(thread=thread, message=thread.starter)
 
 
 class Channel:
@@ -503,11 +497,10 @@ def test_reminders_list_open_posts_read_only(clock, monkeypatch):
     assert [r["id"] for r in asyncio.run(panel._listing(1, client))] == ["a1b2c3d4"]
 
 
-def test_listings_leave_out_posts_closed_by_hand_and_the_test_post(clock, monkeypatch, capsys):
+def test_listings_leave_out_posts_closed_by_hand(clock, monkeypatch, capsys):
     forum = Forum()
     client = Client(forum)
     tagged, shut, paused, kept, away = (Thread(forum, T0) for _ in range(5))
-    Thread(forum, T0, name=fv.TEST_TITLE, owner=BOT)    # the CLI's test post: never a proposal
     passes(client, T0, now=clock)
     tagged.applied_tags = [forum.tag("Closed")]         # day 1: closed by people, the steps learn it on day 6
     shut.locked = True
@@ -645,49 +638,3 @@ def test_settings_persisted_and_checked(clock, monkeypatch):
     assert asyncio.run(go())[0]["content"].startswith("✗ Forum votes are off")
     asyncio.run(fv.run_pass(client))
     assert open(FORUM_JSON, encoding="utf-8").read() == "{broken"   # never overwritten
-
-
-def test_live_test_cli_flow(clock, monkeypatch, capsys):
-    forum = Forum()
-    client = Client(forum)
-
-    async def wait(seconds):                             # people vote while the test waits
-        assert seconds == 120
-        thread = forum.threads[0]
-        thread.starter.vote("👍", 3)
-        thread.starter.vote(Emoji(77, "abstain"), 5)
-    monkeypatch.setattr(fv, "sleep", wait)
-    post = asyncio.run(fv.live_test(client, 2))
-    thread = post.thread
-    assert thread.name == fv.TEST_TITLE and thread.starter.content.endswith("closes in 2 minutes.")
-    assert contents(thread) == ["Voting is closed. Most votes: 👍 (3)."] and thread.tags == ["Closed"] and thread.locked
-    winner = f"Most votes: 👍 (3). {thread.jump_url}\n> This is a test and closes in 2 minutes."
-    assert [m.content for m in client.results.sent] == [winner] and "proposals bot" not in winner
-    assert not any("<@&" in (m.content or "") for m in thread.messages + client.results.sent)
-    out = capsys.readouterr().out
-    assert f"Test post {thread.id}" in out and "Outcome: Most votes: 👍 (3). Winner message: yes" in out
-    assert not exists(FORUM_JSON)
-
-
-def test_test_post_stopped_or_left_open_never_pinged(clock, monkeypatch):
-    forum = Forum()
-    client = Client(forum)
-
-    async def hang_up(seconds):                          # SIGHUP during the wait
-        raise asyncio.CancelledError
-    monkeypatch.setattr(fv, "sleep", hang_up)
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(fv.live_test(client, 10))
-    stopped = forum.archived[0]
-    assert contents(stopped) == ["The test stopped early."] and stopped.tags == ["Closed"] and stopped.locked
-    left = Thread(forum, T0, name=fv.TEST_TITLE, owner=BOT)  # a killed test: its post left open
-    left.starter.vote("👍", 2)
-
-    async def bot_sees():
-        await fv.post_created(client, stopped)
-        await fv.post_created(client, left)
-    asyncio.run(bot_sees())
-    passes(client, DAY6, DAY7, now=clock)
-    assert contents(stopped) == ["The test stopped early."]
-    assert contents(left) == ["Voting is closed. Most votes: 👍 (2)."] and left.locked and left.tags == ["Closed"]
-    assert client.results.sent == []

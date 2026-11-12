@@ -132,8 +132,7 @@ def test_the_current_card_posts_its_image(db):
 def test_the_current_card_from_its_carried_start(db):
     """Its last old version had the same data (dropped): the current card answers from that version's date."""
     current = cm.stats_db.stats["Tainted Bethany"]
-    current.version = {"from": _at(2026, 10, 19, 16, 57, 41), "from_commit": None, "to": None, "to_commit": None,
-                       "cause": "legacy", "png_commit": None, "legacy": False}
+    current.version = {"from": _at(2026, 10, 19, 16, 57, 41), "from_commit": None, "cause": "legacy", "legacy": False}
     cm.stats_db.old_stats["Tainted Bethany"].pop()
     assert _texts("Tainted Bethany", "2026-10-20")[0].startswith(
         f"**Tainted Bethany** as of 2026-10-20 {HEAD}the current card (version 4 of 4), from 2026-10-19.")
@@ -215,8 +214,7 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     day in between posts the PNG of that day (pinned to its commit), after the re-render today's; an old version links
     its own image of that day. Without the history clone a carried day says today's image is shown."""
     current = cm.stats_db.stats["Tainted Bethany"]
-    current.version = {"from": _at(2026, 2, 7, 21, 0), "from_commit": None, "to": None, "to_commit": None,
-                       "cause": "legacy", "png_commit": None, "legacy": False}
+    current.version = {"from": _at(2026, 2, 7, 21, 0), "from_commit": None, "cause": "legacy", "legacy": False}
     cm.stats_db.old_stats["Tainted Bethany"][1:] = []
     assert _ask("Tainted Bethany", "2026-06-01")[0]["content"].endswith("Image: today's (that day's is not known).")
     first, second = _png_clone(tmp_path, monkeypatch, f"{BETHANY}.png", [_at(2026, 1, 30, 17), _at(2026, 10, 22, 7)])

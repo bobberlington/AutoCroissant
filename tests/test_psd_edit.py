@@ -458,24 +458,6 @@ def test_creature_rows(clone, parser, tmp_path):
     assert [group.name for group, _, _ in pe.bar_rows(psd, "def", 2)[0]] == ["2"] and _creature_bars(psd)["shared"] == ["hp"]
 
 
-def test_alt_template_converts_a_card(clone, parser, tmp_path):
-    """The sweep kind alt template: a card's exposure digit rows become the template's layer-comp bars on its own rows,
-    its stats read as before, the rest unchanged but what the gate allows, a styled dark digit's effects on its bar, and
-    the template's bar shapes and (Mr Krabs) text layout where the card renders the same with them."""
-    import commands.card_standards as standards
-    template = tmp_path / "alt.psd"
-    template.write_bytes(at_rev(clone, *ALT_TEMPLATE))
-    for rel, styled, layout in (("Creatures/Kirby/2 Stars/Acro.psd", False, False), ("Creatures/Other/4 Stars/Mr_Krabs.psd", True, True)):
-        psd, _ = _card(clone, rel)
-        out = str(tmp_path / Path(rel).name)
-        done = standards.alt_template(psd, out, SimpleNamespace(template=str(template)))
-        assert any(n.startswith("bar shapes: ") and n.count(",") == 3 for n in done) and ("text layout" in done) == layout, done
-        new = PSDImage.open(out)
-        assert pe.parse_card(parser, out, rel, new)["card"] == pe.parse_card(parser, psd, rel)["card"]
-        assert not any(stat_rows(new).values()) and all(len(rows) == 1 for rows in comp_bars(new).values())
-        assert all(rows[0][0].has_effects() == styled for rows in comp_bars(new).values()), rel
-
-
 def test_hard_edged(tmp_path):
     """Pixel art resizes nearest, its colours kept; a soft edge, many colours or smooth shading stays smooth."""
     rng = np.random.default_rng(1)
@@ -587,33 +569,6 @@ def test_croissants_bars_read_by_their_rows(clone, parser, tmp_path):
                                                          "stats": [7, 6, 7, 6]},
         "Creatures/Other/3 Stars/Pizza.psd": {"hp": [("Health", 6)], "def": [("Defense copy", 4)],
                                               "atk": [("Attack copy", 4)], "spd": [("Speed copy", 4)], "stats": [6, 4, 4, 4]}}
-
-
-def test_alt_parts_rows_decide(clone):
-    """The digits' row decides a bar's place (the Pandas' def and atk art are named for each other's rows) and a split
-    row's halves are one bar (Royal Eradicator's "atk top" and "atk bottom")."""
-    import commands.card_standards as standards
-    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/Pandas/2 Stars/Peter_Panda.psd")[0]))[1]
-    assert (parts["def"][1], parts["atk"][1]) == ((360, 1326, 1173, 1410), (360, 1452, 1173, 1536))
-    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd")[0]))[1]
-    assert parts["atk"][1] == (360, 1443, 1176, 1542)
-
-
-def test_alt_dark():
-    """A bar draws like its digit: the template's dark near -2.95, the digit's own off it, a partial overlay split between
-    the bar and the overlay, a covering one solid."""
-    import commands.card_standards as standards
-    from psd_tools.constants import BlendMode
-
-    class Overlay(SimpleNamespace):
-        enabled, blend_mode = True, BlendMode.NORMAL
-    GradientOverlay = type("GradientOverlay", (Overlay,), {})
-    digit = lambda e, *fx: SimpleNamespace(kind="exposure", exposure=e, effects=list(fx), has_effects=lambda: bool(fx))
-    assert standards.alt_dark(digit(-2.95)) == (171, None)
-    assert standards.alt_dark(digit(-1.11)) == (75, None)
-    opacity, overlay = standards.alt_dark(digit(-4.67, GradientOverlay(opacity=48.0)))
-    assert (opacity, round(overlay, 1)) == (225, 54.5)
-    assert standards.alt_dark(digit(-2.95, GradientOverlay(opacity=100.0))) == (255, None)
 
 
 def test_regions_and_rows_on_mini_doomer(clone, parser):

@@ -377,27 +377,3 @@ def test_cursor_moves_only_after_each_message(tmp_path):
     assert json.loads(out.read_text(encoding="utf-8"))["messages"] == []
     cl.advance(db, 1, p1["after"])
     assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
-
-
-def test_past_misread_stat_lines_dropped(tmp_path):
-    """drop_misread (png_changes backfill --events): Tyler's 'HP 7 -> 23 (buff)' beside DEF, ATK, SPD none goes art; a
-    bars-gone side beside a text change keeps the text; an allowed 23, a raid boss's 30, a real step, an edit, a kind
-    change and an active creature without ATK stay; seqs kept, once."""
-    from commands.card_db import stats_text
-    db = str(tmp_path)
-    cards = {"High": _card("High", allow_high_stats=True), "Act": _card("Act", types=["active"])}
-    (tmp_path / "stats.json").write_text(stats_text(cards), encoding="utf-8")
-
-    def event(seq, fields, card="A", kind="changed", stars=5):
-        verdict = {k: v for k, v in cl.classify(fields).items() if v is not None}
-        return {"seq": seq, "at": T, "kind": kind, "card": card, "card_type": "creature", "stars": stars, "fields": fields, **verdict}
-    misread = {"hp": [7, 23], "def": [6, None], "atk": [4, None], "spd": [6, None]}
-    text = {"hp": [6, None], "ability": ["Hit.", "Smash."]}
-    kept = [event(3, {"hp": [20, 23]}, "High"), event(4, {"hp": [7, 30]}, stars=6), event(5, {"hp": [5, 6]}),
-            event(6, {"hp": [None, 6]}, kind="edited"), event(7, {"card_type": ["item", "creature"], "hp": [None, 5]}),
-            event(8, {"atk": [4, None]}, "Act"), event(9, {"types": [["active"], ["fire"]], "spd": [None, 3]})]
-    cl.append_events(db, [event(1, misread), event(2, text), *kept])
-    assert cl.drop_misread(db) == 2 and cl.drop_misread(db) == 0
-    got = cl.read_events(db)
-    assert got[0] == {k: v for k, v in event(1, misread).items() if k not in ("fields", "buffs", "nerfs", "verdict")} | {"kind": "art"}
-    assert got[1] == event(2, {"ability": text["ability"]}) and got[2:] == kept and "verdict" not in got[1]

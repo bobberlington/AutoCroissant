@@ -359,8 +359,7 @@ def test_changed_moved_archived(cards):
     assert code == 0 and message.startswith("Card data: 1 changed")
     assert stats["Mini Doomer"].ability == _golden(OTHER)["ability"] and stats["Mini Doomer"].timestamp == 2000.0
     version = old["Mini Doomer"][0]
-    assert (version.path, version.blob_sha, version.version["to"], version.version["to_commit"]) == \
-        (DOOMER, blob_sha_bytes(cards.psds[DOOMER]), 2000.0, c2)
+    assert (version.path, version.blob_sha) == (DOOMER, blob_sha_bytes(cards.psds[DOOMER]))
     assert stats["Mini Doomer"].version["from_commit"] == c2
     assert events[len(events) - 1]["kind"] == "changed" and events[len(events) - 1]["by"] == "bob"
 
@@ -384,7 +383,6 @@ def test_changed_moved_archived(cards):
     last_version = old["The Freezer"][len(old["The Freezer"]) - 1]
     tag = last_version.archived
     assert (tag["at"], tag["commit"], tag["path"]) == (4000.0, c4, moved)
-    assert (last_version.version["to"], last_version.version["to_commit"]) == (4000.0, c4)       # closed at the deletion
     last = events[len(events) - 1]
     assert (last["kind"], last["card"], last["by"], last["seq"]) == ("archived", "The Freezer", "dave", 5)
 
@@ -450,7 +448,7 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
         "The Big Freezer"
     assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
     big = stats["The Big Freezer"]                                      # dated from the rename: the archive holds before
-    assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0) and old["The Freezer"][0].version["to"] == 2000.0
+    assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0)
 
 
 def test_history_values_out_of_range_are_kept_and_listed(cards):

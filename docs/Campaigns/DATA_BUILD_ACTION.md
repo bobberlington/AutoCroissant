@@ -499,9 +499,9 @@ github_api reads it inside a try/except and takes the token from the environment
    aliases. Until step 5 it reads aliases.pkl from AutoCroissant main, only while `Card Edits.json` has no
    `aliases_moved` (2026-10-23; read before the PSDs, so a missing file stops the build early), so deleting the file at
    step 10 breaks no build. Then every card's `created` from
-   `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.card_dates created` from
-   the Discord archive), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
-   upload is earlier and the entry isn't a hand one; a card the file misses (one added since the last `created` run)
+   `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; dated from the Discord archive once, kept by hand since
+   2026-11-12), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
+   upload is earlier and the entry isn't a hand one; a card the file misses (one added since)
    gets its first upload. The bot's first upload is the earliest version the database holds (`_first_upload`; the
    website's is the PNG's first commit): equal for every card first uploaded since 2026-02 (11 of 11), and the file
    covers the older ones, where the bot's history is cut short (770 of 770 cards dated as the website on 2026-10-23).
@@ -540,15 +540,14 @@ github_api reads it inside a try/except and takes the token from the environment
 
 - **A version only when data changes.** A new version is recorded only when a card's data fields change: card_type,
   display_name, ability, stars, subtype, series, subseries, types, stats, creatures, author, note, hidden, duplicate_of.
-- **Each version gets `version`:** `{from, from_commit, to, to_commit, cause, png_commit}`.
+- **Each version gets `version`:** `{from, from_commit, cause}` (2026-11-12: `to`, `to_commit` and `png_commit` dropped,
+  never read; older records may still carry them).
   - `cause` is one of `psd` (the blob changed), `reparse` (same blob, newer parser), `moved` (the same blob in another
     folder, whose folder-derived data changed: stars, card type, subtype or series), `edit` (`Card Edits.json`), `authors`
     (`Card Authors.txt`) or `legacy`. A move that changes no data field is no version (below). A re-read of the same
     PSD replaces its reading and keeps its version record whole, cause too (so a re-read card can still show `psd`).
   - `from` is the blob's intro (for psd and reparse; after a revert, the revert: `GitIndex.blob_since`) or the commit of
-    the edits or authors file. `to` is the next version's `from`, or the deleting commit.
-  - `png_commit` is the newest commit of the card's PNG at `to`, so `/query as_of` can link the image of that day with no git on
-    the jetson.
+    the edits or authors file. A version ends where the next one starts.
 - **Art-only changes are not versions.** A blob change with identical data becomes an `art` changelog event and updates the
   current card's `blob_sha`.
 - **The same rules in legacy mode (2026-10-22, owner: "clean our history of dupes").** `/update_stats` archives the card
@@ -1056,8 +1055,7 @@ A duplicate's change is listed under its original.
   history clone (`repo_history.commit_before`: one `rev-list` over trees, no blob). The current card posts it pinned to
   that commit with "Image: as of <date> (it has changed since)" when the PNG changed later (a carried start reaches back
   before today's re-render); an older version adds an "Image (<date>)" button. Without the clone, a day before the
-  current card's own commit says "Image: today's (that day's is not known)". `version.png_commit` (the PNG at `to`)
-  stays for the website.
+  current card's own commit says "Image: today's (that day's is not known)".
 - **Legacy versions** say "(date approximate)".
 - **It ships first (step 3) on today's old_stats.** There, `from` is the stored timestamp and `to` is the next version's.
   Legacy `/update_stats` and a Discord edit's in-memory refresh record `edit` versions since 2026-10-23

@@ -23,8 +23,8 @@ capitalised status words in the chart's colours with their FX layers (status_wor
 steps); each redraws only the changed glyphs and the guards re-export the PNG. A layer one of them can't splice that a
 font explains (an older icon font build, or another file of a text font's name: font_cause, owner 2026-11-10) is laid
 out again whole in the current fonts (_spliced, a re-lay's checks). Every save strips the merged image
-(Maximize Compatibility off, owner 2026-11-07: psd_edit.save_psd). The big pass's normalise (card_sweep alone until the
-guards land its files, G1): sub and superscript text set normal at the same size and place (to_normal), the pictures
+(Maximize Compatibility off, owner 2026-11-07: psd_edit.save_psd). Normalise (the 11-07 big pass; since then the guards'
+convert step): sub and superscript text set normal at the same size and place (to_normal), the pictures
 linked (the link step, psd_links), the merged image stripped, in one gated save. Clean (owner 2026-11-09, cards
 only, silent): hidden star and type icon layers, hidden pictures that are an exact copy of a visible layer, and data
 that draws nothing deleted, when every picture and the parse stay the same; with the guards' Hidden the hidden
@@ -73,8 +73,7 @@ from commands.font_check import _get, _value, is_card_psd, layer_fonts
 from commands.psd_edit import ICON_FONT, Refused, badge_spans
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, hidden_tags,
                                  layer_tag, picture_numbers, shown_in, variant_view, variants_of)
-from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, bar_box, clip, comp_bars, comp_stat, comp_value,
-                                  fx_pad, overlay_words, stat_rows, union_box)
+from commands.psd_regions import STATS as STAT_PATTERNS, _ancestors, clip, comp_value, fx_pad, overlay_words, union_box
 
 # ========================
 # Configuration
@@ -946,7 +945,7 @@ def _every_line_in(data: bytes) -> bool:
 
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
             fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = (),
-            whole: bool = False, folders: bool = False) -> None:
+            folders: bool = False) -> None:
     """fix()'s work in its own temporary folder: the fixable issues (gated together), clean, then the folders (each
     gated on its own, silent), then the composer and the pixel fixes over them."""
     from commands.txt2_repair import repair
@@ -1025,7 +1024,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
             result.plain, result.data, result.rewrapped = result.data, data, names
             current = drawn
     if pixels:
-        _pixel_fixes(folder, base, current, rel, parser, result, fonts, pixels, whole)
+        _pixel_fixes(folder, base, current, rel, parser, result, fonts, pixels)
 
 
 def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: Optional[Callable] = None,
@@ -1047,8 +1046,7 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: O
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
-        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, whole: bool = False,
-        skip: tuple = ()) -> Fixed:
+        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, skip: tuple = ()) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, the folders (standard_folders,
     with a parser), then R8's Single-line Composer
@@ -1066,7 +1064,6 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes; fonts.chart: the status chart's
             fills (status words)
         only: One PIXEL_FIXES kind alone (a sweep: card_sweep), no other fix
-        whole: fit_badges may redraw a layer whole (a sweep's --whole)
         skip: PIXEL_FIXES kinds left out (the guards convert in a step of their own)
 
     Returns:
@@ -1084,7 +1081,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     makedirs(work, exist_ok=True)
     folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
     try:
-        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels, whole, folders)
+        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels, folders)
     finally:
         rmtree(folder, ignore_errors=True)
     return result
@@ -1101,7 +1098,7 @@ OLD_GLYPH_INK = 0.05        # alpha that counts as ink
 OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
 STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
 FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
-WHOLE_OFF = 0.01            # fit_badges(whole): the share of a layer's ink the fork's render may have off its stored pixels
+WHOLE_OFF = 0.01            # relay_badges: the share of a layer's ink the fork's render may have off its stored pixels
 LAID_TOL = 0.01             # pt: an icon glyph Photoshop stepped this far off the current font was laid out at another advance
 EARLIER_FIT = OLD_GLYPH_BAD # badge widths: an icon glyph is drawn in an earlier icon font when that font's own render of the layer
 EARLIER_GAIN = 0.03         # fits it this well and better by this than the current font's (owner 2026-11-04: Roboto labels
@@ -1518,23 +1515,15 @@ def _ink_off(layer, faces) -> float:
     return float(off.sum()) / int(ink.sum()) if ink.any() else 1.0
 
 
-def _lines(layer, faces) -> list:
-    """The layout's lines: [(start, end, drawn)] into the engine's text."""
-    from psd_tools.composite.text.layout import layout
-    from psd_tools.composite.text.model import TextModel
-    return [(line.start, line.end, line.drawn) for line in layout(TextModel.from_layer(layer), faces).lines]
-
-
-def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]], whole: bool = False) -> list:
+def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
     Badges (owner 2026-10-25), the PIXEL_FIXES kind: badge_plan's badges and icons set (FontSize, BaselineShift; TySh
     and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize is made
     even when it rewraps the text or moves other words (owner 2026-10-25, the 58 shifted only that night): the moved
     glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Refused when a line no longer fits the
     box (a new last line below it too: psd_edit.below_box) or ink runs off the canvas. Gated (_only_pixels, the stories
-    by gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size. whole (a
-    sweep's --whole, never the guards): a layer the splice can't take is redrawn whole when the fork draws it as stored
-    (_ink_off within WHOLE_OFF) and the fit keeps its lines; else when a font explains it (_spliced).
+    by gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size. A layer
+    the splice can't take is laid out again whole only when a font explains it (_spliced).
 
     Returns:
         The layer names fitted (notes in .notes); raises Refused or the engine's errors
@@ -1545,14 +1534,12 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     for layer, wants in badge_plan(psd, fonts):
         name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)), layer)
         psd_edit.follow_kerning(psd, layer)
-        whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
-        lines = _lines(layer, faces) if whole_ok else None
         keep, placed = capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
-        relaid = _spliced(path, psd, layer, faces, report, fonts, fitted, whole_ok and _lines(layer, faces) == lines)
+        relaid = _spliced(path, psd, layer, faces, report, fonts, fitted)
         if relaid is None and ("overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or
                                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))):
             raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
@@ -1637,7 +1624,7 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
     return names
 
 
-def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]], whole: bool = False) -> list:
+def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
     R1's fix (owner 2026-11-03: "make sure everything uses the badges"; the guards on every push too), the PIXEL_FIXES
     kind: tag_layers' plain timing tags and costs set in the icon font at the layer's own badge style
@@ -1646,9 +1633,8 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
     their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words cut
     again), the stored preview patched. Refused when a line no longer fits the box (a new last line below it too:
     psd_edit.below_box) or ink runs off the canvas. Gated (_only_pixels, the stories and the added face by
-    gate_stories), then checked: no plain tag left. whole (a sweep's --whole, never the guards): a layer the splice
-    can't take is redrawn whole when the fork draws it as stored (_ink_off within WHOLE_OFF); else when a font explains
-    it (_spliced).
+    gate_stories), then checked: no plain tag left. A layer the splice can't take is laid out again whole only when a
+    font explains it (_spliced).
 
     Returns:
         The layer names changed (notes in .notes); raises Refused or the engine's errors
@@ -1659,7 +1645,6 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
     for layer in tag_layers(psd):
         spans, name = plain_tags(layer), layer.name.strip()
         faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
-        whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
         psd_edit.follow_kerning(psd, layer)
         keep, placed = capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
@@ -1679,7 +1664,7 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
             psd_edit.set_alternates(layer, _salt_spans(layer), [])
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
-        relaid = _spliced(path, psd, layer, faces, report, fonts, names, whole_ok)
+        relaid = _spliced(path, psd, layer, faces, report, fonts, names)
         if relaid is None and ("overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or
                                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))):
             raise Refused("overflow", f"{name}: its badges push text out of its box")
@@ -2480,17 +2465,9 @@ def _laid_plans(path: str, fonts, earlier: tuple) -> list:
 
 
 # ========================
-# Template bars (owner 2026-11-06): the creature template's layer-comp stat bars in place of the exposure digit rows
+# Bar art (card_checks) and smart-object documents no layer uses
 # ========================
-ALT_TEMPLATE = "MDW/Templates/Creature_Template.psd"
-ALT_ROW = (813, 84)         # a template bar row's size; a card's row within ALT_ROW_TOL of it takes the template's bar
-ALT_ROW_TOL = 4
 ALT_FILL = (0.96, 0.99)    # the share of its box a bar shaped like the template's fills (0.977; Little Guy's squares 0.84)
-ALT_SIZES = ((300, 40), (1400, 160))   # a card's own bar this size takes a resized bar (Little Guy 920x78, Sonic's 816x99)
-ALT_PLAIN = 171             # a bar's dark: the template's 67%
-ALT_PLAIN_NEAR = 0.1        # a plain digit passing this near what ALT_PLAIN passes stays at it
-ALT_COVER = 99.5            # an overlay's % that hides the cells: its bar stays solid
-ALT_GAMMA = 2.2             # an exposure e passes 2 ** (e / ALT_GAMMA) of the art
 
 
 def _bar_art(psd, stat: str) -> Optional[tuple]:
@@ -2517,266 +2494,6 @@ def _bar_art(psd, stat: str) -> Optional[tuple]:
                       and fullmatch(rf"\s*({STAT_PATTERNS[stat]})\s+(top|bottom)\s*", layer.name, IGNORECASE)])
 
 
-def _alt_parts(psd):
-    """
-    (the Darks group, {stat: (value, its bar's box, its shown digit or None)}, the empty dark groups to drop) when the
-    card's bars are the template's exposure digit rows: per stat one "<Stat> Dark" group of them, or of its half rows (a
-    stat past 10: Top and Bottom, the parser's sum), all four in one visible Darks group holding nothing else that draws;
-    another dark group of a stat showing no digit draws nothing and goes (Sonic's). A bar takes the card's own bar's box
-    (_bar_art, resized ones too) when it is on the digits' row and spans it, else the art on that row (a name can lie:
-    the Pandas' def and atk), else its digit masks' at the template's size; else None.
-    """
-    if any(comp_bars(psd).values()):
-        return None
-    parts, parents, drop = {}, {}, []
-    for stat, found in stat_rows(psd).items():
-        if not found:
-            return None
-        owners = {}
-        for g, shown, _ in found:
-            owner = next((a for a in [g, *_ancestors_of(g)]
-                          if fullmatch(rf".*\b({STAT_PATTERNS[stat]})\b.*dark.*", a.name.strip(), IGNORECASE)), None)
-            if owner is None:
-                return None
-            owners.setdefault(id(owner), [owner, False])[1] |= bool(shown)
-        drawn = [o for o, any_shown in owners.values() if any_shown] or [next(iter(owners.values()))[0]]
-        if len(drawn) != 1:
-            return None
-        owner = drawn[0]
-        drop += [o for o, _ in owners.values() if o is not owner]
-        rows = [(g, shown, box) for g, shown, box in found if g is owner or any(a is owner for a in _ancestors_of(g))]
-        leaves = [d for d in owner.descendants() if not d.is_group() and (d.is_visible() or d.name.strip().isdigit())
-                  and not (d.kind == "type" and not (d.text or "").strip())]
-        if not leaves or any(d.kind != "exposure" or not d.name.strip().isdigit() for d in leaves):
-            return None
-        filled = [min(shown) for _, shown, _ in rows if shown]
-        value = sum(filled) if filled else 10
-        row = bar_box(psd, stat, rows[0][2]) if len(rows) == 1 and rows[0][2] else None
-        on_row = lambda box: box and row[1] <= (box[1] + box[3]) / 2 <= row[3] \
-            and box[2] - box[0] >= min(row[2] - row[0], ALT_ROW[0]) - ALT_ROW_TOL       # Monkey D Letion's icons don't span it
-        art = _bar_art(psd, stat)
-        if art and row and not on_row(art):
-            art = next((box for box in (_bar_art(psd, other) for other in STAT_PATTERNS) if on_row(box)), None)
-        (w0, h0), (w1, h1) = ALT_SIZES
-        if art and w0 <= art[2] - art[0] <= w1 and h0 <= art[3] - art[1] <= h1:
-            box = tuple(art)
-        elif row:
-            x0, y0, x1, y1 = row
-            if abs(y1 - y0 - ALT_ROW[1]) > ALT_ROW_TOL or abs(x1 - x0 - ALT_ROW[0]) > ALT_ROW_TOL:
-                return None
-            box = (x0, y0, x0 + ALT_ROW[0], y0 + ALT_ROW[1])
-        else:                                   # half rows and no bar of its own: placed by the other rows (_spaced)
-            box = None
-        shown = [d for d in leaves if d.is_visible()]
-        parts[stat] = (value, box, next((d for d in shown if _styled(d)), next(iter(shown), None)))
-        parents[id(owner.parent)] = owner.parent
-    if len(parts) != 4 or len(parents) != 1 or not _spaced(parts):
-        return None
-    darks = next(iter(parents.values()))
-    if (isinstance(darks, PSDImage) or len(darks) != 4 or not darks.visible or darks.opacity != 255 or darks.has_mask()
-            or darks.has_effects()):
-        return None
-    return darks, parts, drop
-
-
-def _spaced(parts: dict) -> bool:
-    """A bar with no box of its own takes the others' size and x, and their evenly spaced y in stat order (the
-    template's 126 px); False when the others are not so spaced or two bars lack one."""
-    order = list(STAT_PATTERNS)
-    placed = {stat: box for stat, (_, box, _) in parts.items() if box}
-    missing = [stat for stat in parts if parts[stat][1] is None]
-    if not missing:
-        return True
-    if len(missing) > 1 or len(placed) < 2 or len({(b[0], b[2] - b[0], b[3] - b[1]) for b in placed.values()}) != 1:
-        return False
-    known = sorted((order.index(stat), box[1]) for stat, box in placed.items())
-    steps = {(y1 - y0) / (i1 - i0) for (i0, y0), (i1, y1) in zip(known, known[1:])}
-    if len(steps) != 1:
-        return False
-    step, (i0, y0), like = steps.pop(), known[0], next(iter(placed.values()))
-    stat = missing[0]
-    top = round(y0 + (order.index(stat) - i0) * step)
-    value, _, digit = parts[stat]
-    parts[stat] = (value, (like[0], top, like[2], top + like[3] - like[1]), digit)
-    return True
-
-
-def _ancestors_of(layer) -> list:
-    out, parent = [], layer.parent
-    while parent is not None and not isinstance(parent, PSDImage):
-        out.append(parent)
-        parent = parent.parent
-    return out
-
-
-def alt_bar_rows(psd: PSDImage) -> list:
-    """The Darks group the template's bars would replace (alt_template), else []."""
-    found = _alt_parts(psd)
-    return [found[0]] if found else []
-
-
-def _styled(digit) -> bool:
-    """A digit draws a style (the shown one alone counts: a hidden one's can be stale, set_stat's rule)."""
-    return digit.has_effects() and any(e.enabled for e in digit.effects)
-
-
-def alt_dark(digit) -> tuple:
-    """
-    (a bar's opacity, its overlay's % or None) that draw like the dark digit: passing T = (1 - p) * 2 ** (e / ALT_GAMMA)
-    of the art under a Normal overlay at p, the bar at 1 - T, the overlay at p / (1 - T) to land its colour as before.
-    A plain digit: the template's dark when near it, else 1 - T. Any other style: solid.
-    """
-    exposure = digit.exposure if digit is not None and digit.kind == "exposure" else None
-    if exposure is None or exposure > 0:
-        return ALT_PLAIN, None
-    passes = 2 ** (exposure / ALT_GAMMA)
-    drawn = [e for e in digit.effects if e.enabled] if _styled(digit) else []
-    if not drawn:
-        near = abs(passes - (1 - ALT_PLAIN / 255)) <= ALT_PLAIN_NEAR
-        return (ALT_PLAIN if near else round((1 - passes) * 255)), None
-    over = drawn[0]
-    if len(drawn) > 1 or type(over).__name__ not in ("GradientOverlay", "ColorOverlay") or over.blend_mode != BlendMode.NORMAL \
-            or over.opacity >= ALT_COVER:
-        return 255, None
-    p = over.opacity / 100
-    solid = 1 - (1 - p) * passes
-    return round(solid * 255), p / solid * 100
-
-
-def set_overlay(bar, percent: float) -> None:
-    """A bar's enabled overlay at percent."""
-    for effect in bar.effects:
-        if type(effect).__name__ in ("GradientOverlay", "ColorOverlay") and effect.enabled:
-            effect.descriptor[b"Opct"].value = percent
-    bar._psd.mark_updated()
-
-
-def _alt_darks(psd: PSDImage, template: PSDImage, found: tuple) -> list:
-    """The card's Darks group of exposure digit rows replaced by the template's layer-comp bars, each moved onto the
-    card's row and set to its value (psd_edit.set_comp), a styled dark digit's effects on its bar, each bar drawn like
-    its digit (alt_dark)."""
-    darks, parts, drop = found
-    source = next(group for group in template.descendants()
-                  if group.is_group() and group.name.strip() == "Darks" and any(comp_value(l) is not None for l in group))
-    parent = darks.parent
-    new = source.copy_to(parent, list(parent).index(darks) + 1)
-    bars = {comp_stat(layer): layer for layer in new if comp_value(layer) is not None}
-    if set(bars) != set(parts):
-        raise Refused("unsupported-card", "the template's Darks group is not one bar per stat")
-    looks = {stat: alt_dark(digit) for stat, (_, _, digit) in parts.items()}
-    own = any(opacity != ALT_PLAIN for opacity, _ in looks.values())
-    if own:                                     # the darks per bar
-        new.opacity = 255
-    for stat, (value, box, digit) in parts.items():
-        bar = bars[stat]
-        psd_edit.place_bar(bar, box)
-        psd_edit.set_comp(psd, {"card": {key: comp_value(b) for key, b in bars.items()}}, stat, value)
-        opacity, overlay = looks[stat]
-        if own:
-            bar.opacity = opacity
-        if digit is not None and _styled(digit):
-            bar.copy_effects_from(digit)
-        if overlay is not None:
-            set_overlay(bar, overlay)
-    parent.remove(darks)
-    for group in drop:
-        group.parent.remove(group)
-    return [f"{bars[stat].name} {value}" for stat, (value, _, _) in parts.items()]
-
-
-ALT_BAR_AT = {"hp": (360, 1200), "def": (360, 1326), "atk": (360, 1452), "spd": (360, 1578)}   # the old template's bars
-ALT_SHAPE = {"hp": "Health", "def": "Defense", "atk": "Attack", "spd": "Speed"}                  # the template's shapes
-
-
-def _alt_shapes(psd: PSDImage, template: PSDImage) -> list:
-    """The old template's bar art (a pixel bar at its place, coloured by its effects) replaced by the template's vector
-    bar shapes, the card's effects on them."""
-    bars = next((g for g in psd.descendants() if g.is_group() and g.name.strip() == "Bars"
-                 and g.parent is not None and not isinstance(g.parent, PSDImage) and g.parent.name.strip() == "Stats Bars"), None)
-    shapes = {layer.name.strip(): layer for group in template.descendants() if group.is_group() and group.name.strip() == "Bars"
-              for layer in group if layer.kind == "shape"}
-    done = []
-    for layer in list(bars or []):
-        stat = next((k for k, pattern in STAT_PATTERNS.items() if fullmatch(rf"\s*({pattern})\s*", layer.name, IGNORECASE)), None)
-        if (stat is None or layer.kind != "pixel" or not layer.has_effects() or tuple(layer.bbox[:2]) != ALT_BAR_AT[stat]
-                or abs(layer.bbox[2] - layer.bbox[0] - ALT_ROW[0]) > 3 or abs(layer.bbox[3] - layer.bbox[1] - ALT_ROW[1]) > 2
-                or ALT_SHAPE[stat] not in shapes):
-            continue
-        shape = shapes[ALT_SHAPE[stat]].copy_to(bars, list(bars).index(layer) + 1)
-        shape.copy_effects_from(layer)
-        shape.visible = layer.visible
-        bars.remove(layer)
-        done.append(ALT_SHAPE[stat])
-    return [f"bar shapes: {', '.join(done)}"] if done else []
-
-
-def _alt_text(psd: PSDImage, template: PSDImage = None) -> list:
-    """The old template's text layout as the template's: "Stat Txt" named "Stat Text and Name", the Name layers moved
-    into it."""
-    text = next((l for l in psd if l.is_group() and l.name.strip() == "Text"), None)
-    stats = next((g for g in text if g.is_group() and g.name.strip() == "Stat Txt"), None) if text is not None else None
-    names = [l for l in text if l.kind == "type" and base_name(l).strip() == "Name"] if text is not None else []
-    if stats is None or not names:
-        return []
-    stats.name = "Stat Text and Name"
-    for name in names:                          # a split title's parts together, in their order
-        name.move_to(stats)
-    return ["text layout"]
-
-
-ALT_CLIPS = {"Clip Ability Backround to this": ((0, 1721, 1200, 2400), "Clip Ability Backround to this"),
-             "Clip Main image to this": ((0, 0, 1200, 1731), "Clip Main Image to this")}   # old base: (its box, the template's shape)
-
-
-def _alt_clips(psd: PSDImage, template: PSDImage) -> list:
-    """The old template's clip bases in images (pixel layers at their place, LINE beside them) swapped for the
-    template's vector shapes, each where the old one was (the art clipped to it stays clipped)."""
-    images = next((l for l in psd if l.is_group() and l.name.strip() == "images"), None)
-    kids = {l.name.strip(): l for l in images} if images is not None else {}
-    if "LINE" not in kids or not all(n in kids and kids[n].kind == "pixel" and tuple(kids[n].bbox) == box
-                                     for n, (box, _) in ALT_CLIPS.items()):
-        return []
-    shapes = {l.name: l for g in template if g.is_group() and g.name == "images" for l in g if l.kind == "shape"}
-    for old_name, (_, shape_name) in ALT_CLIPS.items():
-        old = kids[old_name]
-        shapes[shape_name].copy_to(images, list(images).index(old))
-        images.remove(old)
-    return ["clip shapes"]
-
-
-ALT_STEP_OFF = 24           # a step past the dark cells is kept only where no pixel of the card moves past this
-
-
-def alt_template(path: str, out_path: str, fonts) -> list:
-    """
-    A card onto the template (fonts.template, its PSD) in one rewrite: its dark cells as layer-comp bars (_alt_darks),
-    and where the card renders the same with them (each tried alone, ALT_STEP_OFF), its bar art as the template's bar
-    shapes (_alt_shapes), its text layout (_alt_text) and its clip bases as the template's shapes (_alt_clips). Gate:
-    every layer none of them touched as it was (_alt_gate).
-
-    Returns:
-        what it did; [] when the card's bars are not the template's rows
-    """
-    template = getattr(fonts, "template", None)
-    psd = PSDImage.open(path)
-    found = _alt_parts(psd)
-    if not found or not template:
-        return []
-    tmpl = PSDImage.open(template)
-    base = np.asarray(PSDImage.open(path).composite().convert("RGB"), np.int16)
-    steps = []
-    for step in (_alt_shapes, _alt_text, _alt_clips):
-        trial = PSDImage.open(path)
-        if step(trial, tmpl) and (np.abs(np.asarray(trial.composite().convert("RGB"), np.int16) - base).max() <= ALT_STEP_OFF):
-            steps.append(step)
-    names = _alt_darks(psd, tmpl, found)
-    for step in steps:
-        names += step(psd, tmpl)
-    psd_edit.save_psd(psd, out_path)
-    _alt_gate(path, out_path)
-    return names
-
-
 def _orphan_links(psd: PSDImage) -> set:
     """The smart-object documents, embedded or linked (lnkE), no layer of psd uses."""
     used = {str(layer.smart_object.unique_id).strip("\x00") for layer in psd.descendants() if layer.kind == "smartobject"}
@@ -2785,33 +2502,6 @@ def _orphan_links(psd: PSDImage) -> set:
         links |= {str(item.uuid).strip("\x00") for item in (psd.tagged_blocks.get_data(tag) or [])} \
             if psd.tagged_blocks and tag in psd.tagged_blocks else set()
     return links - used
-
-
-def _alt_gate(path: str, out_path: str) -> None:
-    """Gate: the only layers gone are the ones the conversion replaces (the Darks rows, the old bar art, the old clip
-    bases), and every other layer's record is as it was (by layer id; "Stat Txt" renamed); raises Refused("bytes")."""
-    def by_id(psd: PSDImage) -> dict:
-        records = psd_edit.layer_records(psd)
-        return {layer.layer_id: (records[psd_edit._record_index(layer)], layer) for layer in psd.descendants()}
-    before, after = PSDImage.open(path), PSDImage.open(out_path)
-    if _orphan_links(after) - _orphan_links(before):    # Photoshop 2023 won't open a file holding them
-        raise Refused("bytes", "a smart object's embedded document is left with no layer using it")
-    old, new = by_id(before), by_id(after)
-    found = _alt_parts(before)
-    replaced = {id(layer) for group in ([found[0], *found[2]] if found else []) for layer in [group, *group.descendants()]}
-    for layer in before.descendants():
-        parent = layer.parent
-        where = parent.name.strip() if parent is not None and not isinstance(parent, PSDImage) else ""
-        if (where == "Bars" and layer.kind == "pixel") or (where == "images" and layer.name.strip() in ALT_CLIPS):
-            replaced.add(id(layer))
-    for lid, (a, layer) in old.items():
-        if lid not in new:
-            if id(layer) not in replaced:
-                raise Refused("bytes", f"{layer.name!r} went missing")
-            continue
-        b = new[lid][0]
-        if a != b and not (layer.name.strip() == "Stat Txt" and {k for k in a if a[k] != b[k]} <= {"name", "blocks"}):
-            raise Refused("bytes", f"{layer.name!r} changed beyond the conversion")
 
 
 # ========================
@@ -3678,11 +3368,9 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
     "tags": (tag_layers, tags_to_badges, None),
     "status font": (status_font_layers, restyle_status, None),  # before status words: they cut FX from its text
     "status words": (status_word_layers, status_words, None),   # after the layout fixes: FX cut from the final text
-    "alt template": (alt_bar_rows, alt_template, None),
     "normalise": (needs_normalise, normalise, None),     # last: linked pictures, normal text, no merged image (silent)
 }
-SWEEP_ONLY = {"alt template", "normalise"}   # run by card_sweep alone, never by the push guards (owner's call,
-#   2026-11-06); normalise until the guards land its files silently (big pass G1: then out of this set)
+SWEEP_ONLY = {"normalise"}   # never a default kind: the guards convert in a step of their own
 PIXEL_LINES = {"clean": "hidden stars, type icons, copies and leftovers deleted, data that draws nothing removed",
                "badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
                "old glyphs": "old icon font glyphs redrawn",
@@ -3690,7 +3378,6 @@ PIXEL_LINES = {"clean": "hidden stars, type icons, copies and leftovers deleted,
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
                "status font": "status card text in Krabby Patty, its title in the chart's colour and effects",
                "status words": "status words in the chart's colours and effects",
-               "alt template": "the template's stat bars, bar shapes, text layout and clip shapes",
                "normalise": "pictures linked, text set normal, no merged image"}
 
 
@@ -3714,7 +3401,7 @@ def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = N
 
 
 def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optional[PSDParser], result: Fixed,
-                 fonts: Optional[Callable[[list], Optional[str]]], kinds: tuple, whole: bool = False) -> None:
+                 fonts: Optional[Callable[[list], Optional[str]]], kinds: tuple) -> None:
     """fix()'s pixel fixes over current (the other fixes' result), each gated on its own; plain becomes the PSD without
     them (the pushed one when they are all) unless R8 redrew."""
     plain = result.data
@@ -3722,9 +3409,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         _, apply, reads = PIXEL_FIXES[kind]
         out = join(folder, kind.replace(" ", "-") + ".psd")
         try:
-            if whole and apply in (fit_badges, tags_to_badges):
-                names = apply(current, out, fonts, whole=True)
-            elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
+            if apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
                 names = apply(current, out, fonts, seen=result.stale_glyphs)
             elif apply in (normalise, restyle_status):
                 names = apply(current, out, fonts, rel)

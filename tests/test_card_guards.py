@@ -691,10 +691,10 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     fixture_psd(tmp_path / "psds", card(colour=(0, 200, 0)), "Redrawn")   # Snack's picture drawn again (class 3)
     redrawn = (tmp_path / "psds" / "Redrawn.psd").read_bytes()
 
-    def fix(data, rel, issues, work, parser=None, fonts=None, only=None, whole=False, skip=()):
+    def fix(data, rel, issues, work, parser=None, fonts=None, only=None, skip=()):
         if only != cg.NORMALISE:
             assert cg.NORMALISE in skip            # never in the check itself
-            return real(data, rel, issues, work, parser, fonts, only, whole, skip)
+            return real(data, rel, issues, work, parser, fonts, only, skip)
         assert isinstance(fonts.links, cg.LinkContext) and fonts.links.tree[rel]
         converted.append(rel)
         if rel.endswith("Snack.psd"):           # card_standards' shape: the redrawn layers' names

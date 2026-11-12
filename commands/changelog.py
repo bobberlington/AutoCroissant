@@ -24,10 +24,10 @@ from typing import Optional
 from urllib.parse import quote
 
 from global_config import SITE_URL, TIMEZONE
-from commands.card_db import parse_stats, write_text
+from commands.card_db import write_text
 from commands.card_edits import art_list, as_parsed
-from commands.card_history import STAT_KINDS, STAT_MAX, same_series, unknown
-from commands.card_models import RAID_STARS, CardInfo
+from commands.card_history import same_series, unknown
+from commands.card_models import CardInfo
 
 # ========================
 # Configuration
@@ -403,52 +403,6 @@ def append_events(db: str, new_events: list) -> None:
         write_text(path, text + "".join(dumps(e, ensure_ascii=False, sort_keys=True) + "\n" for e in items))
 
 
-def rewrite_events(db: str, fix) -> None:
-    """Every event through fix(event) -> event, each month file rewritten only when it changed."""
-    for path in sorted(glob(join(db, CHANGELOG_DIR, "*.jsonl"))):
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-        new = "".join(dumps(fix(loads(line)), ensure_ascii=False, sort_keys=True) + "\n" for line in text.splitlines() if line.strip())
-        if new != text:
-            write_text(path, new)
-
-
-def drop_misread(db: str) -> int:
-    """
-    Past changed events' stat lines and verdict where a side was misread, as field_changes leaves them out now (a kind
-    with bars: HP or DEF none, ATK or SPD none unless active, or a stat above STAT_MAX without the card's
-    allow_high_stats or 6+ stars; never a kind change); an event left with no field is art. Every seq and the posted
-    cursor kept (png_changes backfill --events). Returns the events changed.
-    """
-    with open(join(db, "stats.json"), encoding="utf-8") as fh:
-        stats = parse_stats(fh.read())
-    keys, done = {key for key, _, _ in STATS}, []
-
-    def misread(fields: dict, i: int, types, high: bool) -> bool:
-        need = keys & set(fields) - ({"atk", "spd"} if "active" in (types or []) else set())   # misread_stats' rule
-        side = [fields[key][i] for key in keys & set(fields)]
-        return any(fields[key][i] is None for key in need) or (not high and any(isinstance(v, int) and v > STAT_MAX for v in side))
-
-    def fix(event: dict) -> dict:
-        fields = event.get("fields")
-        if (event.get("kind") != "changed" or not isinstance(fields, dict) or event.get("card_type") not in STAT_KINDS
-                or "card_type" in fields):                  # a kind change: stats none -> values are real
-            return event
-        card = stats.get(event.get("card"))
-        high = getattr(card, "allow_high_stats", False) or (event.get("stars") or 0) >= RAID_STARS
-        types = fields["types"] if isinstance(fields.get("types"), list) else [getattr(card, "types", None)] * 2
-        if not any(misread(fields, i, types[i], high) for i in (0, 1)):
-            return event
-        done.append(event.get("seq"))
-        kept = {key: value for key, value in fields.items() if key not in keys | {"creatures"}}
-        out = {key: value for key, value in event.items() if key not in ("fields", "verdict", "buffs", "nerfs")}
-        if not kept:
-            return {**out, "kind": "art"}
-        return {**out, "fields": kept, **{key: value for key, value in classify(kept).items() if value is not None}}
-    rewrite_events(db, fix)
-    return len(done)
-
-
 def read_posted(db: str) -> dict:
     path = join(db, CHANGELOG_DIR, POSTED_JSON)
     if not isfile(path):
@@ -778,7 +732,6 @@ __all__ = [
     'assign_pushes',
     'card_link',
     'classify',
-    'drop_misread',
     'edit_credit',
     'events',
     'field_changes',
@@ -792,7 +745,6 @@ __all__ = [
     'title_of',
     'read_events',
     'read_posted',
-    'rewrite_events',
     'silent',
     'site_ids',
     'split_changes',

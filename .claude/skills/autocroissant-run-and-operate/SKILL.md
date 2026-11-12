@@ -567,8 +567,8 @@ gone." when it fired or was deleted elsewhere). It closes after 10 idle minutes;
 ("This interaction failed"): run `/reminders` again. A failed conversion shows in its footer.
 Since 2026-11-10 the proposal forum's open posts show among them (§13), read-only: "Proposal forum · <title>", the
 post's link, its vote ping (until done) and close times; Reschedule, Turn off and Delete are disabled (settings stay in
-`/forum_votes`). None while the votes are off, or in another server. A post a person closed (as last seen) and the
-bot's own test post are left out here and in `/forum_votes`' "Open posts" count.
+`/forum_votes`). None while the votes are off, or in another server. A post a person closed (as last seen) is left
+out here and in `/forum_votes`' "Open posts" count.
 
 ### /set_reminder (admin only, main.py:238; the gate at :252; the panel's New does the same)
 
@@ -755,14 +755,6 @@ winner message is sent once (after a restart mid-close the bot finds them in the
 last 50 messages). A failed listing of the forum's archived posts at a start is asked again every pass until it works.
 
 - `/forum_votes` (admin): no options show the state; `enabled`, `forum`, `role`, `results` (IDs or mentions) change it.
-- Live test (the jetson, in the bot's checkout and venv; REST only, so it never clashes with the running bot; no role
-  ping; nothing recorded): `cd ~/Documents/AutoCroissant && SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-  ~/venvs/autocroissant/bin/python -m commands.forum_votes test --minutes 5` (one line; without the certificate file the
-  login fails before any post is made). It posts "Test post", opens it, waits, closes it with the bot's own
-  functions and prints the thread, message ids and the outcome. Stopped early (an error, Ctrl-C, SIGHUP from a dropped
-  ssh, SIGTERM), it posts "The test stopped early." and closes, locks and archives the post. The running bot opens the
-  post too (harmless), never pings it (its own post by that title), closes one left open (a SIGKILL) on day 7 without a
-  winner message, and drops it once locked and archived.
 - One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping, note or
   winner message any bot already sent, but adds its own 👍 👎 :abstain:, which the other identity counts as votes (only
   the counting bot's own reaction is taken off). Turn it off there before its first start: `forum_votes.json` holding

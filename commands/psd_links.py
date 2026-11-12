@@ -20,14 +20,10 @@ SmartObject.link_target), never from the filesystem.
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
-    check(psd, rel, files, tree, read) -> [str]      K4 on one rewritten PSD (card_sweep)
-    catalogue(source, tree, jobs, path) -> dict      card_sweep's catalogue file, checked against its jobs' blobs
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6),
                                                      and icon glyphs a font commit changed (psd_glyphs), one rewrite
 
-    python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
-                                           [--recheck catalogue.json] [--history CLONE]
     python -m commands.psd_links redraw --local DIR --db DIR [--head SHA] [--bytes N] [--deadline SECONDS]
                                         [--out DIR] [--dry-run]           (card-sync.yml's)
     python -m commands.psd_links due --clone DIR --db DIR [--head SHA]       prints how many PSDs are due
@@ -44,10 +40,10 @@ from functools import cache
 from hashlib import sha1
 from base64 import b64decode, b64encode
 from io import BytesIO
-from json import dump, dumps, load, loads
+from json import dump, load, loads
 from math import floor
 from os import environ, makedirs
-from os.path import expanduser, isdir, isfile, join as path_join
+from os.path import isfile, join as path_join
 from posixpath import basename, dirname, join as posixpath_join, splitext
 from re import IGNORECASE, compile as re_compile, sub
 from subprocess import PIPE, Popen, run as run_process
@@ -69,7 +65,7 @@ from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
 from psd_tools.terminology import Unit
 
 from commands.psd_regions import _ancestors, badge_layers, comp_names, placed_data
-from global_config import EDITS_PATH, HISTORY_CLONE, STARS_DIR, TYPES_DIR
+from global_config import EDITS_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -868,19 +864,6 @@ class TypesIndex:
         return (REDRAW, best) if apart[best] <= LOOK_SAME and apart[best] <= LOOK_APART * near else None
 
 
-def types_history(clone: str) -> dict:
-    """{blob: path} of every blob Types/ ever held in a clone (trees only: nothing fetched)."""
-    done = run_process(["git", "-C", clone, "log", "--all", "--raw", "--no-abbrev", "--no-renames", "--format=", "--",
-                        TYPES_DIR + "/"], capture_output=True, text=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
-    out = {}
-    for line in done.stdout.splitlines():
-        meta, _, path = line.partition("\t")
-        parts = meta.split()
-        if len(parts) >= 4 and set(parts[3]) != {"0"}:
-            out.setdefault(parts[3], path)
-    return out
-
-
 def items(psd: PSDImage, vocab=()) -> list:
     """
     A PSD's picture items, the catalogue's worker: each smart-object item no stat bar uses, in the file order of its
@@ -1294,35 +1277,6 @@ def link_issues(psd: PSDImage, rel: str, tree, ppis: Optional[Callable[[str], Op
     return list(dict.fromkeys(out))
 
 
-def check(psd: PSDImage, rel: str, files: dict, tree, read: Optional[Callable[[str], Optional[bytes]]] = None,
-          old: Optional[PSDImage] = None) -> list:
-    """
-    K4 on one rewritten PSD (card_sweep): every link placed in tree plus files (the PSD's new files) and canonical, its
-    Rslt and size the file's (read: repo path -> bytes; a link old already had at that size is left due, 5.2 step 4),
-    contentIDs unique, no item without a layer, no linked bar, and every new MDW/Linked file in files linked by it.
-
-    Returns:
-        The problems, one line each ([] passes)
-    """
-    paths = set(tree) | {path for path, data in files.items() if data is not None}
-    ppis = ppis_of(lambda path: files.get(path) if path in files else read(path) if read else None)
-    out = [found for found in link_issues(psd, rel, paths, ppis) if not found.startswith("embedded: ")]
-    links = links_of(psd, rel, paths)
-    seen: dict = {}
-    due = {(link.path, link.size) for link in links_of(old, rel, paths)} if old is not None else set()
-    for link in links:
-        if link.content:
-            seen.setdefault(link.content, []).append(link.name)
-        data = files.get(link.path) if link.path in files else read(link.path) if read and link.path else None
-        if data is not None and len(data) != link.size and (link.path, link.size) not in due:
-            out.append(f"size: {link.name} {link.size}, file {len(data)}")
-    out += [f"contentID shared: {', '.join(names)}" for names in seen.values() if len(names) > 1]
-    used = {link.path for link in links}
-    out += [f"unlinked file: {path}" for path, data in files.items()
-            if data is not None and path.startswith(LINKED_DIR + "/") and path not in used]
-    return out
-
-
 # ========================
 # The normalise fix's link step (card_standards.needs_normalise, normalise)
 # ========================
@@ -1344,20 +1298,6 @@ def needs(psd: PSDImage) -> list:
     rel = getattr(psd, "repo_path", "")
     found = link_issues(psd, rel, None, getattr(psd, "link_ppi", None))
     return [one for one in found if one.startswith(NEEDS if rel else NEEDS[:1])]
-
-
-def catalogue(source, tree: dict, jobs: list, path: str) -> Optional[dict]:
-    """card_sweep's catalogue: the file the catalogue command wrote (none: nothing linked). Every job's PSD it lists
-    must be at the job's blob (the per-batch re-check: --recheck), else ValueError."""
-    if not path:
-        return None
-    with open(path, encoding="utf-8") as fh:
-        found = load(fh)
-    blobs = found.get("blobs") or {}
-    stale = [job.psd for job in jobs if job.psd in found["psds"] and blobs.get(job.psd) != job.psd_new]
-    if stale:
-        raise ValueError(f"{path}: {len(stale)} PSDs moved since it was made ({stale[0]} first): run catalogue --recheck")
-    return found
 
 
 def link(psd: PSDImage, rel: str, fonts) -> Step:
@@ -1849,91 +1789,15 @@ def redraw_message(found: Redrawn) -> str:
     return f"{subject}\n\n" + "\n".join(found.lines) + "\n\n" + "\n".join(trailers)
 
 
-def _catalogue_job(args: tuple) -> tuple:
-    clone, rel, blob, vocab = args
-    data = _git_bytes(clone, [blob]).get(blob)
-    if data is None:
-        return rel, None, "blob missing"
-    try:
-        return rel, items(PSDImage.open(BytesIO(data)), vocab), ""
-    except Exception as error:
-        return rel, None, f"{type(error).__name__}: {error}"
-
-
 def catalogue_order(paths: list) -> list:
     """Catalogue order (PLAN 5.1): cards by repo path, then MDW/Unfinished, then MDW/Templates."""
     rank = lambda p: 2 if p.startswith("MDW/Templates/") else 1 if p.startswith("MDW/Unfinished/") else 0
     return sorted(paths, key=lambda p: (rank(p), p))
 
 
-def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Optional[dict] = None,
-                  history=()) -> dict:
-    """
-    The whole scope's catalogue (PLAN 5.1) read from a clone's objects at ref (held: {rel: blob} read instead). With
-    prev (the per-batch re-check): only PSDs whose blob moved are read again, the rest keep their items; prev's names
-    stay (assign's kept) and every Types target is classed again against ref's Types. Older Types blobs: the clone's
-    history and each of history's clones (a shallow clone misses some).
-    """
-    from concurrent.futures import ProcessPoolExecutor
-    from commands.font_check import is_card_psd
-    ref = run_process(["git", "-C", clone, "rev-parse", "--verify", ref + "^{commit}"], capture_output=True, text=True,
-                      check=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"}).stdout.strip()     # base: a commit, not a name
-    tree = _tree_at(clone, ref)
-    types_files = [p for p in tree if dirname(p) in (TYPES_DIR, STARS_DIR)]
-    data = _git_bytes(clone, [tree[p] for p in types_files])
-    older = {}
-    for source in (clone, *history):
-        for blob, path in types_history(source).items():
-            older.setdefault(blob, path)
-    types = TypesIndex({p: data[tree[p]] for p in types_files if tree[p] in data}, older)
-    scope = [p for p in tree if p.lower().endswith(".psd") and (is_card_psd(p) or p.startswith(("MDW/Templates/",
-                                                                                               "MDW/Unfinished/")))]
-    blobs = {rel: held.get(rel, tree[rel]) for rel in scope}
-    found, errors = {}, {}
-    if prev:
-        for rel in scope:
-            if (prev.get("blobs") or {}).get(rel) == blobs[rel] and rel in prev["psds"]:
-                found[rel] = [{key: value for key, value in entry.items() if key not in ("class", "target", "fallback")}
-                              for entry in prev["psds"][rel]]
-    jobs = [(clone, rel, blobs[rel], types.vocab()) for rel in catalogue_order(scope) if rel not in found]
-    with ProcessPoolExecutor(max_workers=workers) as pool:
-        for rel, rows, error in pool.map(_catalogue_job, jobs, chunksize=2):
-            if rows is None:
-                errors[rel] = error
-            else:
-                found[rel] = rows
-    linked = {p: b for p, b in tree.items() if p.startswith(LINKED_DIR + "/")}
-    kept = (prev or {}).get("files")
-    out = assign([(rel, found[rel]) for rel in catalogue_order(found)], types, linked, kept)
-    fallback_names(out, linked, kept)
-    out.update(base=ref, blobs={rel: blobs[rel] for rel in found}, errors=errors, held=sorted(held), linked=linked,
-               read=[rel for _, rel, _, _ in jobs])
-    return out
-
-
-def _counts(catalogue: dict) -> dict:
-    counts = {}
-    for rows in catalogue["psds"].values():
-        for entry in rows:
-            key = "pixel" if "pixel" in entry else CLASSES.get(entry.get("class"), entry.get("kind") if
-                                                                entry.get("kind") == "external" else "left")
-            counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
 def main(args: Optional[list] = None) -> int:
-    parser = ArgumentParser(prog="python -m commands.psd_links", description="Linked pictures: the catalogue and Card sync's redraw")
+    parser = ArgumentParser(prog="python -m commands.psd_links", description="Linked pictures: Card sync's redraw")
     sub_ = parser.add_subparsers(dest="command", required=True)
-    cat = sub_.add_parser("catalogue", help="every PSD's picture items, classes and targets (PLAN 5.1)")
-    cat.add_argument("--clone", required=True, help="the card repo (its objects; never a lazy fetch)")
-    cat.add_argument("--ref", default="HEAD", help="the commit to read")
-    cat.add_argument("--held", default="", help="a list of PSD paths read at --held-ref instead")
-    cat.add_argument("--held-ref", default="", help="where the held PSDs are read")
-    cat.add_argument("--held-base", default="", help="a held PSD that moved on --ref since this commit is read at --ref")
-    cat.add_argument("--recheck", default="", help="an earlier catalogue.json: its names kept, moved PSDs read again")
-    cat.add_argument("--history", action="append", help="a clone whose Types/ history counts too (default HISTORY_CLONE)")
-    cat.add_argument("--out", required=True, help="catalogue.json")
-    cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
     red.add_argument("--checkout", "--local", required=True, help="the card repo's checkout (blobless is enough)")
     red.add_argument("--db", required=True, help="the data's db folder (its links.json)")
@@ -1947,35 +1811,6 @@ def main(args: Optional[list] = None) -> int:
     due.add_argument("--db", required=True, help="the data's db folder (its links.json)")
     due.add_argument("--head", default="HEAD", help="the commit to read")
     opts = parser.parse_args(args)
-    if opts.command == "catalogue" and opts.held and not (opts.held_ref and opts.held_base):
-        parser.error("--held needs --held-ref and --held-base (PLAN 5.3: a held card pushed meanwhile is read at --ref)")
-    if opts.command == "catalogue":
-        held = {}
-        if opts.held:
-            env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
-            for rel in open(opts.held, encoding="utf-8").read().splitlines():
-                if rel.strip():
-                    found = run_process(["git", "-C", opts.clone, "rev-parse", f"{opts.held_ref}:{rel.strip()}"],
-                                        capture_output=True, text=True, env=env)
-                    if found.returncode == 0:
-                        held[rel.strip()] = found.stdout.strip()
-            if opts.held_base:                  # PLAN 5.3: a held card someone pushed meanwhile is rebuilt from theirs
-                base, now = _tree_at(opts.clone, opts.held_base), _tree_at(opts.clone, opts.ref)
-                held = {rel: blob for rel, blob in held.items() if base.get(rel) == now.get(rel)}
-        prev = None
-        if opts.recheck:
-            with open(opts.recheck, encoding="utf-8") as fh:
-                prev = load(fh)
-        history = opts.history if opts.history is not None else [HISTORY_CLONE] if isdir(expanduser(HISTORY_CLONE)) else []
-        history = [expanduser(path) for path in history]
-        if not all(isdir(path) for path in history):
-            parser.error(f"--history: no such clone in {history}")
-        out = run_catalogue(opts.clone, opts.ref, held, opts.workers, prev, history)
-        makedirs(dirname(opts.out) or ".", exist_ok=True)
-        with open(opts.out, "w", encoding="utf-8") as fh:
-            dump(out, fh, indent=0, sort_keys=True)
-        print(dumps({"psds": len(out["psds"]), "files": len(out["files"]), "errors": len(out["errors"]), **_counts(out)}))
-        return 1 if out["errors"] else 0
     with open(posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
         links = load(fh)
     details, cleared = None, {}                 # psd_glyphs' texts (the data's psd_details.json), people's flags that went

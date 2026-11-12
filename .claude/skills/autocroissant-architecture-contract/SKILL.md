@@ -302,7 +302,7 @@ main.py  (registration + queue loops; imports every commands module)
  |                            Action's db/ JSON, its manifest's fonts report: font_check.fonts_report)  [2026-10-22; no discord,
  |                            pandas, config or utils: card-sync.yml checks out card_data.SPARSE_FILES alone]
  |- commands.psd_remote    -> github_api; psd_tools LAZILY: RemotePSD (a PSD at a commit by range requests) for card_data,
- |                            card_check, history_reread  [2026-11-11, out of github_api: the bot's closure stays toolchain-free]
+ |                            card_check  [2026-11-11, out of github_api: the bot's closure stays toolchain-free]
  |- commands.card_sync     -> card_db, github_api, psd_analyzer (stats_db, the facade's), utils, global_config, config (optional);
  |                            query_card, type_emojis, repo_history, analytics LAZILY: the bot's card data (sync, /update_stats,
  |                            admins' Card sync runs, /fonts from the manifest's fonts report: no psd_details or font_check since
@@ -315,16 +315,15 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.frankenstein  -> utils, query_card (card_repo)
  |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create and
  |                            on_raw_thread_delete, the /reminders panel's read-only entries, the
- |                            5-minute loop; `python -m commands.forum_votes test` logs in over REST only)
+ |                            5-minute loop)
  |                            [2026-11-09; async worker; forum_votes.json beside reminder.json]
  '- commands.update_bot    -> repo_history (batch_overrides);
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
 Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them, even lazily: invariant 11):
 psd_parser, psd_details, psd_edit, font_check, psd_remote, card_data's build, card_check,
-card_guards, card_standards, png_export, psd_diff, txt2_repair, tts_save and card_dates
-(since 2026-10-25 only `created`, the creation-dates CLI; /update_metadata, /mass_replace and /alias are on branch
-archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
+card_guards, card_standards, png_export, psd_diff, txt2_repair and tts_save
+(/update_metadata, /mass_replace and /alias are on branch archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
 
 (not in main) branch archive/local-update-stats: archive/local_update_stats.py  (2026-10-20)
      -> commands.psd_analyzer, commands.query_card, global_config   [the archived local /update_stats mode]

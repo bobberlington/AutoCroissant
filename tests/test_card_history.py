@@ -80,9 +80,6 @@ def test_index_from_one_log(history):
         "Items/Heal/A.psd" and index.first[index.origin("Items/Heal/C.psd")].author == "alice"   # not the renamers
     assert index.renames["Items/Heal/A.psd"] == ("Items/Heal/C.psd", index.by_sha[c[5]])
     assert index.renames["Items/A.psd"][0] == "Items/Heal/A.psd" and "Items/B.psd" not in index.renames
-    assert [x.sha for x in index.pngs["Items/A.png"]] == [c[3], c[2], c[1]]
-    assert index.png_commit("Items/A.psd", index.by_sha[c[3]]) == c[2]                    # older than the end commit
-    assert index.png_commit("Items/A.psd", before_at=1500) == c[1] and index.png_commit("Items/A.psd") == c[3]
 
 
 @pytest.fixture
@@ -261,9 +258,9 @@ def test_build_versions_only_on_data_changes():
     made = ch.record_versions(deepcopy(before), {}, db, {"A": 1, "Art": 1, "Moved": 1}, [], index)
     assert made == [("A", "psd")] and list(db.old_stats) == ["A"]
     version = db.old_stats["A"][0]
-    assert version.path == "Items/A.psd" and version.ability == "Text." and version.version["to"] == 2000.0
+    assert version.path == "Items/A.psd" and version.ability == "Text."
     assert db.stats["A"].version["from_commit"] == "c2"
-    assert db.stats["Art"].version["from"] == 1000.0 and db.stats["Moved"].version["to"] is None   # their versions go on
+    assert db.stats["Art"].version["from"] == db.stats["Moved"].version["from"] == 1000.0   # their versions go on
 
 
 def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():

@@ -971,7 +971,7 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)
         if created:
-            extra.append(f"Created {'about ' if created.get('provisional') else ''}{created['date']}")
+            extra.append(f"Created {created['date']}")
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)
         embed.set_image(url=url)
