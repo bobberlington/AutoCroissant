@@ -440,8 +440,8 @@ def test_each_changes_tab_has_its_own_file(bs, repo, tmp_path, monkeypatch):
 
 def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
-    a difference fails the build. A card's page carries its dialog's picture, the one it preloads, openCard's close
-    button (card_frame) and style.css inline, as index.html; other share pages link it."""
+    a difference fails the build; its grid has grid.js's M size. A card's page carries its dialog's picture, the one it
+    preloads, openCard's close button (card_frame) and style.css inline, as index.html; other share pages link it."""
     if not shutil.which("node"):
         pytest.skip("no node")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -449,6 +449,8 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
     assert re.findall(r'<a class="tile" href="c/([^/"]+)/"', page) == ids
     assert page.count('fetchpriority="high"') == min(len(ids), bs.FIRST_EAGER)
+    m = re.search(r'TILE_SIZES = \{[^}]*\bm: \["([^"]+)"', (BUILD_SITE.parents[1] / "assets" / "grid.js").read_text(encoding="utf-8"))[1]
+    assert f'<div class="grid" style="--tile:{m};' in page
     card = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
     assert re.search(r'<img id="detail-img" src="([^"]+)"', card)[1] == re.search(r'<link rel="preload" as="image" href="([^"]+)"', card)[1]
     app = (BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
