@@ -313,6 +313,21 @@ def test_types_before_parser_2_are_no_change(bs):
     assert a.change(parsed, shown, []) == {"types": {"add": ["fire"], "drop": ["food"]}}
 
 
+def test_values_a_reading_never_recorded_are_no_change(bs):
+    """Older readings recorded no item type, stars or series (aux items before parser 7, a first series fill), and a
+    reading whose stats failed (NO STATS FOUND) read none: such a side is unknown, no change row; two values still are."""
+    a = bs.analytics
+    v = lambda **f: bs.stand_in(bs.CardInfo, {"ability": "Heal 2.", "timestamp": 1.0, "parser_version": 7, **f})
+    assert a.change(v(subtype=None, stars=None, series=None), v(subtype="active", stars=5, series="X"), []) == {}
+    assert a.change(v(series="Mother 2"), v(series="MOTHER"), []) == {"series": ["Mother 2", "MOTHER"]}
+    line = lambda *s: bs.stand_in(bs.CardStats, dict(zip(("hp", "defense", "attack", "speed"), s)))
+    read, failed = v(stats=line(5, 5, 6, 7)), v(stats=line(-1, -1, -1, -1), problems=["NO STATS FOUND: no HP, DEF, ATK or SPD bars"])
+    assert a.change(read, failed, []) == {} == a.change(failed, read, [])
+    assert a.change(read, a.shown({"ability": "Heal 2."}, failed), []) == {}         # the current reading failed
+    edited = a.shown({"hp": 5, "def": 5, "atk": 6, "spd": 8, "ability": "Heal 2."}, failed)      # Card Edits' stats
+    assert a.change(read, edited, [])["stats"] == [[5, 5, 6, 7], [5, 5, 6, 8]]
+
+
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions,
     text history and Balance changes go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's
