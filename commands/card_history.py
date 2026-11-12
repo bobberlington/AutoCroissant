@@ -2,7 +2,7 @@
 Card history from git, without Discord, network or psd-tools: one `git log --raw` of the card repo gives the newest
 commit, first author, deletions and PNG commits per path, each blob's intro (the oldest commit that added it at any
 path) and exact renames. On that index: the version rules (a version only when a card's data changes; from/to dates
-and a cause from git; versions without a blob marked legacy) and the archive tags' dates. Design:
+and a cause from git; versions without a blob cause legacy) and the archive tags' dates. Design:
 docs/Campaigns/DATA_BUILD_ACTION.md section 7.4.
 """
 from copy import deepcopy
@@ -326,9 +326,8 @@ def start(card: CardInfo) -> tuple:
 def carry(dropped: CardInfo, holder: CardInfo) -> None:
     """
     A dropped version's earlier start goes to the version that holds its data now (as_of keeps the first date); the
-    cause and legacy flag stay the holder's own (a current card with a blob is no legacy version). A holder without a
-    record gets one, cause legacy. The
-    website dates a version by this start too (TTSCardMaker site/build/analytics.py when).
+    cause stays the holder's own. A holder without a record gets one, cause legacy. The website dates a version by
+    this start too (TTSCardMaker site/build/analytics.py when).
     """
     at, commit = start(dropped)
     if at is not None:
@@ -342,14 +341,14 @@ def carry_to(holder: CardInfo, at: float, commit: Optional[str]) -> None:
         return
     info = getattr(holder, "version", None)
     if info is None:
-        holder.version = info = meta(None, at, "legacy", legacy=not getattr(holder, "blob_sha", None))
+        holder.version = info = meta(None, at, "legacy")
     info["from"], info["from_commit"] = at, commit
 
 
-def meta(start: Optional[Commit], start_at: float, cause: str, legacy: bool = False) -> dict:
+def meta(start: Optional[Commit], start_at: float, cause: str) -> dict:
     """A version's `version` record, open-ended until close() sets its end."""
     return {"from": start.at if start else start_at, "from_commit": start.sha if start else None, "to": None,
-            "to_commit": None, "cause": cause, "png_commit": None, "legacy": legacy}
+            "to_commit": None, "cause": cause, "png_commit": None}
 
 
 def close(card: CardInfo, index: GitIndex, end_at: Optional[float], end: Optional[Commit] = None) -> None:
@@ -373,7 +372,7 @@ def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], othe
     intro = index.intro_of(blob, getattr(card, "name", None) or card_name(card.path or ""), others, card.path,
                            card.timestamp)
     if intro is None:
-        return meta(None, card.timestamp, "legacy", legacy=True)
+        return meta(None, card.timestamp, "legacy")
     if previous is not None and getattr(previous, "blob_sha", None) == blob:
         here = index.intro_at.get((blob, card.path))
         if previous.path != card.path and here is not None:

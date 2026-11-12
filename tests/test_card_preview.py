@@ -437,12 +437,12 @@ def test_publish_retries_a_moved_head_and_a_moved_lease(remote, tmp_path, monkey
     _git(tmp_path, "clone", "-q", "--depth", "1", "--filter=blob:none", f"file://{remote.bare}", str(other))
     real, calls = br._push, []
 
-    def racing(where, name, commit, lease):
+    def racing(where, commit, lease):
         if not calls:                               # the first push of ours: the other run lands first
             calls.append(None)
             request = f"race-0-{lease is not None:d}-00"
             calls[0] = br.publish(str(_out(tmp_path, request)), request, str(other))
-        real(where, name, commit, lease)
+        real(where, commit, lease)
     monkeypatch.setattr(br, "sleep", lambda s: None)
     br.publish(str(_out(tmp_path, "base-0-0000")), "base-0-0000", str(remote.work))
     monkeypatch.setattr(br, "_push", racing)

@@ -540,7 +540,7 @@ github_api reads it inside a try/except and takes the token from the environment
 
 - **A version only when data changes.** A new version is recorded only when a card's data fields change: card_type,
   display_name, ability, stars, subtype, series, subseries, types, stats, creatures, author, note, hidden, duplicate_of.
-- **Each version gets `version`:** `{from, from_commit, to, to_commit, cause, png_commit, legacy}`.
+- **Each version gets `version`:** `{from, from_commit, to, to_commit, cause, png_commit}`.
   - `cause` is one of `psd` (the blob changed), `reparse` (same blob, newer parser), `moved` (the same blob in another
     folder, whose folder-derived data changed: stars, card type, subtype or series), `edit` (`Card Edits.json`), `authors`
     (`Card Authors.txt`) or `legacy`. A move that changes no data field is no version (below). A re-read of the same
@@ -792,7 +792,7 @@ github_api reads it inside a try/except and takes the token from the environment
 ```json
 {"schema": 1, "built_at": "2026-10-22T18:04:11Z", "run": "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/<id>",
  "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>",
- "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "details_version": 6},
+ "builder": {"commit": "<sha>", "parser_version": 2, "details_version": 6},
  "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
  "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null},
  "problems": [{"card": "…", "path": "…", "notes": ["HP NOT FOUND"]}],

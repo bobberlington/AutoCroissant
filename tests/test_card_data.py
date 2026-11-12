@@ -37,7 +37,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         (bot / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, bot / rel)
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
-                           "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
+                           "--allow-archive", "--restore", "--budget", "--run", "--summary", "--message",
                            "--own", "--verdicts", "--events", "--guard-events", "--records",
                            "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--help"},

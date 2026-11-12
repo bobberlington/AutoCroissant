@@ -180,7 +180,7 @@ def test_start_of_causes(history):
     start = ch.start_of(new, index, moved)
     assert (start["cause"], start["from"], start["from_commit"]) == ("moved", 3000.0, history.c[3])
     legacy = ch.start_of(_card(timestamp=42.0), index, None)
-    assert (legacy["cause"], legacy["from"], legacy["legacy"], legacy["from_commit"]) == ("legacy", 42.0, True, None)
+    assert (legacy["cause"], legacy["from"], legacy["from_commit"]) == ("legacy", 42.0, None)
 
 
 def _index_with(intros: dict, deletions: dict = None, pngs: dict = None) -> ch.GitIndex:
@@ -275,7 +275,7 @@ def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
     listed = _card(path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0)
     db = _db({"A": listed}, {"A": [record]})
     assert db.drop_stale_archives() and "A" not in db.old_stats
-    assert ch.start(listed) == (100.0, None) and listed.version["cause"] == "legacy" and not listed.version["legacy"]
+    assert ch.start(listed) == (100.0, None) and listed.version["cause"] == "legacy"
 
 
 # ========================

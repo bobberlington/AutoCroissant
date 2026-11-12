@@ -369,9 +369,9 @@ class Beside:
         if self._end is not None:
             self._end()
 
-    def join(self, record: dict, more: list = (), timeout: float = JOIN_WAIT, log=print) -> tuple:
+    def join(self, record: dict, more: list = (), log=print) -> tuple:
         """
-        Its measures into the record (timeout s waited at most), then the pairs of `more` (the run's own events) it did
+        Its measures into the record (JOIN_WAIT s at most), then the pairs of `more` (the run's own events) it did
         not cover measured here, first and with the whole limit, and its own after them when it failed, did not start
         or ran out of time (as before it ran beside).
 
@@ -382,7 +382,7 @@ class Beside:
         if self.proc is not None:
             waited = time()
             try:
-                self.proc.wait(timeout)
+                self.proc.wait(JOIN_WAIT)
             except TimeoutExpired:
                 pass
             self.stop()

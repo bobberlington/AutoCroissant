@@ -53,8 +53,7 @@ SECTIONS = ((("new",), "New cards"), (("changed",), "Changed"), (("art",), "New 
             (("restore",), "Rollback"))
 COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("moved", "moved"), ("renamed", "renamed"),
                ("archived", "archived"), ("restored", "restored"), ("edited", "edited"), ("authors", "edited"),
-               ("restore", "data rollback"), ("baked", "baked"), ("bake-refused", "bake refused"),
-               ("guard-png", "PNG"), ("guard-fix", "fixed"))   # the title's counts: "1 new, 2 changed"
+               ("restore", "data rollback"), ("baked", "baked"), ("bake-refused", "bake refused"))   # title: "1 new, 2 changed"
 CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
 GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
 SWEEP_TRAILER = "Card-sweep"                             # a trailer: a hand-committed sweep of the guards' fixes
@@ -593,8 +592,8 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     if kind == "archived":
         gone = f"moved to {_md(event['moved_to'].rsplit('/', 1)[0])}" if event.get("moved_to") else "PSD deleted"
         return f"{_md(event.get('title') or event['card'])} ({gone})"
-    if kind in ("baked", "bake-refused", "guard-png", "guard-fix"):
-        why, was = event.get("reason") or event.get("line") or "", event.get("renamed_from")
+    if kind in ("baked", "bake-refused"):
+        why, was = event.get("reason") or "", event.get("renamed_from")
         if was:                                           # the rename said once, at the end
             why = _without_rename(why, was, event["card"])
         why = PLAIN.sub("", why)

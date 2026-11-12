@@ -1205,8 +1205,8 @@ The card repo (2026-11-08, no actions/checkout): Clone fetches it into the works
 The venv's key (2026-11-09): Clone also reads AC main's requirements-cards.txt once through the API (`bot.reqs`), so the venv restores while the bot clone runs (that clone moves itself into bot/ and compiles there; a failed one waits for the read); no read: the clone's file as before. venv-ok, after Bot, checks the clone's file gives the same sha (AC main moved in between: the venv is removed, cards-python sets up as on a miss).
 
     python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>] [--request <id>]
-    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote origin]
-    python -m commands.card_preview_branch --warm [--git <checkout>] [--remote origin]
+    python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
+    python -m commands.card_preview_branch --warm [--git <checkout>]
 
 The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG and blob gates, the redundancy check,
 `psd_edit.classify`, `apply_jobs` with every gate, the stars/types-refused-beside-the-rest rule, the creatures-stats

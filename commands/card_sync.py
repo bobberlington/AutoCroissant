@@ -107,11 +107,11 @@ def _age(stamp: Optional[str], now: float) -> str:
     return f"{minutes // (24 * 60)} days ago"
 
 
-def built_line(manifest: dict, now: Optional[float] = None) -> str:
+def built_line(manifest: dict) -> str:
     """'built 12 min ago from TTSCardMaker@1a2b3c4d (run: <url>)'."""
     repo = (manifest.get("card_repo") or CARD_REPO).rsplit("/", 1)[-1]
     run = manifest.get("run")
-    return (f"built {_age(manifest.get('built_at'), time() if now is None else now)} from "
+    return (f"built {_age(manifest.get('built_at'), time())} from "
             f"{repo}@{(manifest.get('card_commit') or '?')[:8]}" + (f" (run: <{run}>)" if run else ""))
 
 
@@ -127,9 +127,9 @@ def changes(before: dict, after: dict) -> dict:
             "new": len(b.keys() - a.keys()), "archived": len(a.keys() - b.keys())}
 
 
-def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional[float] = None) -> str:
+def report(manifest: dict, counts: Optional[dict], reloaded: bool) -> str:
     """/update_stats' first line: what the data is and what this sync did."""
-    built = built_line(manifest, now)
+    built = built_line(manifest)
     if not reloaded:
         return f"Card data is already current: {built}."
     if counts is None:                               # no synced data held before (startup)

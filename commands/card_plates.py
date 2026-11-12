@@ -9,7 +9,7 @@ carries the fork's layout of it (its lines and letters, layout()) when that is t
 the mock-up's cells cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it
 takes, at that view, which the mock-up pastes instead.
 
-    python -m commands.card_plates publish --git <checkout> [--head <sha>] [--remote origin] <run results.json> ...
+    python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
 from argparse import ArgumentParser
 from base64 import b64encode
@@ -528,7 +528,7 @@ def collected(paths: list) -> dict:
     return out
 
 
-def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin") -> dict:
+def publish(found: dict, where: str, head: str = "HEAD") -> dict:
     """
     One commit on the plates branch: found ({PSD blob: plates file}) added, those of PSDs not in head's tree dropped;
     none when nothing changed. Built on the branch head, TRIES times from a moved one.
@@ -549,8 +549,8 @@ def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin")
             sleep(uniform(1, 2) * attempt)
         try:
             parent = ""
-            if _git(where, "ls-remote", "--heads", remote, f"refs/heads/{BRANCH}").split():
-                _git(where, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--depth", "1", "--filter=blob:none", remote,
+            if _git(where, "ls-remote", "--heads", "origin", f"refs/heads/{BRANCH}").split():
+                _git(where, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--depth", "1", "--filter=blob:none", "origin",
                      f"+refs/heads/{BRANCH}:{LOCAL_REF}")
                 parent = _git(where, "rev-parse", "--verify", f"{LOCAL_REF}^{{commit}}").strip()
             old = _files(where, parent)
@@ -561,8 +561,8 @@ def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin")
             tree = _git(where, "mktree", "--missing", stdin="".join(f"100644 blob {s}\t{n}\n" for n, s in sorted(files.items())).encode()).strip()
             commit = _git(where, "commit-tree", tree, *(["-p", parent] if parent else []), "-m",
                           f"Card plates: {added} added, {dropped} dropped").strip()
-            _git(where, "-c", "pack.window=0", "push", "-q", "--no-thin", remote,   # no delta search: it would want
-                 f"{commit}:refs/heads/{BRANCH}")                              # replaced plates' blobs (HTTPS is thin)
+            _git(where, "-c", "pack.window=0", "push", "-q", "--no-thin", "origin",   # no delta search: it would want
+                 f"{commit}:refs/heads/{BRANCH}")                                # replaced plates' blobs (HTTPS is thin)
         except Unpublished as error:            # most often a push refused: the branch moved since the fetch
             why = str(error)
             print(f"card_plates: attempt {attempt + 1} of {TRIES}: {why}", file=stderr)
@@ -578,9 +578,8 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("results", nargs="*", help="card_checks run's files")
     parser.add_argument("--git", required=True, help="a checkout of the card repo (blobless is enough)")
     parser.add_argument("--head", default="HEAD", help="the commit whose PSDs keep their plates")
-    parser.add_argument("--remote", default="origin")
     options = parser.parse_args(list(argv[1:] if args is None else args))
-    done = publish(collected(options.results), options.git, options.head, options.remote)
+    done = publish(collected(options.results), options.git, options.head)
     print(f"Plates: {done['added']} added, {done['dropped']} dropped, {done['kept']} on the branch"
           + (f" ({done['commit'][:8]})." if done["commit"] else ": no change."))
     return 0

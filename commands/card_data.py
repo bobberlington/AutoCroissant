@@ -1227,14 +1227,13 @@ class GitBuild(CardBuild):
     A blob comes from --blobs, then the clone, then the REST API within the budget; a card's timestamp is its blob's
     intro and a new card's author the first commit's at its path (card_history).
     """
-    def __init__(self, db: StatsDatabase, checkout: str, head: str = "HEAD", index=None, blobs: str = "",
-                 budget: int = BUDGET):
+    def __init__(self, db: StatsDatabase, checkout: str, head: str = "HEAD", blobs: str = "", budget: int = BUDGET):
         from commands.card_history import GitIndex
         super().__init__(db)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
         self.head = _git(checkout, "rev-parse", head).strip()
         self.at = float(_git(checkout, "log", "-1", "--format=%ct", self.head).strip())   # not show: a merge diffs (blobs)
-        self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
+        self.index = GitIndex.from_git(checkout, self.head)
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
         self.failed_before: dict = {}            # (path, blob) -> last run's pending.failed record
@@ -1444,13 +1443,10 @@ def _restore(db_dir: str, sha: str) -> tuple:
     if run(["git", "-C", db_dir, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True).returncode != 0:
         _git(db_dir, "fetch", "-q", "--depth", "1", "origin", sha)
     prefix = _git(db_dir, "rev-parse", "--show-prefix").strip()
-    text = {name: _git(db_dir, "show", f"{sha}:{prefix}{name}") for name in (STATS_JSON, OLD_STATS_JSON, "psd_details.json")}
+    text = {name: _git(db_dir, "show", f"{sha}:{prefix}{name}")
+            for name in (STATS_JSON, OLD_STATS_JSON, "psd_details.json", MANIFEST_JSON)}
     details = json_loads(text["psd_details.json"]).get("cards") or {}
-    try:
-        manifest = json_loads(_git(db_dir, "show", f"{sha}:{prefix}{MANIFEST_JSON}"))
-    except CalledProcessError:
-        manifest = {}
-    return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details, manifest)
+    return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details, json_loads(text[MANIFEST_JSON]))
 
 
 def _data_head(db_dir: str) -> str:
@@ -1561,7 +1557,7 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
 
 def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", empty: bool = False,
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
-          restore: str = "", builder_ref: str = "", own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
+          restore: str = "", own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
           guard_docs: Optional[list] = None, records: Optional[list] = None) -> Outcome:
     """
     One build (design section 7.1): db/ before, the tree and index from git, the
@@ -1581,7 +1577,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         budget: REST downloads at most
         run_url: The Actions run (manifest, commit message)
         restore: A data commit whose db/ becomes the current one again
-        builder_ref: The AutoCroissant ref the builder was checked out at (the manifest)
         own: Comma-separated main commits the card sync pushed (the bake's M): their pushes are the card sync's
         verdicts: The bake's verdicts for db/verdicts.json ({key: verdict, or None to remove}; card_db.merge_verdicts)
         side: The bake's events (baked, bake-refused), each with its commit (M) when it has one
@@ -1624,7 +1619,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     beside = None if restore else png_changes.Beside(     # the run's picture changes (owner 11-09), beside the PSD reads
         checkout, pictures["pending"] + (png_changes.card_pairs(checkout, run_build.head, base) if base else []), pictures,
         limit=png_changes.RUN_MAX)
-    restored_manifest: dict = {}
     if restore:
         db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
     before, before_old = deepcopy(db.stats), deepcopy(db.old_stats)
@@ -1737,13 +1731,12 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out.manifest = {
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
         "card_repo": repository, "card_commit": run_build.head,
-        "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
-                    "details_version": psd_details.VERSION},
+        "builder": {"commit": _builder_commit(), "parser_version": PARSER_VERSION, "details_version": psd_details.VERSION},
         "pending": {"stale": stale, "failed": failed, "full": still},
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
         "restored_from": restore or None, "fonts": fonts_report(details, db.stats)}       # the bot's /fonts
-    if restored_manifest:                                 # its card commit: the next run re-reads what changed
-        out.manifest["card_commit"] = restored_manifest.get("card_commit", out.manifest["card_commit"])
+    if restore:                                           # its card commit: the next run re-reads what changed
+        out.manifest["card_commit"] = restored_manifest["card_commit"]
         kept = restored_manifest.get("pending") or {}
         out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None}
     kept = kept_values(db.stats, db.old_stats)
@@ -2029,7 +2022,6 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--restore", default="", help="a data commit whose db/ is written back as the current one")
     parser.add_argument("--budget", type=int, default=BUDGET, help=f"REST downloads at most (default {BUDGET})")
     parser.add_argument("--run", default="", help="the Actions run URL (manifest, commit message)")
-    parser.add_argument("--builder-ref", default="", help="the AutoCroissant ref of this builder (manifest)")
     parser.add_argument("--summary", default="", help="write the job summary (Markdown) here")
     parser.add_argument("--message", default="", help="write the data commit's message here")
     parser.add_argument("--own", default="", metavar="SHA", help="main commits the card sync pushed (comma separated): "
@@ -2049,9 +2041,7 @@ def main(argv: Optional[list] = None) -> int:
         docs = _json_file(args.guard_events) if args.guard_events else []
         found = _json_file(args.records) if args.records else []
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.empty, args.full, args.cards,
-                    args.allow_archive, args.budget, args.run, args.restore, args.builder_ref, args.own, verdicts,
-                    side.get("events", []) if isinstance(side, dict) else side,
-                    docs if isinstance(docs, list) else [docs], found if isinstance(found, list) else [found])
+                    args.allow_archive, args.budget, args.run, args.restore, args.own, verdicts, side, docs, found)
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
         return EXIT_ERROR

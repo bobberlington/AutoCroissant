@@ -350,7 +350,7 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_car
 
 The summary's first two lines read `stats     : N cards` and `old_stats : N cards with history, N archived
 versions total` since 2026-10-23 (the file names left the labels). A card lookup also prints its `version` record
-(start, cause, legacy) when it has one. Measured 2026-10-23 on a Mac rebuild from seed 077337a9 at TTSCardMaker
+(start, cause) when it has one. Measured 2026-10-23 on a Mac rebuild from seed 077337a9 at TTSCardMaker
 7b48db05: 818 cards, 355 names with 453 versions, 2 archived (1 backfilled).
 
 **The last baseline on the pickles** (PICKLE a7c310e, the 2026-10-23 05:00 run; `python3` from the repo root; the data
