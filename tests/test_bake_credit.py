@@ -10,11 +10,10 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
-import commands.card_bake as cb  # noqa: E402
-import commands.git_commit as gc  # noqa: E402
-import commands.psd_edit as pe  # noqa: E402
-from helpers import AT, DOOMER, _edits, files, github  # noqa: E402,F401  (fixtures)
+import commands.card_bake as cb
+import commands.git_commit as gc
+import commands.psd_edit as pe
+from helpers import AT, DOOMER, _edits, files, github  # noqa: F401  (fixtures)
 
 SUBJECT = "Card edits: 1 baked"
 BODY = "- Mini Doomer: hp 5 -> 8"

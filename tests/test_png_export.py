@@ -436,8 +436,6 @@ def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
     from psd_tools.constants import Tag
     from psd_tools.psd.descriptor import Integer
     path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
-    if not path.exists():
-        pytest.skip("no Militron (No Armor)")
     old, new = PSDImage.open(str(path)), PSDImage.open(str(path))
     layer = next(each for each in new.descendants() if each.kind == "smartobject" and each.smart_object.kind == "external")
     layer._record.tagged_blocks.get_data(Tag.SMART_OBJECT_LAYER_DATA2).data[b"frameCount"] = Integer(2)
@@ -644,8 +642,6 @@ def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     """Mini Doomer's title hidden by the fork, saved without a new preview: the render drops the title, the composite
     still shows it, so the cross-check refuses."""
     path = clone / (MINI_DOOMER + ".psd")
-    if not path.exists():
-        pytest.skip("no Mini Doomer")
     old = PSDImage.open(str(path))
     edited = PSDImage.open(str(path))
     psd_edit.name_layer(edited).visible = False

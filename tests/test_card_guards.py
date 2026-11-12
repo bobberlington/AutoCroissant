@@ -20,6 +20,7 @@ from sys import executable
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from PIL import Image, ImageDraw
 
 import commands.card_guards as cg
@@ -1450,7 +1451,6 @@ SYNC = "workflow run card-sync.yml -f dry_run=false -f bake=pending"   # Follow 
 
 def _guard_steps(clone) -> tuple:
     """card-guards.yml's jobs read as one: (doc, every named step by name, the jobs' env merged: TOLD, STREAK)."""
-    yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))
     jobs = doc["jobs"].values()
     return (doc, {s["name"]: s for job in jobs for s in job.get("steps", []) if s.get("name")},
@@ -2831,7 +2831,6 @@ def test_the_bot_clone_and_records_run_here(clone, tmp_path):
     """check's Bot start and Bot against a stand-in GitHub (file://, a fake gh): SPARSE_FILES alone in bot/, no header
     saved; the records read beside it (one not read in 3 tries: a warning), CARD_RECORDS_DIR at once. checks reads no
     records; a failed clone leaves no bot/ (the checkout after it brings one)."""
-    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     seed, server, bin_dir = tmp_path / "seed", tmp_path / "github", tmp_path / "bin"
     for rel in cg.SPARSE_FILES + ("config.py",):

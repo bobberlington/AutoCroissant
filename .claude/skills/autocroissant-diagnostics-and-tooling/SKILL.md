@@ -670,25 +670,21 @@ Not part of the five, and not read-only in the same sense (most need a sandbox c
 |---|---|---|
 | Offline test suite | `tests/` (`~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests`) | Behaviour contracts, parser goldens; owner: autocroissant-validation-and-qa row 1c |
 | Whole-corpus parser gate | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` (table below; venv interpreter) | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
-| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and, then, the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
+| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and, then, the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/import_ns.py` (sandbox root as first argument) | Queue hops, import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
 | Skill line-ref check | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/grepcheck.py` runs every quoted grep; `provcheck.py` checks the line numbers after them | Stale `file:line` references after code moves |
 
 ### Optimization-pass scripts
 
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (moved byte-identical from `~/Documents/ac-optimization/`
 on 2026-10-20); the invocations below are relative to that folder. ROOT is a sandbox copy of the repo (`git archive HEAD` plus
-config.py and a `card_data/` copy, under /tmp); "live" means read-only GitHub GETs with the real token. parse_all_ns.py, the `_ns`
-scripts and search_ab.py import the bot (psd_tools, discord): run them with `~/.venvs/ac-py314-fork/bin/python`, not the
-system `python3`; compare.py and the line-ref tools are stdlib.
+config.py and a `card_data/` copy, under /tmp). parse_all_ns.py and import_ns.py import the bot (psd_tools, discord): run them
+with `~/.venvs/ac-py314-fork/bin/python`, not the system `python3`; compare.py and the line-ref tools are stdlib.
 
 | Script | Invocation | What it does |
 |---|---|---|
 | parse_all_ns.py | `parse_all_ns.py <out.json> [ROOT]` (ROOT defaults to `/tmp/psdreg/ac`) | Parses every card PSD of the `~/Desktop/TTSCardMaker` clone with ROOT's parser (16 processes); dumps every field plus the validator's list, `timestamp`/`author` dropped |
 | compare.py | `compare.py a.json b.json` | Field-by-field differences between two parse_all_ns dumps; expect `813 cards, 0 differences` |
 | import_ns.py | `import_ns.py ROOT [N]` | `import main` wall time, RSS and heavy modules loaded, best of N fresh processes (default 5) |
-| startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel; since 2026-10-25 init_query runs after init_psd's sync, so the script's overlap is the worst case), then one /sync_emojis listing |
-| search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (its `card_data/` and the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
-| search_ab.py | `search_ab.py ROOT` | Interleaved A/B in one process: old fuzzy step / name lookup vs the new ones, same queries, results asserted equal; `exec`s search_ns.py beside it |
 | grepcheck.py | no arguments | Runs every read-only grep quoted in the skills; lists the ones that now print nothing |
 | provcheck.py | no arguments | For `grep -n ...` commands followed by expected line numbers, flags numbers the grep does not hit |
 

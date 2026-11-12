@@ -25,12 +25,11 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
-import commands.card_bake as cb  # noqa: E402
-import commands.git_commit as gc  # noqa: E402
-import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha  # noqa: E402
-from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: E402,F401 (fixtures)
+import commands.card_bake as cb
+import commands.git_commit as gc
+import commands.psd_edit as pe
+from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha
+from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: F401 (fixtures)
 
 
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
@@ -604,8 +603,6 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch, t
     the website's verdict reason too, not only the run report; with no field left the verdict stays alone (review
     2026-10-24: the card page shows the flags)."""
     files = github.files_at(github.head)
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
@@ -766,8 +763,6 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     from os import PathLike
     from psd_tools import PSDImage
     files = github.files_at(github.head)
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
@@ -967,8 +962,6 @@ def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
     TextIndex values one lower), 1366 changed in Photoshop since (wrong sha: skipped, kept in _psd.skipped), 1367 done in
     Photoshop (redundant), a layer gone; the derived ability leaves with the last ability part."""
     from psd_tools import PSDImage
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
     files = github.files_at(github.head)
     files.update({MIRACLE: (clone / MIRACLE).read_bytes(), MIRACLE[:-4] + ".png": (clone / (MIRACLE[:-4] + ".png")).read_bytes(),
                   pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes()})
@@ -1015,8 +1008,6 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
     from make_fixtures import CARDS
     rel, _, tags = CARDS["a_snack_tagged"]
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
     psd = PSDImage.open(str(clone / rel))
     for layer in psd.descendants():
         if layer.layer_id in tags:
@@ -1058,8 +1049,6 @@ def _drawn_snack(github, clone, tmp_path, edit: dict) -> tuple:
     sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
     from make_fixtures import CARDS
     rel, _, tags = CARDS["a_snack_tagged"]
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
     psd = PSDImage.open(str(clone / rel))
     for layer in psd.descendants():
         if layer.layer_id in tags:

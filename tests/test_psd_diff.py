@@ -1,7 +1,7 @@
 """
 psd_diff (what changed inside a card PSD, for the push guards' comment and post): made-up PSDs for each kind of change and
-each re-save that must say nothing, and real pushes from the card clone's history (skipped without it) whose Photoshop
-re-saves rewrote dozens of layer records around a one-word edit.
+each re-save that must say nothing, and real pushes from the card clone's history whose Photoshop re-saves rewrote
+dozens of layer records around a one-word edit.
 """
 from io import BytesIO
 
@@ -142,8 +142,6 @@ def test_a_link_rewritten_says_nothing_until_its_pixels_move(clone):
     the guards' repairs) with the layer's pixels kept say nothing; with its pixels moved too, the content changed."""
     from psd_tools.psd.descriptor import String
     path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
-    if not path.exists():
-        pytest.skip("no Militron (No Armor)")
     old = PSDImage.open(str(path))
 
     def rewritten(move: int) -> PSDImage:

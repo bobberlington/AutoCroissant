@@ -1,52 +1,10 @@
-"""github_api's Session per thread (keep-alive, never shared) and the blob retry, against a loopback server and fakes."""
-import socket
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+"""github_api's Session per thread (keep-alive, never shared) and the blob retry, against fakes."""
 from threading import Thread
 
 import pytest
 from requests import HTTPError
 
 import commands.github_api as ga
-
-REAL_CONNECT, REAL_GETADDRINFO = socket.socket.connect, socket.getaddrinfo   # before conftest's offline guard
-
-
-class Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"                                   # keep-alive
-
-    def do_GET(self):
-        self.server.seen.append((self.client_address[1], self.path, dict(self.headers)))
-        body = b"ok " + self.path.encode()
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Set-Cookie", "tracker=1; Path=/")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
-
-@pytest.fixture
-def server(monkeypatch):
-    """A loopback HTTP/1.1 server; only 127.0.0.1 may be reached (conftest refuses all other network)."""
-    def connect(sock, address):
-        assert address[0] == "127.0.0.1"
-        return REAL_CONNECT(sock, address)
-
-    def getaddrinfo(host, *args, **kwargs):
-        assert host == "127.0.0.1"
-        return REAL_GETADDRINFO(host, *args, **kwargs)
-    monkeypatch.setattr(socket.socket, "connect", connect)
-    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    srv.seen = []
-    Thread(target=srv.serve_forever, daemon=True).start()
-    try:
-        yield srv, f"http://127.0.0.1:{srv.server_address[1]}"
-    finally:
-        srv.shutdown()
-        srv.server_close()
 
 
 def _in_thread(func):

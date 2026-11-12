@@ -71,8 +71,6 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
 
 @pytest.fixture(scope="module")
 def bs():
-    for module in ("numpy", "cv2", "fontTools", "PIL"):
-        pytest.importorskip(module)
     spec = importlib.util.spec_from_file_location("site_build_tokens", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

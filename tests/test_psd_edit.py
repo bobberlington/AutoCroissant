@@ -1,7 +1,7 @@
 """
 psd_edit and psd_regions: the edit pipeline's stat toggle, text edits, delta merge and gates (EDIT_PIPELINE_DESIGN
 sections 5, 6, 10; steps S2 and S3). The fixture is the real card repo (MDW/Templates/Creature_Template.psd is 30 MB,
-too big to ship): tests that need a PSD read it from the clone and skip without it. Renders and text edits use the
+too big to ship): tests that need a PSD read it from the clone. Renders and text edits use the
 fork's text engine (conftest.use_fork: $AC_PSD_TOOLS_SRC, else the installed fork):
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py
 """
@@ -100,8 +100,6 @@ def parser():
 @pytest.fixture(scope="module")
 def chart(clone):
     path = clone / pe.STATUS_CHART
-    if not path.exists():
-        pytest.skip("no status chart")
     return pe.status_fills(PSDImage.open(str(path)))
 
 

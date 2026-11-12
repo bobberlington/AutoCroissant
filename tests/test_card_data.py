@@ -287,8 +287,8 @@ def test_requirements_layers_and_pin():
     requirements.txt is it and requirements-bot.txt (the jetson's: test_bot_env), requirements-dev.txt layers on that;
     none of the four gitignored (*.txt)."""
     from helpers import CARD_PACKAGES, card_pin
-    requirement = pytest.importorskip("packaging.requirements").Requirement
-    cards = [requirement(x) for x in _requirements("requirements-cards.txt")]
+    from packaging.requirements import Requirement
+    cards = [Requirement(x) for x in _requirements("requirements-cards.txt")]
     assert [r.name for r in cards] == list(CARD_PACKAGES)
     assert cards[0].url == f"git+https://github.com/MichaelJSr/psd-tools@{card_pin()}" and cards[0].extras == {"composite", "text"}
     assert [str(r) for r in cards[1:]] == ["fonttools", "requests"]
@@ -919,8 +919,6 @@ def test_links_gather_every_psd_and_the_linked_files(cards, clone, monkeypatch):
     one recorded as an error: the guards then delete nothing), the linked files' blobs with their sizes; a stored size
     and an unreadable picture are not read again."""
     rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
-    if not (clone / rel).exists():
-        pytest.skip("no Militron (No Armor)")
     data = (clone / rel).read_bytes()
     put(cards.repo, rel, data)
     put(cards.repo, "MDW/Templates/Linked_Template.psd", data)

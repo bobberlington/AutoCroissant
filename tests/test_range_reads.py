@@ -316,8 +316,6 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
 def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, monkeypatch):
     """gather_links reads MDW PSDs and .psb files by ranges in the download workers: links.json as one worker gives."""
     rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
-    if not (clone / rel).exists():
-        pytest.skip("no Militron (No Armor)")
     linked = (clone / rel).read_bytes()
     others = {"MDW/Assets/A.psd": linked, "MDW/Linked/B - c.psb": cards.psds[DOOMER],
               "MDW/Templates/C.psd": cards.psds[FREEZER], "MDW/Unfinished/D.psd": linked}

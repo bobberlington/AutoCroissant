@@ -10,15 +10,13 @@ from sys import executable
 from types import SimpleNamespace
 
 import pytest
+from fontTools.ttLib import TTCollection, TTFont
 from requests import HTTPError
 
 import commands.font_check as fc
 import commands.github_api as ga
 from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha, smallest
-
-fontBuilder = pytest.importorskip("fontTools.fontBuilder")
-from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
-from helpers import ChecksGitHub as FakeGitHub, build_font, commit, git, put, sharing  # noqa: E402,F401
+from helpers import ChecksGitHub as FakeGitHub, build_font, commit, git, put, sharing  # noqa: F401
 
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history

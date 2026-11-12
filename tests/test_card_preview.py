@@ -28,16 +28,15 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
-import commands.card_bake as cb  # noqa: E402
-import commands.card_preview as cp  # noqa: E402
-import commands.card_preview_branch as br  # noqa: E402
-import commands.card_preview_reads as early  # noqa: E402
-import commands.github_api as github_api  # noqa: E402
-import commands.psd_edit as pe  # noqa: E402
-from conftest import REPO, SITE_SRC, blob_sha_bytes as _sha  # noqa: E402
-from golden_cards import VOCAB  # noqa: E402
-from helpers import FORK_VENV_KEY, bot_files, fork_install  # noqa: E402
+import commands.card_bake as cb
+import commands.card_preview as cp
+import commands.card_preview_branch as br
+import commands.card_preview_reads as early
+import commands.github_api as github_api
+import commands.psd_edit as pe
+from conftest import REPO, SITE_SRC, blob_sha_bytes as _sha
+from golden_cards import VOCAB
+from helpers import FORK_VENV_KEY, bot_files, fork_install
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"

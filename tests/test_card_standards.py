@@ -353,8 +353,6 @@ CURLY = "b67b8799"              # main with 42 cards' curly apostrophes (13 titl
 
 def _fonts(clone):
     fonts = clone / "MDW" / "Fonts"
-    if not fonts.is_dir():
-        pytest.skip("no MDW/Fonts in the clone")
     return lambda names: str(fonts)
 
 
@@ -607,8 +605,6 @@ def ring_fonts(clone, tmp_path_factory):
     """The pin's MDW/Fonts with RING's icon font: (fonts, the same with .earlier the pin's icon font, before the ring)."""
     from functools import partial
     pinned = clone / "MDW" / "Fonts"
-    if not pinned.is_dir():
-        pytest.skip("no MDW/Fonts in the clone")
     folder = tmp_path_factory.mktemp("ring-fonts")
     for font in pinned.iterdir():
         if font.is_file() and font.name != "stoogedings.ttf":

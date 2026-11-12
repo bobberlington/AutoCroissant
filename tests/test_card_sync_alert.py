@@ -5,6 +5,7 @@ import os
 import subprocess
 
 import pytest
+import yaml
 
 from conftest import SITE_SRC
 
@@ -41,7 +42,6 @@ FAKE_CURL = '#!/bin/sh\njq -c . >> "$FAKE_POSTS"\n'
 
 
 def test_a_broken_push_tells_the_standards_channel_once(tmp_path):
-    yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")

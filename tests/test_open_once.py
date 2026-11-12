@@ -2,13 +2,7 @@
 were most of a re-parse's CPU), and the shared open reads as two separate opens do."""
 import json
 import pickle
-from collections import Counter
 from datetime import datetime, timezone
-from hashlib import sha1
-from os import PathLike
-
-import pytest
-from psd_tools import PSDImage
 
 import commands.card_data as cd
 import commands.card_db as cdb
@@ -24,29 +18,6 @@ SAME = (DOOMER,                                                             # th
         "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",          # atk 12; title in 3 layers
         "Items/Heal/2 Stars/A_Snack.psd",                                  # hidden titles
         "N.M.E/Termination_Shock.psd")                                     # drawn stars
-
-
-def _key(data: bytes) -> str:
-    return sha1(data).hexdigest()
-
-
-@pytest.fixture
-def opens(monkeypatch):
-    """PSDImage.open calls by the opened file's bytes (a path or a BytesIO)."""
-    seen: Counter = Counter()
-    inner = PSDImage.open.__func__
-
-    def counted(cls, fp, *args, **kwargs):
-        if isinstance(fp, (str, bytes, PathLike)):
-            with open(fp, "rb") as fh:
-                seen[_key(fh.read())] += 1
-        elif hasattr(fp, "getvalue"):
-            seen[_key(fp.getvalue())] += 1
-        else:
-            seen[f"stream {id(fp)}"] += 1
-        return inner(cls, fp, *args, **kwargs)
-    monkeypatch.setattr(PSDImage, "open", classmethod(counted))
-    return seen
 
 
 class _Frozen(datetime):

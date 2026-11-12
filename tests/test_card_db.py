@@ -86,8 +86,3 @@ def test_write_is_atomic(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         cdb.write_text(str(target), "new")
     assert target.read_text(encoding="utf-8") == "old" and not (tmp_path / "stats.json.tmp").exists()
-
-
-# ========================
-# Pickles
-# ========================

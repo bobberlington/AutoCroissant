@@ -14,11 +14,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
-import commands.card_checks as cc  # noqa: E402
-from commands.card_edits import CardEdits  # noqa: E402
-from commands.psd_edit import SOFT_NOTE, real_notes  # noqa: E402
-from conftest import SITE_SRC  # noqa: E402
+import commands.card_checks as cc
+from commands.card_edits import CardEdits
+from commands.psd_edit import SOFT_NOTE, real_notes
+from conftest import SITE_SRC
 
 REPO = Path(__file__).resolve().parent.parent
 LIT, EMPTY = (47, 191, 58), (16, 63, 19)

@@ -9,6 +9,7 @@ import re
 from subprocess import run as run_process
 
 import pytest
+from fontTools.ttLib import TTFont
 
 from conftest import CLONE, SITE_SRC
 
@@ -42,8 +43,7 @@ VARIANT_PROBES = ["tint", "sticker", "no", "glow", "darkglow", "Glow", "DARKGLOW
 
 
 def font_order():
-    ttlib = pytest.importorskip("fontTools.ttLib")
-    return ttlib.TTFont(FONT, lazy=True).getGlyphOrder()
+    return TTFont(FONT, lazy=True).getGlyphOrder()
 
 
 @pytest.fixture(scope="module")
@@ -155,7 +155,6 @@ def test_badge_colours_agree(build):
 def test_rings_agree(build, tmp_path):
     """text.js ringParts against build_stoogedings ring_parts for a sample of cooldowns: the paints in order and each
     one's outlines (colour and salt), the number's characters (origin and scale, box units) and its colour."""
-    from fontTools.ttLib import TTFont
     label = TTFont(LABEL_FONT)
     glyphs, cmap = label.getGlyphSet(), label.getBestCmap()
     caps = build.cap_height(glyphs, cmap)
@@ -247,7 +246,6 @@ def test_deep_starts_draw_lap_rings(build):
 def test_web_metrics_match_the_label_font(build):
     """text.js's Roboto Black metrics (RING_DIGITS, inkShift's LSB and RSB, costHtml's POINT) are the label font's as
     badges set it (build_stoogedings _set_ink: LABEL_METRICS), as badge_web_font.py writes them into the woff2."""
-    from fontTools.ttLib import TTFont
     label = TTFont(LABEL_FONT)
     glyphs, cmap = label.getGlyphSet(), label.getBestCmap()
     text = TEXT_JS.read_text()
