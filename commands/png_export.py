@@ -101,7 +101,7 @@ TEXT_CHUNKS = (b"iTXt", b"tEXt", b"zTXt")       # stripped: Photoshop's XMP (own
 OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng", "--timeout", str(OXIPNG_TIMEOUT))
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 BAND = 64                                       # rows a band: its own IDAT, ending in a full flush (owner 2026-11-11)
-BAND_LEVEL = 9                                  # band()'s zlib level (memLevel 9)
+BAND_LEVEL = 8                                  # band()'s zlib level, Z_FILTERED (memLevel 9): smaller and faster than 9
 DEFLATES = 4                                    # band()'s deflate threads at most (zlib frees the GIL)
 FLUSH = b"\x00\x00\xff\xff"                     # the empty stored block a full flush ends with
 PIXEL_BYTES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}    # a pixel's bytes at bit depth 8, by colour type
@@ -470,7 +470,7 @@ def share(workers: int) -> int:
 def _deflate(raw: bytes, last: bool) -> bytes:
     """One band's raw deflate, as the one-stream file's: a full flush starts the next band afresh (no history, hash
     cleared), so the bands deflate apart with the same bytes."""
-    deflate = zlib.compressobj(BAND_LEVEL, zlib.DEFLATED, -15, 9)
+    deflate = zlib.compressobj(BAND_LEVEL, zlib.DEFLATED, -15, 9, zlib.Z_FILTERED)
     return deflate.compress(raw) + deflate.flush(zlib.Z_FINISH if last else zlib.Z_FULL_FLUSH)
 
 

@@ -560,7 +560,7 @@ def test_bands_deflated_apart_are_the_one_streams_bytes(monkeypatch, cores):
     for image in (Image.fromarray(pixels), Image.fromarray(pixels[:, :, 1]), Image.fromarray(pixels[:10, :, :3])):
         data = pe.band(photoshop_png(image))
         parts = [payload for kind, payload, _ in pe._all(data) if kind == b"IDAT"]
-        raw, deflate = zlib.decompress(b"".join(parts)), zlib.compressobj(pe.BAND_LEVEL, zlib.DEFLATED, 15, 9)
+        raw, deflate = zlib.decompress(b"".join(parts)), zlib.compressobj(pe.BAND_LEVEL, zlib.DEFLATED, 15, 9, zlib.Z_FILTERED)
         stride = len(raw) // image.height
         want = [deflate.compress(raw[top * stride:(top + pe.BAND) * stride]) + deflate.flush(
             zlib.Z_FULL_FLUSH if top + pe.BAND < image.height else zlib.Z_FINISH) for top in range(0, image.height, pe.BAND)]
