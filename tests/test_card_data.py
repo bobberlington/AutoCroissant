@@ -69,8 +69,8 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
 def _sync_doc():
     yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file() or not shutil.which("timeout"):
-        pytest.skip(f"no {path} or no timeout")
+    if not path.is_file():
+        pytest.skip(f"no {path}")
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 

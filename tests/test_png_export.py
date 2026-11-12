@@ -20,6 +20,7 @@ import commands.png_export as pe
 import commands.psd_edit as psd_edit
 from commands.card_standards import rule_variants
 from commands.psd_parser import hidden_tags, picture_numbers
+from conftest import card_blob as blob
 from helpers import BALLOON_BOY, _rows_off, art, card, fixture_psd, normalised, photoshop_png
 
 # ========================
@@ -52,14 +53,6 @@ SABRE = "becff9f709b1403a8c5ec2d5aa4b7855ec4c5320"      # Auxiliary/Minions/Sabr
 # ========================
 # Helpers
 # ========================
-def blob(clone, sha: str) -> bytes:
-    done = subprocess.run(["git", "-C", str(clone), "cat-file", "blob", sha], capture_output=True,
-                          env={"GIT_NO_LAZY_FETCH": "1", "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"})
-    if done.returncode:
-        pytest.skip(f"the clone lacks blob {sha[:8]}")
-    return done.stdout
-
-
 def pair(clone, shas) -> tuple:
     old, new, old_png = pe.open_psd(blob(clone, shas[0])), pe.open_psd(blob(clone, shas[1])), pe.open_png(blob(clone, shas[2]))
     truth = pe.open_png(blob(clone, shas[3])) if len(shas) > 3 else None
@@ -534,20 +527,14 @@ def test_a_tagged_layer_names_the_duplicate_and_r10_draws_picture_1(tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-oxipng = pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as the card Actions install)")
-
-
 @pytest.mark.oxipng
-@oxipng
 @pytest.mark.parametrize("opaque, icc", [(True, "sRGB"), (False, "sRGB"), (True, "photoshop")])
 def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
     """A Photoshop-sized PNG gets several times smaller and stays the same image to every reader: the pixels, the ICC
     profile (Photoshop's sRGB one too: oxipng would make it an sRGB chunk), gAMA and pHYs; the text (Photoshop's XMP)
     goes, and a fully opaque card becomes RGB (SMALLER_PNG_PUSHES.md)."""
     if icc == "photoshop":                      # a card's own: sRGB IEC61966-2.1
-        from conftest import CLONE, pinned_clone
-        if not (CLONE / ".git").exists():
-            pytest.skip(f"no card repo clone at {CLONE}")
+        from conftest import pinned_clone
         path = pinned_clone() / "Auxiliary/Minions/Mini_Doomer.png"
         icc = pe.open_png(path.read_bytes()).info["icc_profile"]
     image = art()
@@ -566,7 +553,6 @@ def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
 
 
 @pytest.mark.oxipng
-@oxipng
 def test_same_png_tells_a_changed_pixel_or_chunk():
     data = photoshop_png(art())
     out = pe.recompress(data)

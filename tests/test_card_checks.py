@@ -355,8 +355,8 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
     Fetched counts, and stops the fetches Check outlived."""
     yaml = pytest.importorskip("yaml")
     workflow = SITE_SRC / ".github/workflows/card-checks.yml"
-    if not workflow.is_file() or not shutil.which("timeout"):
-        pytest.skip("no card-checks.yml or no timeout (coreutils)")
+    if not workflow.is_file():
+        pytest.skip("no card-checks.yml")
     steps = {s.get("name"): s["run"] for s in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
              if s.get("run")}
     head = steps["Check"].split("mapfile")[0] + 'echo "pending=${CARD_BLOBS_PENDING:-}"'    # before the bot runs
@@ -408,8 +408,8 @@ def test_workflow_site_build_on_shown_flags(tmp_path):
     and bars by card, cleared), not for new records without a flag, fields it never reads or a pushed card's same flags."""
     yaml = pytest.importorskip("yaml")
     workflow = SITE_SRC / ".github/workflows/card-checks.yml"
-    if not workflow.is_file() or not shutil.which("jq"):
-        pytest.skip("no card-checks.yml or no jq")
+    if not workflow.is_file():
+        pytest.skip("no card-checks.yml")
     steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
     script = next(s for s in steps if s.get("id") == "commit")["run"]
     site = next(s for s in steps if s.get("name") == "Site build")

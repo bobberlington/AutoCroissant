@@ -2,10 +2,9 @@
 My filters (TTSCardMaker site/assets/myfilters.js, in node): saved searches in localStorage (junk dropped, one search saved
 once in any case, Undo puts it back where it was); cf / xcf params, one per search, so any search text round-trips the
 address; every cf keeps its matches and every xcf drops them, in the search box's syntax. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or myfilters.js (2026-10-25).
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without myfilters.js (2026-10-25).
 """
 import json
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -13,7 +12,7 @@ import pytest
 from conftest import SITE_SRC
 
 CF_JS = SITE_SRC / "site" / "assets" / "myfilters.js"
-pytestmark = pytest.mark.skipif(not (CF_JS.is_file() and shutil.which("node")), reason=f"no {CF_JS}, or no node")
+pytestmark = pytest.mark.skipif(not CF_JS.is_file(), reason=f"no {CF_JS}")
 
 
 def test_saved_searches_and_params(tmp_path):

@@ -2,13 +2,11 @@
 The website's token picker and token variants (TTSCardMaker site/, in node and Python): typing "[" in card text
 suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags (assets/tokens.js); text.js draws
 [x:tint], [x:sticker], [x:glow] and [x:darkglow] with build_site's variant images, which build_icons makes with the
-font build's own icon_art. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it
-or without node.
+font build's own icon_art. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it.
 """
 import importlib.util
 import json
 import re
-import shutil
 from pathlib import Path
 from subprocess import run as run_process
 
@@ -24,7 +22,6 @@ EDIT_JS = SITE / "assets" / "edit.js"
 BUILD_SITE = SITE / "build" / "build_site.py"
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
                                 reason=f"no {TOKENS_JS}")
-needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 
 ALL = ["tint", "sticker", "glow", "darkglow"]
 
@@ -56,7 +53,6 @@ def node(tmp_path: Path, body: str):
     return json.loads(done.stdout)
 
 
-@needs_node
 def test_a_choice_replaces_the_partial_token(tmp_path):
     """The canonical token in place of what was typed; inside a token whose "]" or ")" follows, in place of all of it
     (a plain icon keeping the ":variant" after the caret); words after the caret stay; the caret just past it."""

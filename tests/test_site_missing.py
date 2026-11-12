@@ -1,10 +1,9 @@
 """
 The cards grid's Missing filter and sorts (TTSCardMaker site/assets/grid.js MISSING, byKey, in node): a value absent, null,
 "" or [] is missing; a sort puts the cards without its value last either way, in name order. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a grid.js with MISSING (2026-10-25).
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a grid.js with MISSING (2026-10-25).
 """
 import json
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -12,7 +11,7 @@ import pytest
 from conftest import SITE_SRC
 
 GRID_JS = SITE_SRC / "site" / "assets" / "grid.js"
-pytestmark = pytest.mark.skipif(not (GRID_JS.is_file() and shutil.which("node")), reason=f"no {GRID_JS}, or no node")
+pytestmark = pytest.mark.skipif(not GRID_JS.is_file(), reason=f"no {GRID_JS}")
 
 
 def test_missing_options_and_sorts_last(tmp_path):

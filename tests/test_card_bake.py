@@ -106,8 +106,8 @@ def test_dump_edits_layout():
 
 
 def _node(script_dir, text, ops, at="2026-10-20T00:00:00Z", by="tester") -> str:
-    if not EDIT_JS.exists() or shutil.which("node") is None:
-        pytest.skip("edit.js or node missing")
+    if not EDIT_JS.exists():
+        pytest.skip("edit.js missing")
     script = script_dir / "edits_file.mjs"
     script.write_text('import { readFileSync } from "node:fs";\n'
                       f'const {{ editsFile }} = await import({json.dumps(EDIT_JS.as_uri())});\n'

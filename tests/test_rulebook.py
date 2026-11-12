@@ -276,8 +276,6 @@ def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
         for where in (bin_, venv) if name == "python" else (bin_,):
             (where / name).write_text(f"#!/bin/bash\n{body}\n")
             (where / name).chmod(0o755)
-    if not shutil.which("jq"):
-        pytest.skip("no jq (gh's --jq)")
     env = {"PATH": f"{bin_}:{os.path.dirname(shutil.which('jq'))}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path / "temp"), "GITHUB_WORKSPACE": str(repo),
            "SITE_URL": "https://site", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"), "HOME": str(tmp_path)}
     for code, ok, lag in (("0", True, "false"), ("3", True, "true"), ("1", False, None)):

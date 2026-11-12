@@ -8,7 +8,6 @@ it, node, or a site before preview.js.
 """
 import importlib.util
 import json
-import shutil
 from pathlib import Path
 from subprocess import run as run_process
 
@@ -21,7 +20,7 @@ ASSETS = SITE / "site" / "assets"
 PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
 BUILD_SITE = SITE / "site" / "build" / "build_site.py"
 FONTS = SITE / "MDW" / "Fonts"
-needs_js = pytest.mark.skipif(not (PREVIEW_JS.is_file() and shutil.which("node")), reason=f"no preview.js at {ASSETS}, or no node")
+needs_js = pytest.mark.skipif(not PREVIEW_JS.is_file(), reason=f"no preview.js at {ASSETS}")
 
 
 def has(path: Path, word: str) -> bool:
@@ -733,6 +732,6 @@ def test_woff2_copies(bs, tmp_path, monkeypatch):
         back = TTFont(str(tmp_path / "dist" / "fonts" / name))
         assert back.flavor == "woff2" and back.getGlyphOrder() == [".notdef", "A"] and back.getBestCmap() == {65: "A"}
         assert back["glyf"]["A"].coordinates == TTFont(str(tmp_path / "MDW" / "Fonts" / "Tiny.ttf"))["glyf"]["A"].coordinates
-    if shutil.which("node") and has(MOCKUP_JS, "fontSrc"):
+    if has(MOCKUP_JS, "fontSrc"):
         out = node(tmp_path, 'out([m.fontSrc({file: "MDW/Fonts/A B.ttf", woff2: "fonts/x.woff2"}, "https://raw/", "https://site/c/"), m.fontSrc({file: "MDW/Fonts/A.ttf"}, "https://raw/", "https://site/")]);')
         assert out == ['url("https://site/c/fonts/x.woff2") format("woff2"), url("https://raw/MDW/Fonts/A%20B.ttf")', 'url("https://raw/MDW/Fonts/A.ttf")']

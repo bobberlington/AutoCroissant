@@ -1159,7 +1159,6 @@ def test_a_card_file_name_a_file_cant_hold_is_renamed_silently(cards, tmp_path):
 # Lossless recompression (owner, 2026-10-23)
 # ========================
 @pytest.mark.oxipng
-@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs)")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 3%
     smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;
@@ -1199,7 +1198,6 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
 
 
 @pytest.mark.oxipng
-@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs)")
 def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeypatch):
     """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check: the same writes,
     in the same order, as one by one (workers=1)."""
@@ -1383,8 +1381,6 @@ def test_a_persons_drawn_duplicate_is_kept_as_pushed(cards, clone, tmp_path):
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================
 def test_replay_of_the_stale_png_push(clone, tmp_path):
-    if pe.tool() is None:
-        pytest.skip("the 16 recompressions need the oxipng CLI (as the Action installs)")
     source = cg.Source(str(clone))
     if not (source.commit("38c55bd3") and source.commit("07589cc7")):
         pytest.skip("the clone lacks the push")
@@ -1853,8 +1849,6 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     nothing, and so does a re-run of the tell job alone (its Told already looks the mark up). With CARD_GUARDS off the
     card check alone posts, its comment carrying the mark."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq") or not shutil.which("python3"):
-        pytest.skip("no jq or python3")
     doc, steps, jenv = _guard_steps(clone)
     bin_dir = _fake_tools(tmp_path)
     bot = tmp_path / "bot"
@@ -1922,8 +1916,6 @@ def test_workflow_failure_alert_once_per_push(clone, tmp_path):
     Card sync, told it). The steps from the attempt's job list (a timed-out one so marked, this job's own card errors
     last), else the jobs; a failed webhook call leaves no marker."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     posts, state = tmp_path / "posts.txt", tmp_path / "gh.json"
     marker = doc["jobs"]["finish"]["env"]["FAILURE_TOLD"]
@@ -1969,8 +1961,6 @@ def test_workflow_failure_alert_once_per_push(clone, tmp_path):
 def test_workflow_alert_tells_a_timeout_from_a_cancel(clone, tmp_path):
     """Every job is in the alert's limits: one missing reads as timed out, so a cancel by hand would tell Discord."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     posts = tmp_path / "posts.txt"
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
@@ -2025,8 +2015,6 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     mode and not on a first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
     always, landed or not."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     bin_dir = _fake_tools(tmp_path)
     (bin_dir / "python").write_text(FAKE_PYTHON)
@@ -2149,8 +2137,6 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     import commands.card_bake as cb
     import commands.github_api as gh
     pytest.importorskip("yaml")
-    if not shutil.which("timeout"):
-        pytest.skip("no timeout (coreutils)")
     doc, steps, _ = _guard_steps(clone)
     for job, wait in (("check", "Decided"), ("checks", "Card and font checks")):
         names = [s.get("name") or s.get("uses") for s in doc["jobs"][job]["steps"]]
@@ -2217,8 +2203,6 @@ def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
     card data and its links, then with each pushed card PSD (not deleted, not MDW/) the head's PNG and numbered PNGs.
     A fetch takes whole lines up to 8 blobs (a file's two sides together); `checks` lists the diff alone, 8 a fetch."""
     pytest.importorskip("yaml")
-    if not shutil.which("timeout"):
-        pytest.skip("no timeout (coreutils)")
     _, steps, _ = _guard_steps(clone)
     work, origin, temp = tmp_path / "work", tmp_path / "origin.git", tmp_path / "temp"
     work.mkdir()
@@ -2274,8 +2258,6 @@ def test_workflow_joins_the_history_in_the_background(clone, tmp_path):
     remote left in the config) and History lets Check run on a complete clone only: GitHub's history when that failed,
     else an error. A dispatch (no first head) takes the data branch from history.git."""
     pytest.importorskip("yaml")
-    if not shutil.which("timeout"):
-        pytest.skip("no timeout (coreutils)")
     _, steps, _ = _guard_steps(clone)
     work, origin, bin_dir = tmp_path / "work", tmp_path / "origin.git", tmp_path / "bin"
     for folder in (work, bin_dir):
@@ -2373,8 +2355,6 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API and
     no wait for the fonts restore; one missing, or not its blob, by the API."""
     pytest.importorskip("yaml")
-    if not shutil.which("timeout"):
-        pytest.skip("no timeout (coreutils)")
     _, steps, _ = _guard_steps(clone)
     repo, temp, bin_dir = tmp_path / "repo", tmp_path / "temp", tmp_path / "bin"
     for folder in (repo, temp, bin_dir):
@@ -2472,8 +2452,6 @@ def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
     step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
     for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
@@ -2491,8 +2469,6 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
     """Card sync's "Guards' fixes" against a fake gh: the wait ends at the check job's Decided step or, failing that, its end
     (never at another job's), and the hold rule then reads Fixes to land. It looks every 3 s, the run every 5th look."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     guards = next(s for s in doc["jobs"]["main"]["steps"] if s.get("name") == "Guards' fixes")
     assert guards["env"]["DECIDED"] == "Decided"
@@ -2532,8 +2508,6 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then History wait
     and Newest."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
                                     ("main", 11, ["Fonts first", None, "Fonts first (cache miss)"], ["History wait"])):
@@ -2569,8 +2543,6 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
     by run and job; their Site build and Card checks dispatch again only when that run is missing, ended, or past its
     20-minute Data wait (or unread)."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq"):
-        pytest.skip("no jq")
     workflows = _workflow(clone).parent
     sync = yaml.safe_load((workflows / "card-sync.yml").read_text(encoding="utf-8"))
     site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))
@@ -2632,8 +2604,6 @@ def test_site_data_wait(clone, tmp_path):
     timeout leaves room for them): checked out later too. A look that finds main past the early images' commit, those
     done (exit 0): the early images again at main's head (same log and code)."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq") or not shutil.which("git"):
-        pytest.skip("no jq or git")
     site = yaml.safe_load((_workflow(clone).parent / "site.yml").read_text(encoding="utf-8"))
     wait = next(s for s in site["jobs"]["build"]["steps"] if s.get("name") == "Data wait")
     try_ = int(re.search(r"timeout (\d+) git -C carddata fetch", wait["run"]).group(1))
@@ -2739,8 +2709,6 @@ def test_checks_data_wait(clone, tmp_path):
     """card-checks.yml's early run: fonts restored, then site.yml's Data wait, then main's and the data's heads (the
     sparse files fetched); a fonts change in the wait: the outdated restore removed and the new fonts checked out."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq") or not shutil.which("git"):
-        pytest.skip("no jq or git")
     workflows = _workflow(clone).parent
     job = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))["jobs"]["check"]
     site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
@@ -2807,8 +2775,6 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
     again, then gates (no Gate when the guards hold it). A push rides along on a lane queued or in that wait; the
     schedule's gate and the failure streak pass over a held lane."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("jq") or not shutil.which("git"):
-        pytest.skip("no jq or git")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     main = doc["jobs"]["main"]
     assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
@@ -2863,8 +2829,6 @@ def test_the_bot_clone_and_records_run_here(clone, tmp_path):
     saved; the records read beside it (one not read in 3 tries: a warning), CARD_RECORDS_DIR at once. checks reads no
     records; a failed clone leaves no bot/ (the checkout after it brings one)."""
     pytest.importorskip("yaml")
-    if not shutil.which("jq") or not shutil.which("timeout"):
-        pytest.skip("no jq or timeout")
     doc, steps, jenv = _guard_steps(clone)
     seed, server, bin_dir = tmp_path / "seed", tmp_path / "github", tmp_path / "bin"
     for rel in cg.SPARSE_FILES + ("config.py",):

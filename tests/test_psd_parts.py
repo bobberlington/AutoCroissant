@@ -1,10 +1,9 @@
 """
 The parts editor's data (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §11, Track A's 1-3): the variant tag rule, psd_parts.card_parts on
-the four fixture PSDs (tests/fixtures/parts/, each read at its own blob: skipped when the clone lacks it) with the parser's
+the four fixture PSDs (tests/fixtures/parts/, each read at its own blob) with the parser's
 fields their joins, and a tagged A Snack parsed and drawn per picture.
 """
 import json
-import subprocess
 from io import BytesIO
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from psd_tools import PSDImage
 
 from commands import psd_parts
 from commands.psd_parser import layer_tag, shown_in, title_text, variant_view, variants_of
-from conftest import no_lazy
+from conftest import card_blob
 from golden_cards import parser
 
 FIXTURES = Path(__file__).parent / "fixtures" / "parts"
@@ -34,12 +33,9 @@ def psd_parser(clone):
 
 
 def _fixture_psd(clone, fixture: str):
-    """(fixture JSON, its PSD at the fixture's blob with the tags applied); skips when the clone lacks the blob."""
+    """(fixture JSON, its PSD at the fixture's blob with the tags applied)."""
     want = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
-    done = subprocess.run(["git", "-C", str(clone), "cat-file", "blob", want["blob"]], capture_output=True, env=no_lazy())
-    if done.returncode:
-        pytest.skip(f"blob {want['blob'][:8]} not in the clone")
-    psd = PSDImage.open(BytesIO(done.stdout))
+    psd = PSDImage.open(BytesIO(card_blob(clone, want["blob"])))
     for layer in psd.descendants():
         if layer.layer_id in CARDS[fixture][2]:
             layer.name = CARDS[fixture][2][layer.layer_id]

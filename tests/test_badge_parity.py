@@ -6,7 +6,6 @@ clone; skips without them.
 """
 import json
 import re
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -126,8 +125,6 @@ def build():
 
 def site_node(tmp_path, body: str) -> object:
     """body's stdout as JSON, text.js imported as t."""
-    if not shutil.which("node"):
-        pytest.skip("needs node")
     script = tmp_path / "probe.mjs"
     script.write_text(f"const t = await import({json.dumps(TEXT_JS.as_uri())});\n{body}\n")
     return json.loads(run_process(["node", str(script)], capture_output=True, text=True, check=True, timeout=60).stdout)

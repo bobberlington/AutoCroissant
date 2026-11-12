@@ -4,12 +4,11 @@ failing the build) and copies them to data/logins/<login in lowercase>.json; sit
 same shapes, seals files the build accepts, opens them only with the right password, refuses weak passwords, and keeps
 this browser's token sealed under a device key (over a fake IndexedDB). Loads both from $AC_SITE_SRC (a TTSCardMaker
 checkout) or the clone; skips without it, or when that build_site.py predates read_logins (TTSCardMaker
-work/site-password). The node checks skip without node.
+work/site-password).
 """
 import base64
 import importlib.util
 import json
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -63,8 +62,8 @@ BAD = {                                           # name -> (file name stem, raw
 
 def node(tmp_path, body: str):
     """Run body after importing login.js as auth; its stdout as JSON."""
-    if not (LOGIN_JS.is_file() and shutil.which("node")):
-        pytest.skip(f"no login.js at {LOGIN_JS}, or no node")
+    if not LOGIN_JS.is_file():
+        pytest.skip(f"no login.js at {LOGIN_JS}")
     script = tmp_path / "probe.mjs"
     script.write_text(f"const auth = await import({json.dumps(LOGIN_JS.as_uri())});\n{body}\n", encoding="utf-8")
     return json.loads(run_process(["node", str(script)], capture_output=True, text=True, check=True).stdout)

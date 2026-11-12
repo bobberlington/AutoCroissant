@@ -3,10 +3,9 @@ The website's editing helpers of round 3 (TTSCardMaker site/assets, in node and 
 ITEM_TYPES = the Items/ folders), drops on a filter-bar value or a pinned box (inline.js targetOf/dropOn, dragenter),
 the click-away rule for the "+" editors, the name autofill (tokens.js suggestNames), the pinned tray (tray.js) and
 Rename everywhere (edit.js renameAll: the ops it queues).
-Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a site before them.
+Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips with a site before them.
 """
 import json
-import shutil
 from pathlib import Path
 from subprocess import run as run_process
 
@@ -19,7 +18,6 @@ ASSETS = SITE / "assets"
 EDIT_JS = ASSETS / "edit.js"
 INLINE_JS = ASSETS / "inline.js"
 pytestmark = pytest.mark.skipif(not EDIT_JS.is_file(), reason=f"no {EDIT_JS}")
-needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 
 
 def node(tmp_path: Path, body: str, **modules: Path):
@@ -37,7 +35,6 @@ TRAY_JS = ASSETS / "tray.js"
 needs_tray = pytest.mark.skipif(not TRAY_JS.is_file(), reason=f"no {TRAY_JS}")
 
 
-@needs_node
 @needs_tray
 def test_add_and_remove_pins(tmp_path):
     out = node(tmp_path, """
@@ -49,7 +46,6 @@ process.stdout.write(JSON.stringify([T.addPin(one, { k: "series", v: "mario " })
                    {"error": "At most 100 pins"}, 100, 99, [{"k": "series", "v": "Mario"}]]
 
 
-@needs_node
 @needs_tray
 def test_many_pins_keys_reach_the_first_nine(tmp_path):
     """Up to 100 stored pins load; keys 1-9 and their badges and labels are the first nine boxes' only; Skip past nine."""

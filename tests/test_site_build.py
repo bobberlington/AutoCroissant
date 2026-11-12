@@ -12,7 +12,6 @@ import importlib.util
 import io
 import json
 import re
-import shutil
 import subprocess
 import sys
 import tarfile
@@ -457,8 +456,6 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
     a difference fails the build; its grid has grid.js's M size. A card's page carries its dialog's picture, the one it
     preloads, openCard's close button (card_frame) and style.css inline, as index.html; other share pages link it."""
-    if not shutil.which("node"):
-        pytest.skip("no node")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     page = (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
     ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
@@ -536,8 +533,8 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
     """`_site` (owner 10-25): applied, never "PSD pending", the card's siteOnly (its "Website only" tag); edit.js stores it
     from an op's ticks as parse_edits and CardEdits.site_only clean it (a field without a value goes); unticked: pending."""
     from commands.card_edits import CardEdits
-    if shutil.which("node") is None or not EDIT_JS.is_file():
-        pytest.skip("node or edit.js missing")
+    if not EDIT_JS.is_file():
+        pytest.skip("edit.js missing")
     script = tmp_path / "site.mjs"
     script.write_text(f'const {{ editsFile }} = await import({json.dumps(EDIT_JS.as_uri())});\n'
                       'const text = JSON.stringify({about: "x", cards: {"Mini Doomer": {"name": "Tiny Doomer", "hp": 9, "_by": "w"}}});\n'
@@ -745,8 +742,8 @@ def test_guards_name_rule_matches_the_site(bs):
 def test_a_card_naming_itself_mentions_itself(tmp_path):
     """Owner 2026-10-30: a card whose text names it is in its own Mentions and Mentioned by (text.js mentions)."""
     text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
-    if shutil.which("node") is None or not text_js.is_file():
-        pytest.skip("no node or text.js")
+    if not text_js.is_file():
+        pytest.skip("no text.js")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
                      "const r = t.makeRenderer({ cards: [{ id: 'mk', name: 'Mirror Knight', key: 'Mirror Knight', type: 'creature' }], icons: {} });\n"
@@ -759,8 +756,8 @@ def test_a_card_naming_itself_mentions_itself(tmp_path):
 def test_a_web_chapter_is_not_printed(bs, tmp_path):
     """Owner 2026-11-07: a chapter titled {.web} is on the website only (rulebook.js printed, build_site printed_chapters)."""
     book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
-    if shutil.which("node") is None or not hasattr(bs, "printed_chapters"):
-        pytest.skip("no node or a site before {.web}")
+    if not hasattr(bs, "printed_chapters"):
+        pytest.skip("a site before {.web}")
     book = [{"id": "stats", "source": "# Stats\n\n## HEALTH {.hp}\nWords.\n"}, {"id": "font", "source": "# Font {.web}\n\nWords.\n"}]
     assert [c["id"] for c in bs.printed_chapters(book)] == ["stats"]
     probe = tmp_path / "probe.mjs"
@@ -775,8 +772,8 @@ def test_rulebook_pictures_sized_before_they_load(tmp_path):
     """rulebook.js: a mascot (rules.json's size) and a card picture (tw/th) carry width/height, so nothing above a contents
     link's chapter grows while the jump runs; a picture of unknown size none."""
     book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
-    if shutil.which("node") is None or "rb-mascot" not in book_js.read_text(encoding="utf-8"):
-        pytest.skip("no node or a rulebook without mascots")
+    if "rb-mascot" not in book_js.read_text(encoding="utf-8"):
+        pytest.skip("a rulebook without mascots")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"const rb = await import({json.dumps(book_js.as_uri())});\n"
                      "const ctx = { size: f => (f === 'kirby' ? [120, 96] : null), card: n => (n === 'Alpha' ? { id: 'a1', name: 'Alpha', tw: 360, th: 504 } : null),\n"
@@ -793,8 +790,8 @@ def test_a_heavy_commit_links_the_cards_history(tmp_path):
     """text.js commitLink: a heavy commit (cards.json heavy) links GitHub's history of the card's PNG from it, its path
     encoded, and nothing without a path; any other commit its commit page."""
     text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
-    if shutil.which("node") is None or not text_js.is_file():
-        pytest.skip("no node or text.js")
+    if not text_js.is_file():
+        pytest.skip("no text.js")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
                      "t.setHeavy(['aaaaaaaaaaaa']); const a = 'a'.repeat(40), b = 'b'.repeat(40), p = \"Items/2 Stars/Ahn'Qiraj #1.png\";\n"
@@ -1041,8 +1038,8 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
     version never fails a deploy)."""
     yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "site.yml"
-    if not path.is_file() or not shutil.which("jq"):
-        pytest.skip(f"no {path} or jq")
+    if not path.is_file():
+        pytest.skip(f"no {path}")
     jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
     steps = {s.get("id"): s for s in jobs["build"]["steps"]}
     assert jobs["build"]["permissions"]["contents"] == "read" and jobs["version"]["permissions"] == {"contents": "write"}

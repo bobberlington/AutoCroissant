@@ -6,7 +6,6 @@ site's own word colours (owner 2026-11-11): textcolor.js wordColors and build_si
 """
 import importlib.util
 import json
-import shutil
 from pathlib import Path
 from subprocess import run as run_process
 from types import SimpleNamespace
@@ -23,7 +22,7 @@ from helpers import _card
 
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
-site = pytest.mark.skipif(not ((ASSETS / "textcolor.js").is_file() and shutil.which("node")), reason=f"no textcolor.js in {ASSETS}, or no node")
+site = pytest.mark.skipif(not (ASSETS / "textcolor.js").is_file(), reason=f"no textcolor.js in {ASSETS}")
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 BURNING = {"field": "ability", "phrase": "Burning", "color": "#ff7a1a"}
 

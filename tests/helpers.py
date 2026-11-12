@@ -164,7 +164,7 @@ def json_dumps(value) -> str:
 def _card_files(clone, rel: str) -> dict:
     png = rel[:len(rel) - 4] + ".png"
     if not (clone / rel).exists() or not (clone / png).exists():
-        pytest.skip(f"{rel} not in the clone")
+        pytest.fail(f"{rel} not at the pin")                # the pin is fixed: the test's bug
     return {rel: (clone / rel).read_bytes(), png: (clone / png).read_bytes()}
 
 
@@ -621,7 +621,7 @@ def _typo_fix(title: str) -> str:
 def _card(clone, rel: str) -> tuple:
     path, png = clone / rel, clone / (rel[:-4] + ".png")
     if not path.exists() or not png.exists():
-        pytest.skip(f"{rel} not in the clone")
+        pytest.fail(f"{rel} not at the pin")
     return str(path), str(png)
 
 
@@ -635,7 +635,7 @@ def normalised(clone, rel: str, tmp_path) -> tuple:
     path, png = _card(clone, rel)
     fonts_dir = clone / "MDW" / "Fonts"
     if not fonts_dir.is_dir():
-        pytest.skip("no MDW/Fonts in the clone")
+        pytest.fail("no MDW/Fonts at the pin")
     fonts = lambda names: str(fonts_dir)
     data = Path(path).read_bytes()
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), fonts, only="normalise")

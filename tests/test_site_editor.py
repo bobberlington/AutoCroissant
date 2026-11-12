@@ -2,11 +2,10 @@
 The website editor's helpers (TTSCardMaker site/assets, in node): the tooltip's hide rules (tip.js: the stuck "Click to
 edit" of 2026-10-23), drafts of unsaved edits (drafts.js), the Edit dialog's live preview (live.js), the stars slider
 (stars.js), the type palette (palette.js) and the dialogs' focus (app.js). Loads them from $AC_SITE_SRC (a
-TTSCardMaker checkout) or the clone; skips without node or a site before them (TTSCardMaker work/site2-editor).
+TTSCardMaker checkout) or the clone; skips with a site before them (TTSCardMaker work/site2-editor).
 """
 import json
 import re
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -15,8 +14,8 @@ from conftest import SITE_SRC
 
 ASSETS = SITE_SRC / "site" / "assets"
 MODULES = ("tip", "drafts", "live", "stars", "palette")
-pytestmark = pytest.mark.skipif(not (shutil.which("node") and all((ASSETS / f"{m}.js").is_file() for m in MODULES)),
-                                reason=f"no node, or no {', '.join(m + '.js' for m in MODULES)} in {ASSETS}")
+pytestmark = pytest.mark.skipif(not all((ASSETS / f"{m}.js").is_file() for m in MODULES),
+                                reason=f"no {', '.join(m + '.js' for m in MODULES)} in {ASSETS}")
 
 # Stand-in elements: enough of the DOM for tip.js (closest, matches, contains, isConnected, dataset) and stars.js
 # (children, classList, setAttribute). Selectors: comma lists of tag.class[attr] parts, with one descendant space.

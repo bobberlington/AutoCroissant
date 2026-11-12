@@ -6,7 +6,6 @@ whatever the viewer's zone. Loads the site from $AC_SITE_SRC (a TTSCardMaker che
 node, or a site before history.js.
 """
 import json
-import shutil
 from os import environ
 from subprocess import run as run_process
 
@@ -16,8 +15,7 @@ from conftest import SITE_SRC
 
 ASSETS = SITE_SRC / "site" / "assets"
 HISTORY_JS = ASSETS / "history.js"
-pytestmark = pytest.mark.skipif(not (HISTORY_JS.is_file() and shutil.which("node")),
-                                reason=f"no history.js at {ASSETS}, or no node")
+pytestmark = pytest.mark.skipif(not HISTORY_JS.is_file(), reason=f"no history.js at {ASSETS}")
 # Beldam (2026-10-22): its (1CD) text came with the 2026-10-21 22:57 PT image; a 10-22 07:27 PT re-save kept it
 OLD_AT, IMAGE_AT, RESAVE_AT = 1770523234, 1792648620, 1792679220
 

@@ -1,10 +1,9 @@
 """
 Site storage blocked (TTSCardMaker site/assets/deck.js, in node): reading localStorage throws a SecurityError, as in a
 browser that blocks site data. The hands still load, saving never throws, and the picked hand is kept for the page.
-Skips without node (2026-11-11).
+Skips without deck.js (2026-11-11).
 """
 import json
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -12,7 +11,7 @@ import pytest
 from conftest import SITE_SRC
 
 DECK_JS = SITE_SRC / "site" / "assets" / "deck.js"
-pytestmark = pytest.mark.skipif(not (DECK_JS.is_file() and shutil.which("node")), reason=f"no {DECK_JS}, or no node")
+pytestmark = pytest.mark.skipif(not DECK_JS.is_file(), reason=f"no {DECK_JS}")
 
 
 def test_hands_work_with_storage_blocked(tmp_path):

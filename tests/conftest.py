@@ -2,6 +2,8 @@
 # The suite needs the psd-tools fork with psd-tools[text] (that venv; see use_fork); -n 0 runs one test serially.
 import hashlib
 import json
+import re
+import shutil
 import socket
 import sys
 import types
@@ -9,6 +11,7 @@ from importlib import import_module
 from os import cpu_count, environ, getpid
 from os.path import expanduser
 from pathlib import Path
+from shlex import quote
 
 import pytest
 
@@ -29,6 +32,9 @@ GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in 
               "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
 POOLED = ("commands.card_check", "commands.font_check", "commands.card_guards")   # process pools capped per worker
 QUEUES = ("dispatch_queue", "edit_queue", "command_queue")                         # utils' deques, empty per test
+TOOLS = {"node": "node", "jq": "jq", "timeout": "coreutils", "git": "git", "oxipng": "oxipng"}   # CLIs the tests run: brew formula
+FETCH = ("GIT_NO_LAZY_FETCH=1 git -C {clone} -c fetch.negotiationAlgorithm=noop fetch --no-tags --no-write-fetch-head"
+         " --filter=blob:none --stdin origin")           # blob ids on stdin, one a line
 
 
 def _git_config():
@@ -89,6 +95,11 @@ def pytest_configure(config):
     missing = [f"{key}={environ[key]}: no such path" for key in TC_PATHS if environ.get(key) and not Path(environ[key]).exists()]
     if missing:                                           # set but wrong: stop, not skip
         raise pytest.UsageError("\n".join(missing))
+    lacking = [f"{tool} (brew install {formula})" for tool, formula in TOOLS.items() if not shutil.which(tool)]
+    if lacking:                                           # checked once: no test skips for a tool
+        raise pytest.UsageError("not on PATH: " + ", ".join(lacking))
+    if not (CLONE / ".git").exists():
+        raise pytest.UsageError(f"no card repo clone at {CLONE} (AUTOCROISSANT_LOCAL_DIR)")
     config.addinivalue_line("filterwarnings", "ignore::DeprecationWarning:discord")
     config.addinivalue_line("markers", "oxipng: runs the real oxipng (no_oxipng's stub off)")
 
@@ -138,8 +149,9 @@ def _blob(root: Path, spec: str):
     pipe.stdin.flush()
     head = pipe.stdout.readline().split()
     if head[-1] == b"missing":
-        if subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", spec], capture_output=True).returncode == 0:
-            raise RuntimeError(f"{spec} is in the pin's tree, but neither {CLONE} nor {HISTORY} has its blob")
+        sha = subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", spec], capture_output=True, text=True).stdout.strip()
+        if sha:
+            raise RuntimeError(f"{spec} is in the pin's tree, but neither {CLONE} nor {HISTORY} has its blob: missing blob {sha}")
         return None
     data = pipe.stdout.read(int(head[2]))
     pipe.stdout.read(1)
@@ -175,7 +187,6 @@ def _materialize(root: Path, rel: str) -> None:
 
 def pinned_clone() -> Pinned:
     """A git repo on the clone's objects (and the history clone's) at CARDS_REV, files written on first use."""
-    import shutil
     import subprocess
     root = Pinned(PINNED / CARDS_REV[:12])
     if not Path(root, ".git", "index").exists():
@@ -187,7 +198,7 @@ def pinned_clone() -> Pinned:
         (temp / ".git" / "HEAD").write_text(CARDS_REV + "\n")
         if subprocess.run(["git", "-C", str(temp), "read-tree", CARDS_REV], capture_output=True, env=no_lazy()).returncode:
             shutil.rmtree(temp, ignore_errors=True)
-            pytest.skip(f"neither {CLONE} nor {HISTORY} has the card repo at {CARDS_REV[:8]}")
+            raise pytest.UsageError(f"neither {CLONE} nor {HISTORY} has the card repo at {CARDS_REV[:8]}")
         try:
             temp.rename(root)
         except OSError:                                   # another worker made it
@@ -206,14 +217,21 @@ def smallest(clone: Pinned, folder: str, n: int) -> list:
     return [clone / rel for _, rel in sized[:n]]
 
 
-def at_rev(clone, rev: str, rel: str) -> bytes:
-    """A card repo file at rev, from the clone's history; skips the test when the history lacks it."""
+def card_blob(clone, spec: str) -> bytes:
+    """A card repo object (rev:path or a blob id) from the clone's objects. Missing fails, naming the blob: the run's
+    summary gives one fetch for them all."""
     import subprocess
-    try:
-        return subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True,
-                              env=no_lazy()).stdout
-    except (subprocess.CalledProcessError, OSError):
-        pytest.skip(f"the clone's history lacks {rev}:{rel}")
+    done = subprocess.run(["git", "-C", str(clone), "cat-file", "blob", spec], capture_output=True, env=no_lazy())
+    if done.returncode == 0:
+        return done.stdout
+    sha = subprocess.run(["git", "-C", str(clone), "rev-parse", "-q", "--verify", spec], capture_output=True, text=True,
+                         env=no_lazy()).stdout.strip()
+    pytest.fail(f"{CLONE} lacks {spec}: " + (f"missing blob {sha}" if sha else f"not in its history or {HISTORY}"), pytrace=False)
+
+
+def at_rev(clone, rev: str, rel: str) -> bytes:
+    """A card repo file at rev, from the clone's history (card_blob)."""
+    return card_blob(clone, f"{rev}:{rel}")
 
 
 def painted(png: bytes, box: tuple, rows: float) -> bytes:
@@ -325,9 +343,16 @@ def no_oxipng(request, monkeypatch):
 @pytest.fixture(scope="session")
 def clone():
     """The card repo at CARDS_REV (pinned_clone), so card pushes never move a test."""
-    if not (CLONE / ".git").exists():
-        pytest.skip(f"no card repo clone at {CLONE}")
     return pinned_clone()
+
+
+def pytest_terminal_summary(terminalreporter):
+    """One batched fetch for every blob the failures name (card_blob, the pin's _blob)."""
+    reports = terminalreporter.stats.get("failed", []) + terminalreporter.stats.get("error", [])
+    ids = sorted({sha for r in reports for sha in re.findall(r"missing blob ([0-9a-f]{40})", str(getattr(r, "longrepr", "")))})
+    if ids:
+        terminalreporter.write_line(f"{len(ids)} card blobs missing from {CLONE}; fetch them in one batch:")
+        terminalreporter.write_line(f"printf '%s\\n' {' '.join(ids)} | {FETCH.format(clone=quote(str(CLONE)))}")
 
 
 def pytest_xdist_auto_num_workers(config):

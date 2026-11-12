@@ -1,11 +1,10 @@
 """
 Card flags (Card Edits.json flags, TTSCardMaker site/assets/flags.js): the three field lists agree, the build carries them
 and never counts them as pending, and the website's search, batch lines and file writing read them. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a flags.js (2026-11-07).
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a flags.js (2026-11-07).
 """
 import importlib.util
 import json
-import shutil
 from subprocess import run as run_process
 
 import pytest
@@ -15,7 +14,7 @@ from conftest import SITE_SRC
 
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
-pytestmark = pytest.mark.skipif(not ((ASSETS / "flags.js").is_file() and shutil.which("node")), reason=f"no flags.js in {ASSETS}, or no node")
+pytestmark = pytest.mark.skipif(not (ASSETS / "flags.js").is_file(), reason=f"no flags.js in {ASSETS}")
 
 
 def node(tmp_path, body: str):

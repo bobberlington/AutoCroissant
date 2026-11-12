@@ -12,7 +12,6 @@ from io import BytesIO
 from os import environ
 from pathlib import Path
 from re import search
-from subprocess import CalledProcessError, run
 from types import SimpleNamespace
 
 import numpy as np
@@ -26,7 +25,7 @@ import commands.psd_edit as pe
 from commands import ability_place
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
-from conftest import BADGED, PLAIN_DOOMER, at_rev, no_lazy, painted
+from conftest import BADGED, PLAIN_DOOMER, at_rev, card_blob, painted
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 PRE_SWEEP = "1c717c8b"     # TTSCardMaker main before the badge sweep re-made some test cards
@@ -90,11 +89,7 @@ def _ink(layer, psd) -> np.ndarray:
 
 def _overlaid(clone, rel: str, tmp_path) -> str:
     """OVERLAID[rel]'s PSD from the clone's history, in tmp_path/overlaid/."""
-    try:
-        data = run(["git", "-C", str(clone), "show", f"{OVERLAID[rel]}:{rel}"], capture_output=True, check=True,
-                   env=no_lazy()).stdout
-    except (CalledProcessError, OSError):
-        pytest.skip(f"the clone's history lacks {OVERLAID[rel]}:{rel}")
+    data = at_rev(clone, OVERLAID[rel], rel)
     path = tmp_path / "overlaid" / Path(rel).name
     path.parent.mkdir()
     path.write_bytes(data)
@@ -432,10 +427,7 @@ def test_creature_bars(clone, parser, tmp_path):
     """The 2 creature template: a bar per creature reads exactly, the `creatures` field bakes every creature, the shared
     HP bar moves both; what the bars can't print is website only."""
     from commands.psd_details import _creature_bars, _stats
-    try:
-        data = run(["git", "-C", str(clone), "cat-file", "blob", TWO_CREATURES], capture_output=True, check=True, env=no_lazy()).stdout
-    except CalledProcessError:
-        pytest.skip("the clone lacks the 2 creature template")
+    data = card_blob(clone, TWO_CREATURES)
     path, rel = tmp_path / "Two.psd", "Creatures/Other/5 Stars/Two.psd"
     path.write_bytes(data)
     psd = PSDImage.open(str(path))
