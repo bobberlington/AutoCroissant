@@ -612,6 +612,25 @@ out([n, drawn, kept, go("Zero Twooooo"), go("Zero\\nTwo"), calls]);""")
     assert off == lines == "" and none == []
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "tintInPlace"), reason="no colours in place in mockup.js")
+def test_colour_alone_in_place(tmp_path):
+    """A colour alone on the card's own letters (plate layout): the word's fill moved to the new colour, a white letter's
+    black stroke and its soft outside edge and the backdrop kept, other letters kept; none when the old fill doesn't show."""
+    out = node(tmp_path, """
+const W = 40, H = 20, data = new Uint8ClampedArray(W * H * 4), plate = new Uint8ClampedArray(W * H * 4);
+const put = (a, x, y, c) => a.set([...c, 255], (y * W + x) * 4), at = (x, y) => [...data.slice((y * W + x) * 4, (y * W + x) * 4 + 3)];
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = x < 28 ? [250, 250, 250] : [0, 0, 128]; put(data, x, y, c); put(plate, x, y, c); }
+const box = (x0, x1, y0, y1, c) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) put(data, x, y, c); };
+box(3, 9, 5, 15, [255, 255, 255]); box(21, 27, 5, 15, [0, 0, 0]); box(23, 25, 7, 13, [255, 255, 255]); box(29, 35, 5, 15, [255, 255, 255]);
+put(data, 20, 10, [128, 128, 128]);   // the stroke's soft outside
+const c = { id: 5, box: [0, 0, W, H], at: [0, 0, W, H], text: "ab cd", lines: [[0, 5, 15, 2, 38, 2, 18, 0]], glyphs: [[0, 2, 3, 9], [1, 10, 11, 17], [2, 18], [3, 20, 21, 27], [4, 28, 29, 35]] };
+const plan = fill => m.tintPlan(data, W, { crops: [c] }, [5], 1, "ab cd", { text: "ab cd", color: fill }, [{ field: "ability", phrase: "cd", color: "#ff0000" }], "ability");
+m.tintInPlace(data, W, H, 1, plan("#ffffff"), () => plate);
+out([at(24, 10), at(22, 10), at(20, 10), at(19, 3), at(32, 10), at(30, 3), at(5, 10), plan("#00ff00")]);""")
+    assert out == [[255, 0, 0], [0, 0, 0], [128, 128, 128], [250, 250, 250], [255, 0, 0], [0, 0, 128], [255, 255, 255], None]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
