@@ -619,7 +619,7 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     fake.items = lambda psd, vocab=(): []
     fake.TypesIndex = lambda files, history=None: None
     fake.assign = lambda psds, kinds, linked: {"psds": {rel: [] for rel, _ in psds}, "files": {}}
-    fake.fallback_names = lambda catalogue, linked, kept=None: None
+    fake.fallback_names = lambda catalogue, linked: None
     fake.links_of = lambda psd, rel, tree: [SimpleNamespace(path=p, name=p.rsplit("/", 1)[-1], uuid="u1", size=3)
                                             for p in (links or {}).get(rel, [])]
     fake.records_of = lambda index: ({k: v for k, v in index.items() if k != "files"}, index.get("files") or {})
@@ -1263,7 +1263,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     fixed = b"the fixed PSD"                                                # land only moves bytes
     (out / "fixed.psd").write_bytes(fixed)
     bread["writes"] = [{"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd",
-                        "line": "R11 fixed; Single-line Composer (Ability)", "shown": "R11 fixed", "composer": True, "pixels": ["apostrophes"]}]
+                        "line": "R9 fixed; Single-line Composer (Ability)", "shown": "R9 fixed", "composer": True, "pixels": ["apostrophes"]}]
     bread["expect"] = cg._expect(cg.Job(bread["psd"], "pair", "", tree[bread["psd"]][1], f"{FOLDER}/Bread.png",
                                         png_new=tree[f"{FOLDER}/Bread.png"][1]))
     assert bread["expect"][f"{FOLDER}/Bread.png"] == tree[f"{FOLDER}/Bread.png"][1]
@@ -1273,7 +1273,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     assert report["landed"] == ["Bread"] and report["dropped"] == [] and report["sha"]
     assert _git(root, "show", "--name-only", "--format=", report["sha"]).splitlines() == [f"{FOLDER}/Bread.psd"]
     assert report["events"] == [{"kind": "guard-fix", "card": "Bread", "path": f"{FOLDER}/Bread.psd",    # never the composer
-                                 "line": "R11 fixed; straight apostrophes"}]
+                                 "line": "R9 fixed; straight apostrophes"}]
 
 
 def test_a_duplicate_follows_its_psd_silently_and_records_land(cards, tmp_path):

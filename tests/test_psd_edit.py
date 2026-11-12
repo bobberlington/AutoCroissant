@@ -487,7 +487,15 @@ def test_resized_bar_mode(clone, tmp_path):
     path = tmp_path / "alt.psd"
     path.write_bytes(at_rev(clone, *ALT_TEMPLATE))
     layer = comp_bars(PSDImage.open(str(path)))["hp"][0][0]
-    pe.place_bar(layer, (355, 1190, 1176, 1289))
+    corners = (355.0, 1190.0, 1176.0, 1190.0, 1176.0, 1289.0, 355.0, 1289.0)     # its placed transform resized
+    for key in [key for key in pe.PLACED if key in layer.tagged_blocks]:
+        data = layer.tagged_blocks.get_data(key)
+        if data is not None and key in pe.PLACED[2:]:
+            data.transform = corners
+        for name in (b"Trnf", b"nonAffineTransform") if data is not None and key in pe.PLACED[:2] else ():
+            for value, new in zip(data.data.get(name, ()), corners):
+                value.value = new
+    layer._psd.mark_updated()
     assert pe.stored_mode(layer) is None
     alpha = pe.comp_render(layer, 3)[0][..., 3]
     assert not ((alpha > 0.01) & (alpha < 0.99)).any()
@@ -955,14 +963,17 @@ def test_a_split_titles_parts_named_name(clone, parser, tmp_path):
     under the title region too (Knight Lost A Lot's 'A' and 'Lot'). Renamed so, a card reads as before, no standards note
     is left and a whole-name edit refuses plainly (each part has its box); a hidden extra title is never a part."""
     import commands.card_standards as cs
-    for rel, pairs in ((CANNON, ["'Eradicator' -> 'Name'", "'Royal' -> 'Name'"]),
-                       (KNIGHT, ["'Knight' -> 'Name'", "'Lost' -> 'Name'", "'A' -> 'Name'", "'Lot' -> 'Name'"])):
+    for rel, names in ((CANNON, ["Eradicator", "Royal"]), (KNIGHT, ["Knight", "Lost", "A", "Lot"])):
         old, new = _card(clone, rel)[0], str(tmp_path / Path(rel).name)
         before = PSDImage.open(old)
         texts = [layer for layer in before.descendants() if layer.kind == "type"]
-        parts = [layer.layer_id for layer in pe.PSDParser.title_parts(before, texts, card_name(rel))[0]]
+        title = pe.PSDParser.title_parts(before, texts, card_name(rel))[0]
+        parts = [layer.layer_id for layer in title]
         assert cs.rule_part_names(before, Path(rel).stem) is not None
-        assert cs.rename_titles(old, new, Path(rel).stem) == pairs
+        assert sorted(layer.name for layer in title if layer.name != "Name") == sorted(names)
+        for layer in title:                                                 # renamed so (the 11-08 pass)
+            layer.name = "Name"
+        pe.save_psd(before, new)
         after = PSDImage.open(new)
         texts = [layer for layer in after.descendants() if layer.kind == "type"]
         assert [layer.layer_id for layer in pe.PSDParser.title_parts(after, texts, card_name(rel))[0]] == parts
@@ -971,15 +982,15 @@ def test_a_split_titles_parts_named_name(clone, parser, tmp_path):
         assert cs.rule_part_names(after, Path(rel).stem) is None and cs.rule_name(after, Path(rel).stem) is None
         with pytest.raises(pe.Refused, match=f"split over {len(parts)} layers: edit each box on the website"):
             pe.name_layer(after, card_name(rel))
-        assert cs.rename_titles(new, str(tmp_path / "again.psd"), Path(rel).stem) == []
     psd = PSDImage.open(new)                                                # a box edit running into the next part refuses
     record = pe.card_parts(psd, rel, card_name(rel), parser)
     first = record["title"][0]
     with pytest.raises(pe.Refused, match=r"title part 1/4 .* would run into 'Lost', another part of the title"):
         pe.set_parts(psd, {str(first["id"]): {"text": "Knight\nKnight\nKnight"}}, record, str(clone / pe.FONTS_DIR),
                      card=card_name(rel), parser=parser, original=PSDImage.open(new))
-    king = PSDImage.open(_card(clone, "Creatures/Other/2 Stars/Stubborn_King.psd")[0])
-    assert cs.title_renames(king, "Stubborn_King") == []                   # its hidden 'Name copy' stays as it is
+    king = PSDImage.open(_card(clone, "Creatures/Other/2 Stars/Stubborn_King.psd")[0])     # its hidden 'Name copy': no part
+    texts = [layer for layer in king.descendants() if layer.kind == "type"]
+    assert {layer.name for layer in pe.PSDParser.title_parts(king, texts, "Stubborn King")[0]} == {"Name"}
 
 
 def test_a_title_named_after_the_card_outside_text(clone, parser):

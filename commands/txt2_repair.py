@@ -8,17 +8,13 @@ preview and stripped (psd_edit.save_psd), then checked (every story holds its la
 repaired stories changed, the rest of Txt2 and the other document blocks are the old bytes: psd_edit.gate_stories;
 every layer record and the image resources are the old bytes too).
 
-    python -m commands.txt2_repair <psd>... --out DIR
     repair(path, out_path) -> Repair; verify(old_path, new_path, stories) -> the changed stories
 
 Needs the psd-tools fork with sync_story (fix/txt2-sync); no Discord, network or config.
 """
-from argparse import ArgumentParser
 from dataclasses import dataclass, field
-from os import makedirs, remove, replace
+from os import remove, replace
 from os.path import basename, dirname, exists, join
-from sys import stderr
-from typing import Optional
 
 from psd_tools import PSDImage
 
@@ -33,16 +29,9 @@ from commands.psd_edit import Refused
 class Repair:
     """One PSD's repair."""
     path: str
-    out: str = ""                                   # the written PSD; "" when nothing was stale (or --check)
+    out: str = ""                                   # the written PSD; "" when nothing was stale
     stale: list = field(default_factory=list)       # (layer name, story text, layer text) as found
     stories: list = field(default_factory=list)     # indices of the stories rewritten
-
-
-# ========================
-# Helper Functions
-# ========================
-def _show(text: Optional[str]) -> str:
-    return repr(psd_edit.collapse(text))
 
 
 # ========================
@@ -108,42 +97,12 @@ def repair(path: str, out_path: str) -> Repair:
     return found
 
 
-def main(args: Optional[list] = None) -> int:
-    """The command line: one line per PSD; exit 2 when a PSD fails."""
-    parser = ArgumentParser(prog="python -m commands.txt2_repair",
-                            description="Rewrite the Txt2 stories a bake left stale to their layers' text (Photoshop "
-                                        "reads the story); nothing else changes.")
-    parser.add_argument("psd", nargs="+", help="PSD files")
-    parser.add_argument("--out", metavar="DIR", required=True, help="write the repaired PSDs here (same file names)")
-    options = parser.parse_args(args)
-    makedirs(options.out, exist_ok=True)
-    status = 0
-    for path in options.psd:
-        try:
-            result = repair(path, join(options.out, basename(path)))
-        except (Refused, ImportError, OSError, ValueError) as error:
-            print(f"{path}: failed: {error}", file=stderr)
-            status = 2
-            continue
-        if not result.stale:
-            print(f"{path}: in sync")
-            continue
-        found = "; ".join(f"{name} {_show(story)} -> {_show(own)}" for name, story, own in result.stale)
-        print(f"{path}: repaired {found} (stories {result.stories}) -> {result.out}")
-    return status
-
-
 # ========================
 # Module Exports
 # ========================
 __all__ = [
     'Repair',
-    'main',
     'repair',
     'sync_stories',
     'verify',
 ]
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

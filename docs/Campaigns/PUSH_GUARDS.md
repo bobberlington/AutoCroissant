@@ -423,7 +423,7 @@ PNGs that authors pushed was rejected: it would add a second blob for every push
 | R8 | Single-line composer on visible Ability, Name and stat text layers (L10) | **auto-fix, never told** (owner 2026-10-25: "auto fix this and not report it"; `card_standards.single_line`: TySh and the Txt2 story's key 29, gated byte for byte; since work/clean (2026-10-25) every such layer is set; box text whose fork Single-line layout inks a line under `LINE_IOU` 0.9 of the stored one rewraps: the layer is redrawn whole by the fork with the stored preview patched (`card_standards.redraw`, gated: only its pixels, rectangle, TySh and the preview change) and its PNG re-exported by guard 1's `png_export.export` (pushed PSD -> fixed one), a silent PNG write; when the PNG can't follow (no PNG that shows the PSD, a refusal) or the redraw fails a gate, the PSD lands set but not redrawn, plan.json only (so is a render or font failure); box text's fonts: the clone's MDW/Fonts, else only the files its faces look to be in, fetched (`FONT_FETCH_MAX` 12 a run); the guards' changes leave the composer out; only the commit message says "Single-line Composer on N cards") | cards | 0 | 0 (4 at 86733bd2: PoD08/09/10/12's Name) |
 | R9 | every type layer's Txt2 story holds its text (`psd_edit.stale_stories`) | **auto-fix** (`txt2_repair`) | cards | 6: Clot_White, PoD08MOAB, PoD09DDT, PoD10BFB, PoD12BAD, Springtrap | 6 (release step 4 and B2 plan them anyway) |
 | R10 | the PNG matches the PSD's composite (converted as voted) within the bar; with no stored image the fork's render, not past the floor, and a PNG gone back to an earlier picture where the PNG before showed the PSD (png_changes' rule, shown by one of its last 5 versions) is put back, silent (11-10); a PNG pushed with its PSD that skips the PSD's change (png_changes' rule over guard 1's export onto the PNG before, past the bar of it there) is made again as that export, silent (11-10), unless the PNG's own change is past the floor of it (kept, 11-11) | report, **commit comment only** (`TELL_PNG_MISMATCH = False`: beyond the owner's two rules, review 2) | every push that changes a PNG or a PSD with its PNG | 2: Dark_Mind_Eye, Kel | 2 (the owner's restore is pending) |
-| R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename is built and gated, 0 pixels; `card_standards.AUTO_FIX` adds it once the owner says yes, review 6) | 651 cards | 0 | 0 |
+| R11 | `Text/Ability`, `Text/Name` and the `Ability FX:` layers that key on them are named exactly so (case, outer spaces) | report (the rename built for it was deleted 2026-11-12, owner) | 651 cards | 0 | 0 |
 | R14 | card names in the ability text typed in their card's letter case (owner 2026-10-30): `card_standards.miscased_names`, text.js's rule of which words name a card (any of several words, a capitalised one, a lowercase one after its verb), the names from `db/stats.json` on the data branch (`card_guards.shown_cards`; no data, not checked) | report | every card | 9 cards (Gates of Ahn'Qiraj, Doctor Zomboss, Fawful, Mettaton, Nefarious Chip, Overseer, Papa Chip, Sans, Azamoth the Forgotten King) | 9 |
 | R15 | the ability's and title's text inside the card's edges (2026-11-04): `card_standards.rule_off_card`, the visible ability layers (`ability_layers`) and the Name layers (`PSDParser.title_parts`) through `psd_edit._ink_off_canvas` on Photoshop's stored pixels (a layer without them is not off); cut in the PNG and TTS | report, **new cards and regressions** (waived when the old blob had it, as R4) | every card | 1 of 813 at `a4d137bf` (PoD05Lead_Bloon's Ability) | 0 |
 
@@ -456,16 +456,14 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stal
 
 **6.3 The fixes and their gates.**
 - **What is fixed:** R9 only (`card_standards.AUTO_FIX`, the owner's "easy fixes only (today only R9 Txt2 sync)"),
-  0-pixel by construction, on the pushed blob, after the quiet window. R11's rename is built and gated below, but it is
-  told like any other issue until the owner adds it (review 6: it had been fixed, beyond the owner's rule).
+  0-pixel by construction, on the pushed blob, after the quiet window. R11 is told like any other issue (review 6: it
+  had been fixed, beyond the owner's rule; the rename was deleted 2026-11-12).
 - **Never fixed:** rule pages; when `CARD_GUARDS` is not `on`; the cards a hold names.
 - **R9:** `txt2_repair.repair` (the fork's `sync_story`) then `txt2_repair.verify`:
   - only the stale stories changed;
   - every story holds its layer's text and styles;
   - every layer record, the other document blocks, the image resources and the stored composite are the old bytes.
-- **R11 (once switched on):** the rename sets the Pascal name and `luni`, and renames the `<old> FX: ...` layers with it. Its byte proof is the
-  bake's `gate_bytes` with only `name` and `luni` allowed to change.
-- **Both:**
+- **Then:**
   - `gate_reparse`: the bot's parse of the fixed PSD equals the parse of the pushed one, so no data change and no changelog
     event;
   - the composite bytes are unchanged, so guard 1's PNG still holds;
@@ -815,8 +813,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
    ("like we do for fonts"), posts at once. The wait lets a refusal be withdrawn when the author pushes the PNG, leaves a
    card pushed again to the later push, and tells the writes that did not land. Since 2026-10-24 (decision 5) the wait is
    the environment `card-guards-quiet`'s 30-minute timer on the post job: no runner is held (section 20).
-3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261023` has `sync_story`. R11's exact-name rename is
-   built and gated but told, not fixed, until the owner says yes (`card_standards.AUTO_FIX`; 0 cases in the tree).
+3. **"Fix the easy issues" is R9 only** (6.3): the pin `cards-20261023` has `sync_story`. R11 is told, not fixed
+   (`card_standards.AUTO_FIX`; its exact-name rename was deleted 2026-11-12).
    Report mode tells everything, the PNGs the bot would make included.
 4. **Decided (rulings 2 and 3, 2026-10-22; decision 3, 2026-10-24): fonts in the standards channel, by font-check
    only.** font-check.yml posts there (`DISCORD_STANDARDS_WEBHOOK`, its role ping and wording kept); the guard told R7 in

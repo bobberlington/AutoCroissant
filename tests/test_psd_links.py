@@ -68,7 +68,7 @@ def test_names_and_classes():
 
     def entry(data, name, row=False):
         rgba = np.asarray(Image.open(BytesIO(data)).convert("RGBA"))
-        return {"uuid": name + str(row), "kind": "data", "blob": pl.git_blob(data), "ext": "png", "file": "", "size": len(data),
+        return {"uuid": name + str(row), "kind": "data", "blob": pl.git_blob(data), "ext": "png", "file": "",
                 "key": pl.ink_key(rgba), "look": pl.look_of(rgba), "layers": [{"name": name, "row": row}]}
     psds = [("Items/A.psd", [entry(files["Types/Stars/star.png"], "Star"), entry(_png(fire), "fire"),
                              entry(_png(old_fire), "Fire"), entry(_png(star.resize((20, 20))), "star", True),
@@ -109,7 +109,7 @@ def test_trim_map_on_star_of_beth(clone):
     catalogue = pl.assign([(rel, pl.items(psd, types.vocab()))], types, {})
     pl.fallback_names(catalogue, {})
     rows = catalogue["psds"][rel]
-    assert sorted(pl.CLASSES[r["class"]] for r in rows) == ["bytes", "ink", "ink", "ink", "linked", "new", "new"]
+    assert sorted(r["class"] for r in rows) == [pl.BYTES, pl.INK, pl.INK, pl.INK, pl.LINKED, pl.NEW, pl.NEW]
     done = pl.link_card(psd, rel, rows, files.get, set(files), pl.ppis_of(files.get))
     assert sorted(done.files) == ["MDW/Linked/Delta - Delta_sprite.psb", "MDW/Linked/Delta - The_Queen_bg.png"]
     assert not done.left and not done.redrawn and not done.notes

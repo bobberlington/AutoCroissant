@@ -1,8 +1,8 @@
 """
 card_standards (guard 2 of the push guards): the rules on real cards of the clone (as of 6e50c3ee, from its history; the counts of
 docs/Campaigns/PUSH_GUARDS.md section 6 per card, R3 and R4 without the template layout dropped 2026-10-23), the owner's
-waivers, "(new)" against the old blob, R4's new-card and regression cases, and the two 0-pixel fixes on copies: R11's
-rename (told until the owner adds it to AUTO_FIX; only the names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
+waivers, "(new)" against the old blob, R4's new-card and regression cases, and the 0-pixel fix on copies: R9's Txt2
+story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
 from io import BytesIO
@@ -181,56 +181,6 @@ def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
 # ========================
 # The fixes (copies)
 # ========================
-def test_r11_rename_changes_only_the_names(clone, context, tmp_path, monkeypatch):
-    monkeypatch.setattr(cs, "AUTO_FIX", ("R9", "R11"))
-    edited = _open(clone, MINI_DOOMER)
-    psd_edit.name_layer(edited).name = "NAME"
-    pushed = tmp_path / "pushed.psd"
-    edited.save(str(pushed), update_preview=False)
-    issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
-    (rule,) = [i for i in issues if i.code == "R11"]
-    assert rule.fix and rule.items == ("'NAME' -> 'Name'",) and rule not in cs.reported(issues)
-    parser = clone_vocabulary(str(clone)).parser()
-    fixed = cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work"), parser)
-    assert fixed.refused == [] and fixed.applied == [rule.line()] and fixed.data
-    out = tmp_path / "fixed.psd"
-    out.write_bytes(fixed.data)
-    reopened = PSDImage.open(str(out))
-    assert cs.inexact_names(reopened) == [] and psd_edit.name_layer(reopened).name == "Name"
-    assert not reopened.has_preview()                   # saved stripped (Maximize Compatibility off, owner 2026-11-07)
-    assert cs.rename(str(out), str(tmp_path / "again.psd")) == []                                  # idempotent
-
-
-def test_r11_refused_when_the_rename_changes_the_bots_reading(clone, context, tmp_path, monkeypatch):
-    """The parser misses an "ability " layer: the rename would change the card's data, so the reparse gate keeps it a
-    report (the bot never changes data on its own)."""
-    monkeypatch.setattr(cs, "AUTO_FIX", ("R9", "R11"))
-    edited = _open(clone, MINI_DOOMER)
-    psd_edit.ability_layer(edited).name = "ability "
-    pushed = tmp_path / "pushed.psd"
-    edited.save(str(pushed), update_preview=False)
-    issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
-    fixed = cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser())
-    assert fixed.applied == [] and [code for code, _ in fixed.refused] == ["R11"]
-    assert fixed.data == b"" or fixed.folders           # the folders stand on their own gate
-    assert "reparse" in fixed.refused[0][1]
-
-
-def test_r11_gate_refuses_any_other_change(clone, tmp_path, monkeypatch):
-    edited = _open(clone, MINI_DOOMER)
-    psd_edit.ability_layer(edited).name = "ability"
-    pushed = tmp_path / "pushed.psd"
-    edited.save(str(pushed), update_preview=False)
-    real = psd_edit.save_psd
-
-    def sneaky(psd, path):
-        psd_edit.name_layer(psd).visible = False            # a flag byte beyond the rename
-        real(psd, path)
-    monkeypatch.setattr(psd_edit, "save_psd", sneaky)
-    with pytest.raises(psd_edit.Refused, match="beyond its name"):
-        cs.rename(str(pushed), str(tmp_path / "out.psd"))
-
-
 def test_r9_story_sync_on_clot_white(clone, context, tmp_path):
     """The pushed blob, not the working tree: main's Txt2 repair (7b48db05) synced the live file, so the stale story is
     read from the commit before it."""
@@ -250,22 +200,23 @@ def test_r9_story_sync_on_clot_white(clone, context, tmp_path):
 
 
 def test_two_cards_of_one_key_fix_in_separate_files(tmp_path, monkeypatch):
-    """The process pool shares out/work: Same.psd in two folders, fixed at once (one inside the other's rename here),
+    """The process pool shares out/work: Same.psd in two folders, fixed at once (one inside the other's story sync here),
     keep their own bytes and leave no temporary behind."""
+    import commands.txt2_repair as txt2_repair
     calls = []
 
-    def rename(path, out):
+    def repair(path, out):
         calls.append(path)
         if len(calls) == 1:                                 # the other card's whole fix while this one is mid-way
-            other = cs.fix(b"B" * 1000, "Creatures/Other/Same.psd", [cs.Issue("R11", "x", fix=True)], str(tmp_path / "work"))
+            other = cs.fix(b"B" * 1000, "Creatures/Other/Same.psd", [cs.Issue("R9", "x", fix=True)], str(tmp_path / "work"))
             assert other.data == b"B" * 1000 + b"!"
         with open(path, "rb") as fh:
             data = fh.read()
         with open(out, "wb") as fh:
             fh.write(data + b"!")
-        return ["renamed"]
-    monkeypatch.setattr(cs, "rename", rename)
-    fixed = cs.fix(b"A" * 1000, "Items/Heal/2 Stars/Same.psd", [cs.Issue("R11", "x", fix=True)], str(tmp_path / "work"))
+        return SimpleNamespace(out=out)
+    monkeypatch.setattr(txt2_repair, "repair", repair)
+    fixed = cs.fix(b"A" * 1000, "Items/Heal/2 Stars/Same.psd", [cs.Issue("R9", "x", fix=True)], str(tmp_path / "work"))
     assert fixed.data == b"A" * 1000 + b"!" and fixed.refused == [] and len(set(calls)) == 2
     assert not list((tmp_path / "work").iterdir())
 
@@ -884,19 +835,6 @@ def test_normalise_sets_text_normal_and_strips(clone, tmp_path):
     assert again.data == b"" and again.normalised == []
 
 
-def test_a_widened_box_passes_the_gates(clone, tmp_path):
-    """K2's redo (fonts.widen, layer ids): Toy Bonnie's Ability box narrowed into its slack (proofs P1 c02: 396 to 394
-    pt), its own Txt2 frame with it, through normalise's gates."""
-    from psd_tools.composite.text.model import TextModel
-    from helpers import _card
-    rel = "Creatures/Fnaf/3 Stars/Toy_Bonnie.psd"
-    fonts = lambda names: str(clone / "MDW" / "Fonts")     # noqa: E731
-    fonts.widen = [321]
-    done = cs.normalise(_card(clone, rel)[0], str(tmp_path / "out.psd"), fonts, rel)
-    layer = next(x for x in PSDImage.open(tmp_path / "out.psd").descendants() if x.layer_id == 321)
-    assert "Ability" in done and not done.left and round(TextModel.from_layer(layer).box[2], 3) == 394.0
-
-
 def test_status_words_in_the_chart_colours(clone, context, tmp_path):
     """Owner 2026-11-07: a capitalised status word off the chart takes its colour and its FX layers the chart's style
     (Standstill's two Frozen In Time, cut again), and a styled one with no FX layer gets the chart's (Credit Card's
@@ -1039,12 +977,16 @@ def _linked_icons(monkeypatch):
 
 def test_folders_mid_images_icons(clone, tmp_path, monkeypatch):
     """Owner 2026-11-09: Armored Squit's linked type icon in the middle of images, crossing no ink, into Creature
-    Types, parse and picture the same; Hero Cap's two 'Mother' stars there are art (in Stars the parser would count 3
-    stars, not 1): not told, not moved."""
+    Types, parse and picture the same (its hidden Curves clipped to that folder gone first: the guards keep those);
+    Hero Cap's two 'Mother' stars there are art (in Stars the parser would count 3 stars, not 1): not told, not moved."""
     _linked_icons(monkeypatch)
     parser = clone_vocabulary(str(clone)).parser()
     rel = "Auxiliary/Minions/Armored_Squit.psd"
-    path = _card(clone, rel)[0]
+    psd = PSDImage.open(_card(clone, rel)[0])
+    for layer in [layer for layer in psd.descendants() if layer.name == "Curves [Types]"]:
+        layer.parent.remove(layer)
+    path = str(tmp_path / "in.psd")
+    psd.save(path)
     assert "'Offensive_Minion' in 'images'" in cs.folder_issues(PSDImage.open(path), rel, parser)
     done = cs.standard_folders(path, str(tmp_path / "out.psd"), rel, parser)
     types = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Creature Types")
@@ -1106,7 +1048,7 @@ def test_folders_refusals_read_once(clone, tmp_path, monkeypatch):
     parser = clone_vocabulary(str(clone)).parser()
     reads, real = [], cs.folder_reads
     monkeypatch.setattr(cs, "folder_reads", lambda *args: reads.append(args) or real(*args))
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser, isolated=False)
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
     why = [line for _, line in done.tried]
     assert not done and why.count(why[0]) == 5 and why[0].startswith("reparse") and len(reads) == 2
 
@@ -1149,17 +1091,6 @@ def test_folders_name_under_a_styled_text(clone, tmp_path):
     assert done.level == "template" and not done.left and "'Stat Txt' named 'Stat Text' in it" in done
     assert cs._plain(stat) and [l.name for l in stat] == ["Stat Text", "Name"] and stat[0].has_effects()
     assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), rel, parser)
-
-
-def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
-    """Mettaton EX's Gradient Map clipped to its stars folder: moved into Stars, Stars set Normal, every picture the
-    same (folders_gate, its blend and clip allowed)."""
-    rel = "Auxiliary/Creatures/Mettaton_EX.psd"
-    parser = clone_vocabulary(str(clone)).parser()
-    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), rel, parser)
-    stars = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Stars")
-    assert done.counts["folders isolated"] >= 1 and stars.blend_mode.name == "NORMAL"
-    assert any(l.kind == "gradientmap" and not l.clipping for l in stars)
 
 
 def test_folders_may_move_the_website_regions(clone, tmp_path):

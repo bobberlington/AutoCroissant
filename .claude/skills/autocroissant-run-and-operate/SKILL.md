@@ -466,8 +466,8 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11's exact-name rename is built but told
-until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
+card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11 is told,
+`card_standards.AUTO_FIX` (its exact-name rename was deleted 2026-11-12); R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`; since 2026-11-11 ONE post per push with the card check's and the font check's notes, by the

@@ -64,7 +64,7 @@ from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
 from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
 from psd_tools.terminology import Unit
 
-from commands.psd_regions import _ancestors, badge_layers, comp_names, placed_data
+from commands.psd_regions import badge_layers, comp_names, placed_data
 from global_config import EDITS_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
@@ -78,7 +78,6 @@ MAGIC = ((b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF8", "gif"), (b"8BP
          (b"8BPS\x00\x02", "psb"), (b"II*\x00", "tif"), (b"MM\x00*", "tif"), (b"%PDF", "pdf"))
 RASTER = ("png", "jpg", "gif", "webp")      # decoded by PIL; psd and psb by the fork's composite
 BYTES, INK, REDRAW, LINKED, NEW = 1, 2, 3, 4, 5
-CLASSES = {BYTES: "bytes", INK: "ink", REDRAW: "redraw", LINKED: "linked", NEW: "new"}
 MESH_TOL = 0.01                 # px: a warpCustom mesh this close to its quad's grid is no warp
 QUAD_TOL = 0.01                 # px: corners this close make an upright rectangle
 PPI_TOL = 0.01                  # a stored Rslt this close to its file's ppi is right
@@ -260,11 +259,6 @@ def kept_embedded(data: bytes) -> bool:
     except Exception:                       # unreadable contents: linked as any picture
         return False
     return any(kept_embedded(one) for one in nested)
-
-
-def _path(layer) -> str:
-    """The groups a layer sits in, outermost first ("Stars/5 stars")."""
-    return "/".join(group.name for group in reversed(list(_ancestors(layer))))
 
 
 def _items_of(psd: PSDImage) -> dict:
@@ -870,9 +864,8 @@ def items(psd: PSDImage, vocab=()) -> list:
     first layer, and each plain pixel layer in a star or type row (psd_regions.badge_layers: the header's).
 
     Returns:
-        [{"uuid", "kind" (data / external), "blob", "ext", "size", "file", "key" (ink_key or None), "look" (look_of or
-        None), "links" (an external item's path strings), "layers": [{"name", "id", "path", "visible", "row"}]}] then
-        [{"pixel": layer id, "name", "path", "key"}]
+        [{"uuid", "kind" (data / external), "blob", "ext", "file", "key" (ink_key or None), "look" (look_of or None),
+        "layers": [{"name", "row"}]}] then [{"pixel": layer id, "key"}]
     """
     stars, icons, _ = badge_layers(psd, vocab)
     rows = {id(layer) for layer in stars + icons}
@@ -887,8 +880,7 @@ def items(psd: PSDImage, vocab=()) -> list:
             bars.add(uid)
             continue
         entry = out.setdefault(uid, {"uuid": uid, "layers": []})
-        entry["layers"].append({"name": layer.name, "id": layer.layer_id, "path": _path(layer),
-                                "visible": layer.is_visible(), "row": id(layer) in rows})
+        entry["layers"].append({"name": layer.name, "row": id(layer) in rows})
     for uid in list(out):
         if uid in bars:                         # one item, a bar and a picture: it stays embedded with the bar
             del out[uid]
@@ -897,8 +889,7 @@ def items(psd: PSDImage, vocab=()) -> list:
         entry = out[uid]
         entry["file"] = _text(item.filename)
         if item.kind == LinkedLayerType.EXTERNAL:
-            entry.update(kind="external", size=item.filesize, blob=None, key=None, ext=file_type(b"", entry["file"]),
-                         links={_text(k): _text(v) for k, v in item.linked_file.items() if _text(k).endswith("Path")})
+            entry.update(kind="external", blob=None, key=None, ext=file_type(b"", entry["file"]))
             continue
         if item.kind != LinkedLayerType.DATA or kept_embedded(item.data or b""):
             del out[uid]
@@ -906,7 +897,7 @@ def items(psd: PSDImage, vocab=()) -> list:
         data = item.data or b""
         ext = file_type(data, entry["file"])
         rgba = decode(data, ext) if ext in RASTER else None
-        entry.update(kind="data", size=len(data), blob=git_blob(data), ext=ext, key=ink_key(rgba), look=look_of(rgba))
+        entry.update(kind="data", blob=git_blob(data), ext=ext, key=ink_key(rgba), look=look_of(rgba))
     pixels = []
     for layer in stars + icons:
         if layer.kind != "pixel":
@@ -914,11 +905,11 @@ def items(psd: PSDImage, vocab=()) -> list:
         own = layer.numpy()
         key = ink_key(np.clip(np.round(own * 255), 0, 255).astype(np.uint8)) if own is not None and own.shape[2] >= 4 else None
         if key is not None:
-            pixels.append({"pixel": layer.layer_id, "name": layer.name, "path": _path(layer), "key": key})
+            pixels.append({"pixel": layer.layer_id, "key": key})
     return list(out.values()) + pixels
 
 
-def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = None) -> dict:
+def assign(psds: list, types: TypesIndex, linked: dict) -> dict:
     """
     Every item's class and target in catalogue order (PLAN 5.1: cards by repo path, then MDW/Unfinished, then
     MDW/Templates; "first user" is first in it). An item takes the most cautious class its layers allow: a name-only
@@ -929,8 +920,6 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
         psds: [(repo path, items())] in catalogue order
         types: TypesIndex
         linked: {MDW/Linked path: blob} at the base (Croissant's names kept, Q1)
-        kept: An earlier catalogue's new files (the per-batch re-check): their names stay, unless main now holds the
-            same bytes under another name (that file is used and the unlanded name dropped)
 
     Returns:
         {"psds": {rel: [entry + {"class", "target"}]}, "files": {new path: {"blob", "first", "ext"}}}
@@ -940,11 +929,6 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
         by_blob.setdefault(blob, path)
     taken = {basename(path).casefold() for path in linked}
     files, out, made = {}, {}, set()
-    for path, info in (kept or {}).items():
-        if info["blob"] not in by_blob and basename(path).casefold() not in taken and not info.get("fallback"):
-            by_blob[info["blob"]] = path
-            taken.add(basename(path).casefold())
-            files[path] = {key: info[key] for key in ("blob", "first", "ext")}
 
     def new_file(entry: dict, rel: str) -> str:
         path = by_blob.get(entry["blob"])
@@ -983,18 +967,13 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
     return {"psds": out, "files": files}
 
 
-def fallback_names(catalogue: dict, linked: dict, kept: Optional[dict] = None) -> None:
+def fallback_names(catalogue: dict, linked: dict) -> None:
     """A fallback file name for every class 2 or 3 item still without one: the name its exact copy takes (dedupe by blob
-    first; kept: an earlier catalogue's fallback names stay), registered in the catalogue's files like a new one."""
+    first), registered in the catalogue's files like a new one."""
     by_blob = {info["blob"]: path for path, info in catalogue["files"].items()}
     for path, blob in linked.items():
         by_blob.setdefault(blob, path)
     taken = {basename(p).casefold() for p in list(linked) + list(catalogue["files"])}
-    for path, info in (kept or {}).items():
-        if info.get("fallback") and info["blob"] not in by_blob and basename(path).casefold() not in taken:
-            by_blob[info["blob"]] = path
-            catalogue["files"][path] = dict(info)
-            taken.add(basename(path).casefold())
     for rel, rows in catalogue["psds"].items():
         for entry in rows:
             if entry.get("class") in (INK, REDRAW) and not entry.get("fallback") and "pixel" not in entry:

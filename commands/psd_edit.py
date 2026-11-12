@@ -3876,22 +3876,6 @@ def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[i
     return np.ascontiguousarray(rgba[..., :3]), np.ascontiguousarray(rgba[..., 3])
 
 
-def place_bar(layer, box: tuple) -> None:
-    """A layer-comp bar's placed transform set to box (x0, y0, x1, y1): moved there and, unlike the template's, resized."""
-    x0, y0, x1, y1 = (float(v) for v in box)
-    corners = (x0, y0, x1, y0, x1, y1, x0, y1)
-    for key in PLACED[:2]:
-        data = layer.tagged_blocks.get_data(key) if key in layer.tagged_blocks else None
-        for name in (b"Trnf", b"nonAffineTransform"):
-            for value, new in zip(data.data.get(name, ()) if data is not None else (), corners):
-                value.value = new
-    for key in PLACED[2:]:
-        data = layer.tagged_blocks.get_data(key) if key in layer.tagged_blocks else None
-        if data is not None:
-            data.transform = corners
-    layer._psd.mark_updated()
-
-
 def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1) -> Edit:
     """
     A stat on a creature's layer-comp bar (comp_row): its chosen comp (SoLd "comp") set to the comp named str(value) and
@@ -10410,7 +10394,7 @@ def _story_font_name(entry) -> str:
 
 
 def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
-                 links=(), also: frozenset = frozenset(), frames=(), relinked=()) -> list:
+                 links=(), also: frozenset = frozenset(), relinked=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -10430,7 +10414,6 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
         links: uuids of the links the edits added (made type icons): lnkE is the old items and those, appended
         also: Other document blocks (keys) that may change: the link step's (card_standards.normalise)
-        frames: TextIndex of each edited layer whose box was resized (set_text_box): its own Txt2 frames may change
         relinked: uuids of the links the edits rewrote (Edit.relinked): lnkE the old items, those changed only in
             their file's size and contentID
 
@@ -10492,10 +10475,6 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         trimmed = _story_fonts(root_b)
         while len(trimmed) > len(faces_a):
             trimmed.pop()
-    if frames:                                  # the resized boxes' own frames left out of both
-        root_a, root_b = _frames_out(root_a, frames), _frames_out(root_b, frames)
-        objects_a, objects_b = _story_list(root_a)[0], _story_list(root_b)[0]
-        items_a, items_b = _story_list(root_a)[2], _story_list(root_b)[2]
     rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
             + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
@@ -11577,20 +11556,6 @@ def _drop_story(psd: PSDImage, index: int) -> list:
     return moved
 
 
-def _frames_out(root, indices):
-    """A copy of a Txt2 root with the frames only these stories use blanked (gate_stories' frames)."""
-    from psd_tools.api import text_edit
-    from psd_tools.psd import engine_data
-    root = deepcopy(root)
-    keys, items = _story_keys(root)
-    own = {i for index in indices for i in text_edit._frame_refs(items[index], keys)}
-    shared = {i for k, story in enumerate(items) if k not in set(indices) for i in text_edit._frame_refs(story, keys)}
-    frames = text_edit._resource_items(root, keys, keys.frame_set)
-    for i in own - shared:
-        frames[i] = engine_data.Dict()
-    return root
-
-
 def _drop_story_in(root, keys, items, index: int) -> None:
     """_drop_story's Txt2 part, on any root (gate_stories replays it on the old card's)."""
     from psd_tools.api import text_edit
@@ -11834,10 +11799,10 @@ def set_text_font(layer, font: str, size: float, leading: float) -> None:
     layer.set_span_style(0, len(layer.text), **keys)
 
 
-def set_text_box(layer, box: tuple, pixels: bool = True) -> None:
+def set_text_box(layer, box: tuple) -> None:
     """
     A paragraph type layer's box moved and sized to box (x0, y0, x1, y1, canvas px; the transform's scale kept): the
-    TySh transform and the record (its pixels and fxrp follow, unless pixels is False: the glyphs stay), BoxBounds, the
+    TySh transform and the record (its pixels and fxrp follow), BoxBounds, the
     TySh bounds, and the Txt2 frame's Bezier (its points scaled, Photoshop's order kept) and its frame and region
     strikes, which must agree (+ability, §4.7). Point text raises Refused.
     """
@@ -11854,8 +11819,7 @@ def set_text_box(layer, box: tuple, pixels: bool = True) -> None:
     was = [float(v) for v in child["Cookie"]["Photoshop"]["BoxBounds"]]
     sx, sy = w / ((was[2] - was[0]) or 1.0), h / ((was[3] - was[1]) or 1.0)
     layer._data.transform = (xx, xy, yx, yy, tx + dx, ty + dy)
-    if pixels:
-        layer.left, layer.top = layer.left + dx, layer.top + dy       # the fork carries fxrp along
+    layer.left, layer.top = layer.left + dx, layer.top + dy           # the fork carries fxrp along
     child["Cookie"]["Photoshop"]["BoxBounds"] = engine_data.List([f(0), f(0), f(w), f(h)])
     bounds = layer._data.text_data[b"bounds"]
     for key, value in ((b"Rght", w), (b"Btom", h)):

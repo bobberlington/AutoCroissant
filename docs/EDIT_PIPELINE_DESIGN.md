@@ -393,8 +393,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (TySh only) reverted when the card was opened (`B.F.B.` -> `B.F.B`). The fork's `set_text`/`set_span_style` now write the
    story too (`fix/txt2-sync`; Photoshop redoes the story's glyph layout itself); gate `bytes` also holds `gate_stories`:
    every story holds its layer's text, only the edited layers' stories changed, the rest of Txt2 and every other
-   document-wide block are the old bytes. A card that already has a stale story is refused `unsupported-card` until
-   `python -m commands.txt2_repair` rewrites it; a fork without `TypeLayer.sync_story` edits no text (transient error).
+   document-wide block are the old bytes. A card that already has a stale story has it synced by the bake itself
+   (`txt2_repair.sync_stories`, owner 2026-10-24: repaired, not refused); a fork without `TypeLayer.sync_story` edits no
+   text (transient error).
    The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
    character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
    that already differs is refused `unsupported-card`). Kerning too (B12, 2026-10-25), but never refused: an edited

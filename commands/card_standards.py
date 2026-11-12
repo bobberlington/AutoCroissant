@@ -12,8 +12,7 @@ split over several layers is standard (owner 2026-11-08: every part named Name, 
 suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
 duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only); R15 the
 ability's or title's text run off the card's edge (report only; existing cards waived as R4).
-R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
-and gated but reported until the owner says yes (AUTO_FIX). The pixel fixes (PIXEL_FIXES,
+R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported (AUTO_FIX). The pixel fixes (PIXEL_FIXES,
 silent, owner 2026-10-25) run on every card, in this order: badges laid out at older widths laid out again
 (relay_badges), straight apostrophes, icon font glyphs Photoshop drew with an older font drawn again (never one whose
 advance moved: relay_badges'), badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
@@ -35,12 +34,11 @@ before the composer, the folders as the templates' (standard_folders, owner 2026
 order (an order alone too), loose layers and extra folders in their folder (Overlay Text and Overlay where Text, Stat
 Text and Name or images would change their look), hidden Curves and nested star and type folders gone, at the first
 FOLDER_LEVELS level whose card renders and reads as before (folders_gate), then linked icons in the middle of images
-into their folder (mid_icons, gated alone; star icons that are art stay, untold: art_icons); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the
-guards do not).
+into their folder (mid_icons, gated alone; star icons that are art stay, untold: art_icons); no PNG follows.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
-    normalise(path, out_path, fonts, rel) -> Normalised           the big pass's rewrite (fix(only="normalise"))
+    normalise(path, out_path, fonts, rel) -> Normalised           the guards' convert step (fix(only="normalise"))
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
     standard_folders(path, out_path, rel, parser) -> Foldered    the templates' folders, gated
@@ -81,16 +79,15 @@ from commands.psd_regions import STATS as STAT_PATTERNS, _ancestors, clip, comp_
 SCOPE = ("creature", "aux creature", "minion", "item", "aux item", "nme")   # the ledger's 651
 STARS_KINDS = ("minion", "aux item", "nme")     # stars drawn from a Stars group (L14)
 EXACT = {"ability": "Ability", "name": "Name"}  # R11: Text/Ability, Text/Name
-FIXABLE = ("R9", "R11")                         # 0-pixel by construction, gated: what fix() can do
+FIXABLE = ("R9",)                               # 0-pixel by construction, gated: what fix() can do
 AUTO_FIX = ("R9",)                              # what the bot fixes: the owner's "easy fixes only (today only R9 Txt2
-                                                # sync)", 2026-10-22; R11 is told until the owner adds it
+                                                # sync)", 2026-10-22; R11 is told
 SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of the pushed one
 COMPOSER_LAYERS = ("ability", "name", "health", "attack", "defense", "speed")   # R8: visible ones set Single-line
 TXT2_COMPOSER = psd_edit.COMPOSER_KEY           # Txt2's EveryLineComposer (Photoshop CC's numbered keys)
 LINE_IOU = 0.9                                  # R8 box text: a line rewraps under it (each line's ink, the fork's
                                                 # Single-line layout vs the stored; matches 0.94-1.0, a moved word 0.04-0.34)
 LINE_PAD = 2                                    # px around a line's box
-NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
     "R2": {"cards": {"tainted lazarus"}, "why": "its header icon (2026-10-22)"},
     "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix",
@@ -565,31 +562,6 @@ def rule_part_names(psd: PSDImage, card: str) -> Optional[Issue]:
                         f"{'it' if len(pairs) == 1 else 'them'}): rename {', '.join(pairs)}", pairs, discord=False)
 
 
-def title_renames(psd: PSDImage, card: str) -> list:
-    """R11's title renames (owner 2026-11-08: a split title's parts all named Name): [(layer, name)] for each title
-    part (PSDParser.title_parts, in every picture) not named Name, its variant tag kept, and the FX layers on it."""
-    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    pictures = variants_of(psd)
-    found: dict = {}
-    for n in (pictures if len(pictures) > 1 else [None]):
-        with variant_view(psd, n):
-            for layer in PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]:
-                base, tags = layer_tag(layer.name)
-                if base.strip() != "Name" and id(layer) not in found:
-                    found[id(layer)] = (layer, "Name" + (layer.name[len(base):] if tags is not None else ""))
-    out = list(found.values())
-    for layer, target in list(out):             # its FX layers, as the parser pairs them
-        for fx in psd_edit.fx_layers(psd, layer):
-            out.append((fx, target + EFFECT_LAYER_TAG + fx.name.partition(EFFECT_LAYER_TAG)[2]))
-    return out
-
-
-def rename_titles(path: str, out_path: str, card: str) -> list:
-    """title_renames saved without a new preview; gated as rename(): only the renamed records' names change."""
-    psd = PSDImage.open(path)
-    return _renamed(psd, path, out_path, title_renames(psd, card))
-
-
 def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
     """
     R12, variant tags (' #2', ' #2,3': PARTS_EDITOR.md §9): a #0, an FX layer's (ignored), a tag past the pictures, a
@@ -654,7 +626,7 @@ def rule_names(psd: PSDImage) -> Optional[Issue]:
     if not renames:
         return None
     pairs = tuple(f"{layer.name!r} -> {target!r}" for layer, target in renames)
-    return Issue("R11", f"layer names to correct: {', '.join(pairs)}", pairs, fix="R11" in AUTO_FIX)
+    return Issue("R11", f"layer names to correct: {', '.join(pairs)}", pairs)
 
 
 # ========================
@@ -875,15 +847,6 @@ def reported(issues: list) -> list:
     return [issue for issue in issues if not issue.waived and not issue.fix]
 
 
-def _records_except_names(path: str) -> list:
-    """layer_records with the name and luni left out (R11's byte proof)."""
-    out = []
-    for record in psd_edit.layer_records(path):
-        out.append({**{k: v for k, v in record.items() if k != "name"},
-                    "blocks": tuple((key, data) for key, data in record["blocks"] if key != NAME_BLOCK)})
-    return out
-
-
 def _same_document(old: PSDImage, new: PSDImage) -> Optional[str]:
     """The part of the document other than the layer records that changed (the merged image's strip is none), or None."""
     part = psd_edit.changed_part(old, new)
@@ -892,41 +855,6 @@ def _same_document(old: PSDImage, new: PSDImage) -> Optional[str]:
     if psd_edit._document_blocks(old) != psd_edit._document_blocks(new):
         return "document blocks"
     return None
-
-
-def rename(path: str, out_path: str) -> list:
-    """
-    R11: rename the inexact layers and save without a new preview; gated: only the renamed records' names change.
-
-    Returns:
-        The renames ("old -> new"); raises Refused("bytes")
-    """
-    psd = PSDImage.open(path)
-    return _renamed(psd, path, out_path, inexact_names(psd))
-
-
-def _renamed(psd: PSDImage, path: str, out_path: str, renames: list) -> list:
-    """Rename [(layer, name)] and save without a new preview; gated: only the renamed records' names change."""
-    if not renames:
-        return []
-    indices = set()
-    records = psd._record.layer_and_mask_information.layer_info.layer_records
-    for layer, target in renames:
-        indices.add(next(i for i, record in enumerate(records) if record is layer._record))
-        layer.name = target
-    psd_edit.save_psd(psd, out_path)
-    old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
-    if len(old_records) != len(new_records):
-        raise Refused("bytes", "layer count changed")
-    names = [i for i, (a, b) in enumerate(zip(old_records, new_records)) if a["name"] != b["name"]]
-    if set(names) != indices:
-        raise Refused("bytes", f"renamed records {names}, expected {sorted(indices)}")
-    if _records_except_names(path) != _records_except_names(out_path):
-        raise Refused("bytes", "a layer record changed beyond its name")
-    part = _same_document(PSDImage.open(path), PSDImage.open(out_path))
-    if part:
-        raise Refused("bytes", f"{part} changed")
-    return [f"{a['name']!r} -> {b['name']!r}" for i, (a, b) in enumerate(zip(old_records, new_records)) if i in indices]
 
 
 def _folders_in(data: bytes, rel: str, parser: Optional[PSDParser] = None) -> bool:
@@ -956,13 +884,9 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
     for issue in sorted(wanted, key=lambda i: FIXABLE.index(i.code)):
         out = join(folder, f"{issue.code}.psd")
         try:
-            if issue.code == "R11":
-                if not rename(current, out):
-                    continue
-            else:
-                done = repair(current, out)
-                if not done.out:
-                    continue
+            done = repair(current, out)
+            if not done.out:
+                continue
         except (Refused, ImportError, ValueError) as error:
             result.refused.append((issue.code, str(error)))
             continue
@@ -989,7 +913,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
     if folders:                                 # the templates' folders (owner 11-09): silent, no PNG
         out = join(folder, "folders.psd")
         try:
-            done = standard_folders(base, out, rel, parser, isolated=False)
+            done = standard_folders(base, out, rel, parser)
         except Exception as error:              # best effort, never told
             result.pixel_left.append(("folders", f"{type(error).__name__}: {error}"))
         else:
@@ -1048,7 +972,7 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: O
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
         fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, skip: tuple = ()) -> Fixed:
     """
-    The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, the folders (standard_folders,
+    The fixable issues of one PSD (R9 story syncs), each gated, the folders (standard_folders,
     with a parser), then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
     refusal leaves that fix out (and reports it). Box text that rewraps is
@@ -2511,8 +2435,6 @@ SCRIPT_RATIOS = {1: ("SuperscriptSize", "SuperscriptPosition"),   # FontBaseline
                  2: ("SubscriptSize", "SubscriptPosition")}
 SCRIPT_DEFAULT = (0.583, 0.333)  # a ResourceDict without them: Photoshop's size and position
 AUTO_LEADING = 1.2          # a paragraph's AutoLeading when its sheets set none
-BOX_LO, BOX_HI, BOX_TIGHT = 0.003, 0.018, 1.02   # the box-width rule (a redo): room past the widest line and before
-                                                 # the next word; a box this tight keeps its width
 
 
 def _runs(layer):
@@ -2576,13 +2498,12 @@ def script_plan(layer) -> list:
     return out
 
 
-def to_normal(layer, fonts, widen: bool = False) -> Optional[str]:
+def to_normal(layer, fonts) -> Optional[str]:
     """
     One layer's sub and superscript runs set normal in place (TySh and the Txt2 story, its stale story synced first;
     the stored pixels stay). Box text also rises by d, how far its first baseline moves when those runs shrink (it sits
-    one ascent of the line's largest run below the box top), on every run; widen: the box-width rule too (a redo, when
-    Photoshop re-breaks the converted box). Checked: the fork lays every glyph where it was (psd_edit.GLYPH_TOL; proofs
-    P1: 225 of 225 layers).
+    one ascent of the line's largest run below the box top), on every run. Checked: the fork lays every glyph where it
+    was (psd_edit.GLYPH_TOL; proofs P1: 225 of 225 layers).
 
     Args:
         fonts: The fork's FontMap (psd_edit.layout_fonts)
@@ -2610,63 +2531,8 @@ def to_normal(layer, fonts, widen: bool = False) -> Optional[str]:
             for run in _runs(layer).runs:
                 if run.end > run.start:
                     layer.set_span_style(run.start, run.end, BaselineShift=run.style.baseline_shift - rise)
-        if widen:
-            _fit_box(layer, fonts)
     moved = not psd_edit.same_places(before, psd_edit.glyph_places(layer, fonts), psd_edit.GLYPH_TOL)
     return "its glyphs would move" if moved else None
-
-
-def _slack(layer, fonts) -> Optional[tuple]:
-    """(lo, hi): the fork breaks the box's lines the same for any width in [lo, hi) (lo the widest line, hi the
-    narrowest line plus its next word); None for a line it compresses or breaks inside a word, or no box."""
-    from psd_tools.composite.text.compose import break_lines
-    from psd_tools.composite.text.layout import frame, pieces
-    from psd_tools.composite.text.shape import shape_piece
-    model = _runs(layer)
-    box = frame(model)
-    if model.shape != 1 or box is None:
-        return None
-    text, lo, hi, aligned = model.text, 0.0, float("inf"), set()
-    for piece in pieces(model):
-        paragraph = model.paragraphs[piece.paragraph]
-        shaped = shape_piece(text, piece.start, piece.end, model.runs, fonts, sub_size=model.sub_size,
-                             tab_width=paragraph.tab_width)
-        lines = break_lines(text, piece.start, piece.end, shaped.measure, sorted(shaped.space_adv), box[2],
-                            paragraph.justification, None)
-        for k, line in enumerate(lines):
-            if line.decision in ("compress", "break"):
-                return None
-            if line.end > line.start:
-                aligned.add(paragraph.justification)
-                lo = max(lo, shaped.measure(line.start, line.end))
-            if line.decision == "fit" and k + 1 < len(lines):
-                j = lines[k + 1].start
-                while j < lines[k + 1].end and text[j] not in " \t":
-                    j += 1
-                hi = min(hi, shaped.measure(line.start, j))
-    return (lo, hi, aligned) if lo and hi != float("inf") else None
-
-
-def _fit_box(layer, fonts) -> None:
-    """The box-width rule (proofs P1, a redo only): a box width W' in the slack, max(lo (1 + BOX_LO), min(W,
-    hi / (1 + BOX_HI))), W kept when hi / lo < BOX_TIGHT; whole px, the side the paragraphs align to kept. Rotated or
-    offset boxes and mixed alignment keep theirs."""
-    found = _slack(layer, fonts)
-    model = _runs(layer)
-    xx, xy, yx, _, _, _ = model.transform
-    if found is None or abs(xy) > 1e-6 or abs(yx) > 1e-6 or any(abs(v) > 1e-6 for v in model.box[:2]):
-        return
-    lo, hi, aligned = found
-    if len(aligned) != 1 or not aligned <= {0, 1, 2} or hi / lo < BOX_TIGHT:
-        return
-    _, _, width, height = model.box
-    side = next(iter(aligned))
-    step = 2 if side == 2 else 1                 # centred: a px each side
-    n = round((width - max(lo * (1 + BOX_LO), min(width, hi / (1 + BOX_HI)))) * xx / step)
-    if n:
-        x0, y0 = model.transform[4] + {0: 0, 1: n * step, 2: n}[side], model.transform[5]
-        psd_edit.set_text_box(layer, (x0, y0, x0 + (width - n * step / xx) * xx, y0 + height * model.transform[3]),
-                              pixels=False)
 
 
 NORMAL_NOTE = "The {name} text still has subscript or superscript in it: set it to normal text in Photoshop."   # note
@@ -2705,41 +2571,31 @@ def _layout_fonts(fonts, layer):
 
 def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     """
-    The big pass's rewrite, in one save (owner 2026-11-07): the held cards' bars lined up (fonts.held(psd, rel), the
-    sweep's alone), sub and superscript text set normal (to_normal; widened boxes: fonts.widen, layer ids; none with
-    fonts.keep_text, the reason: the sweep's fallback), the pictures linked (the link step, _links()), the merged image
-    stripped (psd_edit.save_psd). Gated: the converted layers' records changed in TySh alone, the stories by
-    gate_stories (a widened box's own frames too), every other layer as it was (but the link step's), no smart-object
-    document left without a layer.
+    The guards' convert step, in one save (the big pass's rewrite, owner 2026-11-07): sub and superscript text set
+    normal (to_normal), the pictures linked (the link step, _links()), the merged image stripped (psd_edit.save_psd).
+    Gated: the converted layers' records changed in TySh alone, the stories by gate_stories, every other layer as it
+    was (but the link step's), no smart-object document left without a layer.
 
     Returns:
         Normalised; empty when there was nothing to do (nothing written)
     """
-    widen, kept = set(getattr(fonts, "widen", ())), getattr(fonts, "keep_text", "")
     psd, failed = PSDImage.open(path), {}
     texts = script_layers(psd)
-    if kept:                                    # 5.2 step 9: the text left as it is (kept: why)
-        failed = {layer.layer_id: (layer.name.strip(), kept) for layer in texts}
-        texts = []
     for layer in texts:
-        why = to_normal(layer, _layout_fonts(fonts, layer), layer.layer_id in widen)
+        why = to_normal(layer, _layout_fonts(fonts, layer))
         if why:
             failed[layer.layer_id] = (layer.name.strip(), why)
     if failed:                                  # opened again: the layers that would move stay as they are
         psd = PSDImage.open(path)
         texts = [layer for layer in script_layers(psd) if layer.layer_id not in failed]
         for layer in texts:
-            to_normal(layer, _layout_fonts(fonts, layer), layer.layer_id in widen)
+            to_normal(layer, _layout_fonts(fonts, layer))
     texts = [layer for layer in texts if layer.layer_id not in failed]
     done = Normalised(layer.name.strip() for layer in texts)
     done.left = [f"{name}: {why}" for name, why in failed.values()]
     names = list(dict.fromkeys(name for name, _ in failed.values()))
     done.notes = [NORMAL_NOTE.format(name=", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0])
                   ] if names else []                # one sentence a card (owner 11-07)
-    held = getattr(fonts, "held", None)
-    bars = held(psd, rel) if held is not None else []
-    done += bars
-    done.notes += getattr(bars, "notes", [])
     linked = _links().link(psd, rel, fonts)
     done += linked
     done.files.update(linked.files)
@@ -2753,15 +2609,13 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     psd_edit.save_psd(psd, out_path)
     stories = {layer.layer_id: psd_edit.story_index(layer) for layer in texts}
     _normal_gate(path, out_path, {psd_edit._record_index(layer) for layer in texts},
-                 [i for i in stories.values() if i is not None], bool(linked or bars),
-                 [i for lid, i in stories.items() if lid in widen and i is not None])
+                 [i for i in stories.values() if i is not None], bool(linked))
     return done
 
 
-def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bool, boxes: list = ()) -> None:
-    """normalise()'s gate: the text records changed in TySh alone, every other record as it was unless the link or
-    held-bar steps ran (others: theirs are checked by the pass's own links check), the document but its merged image,
-    the stories (gate_stories, the link blocks free when others; boxes: the widened stories, their frames free), no
+def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bool) -> None:
+    """normalise()'s gate: the text records changed in TySh alone, every other record as it was unless the link step
+    ran (others), the document but its merged image, the stories (gate_stories, the link blocks free when others), no
     orphaned smart-object document; Refused("bytes")."""
     old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
     if len(old_records) != len(new_records):
@@ -2780,7 +2634,7 @@ def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bo
     part = psd_edit.changed_part(before, after, ("header", "color_mode_data", "image_resources"))
     if part:
         raise Refused("bytes", f"{part} changed")
-    psd_edit.gate_stories(before, after, stories, also=LINK_BLOCKS if others else frozenset(), frames=boxes)
+    psd_edit.gate_stories(before, after, stories, also=LINK_BLOCKS if others else frozenset())
     if _orphan_links(after) - _orphan_links(before):    # Photoshop 2023 won't open a file holding them
         raise Refused("bytes", "a smart object's document is left with no layer using it")
 
@@ -3439,21 +3293,16 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
 
 
 # ========================
-# Folders (owner 2026-11-09): every card's and template's folders as the templates' (names, colours, order; loose
+# Folders (owner 2026-11-09): every card's folders as the templates' (names, colours, order; loose
 # layers and extra folders in their folder by role; text kept off a styled Text or Stat Text and Name in Overlay Text,
 # or under a styled Text in a plain Stat Text and Name around the styled one; art drawn over other folders in Overlay;
-# hidden Curves gone; nested star and type folders flattened; adjustments clipped to a folder moved into it, the folder
-# isolated), only where every picture renders and the bot reads the card as before (folders_gate); silent, as the
-# composer
+# hidden Curves gone; nested star and type folders flattened), only where every picture renders and the bot reads the
+# card as before (folders_gate); silent, as the composer
 # ========================
 _C = SheetColorType
 FOLDER_TYPES = {"creature": "Creature Types", "aux creature": "Creature Types", "minion": "Creature Types",
                 "item": "Item Types", "aux item": "Item Types", "field": "Item Types", "nme": "Item Types",
                 "status": "Status Effect Symbols"}  # the templates' type folder per class
-FOLDER_TEMPLATES = {"Creature_Template": "Creature Types", "2_Creature_Template": "Creature Types",
-                    "3_Creature_Template": "Creature Types", "Raid_Boss_Template": "Creature Types",
-                    "Item_Template": "Item Types", "ActiveItem_Template": "Item Types",
-                    "Status_Effect_Template": "Status Effect Symbols"}   # MDW/Templates' own (owner 2026-11-09)
 FOLDER_ORDER = ("images", "stars", "types", "bars", "text", "overlay text", "overlay")   # bottom to top (Overlay: where
                                                 # its art keeps the picture, above what it was drawn over)
 FOLDER_NAMES = {"images": "images", "stars": "Stars", "bars": "Stats Bars", "text": "Text", "overlay text": "Overlay Text",
@@ -3489,9 +3338,7 @@ def _key(name: str) -> str:
 
 
 def folder_kind(rel: str) -> Optional[str]:
-    """The card's or template's type folder name (FOLDER_TYPES, FOLDER_TEMPLATES); None for any other PSD."""
-    if rel.startswith("MDW/Templates/") and rel.count("/") == 2:
-        return FOLDER_TEMPLATES.get(basename(rel)[:len(basename(rel)) - 4])
+    """The card's type folder name (FOLDER_TYPES); None for any other PSD."""
     return FOLDER_TYPES.get(kind_of(rel))
 
 
@@ -3937,8 +3784,7 @@ def _around_stat(text, stat, moving: list, done: list, counts: Counter) -> None:
     stat.name = "Stat Text"
 
 
-def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True,
-            art: frozenset = frozenset()) -> tuple:
+def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", art: frozenset = frozenset()) -> tuple:
     """
     The card's folders as the templates' (FOLDER_ORDER, FOLDER_NAMES, FOLDER_COLOURS), in place.
 
@@ -3950,7 +3796,6 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
             role's layers next to its folder folded in, none into a folder with effects, a mask or another blend, the
             folders in the templates' order); kept (as plain, the folders where they are); names (no layer out of its
             folder); bare (names, colours, deletions and nests alone); colours (colours and hidden Curves alone)
-        proven: hidden Curves clipped to a folder go too (hidden_curves' on_groups: a sweep proven in Photoshop)
         art: layer ids of star icons that are art (art_icons): they stay where they are
 
     Returns:
@@ -3961,7 +3806,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
     if type_name is None:
         return done, counts
     names = {**FOLDER_NAMES, "types": type_name}
-    for layer in hidden_curves(psd, proven):
+    for layer in hidden_curves(psd, False):
         layer.parent.remove(layer)
         done.append(f"hidden {layer.name!r} deleted")
         counts["hidden curves"] += 1
@@ -4175,16 +4020,14 @@ def _by_id(psd: PSDImage) -> dict:
 
 
 def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict] = None,
-                 allow: Optional[dict] = None, spots: bool = False, memo: Optional[dict] = None) -> dict:
+                 spots: bool = False, memo: Optional[dict] = None) -> dict:
     """
-    Gate: every layer's record as it was (a folder's name and colour aside; allow: layer id -> the record parts that
-    may change too, an isolated folder's blend and the clips moved into it), gone only a hidden Curves layer or a
+    Gate: every layer's record as it was (a folder's name and colour aside), gone only a hidden Curves layer or a
     folder whose layers stay, new only plain folders, no smart object's data left unused; every picture renders
     within FOLDER_TOL and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
     may change; spots: the bake's star and type spots too, which follow the stars filed in Stars). Raises Refused;
     returns base's reads (made when None; memo["base"] keeps them, a refusal too).
     """
-    allow = allow or {}
     before, after = PSDImage.open(path), PSDImage.open(out_path)
     if _orphan_links(after) - _orphan_links(before):
         raise Refused("bytes", "a smart object's embedded document is left with no layer using it")
@@ -4202,10 +4045,8 @@ def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Op
                 continue
             keys = {k for k in a if a[k] != b[k]}
             blocks = {key for key, raw in set(a["blocks"]) ^ set(b["blocks"])}
-            more = allow.get(lid, set())
             names = {bytes(Tag.UNICODE_LAYER_NAME), bytes(Tag.SHEET_COLOR_SETTING)} if layer.is_group() else set()
-            if not (keys <= ({"name", "blocks"} if layer.is_group() else set()) | more
-                    and blocks <= names | ({bytes(Tag.SECTION_DIVIDER_SETTING)} if "blocks" in more else set())):
+            if not (keys <= ({"name", "blocks"} if layer.is_group() else set()) and blocks <= names):
                 raise Refused("bytes", f"{layer.name!r} changed beyond its folder")
     for lid, items in new.items():
         if lid not in old and not all(_plain(layer) for _, layer in items):
@@ -4285,13 +4126,11 @@ def _folder_details(was: dict, now: dict, ids: set, renamed: dict) -> dict:
     return was
 
 
-def standard_folders(path: str, out_path: str, rel: str = "", parser: Optional[PSDParser] = None,
-                     isolated: bool = True) -> Foldered:
+def standard_folders(path: str, out_path: str, rel: str = "", parser: Optional[PSDParser] = None) -> Foldered:
     """
-    The card's folders as the templates' (arrange), at the first FOLDER_LEVELS level folders_gate lets through, then
-    the adjustments clipped to a folder moved into it (isolate, gated on its own; isolated False: not, nor hidden Curves
-    clipped to a folder deleted, the guards' call: the owner wants each proven in Photoshop), written to out_path; nothing ([]) where the folders are standard,
-    the card is no card or nothing holds (Foldered.tried says why).
+    The card's folders as the templates' (arrange), at the first FOLDER_LEVELS level folders_gate lets through (hidden
+    Curves clipped to a folder stay: the owner wants each proven in Photoshop), written to out_path; nothing ([])
+    where the folders are standard, the card is no card or nothing holds (Foldered.tried says why).
     """
     result = Foldered()
     if parser is None or folder_kind(rel) is None:
@@ -4306,7 +4145,7 @@ def standard_folders(path: str, out_path: str, rel: str = "", parser: Optional[P
     found, memo, refused = None, {"base": None}, {}     # the card read once; a refused file's sha1 -> why
     for level in FOLDER_LEVELS:
         psd = PSDImage.open(path)
-        done, counts = arrange(psd, rel, types, stars, level, isolated, art)
+        done, counts = arrange(psd, rel, types, stars, level, art)
         if not done:
             result.tried.append((level, "nothing to change"))
             continue
@@ -4329,8 +4168,6 @@ def standard_folders(path: str, out_path: str, rel: str = "", parser: Optional[P
     found, base = found or Foldered(tried=result.tried), memo["base"]
     if _loose_icons(card)[1]:
         _icons(path, out_path, rel, parser, base, found, art)
-    if isolated:
-        _isolated(path, out_path, rel, parser, base, found)
     if not found:
         return Foldered(left=left, tried=found.tried)
     found.left = folder_issues(PSDImage.open(out_path), rel, parser, art)
@@ -4496,83 +4333,6 @@ def _icons(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional
     found.level = found.level or "icons"
 
 
-def isolate(psd: PSDImage, done: list, counts: Counter) -> dict:
-    """The adjustments clipped to a top-level folder moved into it, on top, and the folder set to Normal (its layers
-    alone adjusted, as the clip did; owner 2026-11-09); {layer id: the record parts it changes} for folders_gate."""
-    allow = {}
-    standard = set(FOLDER_NAMES.values()) | set(FOLDER_TYPES.values())
-    for unit in _units(psd):
-        folder, clips = unit[0], unit[1:]
-        if (not clips or not folder.is_group() or folder.name not in standard or not all(c.kind in ADJUSTMENTS for c in clips)
-                or folder.blend_mode not in (BlendMode.PASS_THROUGH, BlendMode.NORMAL)):
-            continue
-        for layer in clips:
-            layer.move_to(folder)
-            layer.clipping = False
-            allow[layer.layer_id] = {"blend"}
-            done.append(f"{layer.name!r} into {folder.name} (was clipped to it)")
-        if folder.blend_mode == BlendMode.PASS_THROUGH:
-            folder.blend_mode = BlendMode.NORMAL
-            allow[folder.layer_id] = {"blend", "blocks"}
-        counts["clipped adjustments in"] += len(clips)
-        counts["folders isolated"] += 1
-    for folder in [layer for layer in psd if layer.is_group() and layer.name in ("Stars", *FOLDER_TYPES.values())]:
-        _nest_isolated(folder, allow, done, counts)
-    return allow
-
-
-def _nest_isolated(folder, allow: dict, done: list, counts: Counter) -> None:
-    """A redundant nest that adjustments clip to (Stars/stars under a Color Balance), all the folder draws: the
-    adjustments onto the folder's top, the folder set to Normal, the nest flattened (isolate's)."""
-    if folder.blend_mode not in (BlendMode.PASS_THROUGH, BlendMode.NORMAL):
-        return
-    for unit in _units(folder):
-        nest, clips = unit[0], unit[1:]
-        role = "stars" if folder.name == "Stars" else "types"
-        if (not clips or not nest.is_group() or not _plain(nest) or not all(c.kind in ADJUSTMENTS for c in clips)
-                or not (NESTED[role].fullmatch(_key(nest.name)) or GENERIC.fullmatch(_key(nest.name)))
-                or any(_draws(other) for other in folder if other is not nest and other not in clips)
-                or (len(nest) and list(nest)[0].clipping)):
-            continue
-        for layer in clips:
-            layer.move_to(folder)
-            layer.clipping = False
-            allow[layer.layer_id] = {"blend"}
-        if folder.blend_mode == BlendMode.PASS_THROUGH:
-            folder.blend_mode = BlendMode.NORMAL
-            allow[folder.layer_id] = {"blend", "blocks"}
-        i = list(folder).index(nest)
-        for j, layer in enumerate(list(nest)):
-            layer.move_to(folder, index=i + j)
-        folder.remove(nest)
-        done.append(f"nested {role} folder {nest.name!r} flattened, {len(clips)} adjustment(s) on it onto {folder.name}")
-        counts[f"nested {role} folder"] += 1
-        counts["folders isolated"] += 1
-        return
-
-
-def _isolated(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict], found: Foldered) -> None:
-    """standard_folders' second step: isolate() over its result (or the card), gated on its own; found grows."""
-    current = out_path if found else path
-    psd = PSDImage.open(current)
-    done, counts = [], Counter()
-    allow = isolate(psd, done, counts)
-    if not allow:
-        return
-    trial = out_path + ".isolated"
-    psd_edit.save_psd(psd, trial)
-    try:
-        folders_gate(path, trial, rel, parser, base, allow)
-    except Exception as error:                  # Refused or a read the fork can't make: the clips stay
-        found.tried.append(("isolate", f"{error}"))
-        remove(trial)
-        return
-    move_file(trial, out_path)
-    found.extend(done)
-    found.counts.update(counts)
-    found.level = found.level or "isolate"
-
-
 # ========================
 # Module Exports
 # ========================
@@ -4624,8 +4384,6 @@ __all__ = [
     'tags_to_badges',
     'arrange',
     'hidden_curves',
-    'rename',
-    'rename_titles',
     'reported',
     'redraw',
     'redraw_old_glyphs',
@@ -4640,6 +4398,5 @@ __all__ = [
     'status_words',
     'straighten',
     'title_problem',
-    'title_renames',
     'to_normal',
 ]
