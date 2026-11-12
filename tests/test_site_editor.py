@@ -1,8 +1,7 @@
 """
-The website editor's helpers (TTSCardMaker site/assets, in node): the tooltip's hide rules (tip.js: the stuck "Click to
-edit" of 2026-10-23), drafts of unsaved edits (drafts.js), the Edit dialog's live preview (live.js), the stars slider
-(stars.js), the type palette (palette.js) and the dialogs' focus (app.js). Loads them from $AC_SITE_SRC (a
-TTSCardMaker checkout) or the clone; skips with a site before them (TTSCardMaker work/site2-editor).
+The website editor's helpers (TTSCardMaker site/assets, in node): drafts of unsaved edits (drafts.js), the type palette
+(palette.js) and the dialogs' focus (app.js). Loads them from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone;
+skips with a site before them.
 """
 import json
 import re
@@ -13,37 +12,16 @@ import pytest
 from conftest import SITE_SRC
 
 ASSETS = SITE_SRC / "site" / "assets"
-MODULES = ("tip", "drafts", "live", "stars", "palette")
+MODULES = ("drafts", "palette")
 pytestmark = pytest.mark.skipif(not all((ASSETS / f"{m}.js").is_file() for m in MODULES),
                                 reason=f"no {', '.join(m + '.js' for m in MODULES)} in {ASSETS}")
 
-# Stand-in elements: enough of the DOM for tip.js (closest, matches, contains, isConnected, dataset) and stars.js
-# (children, classList, setAttribute). Selectors: comma lists of tag.class[attr] parts, with one descendant space.
-FAKE_DOM = r"""
-class El {
-  constructor(tag, attrs = {}, cls = []) { this.tag = tag; this.attrs = { ...attrs }; this.cls = new Set(cls); this.parent = null; this.children = [];
-    const self = this; this.classList = { toggle(c, on) { if (on ?? !self.cls.has(c)) self.cls.add(c); else self.cls.delete(c); }, contains: c => self.cls.has(c) }; }
-  add(...kids) { for (const k of kids) { k.parent = this; this.children.push(k); } return this; }
-  remove() { if (this.parent) this.parent.children = this.parent.children.filter(x => x !== this); this.parent = null; }
-  get isConnected() { let e = this; while (e.parent) e = e.parent; return e === ROOT; }
-  get dataset() { return Object.fromEntries(Object.entries(this.attrs).filter(([k]) => k.startsWith("data-")).map(([k, v]) => [k.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase()), v])); }
-  setAttribute(k, v) { this.attrs[k] = String(v); } getAttribute(k) { return this.attrs[k] ?? null; } removeAttribute(k) { delete this.attrs[k]; }
-  one(part) { const m = /^([a-z]*)((?:\.[\w-]+)*)((?:\[[\w-]+\])*)$/.exec(part); if (!m) throw new Error(`selector ${part}`);
-    return (!m[1] || m[1] === this.tag) && [...m[2].matchAll(/\.([\w-]+)/g)].every(x => this.cls.has(x[1])) && [...m[3].matchAll(/\[([\w-]+)\]/g)].every(x => x[1] in this.attrs); }
-  matches(sel) { return sel.split(",").map(s => s.trim()).some(s => { const [a, b] = s.split(/\s+/); if (!b) return this.one(a); if (!this.one(b)) return false;
-    for (let e = this.parent; e; e = e.parent) if (e.one(a)) return true; return false; }); }
-  closest(sel) { for (let e = this; e; e = e.parent) if (e.matches(sel)) return e; return null; }
-  contains(o) { for (let e = o; e; e = e.parent) if (e === this) return true; return false; }
-}
-const ROOT = new El("html");
-"""
 
-
-def node(tmp_path, body: str, fake_dom: bool = False):
-    """Run body with the modules imported (tip, drafts, live, stars, palette); its stdout as JSON."""
+def node(tmp_path, body: str):
+    """Run body with the modules imported (drafts, palette); its stdout as JSON."""
     imports = "\n".join(f"const {m} = await import({json.dumps((ASSETS / f'{m}.js').as_uri())});" for m in MODULES)
     script = tmp_path / "probe.mjs"
-    script.write_text(f"{imports}\n{FAKE_DOM if fake_dom else ''}\n{body}\n", encoding="utf-8")
+    script.write_text(f"{imports}\n{body}\n", encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)

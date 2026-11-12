@@ -43,7 +43,7 @@ def test_field_rules_and_file():
     assert entry == {"colors": good[2:], "_by": "web"} and rewrite_entry({"colors": good[:1]}, colors_done=good[:1]) is None
     assert color_text(BURNING) == "Ability: 'Burning' coloured #ff7a1a" and color_text(good[1]) == "Name coloured #ffffff"
     spec = importlib.util.spec_from_file_location("site_build_colors", SITE / "build" / "build_site.py")
-    if spec and Path(spec.origin).is_file() and "def valid_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
+    if spec and Path(spec.origin).is_file():
         bs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bs)
         lists = (good, [], [dict(BURNING), dict(BURNING)], note)
@@ -78,31 +78,31 @@ const out = {{
   lines: E.describeItems({{ set: {{ colors: list }}, unset: [] }}, {{}}).map(x => [x.text, x.psd]),
   status: T.statusSpans("Inflict 2T Burning. burning prose.", ["Burning"]),
   kept: T.colorRanges("Inflict 2T Burning. burning prose.", [{{ field: "ability", color: "#ffd21f" }}], "ability", ["Burning"]),
-  parts: T.layerColors ? (() => {{                 // a field over several layers: "word#n" counted across them
+  parts: (() => {{   // a field over several layers: "word#n" counted across them
     const texts = ["New fire.", "Bonfire.", "Fire foes."], ones = [{{ field: "ability", phrase: "fire#2", color: "#ff0000" }}, {{ field: "ability", phrase: "fire", color: "#ff0000" }}];
     const rec = {{ parts: {{ title: [{{ id: 1, text: "Ant" }}], ability: [{{ id: 5, text: "fire", variants: [2] }}, {{ id: 2, text: "Old." }}, {{ id: 3, text: texts[1] }}, {{ id: 4, text: texts[2] }}] }} }};
     return {{ spans: ones.map(one => texts.map((t, i) => (T.layerColors(texts, i, [one], "ability") || []).flatMap(c => T.spansOf(t, c) || []))),
       jobs: M.partJobs(rec, {{ 2: {{ text: texts[0] }} }}, {{ colors: [ones[0], {{ field: "name", color: "#00ff00" }}] }}).map(j => [j.id, j.text === j.old, j.colors]) }};
-  }})() : null,
-  ink: T.inkOf ? (() => {{                         // the card's own colours under the edits; an edit keeps the unchanged ends'
+  }})(),
+  ink: (() => {{   // the card's own colours under the edits; an edit keeps the unchanged ends'
     const c = {{ name: "Ant", ability: "Inflict Burning now.", ink: {{ ability: [[8, 15, "#ff7a1a"], [16, 19, "#0060ff"]] }} }};
     T.anchorInks([c]); c.ability = "Inflict Burning right now.";
     const base = T.inkOf(c, "ability");
     return {{ base, name: T.inkOf(c, "name"), drawn: T.colorRanges(c.ability, [{{ field: "ability", phrase: "now", color: "#ffffff" }}], "ability", null, base),
       at: T.colorAt(null, "ability", c.ability, 8, 15, null, base), cut: T.inkOf(c, "ability", "Inflict Freezing right now."),
       low: T.paintHtml("ab", [{{ start: 0, end: 1, color: "#ffff00" }}, {{ start: 1, end: 2, color: "#202020" }}]) }};
-  }})() : null,
-  mock: M.baseInk ? (() => {{                     // the mock-up keeps them as the card page does: the field's, a part's share
+  }})(),
+  mock: (() => {{   // the mock-up keeps them as the card page does: the field's, a part's share
     const c = {{ ability: "Inflict Burning now.\\nGain 2 HP.", ink: {{ ability: [[8, 15, "#ff7a1a"], [26, 30, "#00ff00"]] }} }}, now = "Inflict Burning now.\\nGain 3 HP.";
     T.anchorInks([c]);
     return {{ drawn: M.colourize(M.tokenize(now, {{}}), now, null, "ability", null, M.baseInk(c, "ability", now)).flat(2).filter(p => p.color).map(p => [p.text, p.color]),
-      part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP."), bake: !!M.bakeInk }};
-  }})() : null,
-  chart: M.colourize.toString().includes("fills") ? (() => {{   // capitalised status words in the chart's, over all
+      part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP.") }};
+  }})(),
+  chart: (() => {{   // capitalised status words in the chart's, over all
     const t = "Inflict Burning. burning foes.";
     return M.colourize(M.tokenize(t, {{}}), t, [{{ field: "ability", color: "#ffffff" }}], "ability", ["Burning"], [{{ start: 8, end: 15, color: "#123456" }}], null, {{ burning: "#ff7a1a" }})
       .flat(2).filter(p => p.color).map(p => [p.text, p.color]);
-  }})() : null,
+  }})(),
 }};
 process.stdout.write(JSON.stringify(out));
 """, encoding="utf-8")
@@ -124,25 +124,22 @@ process.stdout.write(JSON.stringify(out));
     assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]]
     assert out["status"] == [[11, 18]]                  # psd_edit.status_letters' (test_status_words_keep_the_chart)
     assert not any(r["start"] < 18 and 11 < r["end"] for r in out["kept"]) and any(r["start"] <= 20 < r["end"] for r in out["kept"])
-    if out["parts"] is not None:                       # as color_spans counts; unchanged layers the colours reach redrawn
-        layers = [SimpleNamespace(text=t) for t in ("New fire.", "Bonfire.", "Fire foes.")]
-        assert out["parts"]["spans"] == [[[[a, b] for x, a, b in pe.color_spans(layers, {"field": "ability", "phrase": phrase})[0] if x is layer]
-                                          for layer in layers] for phrase in ("fire#2", "fire")]
-        assert out["parts"]["jobs"] == [["1", True, [{"field": "name", "color": "#00ff00"}]], ["2", False, None],
-                                        ["4", True, [{"field": "ability", "phrase": "fire#1", "color": "#ff0000"}]]]
+    # as color_spans counts; unchanged layers the colours reach redrawn
+    layers = [SimpleNamespace(text=t) for t in ("New fire.", "Bonfire.", "Fire foes.")]
+    assert out["parts"]["spans"] == [[[[a, b] for x, a, b in pe.color_spans(layers, {"field": "ability", "phrase": phrase})[0] if x is layer]
+                                      for layer in layers] for phrase in ("fire#2", "fire")]
+    assert out["parts"]["jobs"] == [["1", True, [{"field": "name", "color": "#00ff00"}]], ["2", False, None],
+                                    ["4", True, [{"field": "ability", "phrase": "fire#1", "color": "#ff0000"}]]]
     ink = out["ink"]
-    if ink is None:                                     # before TC's card colours land
-        return
     assert ink["cut"] == [{"start": 23, "end": 26, "color": "#0060ff"}]                 # no stray letters of an edited word
     assert ink["base"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#0060ff"}] and ink["name"] is None
     assert ink["drawn"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#ffffff"}] and ink["at"] == "#ff7a1a"
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
-    if out["mock"] is not None:                         # as the bake: "3" takes the "2"'s colour (bakeInk); before it none
-        three = out["mock"].pop("bake")
-        assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], *[[w, "#00ff00"] for w in (["3", "HP"] if three else ["HP"])]],
-                               "part": [{"start": 5 if three else 6, "end": 9, "color": "#00ff00"}]}
-    if out["chart"] is not None:                        # as psd_edit's status words; lowercase stays the field's
-        assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
+    # as the bake: "3" takes the "2"'s colour (bakeInk)
+    assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["3", "#00ff00"], ["HP", "#00ff00"]],
+                           "part": [{"start": 5, "end": 9, "color": "#00ff00"}]}
+    # as psd_edit's status words; lowercase stays the field's
+    assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
 
 
 PALETTE = {"stats": {"hp": "#2fbf3a", "def": "#3d63ff", "atk": "#ff3b3b", "spd": "#ffd21f"},
@@ -287,7 +284,7 @@ def test_status_colours_record(clone, tmp_path):
     assert colors["Thickened"] == pe._hex(chart["thickened"].fill) and colors["Burning"] == pe._hex(chart["burning"].fill)
     assert card_data.status_colors(run_build, record) is record and len(reads) == 1
     spec = importlib.util.spec_from_file_location("site_build_status", SITE / "build" / "build_site.py")
-    if spec and Path(spec.origin).is_file() and "def status_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
+    if spec and Path(spec.origin).is_file():
         bs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bs)
         (tmp_path / card_data.STATUS_COLORS).write_text(card_data.records_text({**record, "colors": {**colors, "X": "red"}}))

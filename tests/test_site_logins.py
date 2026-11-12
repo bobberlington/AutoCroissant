@@ -3,8 +3,7 @@ The website's password sign-in (TTSCardMaker site/logins/<login>.json): build_si
 failing the build) and copies them to data/logins/<login in lowercase>.json; site/assets/login.js (in node) refuses the
 same shapes, seals files the build accepts, opens them only with the right password, refuses weak passwords, and keeps
 this browser's token sealed under a device key (over a fake IndexedDB). Loads both from $AC_SITE_SRC (a TTSCardMaker
-checkout) or the clone; skips without it, or when that build_site.py predates read_logins (TTSCardMaker
-work/site-password).
+checkout) or the clone; skips without it.
 """
 import base64
 import importlib.util

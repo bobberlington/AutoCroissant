@@ -19,7 +19,6 @@ SITE = SITE_SRC
 ASSETS = SITE / "site" / "assets"
 PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
 BUILD_SITE = SITE / "site" / "build" / "build_site.py"
-FONTS = SITE / "MDW" / "Fonts"
 needs_js = pytest.mark.skipif(not PREVIEW_JS.is_file(), reason=f"no preview.js at {ASSETS}")
 
 

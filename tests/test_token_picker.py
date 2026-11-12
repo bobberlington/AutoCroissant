@@ -1,8 +1,8 @@
 """
 The website's token picker and token variants (TTSCardMaker site/, in node and Python): typing "[" in card text
-suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags (assets/tokens.js); text.js draws
-[x:tint], [x:sticker], [x:glow] and [x:darkglow] with build_site's variant images, which build_icons makes with the
-font build's own icon_art. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it.
+suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags (assets/tokens.js); build_site's
+build_icons makes each icon's WebP copies. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone;
+skips without it.
 """
 import importlib.util
 import json
@@ -16,9 +16,6 @@ from conftest import SITE_SRC
 
 SITE = SITE_SRC / "site"
 TOKENS_JS = SITE / "assets" / "tokens.js"
-TEXT_JS = SITE / "assets" / "text.js"
-INLINE_JS = SITE / "assets" / "inline.js"
-EDIT_JS = SITE / "assets" / "edit.js"
 BUILD_SITE = SITE / "build" / "build_site.py"
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
                                 reason=f"no {TOKENS_JS}")
@@ -36,17 +33,14 @@ ICONS = {"fire": entry("fire", "type"), "field": entry("field", "type"), "dark":
          "star": entry("star", "star"), "6star": entry("6star", "star"), "yinyangultra": entry("yinyangultra", "star"),
          "yinyang": entry("yinyangultra", "star"), "thepoorlydrawnbarnstar": entry("the_poorly_drawn_barnstar", "star"),
          "poorlydrawnbarnstar": entry("the_poorly_drawn_barnstar", "star"), "barnstar": entry("the_poorly_drawn_barnstar", "star")}
-REACH = {"tint": 0, "sticker": 0.0729, "glow": 0.3021, "darkglow": 0.3021}
 
 
 def node(tmp_path: Path, body: str):
-    """Run body with tokens.js as P, text.js as T and the vocabulary V of ICONS; its stdout as JSON."""
+    """Run body with tokens.js as P and the vocabulary V of ICONS; its stdout as JSON."""
     script = tmp_path / "probe.mjs"
     script.write_text(f"const P = await import({json.dumps(TOKENS_JS.as_uri())});\n"
-                      f"const T = await import({json.dumps(TEXT_JS.as_uri())});\n"
-                      f"const ICONS = {json.dumps(ICONS)}, REACH = {json.dumps(REACH)}, V = P.vocabulary(ICONS);\n"
+                      f"const ICONS = {json.dumps(ICONS)}, V = P.vocabulary(ICONS);\n"
                       "const at = (text, caret = text.length) => P.openToken(text, caret);\n"
-                      "const tokens = (text, caret) => P.suggest(at(text, caret), V).map(i => i.token);\n"
                       f"{body}\n", encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr

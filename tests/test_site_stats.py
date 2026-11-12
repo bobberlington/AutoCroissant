@@ -1,11 +1,9 @@
 """
-The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node; build/analytics.py): stat
-distributions paged past 10, the cooldown update gone, timing tags only left out of the changes by month, short chart
-texts, which History charts show (Ratings off the site, owner 11-11), power creep, subseries under their series, and the charts' links to the
-Cards grid. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a stats.js
-with cardsHref (2026-10-25).
+The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node): stat distributions paged
+past 10, short chart texts, which History charts show (Ratings off the site, owner 11-11), power creep, subseries under
+their series, and the charts' links to the Cards grid. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the
+clone; skips without a stats.js with cardsHref (2026-10-25).
 """
-import importlib.util
 import json
 from subprocess import run as run_process
 
@@ -68,14 +66,6 @@ def node(tmp_path, body: str):
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=120)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
-
-
-@pytest.fixture(scope="module")
-def an():
-    spec = importlib.util.spec_from_file_location("site_analytics_stats", SITE / "build" / "analytics.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_power_creep(tmp_path):

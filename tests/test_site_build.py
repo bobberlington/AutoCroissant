@@ -5,7 +5,7 @@ from its start (since), a duplicate's history, dates by committer time, an archi
 author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
 pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json), a profile's
 subseries, PSD sizes, the Changes tabs' own files. Loads
-build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
+build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it.
 """
 import copy
 import importlib.util

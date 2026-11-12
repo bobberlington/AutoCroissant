@@ -1,9 +1,6 @@
 """
-The website's editing helpers of round 3 (TTSCardMaker site/assets, in node and by text): the item type list (edit.js
-ITEM_TYPES = the Items/ folders), drops on a filter-bar value or a pinned box (inline.js targetOf/dropOn, dragenter),
-the click-away rule for the "+" editors, the name autofill (tokens.js suggestNames), the pinned tray (tray.js) and
-Rename everywhere (edit.js renameAll: the ops it queues).
-Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips with a site before them.
+The website's pinned tray (TTSCardMaker site/assets/tray.js, in node): adding and removing pins, keys 1-9 on the first
+nine boxes. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips with a site before them.
 """
 import json
 from pathlib import Path
@@ -16,7 +13,6 @@ from conftest import SITE_SRC
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 EDIT_JS = ASSETS / "edit.js"
-INLINE_JS = ASSETS / "inline.js"
 pytestmark = pytest.mark.skipif(not EDIT_JS.is_file(), reason=f"no {EDIT_JS}")
 
 

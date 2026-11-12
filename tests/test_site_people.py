@@ -1,9 +1,7 @@
 """
-The website's person pages (TTSCardMaker site/build/build_site.py person_extras, site/assets/profile.js in node): image
-revisions after the first upload, a bake as its editors' revision, untouched and most revised cards, the strength profile,
-buffs and nerfs and who made them, ratings of their cards and as a rater (hidden without per-person ratings), edits by
-field, archived cards; the style, rank, career, series and most-referenced helpers and the panels. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without person_extras / styleOf.
+The website's person pages (TTSCardMaker site/build/build_site.py contributions, site/assets/profile.js in node): the
+strength profile and the star mix within a kind. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the
+clone; skips without build_site.py / profile.js.
 """
 import importlib.util
 import json
@@ -16,7 +14,6 @@ from conftest import SITE_SRC
 SITE = SITE_SRC / "site"
 BUILD_SITE = SITE / "build" / "build_site.py"
 PROFILE_JS = SITE / "assets" / "profile.js"
-T = 1_780_000_000
 
 
 @pytest.fixture(scope="module")
@@ -45,11 +42,6 @@ def card(cid, author, **kw):
     return {"id": cid, "key": cid, "name": cid.title(), "author": author, **kw}
 
 
-def commit(sha, ts, name, paths=(), editors=()):
-    """A parse_history row: (sha, committer time, author, email, subject, entries, Edit-by values)."""
-    return (sha, ts, name, f"{name.lower()}@example.com", "s", [("M", "1" * 40, "2" * 40, p) for p in paths], list(editors))
-
-
 def rows_of(bs, cards, commits=(), people=None, **kw):
     out = bs.contributions(cards, people or {}, [], {}, list(commits), **kw)
     return {r["key"]: r for r in out["people"]}, out
@@ -62,12 +54,6 @@ def test_power_profile(bs):
     rows, out = rows_of(bs, [card("a1", "A"), card("a2", "A"), card("a3", "A"), card("b1", "B")], balance=balance)
     assert rows["A"]["power"] == {"n": 3, "z": -0.25, "top": 1, "bottom": 1, "dots": [["a3", -2.0, "bottom"], ["a2", -0.25], ["a1", 1.5, "top"]]}
     assert out["site"] == {"z": -0.06}
-
-
-def rate(value, by="group", day="2025-04-28", scale="favorability", source="TTS session"):
-    return {"date": day, "scale": scale, "value": value, "by": by, "source": source}
-
-
 
 
 def test_star_mix_within_kind(tmp_path):
