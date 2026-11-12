@@ -382,6 +382,73 @@ def test_card_sync_keeps_the_look_in_the_background(tmp_path):
     assert _gh_bash(stop["run"], repo, env).returncode == 0 and ended() == "143"
 
 
+def test_card_sync_saves_right_after_the_gate(tmp_path):
+    """card-sync.yml as written: Early save starts the save and the Linked redraw's count on main's head; TTS save start
+    keeps both while HEAD is there, and a count of 0 skips the redraw; after the Bake's B it stops that save, puts the
+    file back and starts both again on B, whose count of 1 lets the redraw run."""
+    yaml = pytest.importorskip("yaml")
+    path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file() or not shutil.which("timeout") or not shutil.which("jq"):
+        pytest.skip(f"no {path}, timeout or jq")
+    main = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]
+    names = [s.get("name") for s in main["steps"]]
+    steps = {s.get("name"): s for s in main["steps"]}
+    early, start, redraw = steps["Early save"], steps["TTS save start"], steps["Linked redraw"]
+    assert names.index("Early save") == names.index("Gate") + 1 and early["run"] == start["run"] and early["continue-on-error"] is True
+    repo, temp, calls = tmp_path / "ws", tmp_path / "temp", tmp_path / "calls"
+    save = repo / "TTS" / "Impossibility Simulator.json"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _commit(repo, "2026-11-12T10:00:00+00:00", {"TTS/Impossibility Simulator.json": b"{}\n", "A.psd": b"a"})
+    (repo / "bot" / "commands").mkdir(parents=True)
+    (repo / "bot" / "commands" / "psd_links.py").write_text("")
+    (repo / "carddata" / "db").mkdir(parents=True)
+    (repo / "carddata" / "db" / "links.json").write_text("{}")
+    venv = temp / "venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "python").write_text('#!/bin/bash\necho "$2 $3 $*" >> "$CALLS"\ncase $2 in\n'
+                                 '  commands.tts_save) echo "{\\"by\\": \\"$WHO\\"}" > "$3"; sleep "${NAP:-0}"; echo "TTS save: $WHO" ;;\n'
+                                 '  *) [ "$3" = due ] && echo "$DUE" || echo "## Linked redraw"; ;;\nesac\n')
+    (venv / "python").chmod(0o755)
+    env = {"PATH": os.environ["PATH"], "RUNNER_TEMP": str(temp), "GITHUB_WORKSPACE": str(repo), "HOME": str(tmp_path), "CALLS": str(calls),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"), "START": str(int(time())), "GIT_NO_LAZY_FETCH": "1"}
+    head = lambda: subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    main_head = head()
+
+    def done(*files, word=""):
+        for _ in range(200):
+            if all(f.exists() and f.read_text().strip() and word in f.read_text() for f in files):
+                return [f.read_text().strip() for f in files]
+            sleep(0.05)
+        raise AssertionError(f"not done: {files}")
+
+    def redrawn(**more):
+        out = tmp_path / "out"
+        out.write_text("")
+        run = _gh_bash(redraw["run"], repo / "bot", {**env, "MAIN": main_head, "GITHUB_OUTPUT": str(out), **more})
+        assert run.returncode == 0, run.stderr
+        return run.stdout, out.read_text().split()
+
+    first = _gh_bash(early["run"], repo / "bot", {**env, "WHO": "early", "DUE": "0"})
+    assert first.returncode == 0 and done(temp / "save" / "code", temp / "due" / main_head / "code") == ["0", "0"], first.stderr
+    kept = _gh_bash(start["run"], repo / "bot", {**env, "WHO": "again", "DUE": "5"})
+    assert kept.returncode == 0 and "kept" in kept.stdout and json.loads(save.read_text()) == {"by": "early"}
+    stdout, out = redrawn()
+    assert "0 PSDs drawn again" in stdout and "due=0" in out and "psd_links redraw" not in calls.read_text()
+    lines = calls.read_text().splitlines()
+    assert len(lines) == 2 and lines[0].startswith(f"commands.tts_save {save} ") and lines[1].startswith("commands.psd_links due ")
+
+    shutil.rmtree(temp / "save")
+    calls.write_text("")
+    assert _gh_bash(early["run"], repo / "bot", {**env, "WHO": "early", "DUE": "0", "NAP": "30"}).returncode == 0
+    done(save, word="early")
+    _commit(repo, "2026-11-12T10:05:00+00:00", {"A.psd": b"baked"})          # the Bake's B
+    again = _gh_bash(start["run"], repo / "bot", {**env, "WHO": "on B", "DUE": "1"})
+    assert again.returncode == 0 and "made again" in again.stdout, again.stderr
+    assert done(temp / "save" / "code", temp / "due" / head() / "code") == ["0", "0"] and json.loads(save.read_text()) == {"by": "on B"}
+    stdout, out = redrawn()
+    assert "## Linked redraw" in stdout and "0 PSDs drawn again" not in stdout and [line.split()[1] for line in calls.read_text().splitlines()].count("redraw") == 1
+
+
 def _card(guid, path, nick, deck_id):
     url = f"{tts_save.RAW}abc1234/{path}"
     return {"GUID": guid, "Name": "CardCustom", "Nickname": nick, "Description": "theirs", "CardID": deck_id * 100,
