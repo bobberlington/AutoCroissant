@@ -179,7 +179,7 @@ def test_a_wrong_range_after_the_open_marks_the_psd_failed(psds, monkeypatch, an
         return reply
 
     monkeypatch.setattr(ga, "get", get)
-    remote = pr.RemotePSD("o/r", COMMIT, DOOMER, len(data))
+    remote = pr.RemotePSD("o/r", COMMIT, DOOMER)
     opened.append(True)
     assert not remote.failed
     remote.reader.seek(len(data) - 100)                            # pixels: not fetched by the open

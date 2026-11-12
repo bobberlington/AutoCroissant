@@ -24,22 +24,19 @@ class RemotePSD:
         repository: owner/name
         ref: A commit sha
         path: The file's repo path
-        size: Its size from the tree, checked when given
 
     Raises:
-        RangeError: no range reply (a 404: the commit is not on GitHub), another size, or a range other than asked;
+        RangeError: no range reply (a 404: the commit is not on GitHub), or a range other than asked;
         RequestException, or what psd-tools raises on the records. A read that fails after the open sets failed (the
         caller may have caught it)
     """
-    def __init__(self, repository: str, ref: str, path: str, size=None, timeout: int = 60):
+    def __init__(self, repository: str, ref: str, path: str, timeout: int = 60):
         from psd_tools import PSDImage
         from psd_tools.range_reader import RangeReader
         self.url, self.timeout = github_api.raw_url(repository, ref, path), timeout
         self.failed = False                     # a fetch raised (the parse may have caught it): read the PSD whole
         self.total = None                       # the file's size from the first reply
         self.reader = RangeReader(self._fetch)
-        if size is not None and self.reader.size != size:
-            raise RangeError(f"{self.reader.size} bytes at {ref[:8]}, the tree says {size}")
         self.psd = PSDImage.open(self.reader, lazy=True)
 
     def _fetch(self, start: int, stop: int) -> tuple:

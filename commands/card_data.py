@@ -23,7 +23,6 @@ from os import environ, fdopen, remove
 from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
 from pickle import dumps as pickle_dumps, loads as pickle_loads
 from subprocess import CalledProcessError, run
-from sys import version_info
 from tempfile import mkstemp
 from threading import Lock, active_count, local
 from typing import Optional
@@ -31,7 +30,7 @@ from typing import Optional
 from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC, RULES_PATH,
+from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
@@ -54,7 +53,6 @@ RANGE_REFUSALS = 3                                                # PSDs refused
                                                                   # trying them (github_api.RANGE_READS: the off switch)
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
-REAL_DATES = 946684800.0                                          # 2000-01-01 UTC: older stamps are no commit found (year 1000)
 LINKS_JSON = "links.json"                                         # db/: every PSD's links (Card sync's redraw, the guards' files,
                                                                   # the card checks' notes); not in the manifest: no bot reads it
 LINK_KEYS = ("files", "pixels")                                  # links.json's keys beside the PSD paths
@@ -132,7 +130,7 @@ class CardBuild:
         self.unlooked: list = []                 # PSDs whose date or author lookup raised
         self.repository = ""
         self.shas: dict = {}                     # repo path -> blob sha, from the tree
-        self.sizes: dict = {}                    # repo path -> blob size (git's tree has none)
+        self.tree_blobs: list = []               # the tree's blob paths, in its order
         self.raw_ref = ""                        # the commit for range reads ("": whole downloads this run)
         self.ranged: list = []                   # bytes fetched per PSD parsed from range reads
         self.refused: list = []                  # PSDs whose range read got a 4xx, 5xx or no connection (RANGE_REFUSALS)
@@ -219,7 +217,7 @@ class CardBuild:
         self.repository = repository
         self.tree = self._fetch_tree()                  # read once; the helpers below read it
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
-        self.sizes = {item.get("path", ""): item.get("size") for item in self.tree.get("tree", []) if item.get("type") == "blob"}
+        self.tree_blobs = [item.get("path", "") for item in self.tree.get("tree", []) if item.get("type") == "blob"]
         from commands import psd_details                # lazy: fontTools loads here
         self.font_index = psd_details.font_index(self.tree)     # this repo's MDW/Fonts
 
@@ -423,7 +421,7 @@ class CardBuild:
         """
         from commands.card_history import start
         versions = [*self.db.old_stats.get(name, ()), card]
-        known = [at for at in (start(v)[0] for v in versions) if at and at >= REAL_DATES]
+        known = [at for at in (start(v)[0] for v in versions) if at]
         return datetime.fromtimestamp(min(known), timezone.utc).date().isoformat() if known else None
 
     def _apply_dates(self, dates: Optional[CardDates]) -> int:
@@ -697,7 +695,7 @@ class CardBuild:
         """
         if self.raw_ref:
             try:
-                return RemotePSD(self.repository, self.raw_ref, path, self.sizes.get(path))
+                return RemotePSD(self.repository, self.raw_ref, path)
             except Exception as e:                              # the whole file decides
                 if isinstance(e, RequestException) or (isinstance(e, RangeError) and e.status >= 400):
                     self._refuse(path)
@@ -745,7 +743,7 @@ class CardBuild:
         """_repo_tree, made once before workers share it."""
         if self._repo_tree is None:
             from psd_tools.api.links import RepoTree
-            self._repo_tree = RepoTree(self.sizes)
+            self._repo_tree = RepoTree(self.tree_blobs)
 
     def _fetch_read(self, path: str, name: str, sha: str) -> Optional["Read"]:
         """A download worker's PSD: fetched, read (_read) and closed; None when not fetched."""
@@ -866,7 +864,7 @@ class CardBuild:
             from commands.psd_regions import linked_items
             if self._repo_tree is None:
                 from psd_tools.api.links import RepoTree
-                self._repo_tree = RepoTree(self.sizes)
+                self._repo_tree = RepoTree(self.tree_blobs)
             return {"blob": sha, "items": linked_items(psd, path, self._repo_tree)}
         except Exception as e:                  # recorded: the guards delete nothing while a PSD's links are unknown
             return {"blob": sha, "error": f"{type(e).__name__}: {e}"[:200]}
@@ -1030,23 +1028,6 @@ def _sizes(build: "GitBuild", paths: list) -> dict:
     return out
 
 
-def _history(checkout: str, head: str) -> dict:
-    """{path: {blob: None}} of every Types/ blob in head's history (trees only: git log --raw)."""
-    out: dict = {}
-    try:
-        raw = _git(checkout, "log", "--raw", "--no-renames", "--no-abbrev", "--format=", head, "--", f"{TYPES_DIR}/")
-    except CalledProcessError:
-        return out
-    for line in raw.splitlines():
-        meta, _, path = line.partition("\t")
-        fields = meta.split()
-        if len(fields) >= 4 and path:
-            for sha in fields[2:4]:
-                if set(sha) != {"0"}:
-                    out.setdefault(path, {})[sha] = None
-    return out
-
-
 def pixel_hash(data: bytes, path: str) -> str:
     """sha1 of a picture's decoded pixels (mode, size, RGBA): look-alike linked files (the guards flag them)."""
     from PIL import Image
@@ -1064,22 +1045,19 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
     db/links.json after this run: every PSD and .psb of the tree (cards from this run's parse, the others read when
     their blob moved, DOWNLOAD_WORKERS at a time, RANGED_WORKERS by ranges on a runner: range reads, else the local store,
     else REST within the budget; a card not parsed since its blob moved has no record, so the guards delete nothing), the
-    linked files' blobs (append-only; seeded once from Types/ history, sizes unknown) and the pixels of MDW/Linked's
-    (batched git fetches).
+    linked files' blobs (append-only) and the pixels of MDW/Linked's (batched git fetches).
     """
     files = {path: dict(blobs) for path, blobs in before["files"].items()}
     kept_psds = {path: record for path, record in before.items() if path not in LINK_KEYS}
-    if not files:
-        files = _history(build.checkout, build.head)
-    linked = [path for path in build.sizes if linked_file(path)]
+    linked = [path for path in build.tree_blobs if linked_file(path)]
     sizes = _sizes(build, [p for p in linked if files.get(p, {}).get(build.shas[p]) is None])   # stored sizes kept
     for path in linked:
         blobs = files.setdefault(path, {})
         blobs[build.shas[path]] = sizes.get(path, blobs.get(build.shas[path]))
-    cards = {path for path in build.sizes if path.endswith(".psd")
+    cards = {path for path in build.tree_blobs if path.endswith(".psd")
              and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in path.split("/"))}
     psds, unread = {}, []
-    for path in sorted(p for p in build.sizes if p.lower().endswith(LINK_HOLDERS)):
+    for path in sorted(p for p in build.tree_blobs if p.lower().endswith(LINK_HOLDERS)):
         sha = build.shas[path]
         found, kept = build.links.get(path), kept_psds.get(path) or {}
         if found is not None and found["blob"] == sha:
@@ -1185,12 +1163,11 @@ def variant_duplicates(stats: dict, edits: Optional[CardEdits]) -> dict:
 
 
 def can_prune(build: CardBuild) -> bool:
-    """Whether the run saw the whole repo: a tree, not truncated, no failed new-name PSD, at least one card."""
-    tree = build.tree
-    if tree is None or build.failed_new:
+    """Whether the run saw the whole repo: a tree, no failed new-name PSD, at least one card."""
+    if build.tree is None or build.failed_new:
         return False
-    if tree.get("truncated") or not build.db.seen_cards:
-        print("Card repo tree truncated or without cards; no card archived.")
+    if not build.db.seen_cards:
+        print("Card repo tree without cards; no card archived.")
         return False
     return True
 
@@ -1234,14 +1211,14 @@ def _git(repo: str, *args: str) -> str:
 
 
 def ls_tree(repo: str, head: str) -> dict:
-    """The recursive tree at head in the API's shape (path, mode, type, sha; directories too). Never truncated, no API."""
+    """The recursive tree at head in the API's shape (path, mode, type, sha; directories too). No API."""
     items = []
     for entry in _git(repo, "ls-tree", "-r", "-t", "-z", head).split("\0"):
         if entry:
             info, path = entry.split("\t", 1)
             mode, kind, sha = info.split()
             items.append({"path": path, "mode": mode, "type": kind, "sha": sha})
-    return {"sha": _git(repo, "rev-parse", f"{head}^{{tree}}").strip(), "tree": items, "truncated": False}
+    return {"sha": _git(repo, "rev-parse", f"{head}^{{tree}}").strip(), "tree": items}
 
 
 class GitBuild(CardBuild):
@@ -1525,7 +1502,7 @@ def _builder_commit() -> str:
     try:
         return _git(path_join(dirname(abspath(__file__)), ".."), "rev-parse", "HEAD").strip()
     except (CalledProcessError, OSError):
-        return environ.get("BUILDER_SHA", "")
+        return ""
 
 
 def _commits(checkout: str, base: Optional[str], head: str) -> list:
@@ -1759,21 +1736,14 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out.lines = [_plain_line(e) for e in numbered] + ([measured] if measured else [])
     out.manifest = {
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
-        "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at,
+        "card_repo": repository, "card_commit": run_build.head,
         "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
-                    "details_version": psd_details.VERSION, "psd_tools": _version("psd-tools"),
-                    "python": ".".join(map(str, version_info[:2]))},
-        "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
-                                                                   ("created_blob", CREATED_PATH),
-                                                                   ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
-                                                                   ("types_tree", TYPES_DIR), ("fonts_tree", "MDW/Fonts"))},
-        "counts": out.counts,
+                    "details_version": psd_details.VERSION},
         "pending": {"stale": stale, "failed": failed, "full": still},
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
         "restored_from": restore or None, "fonts": fonts_report(details, db.stats)}       # the bot's /fonts
-    if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
-        for key in ("card_commit", "card_commit_at", "inputs"):
-            out.manifest[key] = restored_manifest.get(key, out.manifest[key])
+    if restored_manifest:                                 # its card commit: the next run re-reads what changed
+        out.manifest["card_commit"] = restored_manifest.get("card_commit", out.manifest["card_commit"])
         kept = restored_manifest.get("pending") or {}
         out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None}
     kept = kept_values(db.stats, db.old_stats)
@@ -1986,14 +1956,6 @@ def _text(folder: str, name: str) -> Optional[str]:
         return None
     with open(path, encoding="utf-8") as fh:
         return fh.read()
-
-
-def _version(package: str) -> str:
-    try:
-        from importlib.metadata import version
-        return version(package)
-    except Exception:
-        return ""
 
 
 def _json_file(path: str):

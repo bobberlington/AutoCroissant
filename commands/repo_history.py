@@ -51,25 +51,23 @@ def _configured_ssh(where: str) -> Optional[str]:
     return command
 
 
-def ssh_command(where: str = "", env: Optional[dict] = None) -> Optional[str]:
+def ssh_command(where: str = "") -> Optional[str]:
     """
     The ssh command git would run in where, with BatchMode added.
 
     Args:
         where: The repo dir ('' or a missing dir: the current dir's config)
-        env: The environment git gets (default os.environ)
 
     Returns:
         Git's order: GIT_SSH_COMMAND, else core.sshCommand, else GIT_SSH, else ssh, keeping their options (-i keys);
         None for a GIT_SSH program (takes no options) or a failed config lookup;
         an explicit BatchMode is left as is
     """
-    env = environ if env is None else env
-    command = env.get("GIT_SSH_COMMAND", "").strip() or _configured_ssh(abspath(where) if where else "")
+    command = environ.get("GIT_SSH_COMMAND", "").strip() or _configured_ssh(abspath(where) if where else "")
     if command is None:                         # lookup failed: git keeps its own config
         return None
     if not command:
-        if env.get("GIT_SSH"):
+        if environ.get("GIT_SSH"):
             return None
         command = "ssh"
     if _HAS_BATCH.search(command):
@@ -77,10 +75,10 @@ def ssh_command(where: str = "", env: Optional[dict] = None) -> Optional[str]:
     return f"{command} {BATCH_MODE}"
 
 
-def batch_overrides(where: str = "", env: Optional[dict] = None) -> dict:
+def batch_overrides(where: str = "") -> dict:
     """The variables that make git non-interactive: no credential prompt, ssh in BatchMode (SSH_AUTH_SOCK untouched)."""
     overrides = {"GIT_TERMINAL_PROMPT": "0"}
-    command = ssh_command(where, env)
+    command = ssh_command(where)
     if command:
         overrides["GIT_SSH_COMMAND"] = command
     return overrides

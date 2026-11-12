@@ -39,7 +39,6 @@ filterwarnings('ignore')
 DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
-UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
 FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~)\s*(.*)$")   # a condition: field, operator, value
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
@@ -1032,14 +1031,14 @@ def _since(card) -> float:
 
 def _day(stamp) -> str:
     """A stamp's date in TIMEZONE."""
-    if not stamp or stamp < UNKNOWN_BEFORE:
+    if not stamp:
         return "an unknown date"
     return datetime.fromtimestamp(stamp, TIMEZONE).date().isoformat()
 
 
 def _approx(card) -> str:
     """Said of legacy versions (no blob): their dates can't be checked against git."""
-    known = (getattr(card, "timestamp", 0.0) or 0.0) >= UNKNOWN_BEFORE
+    known = bool(getattr(card, "timestamp", 0.0))
     return " (date approximate)" if known and not getattr(card, "blob_sha", None) else ""
 
 

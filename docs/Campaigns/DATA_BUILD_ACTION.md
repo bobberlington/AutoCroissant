@@ -791,11 +791,9 @@ github_api reads it inside a try/except and takes the token from the environment
 **Manifest.**
 ```json
 {"schema": 1, "built_at": "2026-10-22T18:04:11Z", "run": "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/<id>",
- "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>", "card_commit_at": 1792700000,
- "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "details_version": 6, "psd_tools": "1.25.0", "python": "3.14"},
+ "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>",
+ "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "details_version": 6},
  "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
- "inputs": {"edits_blob": "…", "authors_blob": "…", "created_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
- "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0},
  "pending": {"stale": [], "failed": [{"path": "…", "blob": "…", "error": "…"}], "full": null},
  "problems": [{"card": "…", "path": "…", "notes": ["HP NOT FOUND"]}],
  "gates": {"G2": "override by run 123"}, "restored_from": null,
@@ -971,13 +969,13 @@ github_api reads it inside a try/except and takes the token from the environment
 - **Reminders are quiet:** a reminder's plain `/update_stats` replies to the console only, unless the sync fails or new data
   has problem cards, so the 30-minute reminder posts nothing on a normal day.
 - **Dispatches** pass `dry_run=false` explicitly (so they are live before and after card-sync.yml's default flips) and
-  `full=true` or `cards`. The run is taken from the dispatch reply (`return_run_details`; a 422 naming it is sent again
-  without it) or else is the newest dispatched run not listed before. A cancelled run is dispatched once more only when
-  the newer pending run is a scheduled one (ours does its work too) or nothing newer is pending; when another dispatch is
-  pending it is said (dispatching again would cancel that one), and one seen running, or with nothing newer at all, was
-  cancelled by hand. Card sync's own retry (main moved during the run: a green run with its data dropped, then a
-  dispatch by github-actions[bot]) is followed too; it never carries `full`, so the reply says to ask again. One
-  followed run at a time. Progress edits stop after 14 minutes (the interaction's 15); a reminder's run gets none.
+  `full=true` or `cards`. The run is taken from the dispatch reply (`return_run_details`). A cancelled run is
+  dispatched once more only when the newer pending run is a scheduled one (ours does its work too) or nothing newer is
+  pending; when another dispatch is pending it is said (dispatching again would cancel that one), and one seen
+  running, or with nothing newer at all, was cancelled by hand. Card sync's own retry (main moved during the run: a
+  green run with its data dropped, then a dispatch by github-actions[bot]) is followed too; it never carries `full`,
+  so the reply says to ask again. One followed run at a time. Progress edits stop after 14 minutes (the interaction's
+  15); a reminder's run gets none.
 - **Discord edits** keep committing and applying in memory, but no longer save stats.pkl. A sync of a run that started
   before the edit's commit shows the card without it until the next run (30 minutes at most), as does a restart.
 - **/fonts** reports the fonts the build marked `supplied: false` in `card_data/psd_details.json`; a PSD without a record or

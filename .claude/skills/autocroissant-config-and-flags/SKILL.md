@@ -166,8 +166,8 @@ Whole file, 45 lines on 2026-10-23 (verify: `cat global_config.py`). Three const
 Actions can run `python -m commands.tts_save` and the build on their checkout without a symlink); `AUTOCROISSANT_BOT_CLONE`
 went with the pickle seed on 2026-10-25. Modules also read a few environment variables themselves:
 `PSD_TOOLS_FONT_DIRS` (`FONT_DIRS_ENV`: card_bake, font_check), `RUNNER_TEMP` (card_bake's work dir in the Action),
-`GITHUB_TOKEN` (the Actions' token when config.py gives none: github_api.token_from_env, git_commit.token), `BUILDER_SHA`
-(the card_data build's stamp), `DISCORD_ARCHIVE` / `DISCORD_MATCH_REPO` (the Discord archive CLIs) and `SSH_AUTH_SOCK`
+`GITHUB_TOKEN` (the Actions' token when config.py gives none: github_api.token_from_env, git_commit.token),
+`DISCORD_ARCHIVE` / `DISCORD_MATCH_REPO` (the Discord archive CLIs) and `SSH_AUTH_SOCK`
 (tts_save words its SSH-push error with it). repo_history passes the environment to git with `batch_overrides`
 (GIT_TERMINAL_PROMPT=0, ssh BatchMode) and card_history with `GIT_NO_LAZY_FETCH=1`. Verify:
 `grep -rn environ --include="*.py" commands/ main.py global_config.py`:
@@ -457,7 +457,6 @@ autocroissant-run-and-operate §9.
 | `WAIT_MINUTES` | `30` | a dispatched run's Card data job is followed this long (not its Bake and save) |
 | `DATA_JOB`, `MAIN_JOB` (2026-10-25) | `"Card data"`, `"Bake and save"` | card-sync.yml's lane job names: the followed job, and the lanes the notes judge |
 | `LANE_RUNS` (2026-10-25) | `5` | notes: the runs whose jobs are read for each lane's last outcome (one request a run) |
-| `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
 | `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |
 | `READERS` (2026-10-25) | 12 slash command names | the commands that read card data, so look on use (autocomplete always does) |
@@ -745,7 +744,7 @@ table with its command before quoting it in the future.
 | card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
 | No card_runner, repo_traverser or CARD_SYNC (2026-10-25) | `ls commands/card_runner.py commands/repo_traverser.py` (absent); `grep -rn "CARD_SYNC" global_config.py main.py commands/ \| grep -v changelog` (nothing) |
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
-| Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
+| Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
 | Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_COMMENT\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG\|^EARLIER_\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^FONT_\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |

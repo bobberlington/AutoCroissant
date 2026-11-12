@@ -5,7 +5,7 @@ old_stats.json one card per line written atomically, the manifest's sha256 per f
 The bot's sync() is the one network use, imported lazily.
 """
 from collections import defaultdict
-from dataclasses import MISSING, fields
+from dataclasses import fields
 from hashlib import sha256
 from json import dumps, loads
 from os import fsync, makedirs, remove, replace
@@ -44,15 +44,6 @@ _warned: set = set()                               # record keys CardInfo lacks,
 # ========================
 # Records
 # ========================
-def _default(field):
-    """A dataclass field's default value."""
-    if field.default is not MISSING:
-        return field.default
-    if field.default_factory is not MISSING:
-        return field.default_factory()
-    return None
-
-
 def _stats_record(stats) -> Optional[dict]:
     return None if stats is None else {key: getattr(stats, key) for key in STAT_KEYS}
 
@@ -70,7 +61,7 @@ def _plain(value, where: str):
 
 def record(card: CardInfo) -> dict:
     """
-    A card as plain data: every CardInfo field (a missing one takes its default) plus `version`;
+    A card as plain data: every CardInfo field plus `version`;
     stats and creatures as CardStats' attribute names.
 
     Raises:
@@ -78,8 +69,8 @@ def record(card: CardInfo) -> dict:
     """
     out = {}
     name = getattr(card, "name", "?")
-    for key, field in CARD_FIELDS.items():
-        value = getattr(card, key, None) if hasattr(card, key) else _default(field)
+    for key in CARD_FIELDS:
+        value = getattr(card, key)
         if key == "stats":
             out[key] = _stats_record(value)
         elif key == "creatures":

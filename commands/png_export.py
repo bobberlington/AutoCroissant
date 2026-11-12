@@ -39,7 +39,6 @@ import hashlib
 import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
-from importlib import import_module
 from contextlib import nullcontext
 from io import BytesIO
 from re import search
@@ -700,9 +699,8 @@ def _render_like(psd: PSDImage, like: PSDImage, box: tuple, icc: bool, numbers: 
     stored image to read, as psd's render record says (psd_edit.look_kwargs: a layer whose raster changed is in the
     gamma), else in the text gamma throughout.
     """
-    fork = import_module("psd_tools.composite.composite")
-    kept, read = getattr(fork, "_TEXT_REFERENCES", None), getattr(fork, "_text_reference", None)
-    reference = read(like) if kept is not None and read is not None else None
+    from psd_tools.composite.composite import _TEXT_REFERENCES as kept, _text_reference as read
+    reference = read(like)
     if reference is None:
         return _render(psd, box, icc, numbers, "preview", edited)
     kept[psd] = (psd._record.image_data.data, reference)

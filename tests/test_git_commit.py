@@ -176,11 +176,7 @@ def test_git_commit_deltas_against_old_blobs_it_holds(monkeypatch, tmp_path):
     assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("plain", None)]   # the old blob missing
     assert not gc.has_blobs([]) and not gc.has_blobs([old], str(tmp_path / "none"))
     (clone / "objects" / "info" / "alternates").write_text(f"{other / 'objects'}\n")
-    monkeypatch.setattr(gc, "_no_lazy", None)
     assert gc.has_blobs([old]) and not gc.has_blobs([old, "1" * 40])
-    monkeypatch.setattr(gc, "_no_lazy", False)              # git before 2.44 (the jetson's 2.25): it would fetch them
-    assert not gc.has_blobs([old])
-    monkeypatch.setattr(gc, "_no_lazy", True)
     pushes.clear()
     replies[:] = [(0, b"", b"")]
     assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("delta", "1")]

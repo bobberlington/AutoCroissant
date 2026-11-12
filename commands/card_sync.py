@@ -41,12 +41,10 @@ DATA_JOB = "Card data"                               # a run's data lane (after 
 MAIN_JOB = "Bake and save"                           # a run's main lane
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
 WAIT_MINUTES = 30                                    # a dispatched run is followed this long
-FIND_SECONDS = 60                                    # a dispatched run shows up in the run list within this
 LANE_RUNS = 5                                        # notes: runs whose jobs are read for each lane's last outcome
 EDIT_MINUTES = 14                                    # progress edits stop here: Discord's interaction lasts 15 minutes
 WAITING = ("queued", "pending", "waiting", "requested")   # a run not started yet
-FAILED = ("failure", "timed_out", "startup_failure")
-BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
+FAILED = ("failure", "timed_out")
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
 LINKED_PREFIX = "MDW/Linked/"                         # the cards' linked pictures, every extension (a redraw, 11-07)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_PATH}
@@ -82,15 +80,15 @@ class NoAnswer(Exception):
 # ========================
 # Helper Functions
 # ========================
-def actions_link(repository: str = CARD_REPO) -> str:
+def actions_link() -> str:
     """The Card sync Action's page."""
-    return f"https://github.com/{repository}/actions/workflows/{WORKFLOW}"
+    return f"https://github.com/{CARD_REPO}/actions/workflows/{WORKFLOW}"
 
 
-def gh_command(full: bool, names: list, repository: str = CARD_REPO) -> str:
+def gh_command(full: bool, names: list) -> str:
     """The same run started by hand."""
     what = "-f full=true" if full else f'-f cards="{", ".join(names)}"'
-    return f"gh workflow run {WORKFLOW} -R {repository} {what} -f dry_run=false"
+    return f"gh workflow run {WORKFLOW} -R {CARD_REPO} {what} -f dry_run=false"
 
 
 def _age(stamp: Optional[str], now: float) -> str:
@@ -180,14 +178,11 @@ def _lane(job: dict) -> Optional[str]:
 def _lanes(repository: str, runs: list) -> dict:
     """
     Each lane's last outcome: {"data" or "main": (failed, run)} from the newest run where that lane's job ended (one
-    jobs request per run, up to LANE_RUNS; runs that skipped a lane pass over it). A run without the lanes' jobs (before
-    the split) counts for both by its conclusion.
+    jobs request per run, up to LANE_RUNS; runs that skipped a lane pass over it).
     """
     found: dict = {}
     for run in runs[:LANE_RUNS]:
         jobs = _json(api_url(repository, f"actions/runs/{run.get('id')}/jobs"), HEADERS).get("jobs") or []
-        if not any(_lane(j) for j in jobs):
-            jobs = [{**run, "name": name} for name in (DATA_JOB, MAIN_JOB)]
         ended = [j for j in jobs if j.get("status") == "completed" and j.get("conclusion") not in ("skipped", "cancelled", None)]
         for lane in ("data", "main"):
             done = [j for j in ended if _lane(j) == lane]
@@ -454,20 +449,15 @@ def _post_dispatch(repository: str, body: dict):
 
 def dispatch(repository: str, inputs: dict) -> Optional[dict]:
     """
-    Start a Card sync run (never retried: a retry could start two). The run comes from the reply when GitHub returns
-    it (return_run_details), else it is the newest dispatched run not listed before, looked for FIND_SECONDS.
+    Start a Card sync run (never retried: a retry could start two). The run comes from the reply (return_run_details).
 
     Returns:
-        The run, or None when it did not show up
+        The run, or None when the reply names none
 
     Raises:
         TokenRefused: 401, 403 or 404; RateLimited, ValueError: another refusal; NoAnswer: the dispatch got no reply;
-        requests' exceptions (the run list before it)
+        requests' exceptions (the run's read)
     """
-    listed = get_with_retry(api_url(repository, f"actions/workflows/{WORKFLOW}/runs?per_page=10"), headers=_headers())
-    _refusal(listed)
-    listed.raise_for_status()
-    seen = {r.get("id") for r in listed.json().get("workflow_runs") or []}
     body = {"ref": CARD_BRANCH, "inputs": inputs, "return_run_details": True}
     try:
         reply = _post_dispatch(repository, body)
@@ -484,13 +474,6 @@ def dispatch(repository: str, inputs: dict) -> Optional[dict]:
             run_id = None
     if run_id:
         return _json(api_url(repository, f"actions/runs/{run_id}"), _headers())
-    deadline = monotonic() + FIND_SECONDS
-    while monotonic() < deadline:
-        sleep(3)
-        for run in _runs(repository, _headers()):
-            if (run.get("id") not in seen and run.get("event") == "workflow_dispatch"
-                    and (run.get("actor") or {}).get("login") != BOT_LOGIN):
-                return run
     return None
 
 
@@ -604,7 +587,7 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
                                  f"it on <{actions_link()}>.")
                 return None
             if run is None:
-                say(interaction, f"Card sync was started, but its run did not show up within a minute: <{actions_link()}>")
+                say(interaction, f"Card sync was started, but GitHub's reply named no run: <{actions_link()}>")
                 return None
             say(interaction, f"Card sync run started ({what}): <{run.get('html_url')}>")
             run = follow(interaction, run, started)
@@ -633,8 +616,7 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
 # ========================
 # Public API Functions
 # ========================
-def update(interaction=None, output_problematic: bool = True, force_update: bool = False, verbose: bool = True,
-           cards: str = "") -> list:
+def update(interaction=None, output_problematic: bool = True, force_update: bool = False, cards: str = "") -> list:
     """
     /update_stats: with force_update or cards, a Card sync run first (request_run); then the sync
     (Card sync starts its other runs itself). A reminder's plain sync is quiet (the console), unless it fails.
@@ -643,21 +625,19 @@ def update(interaction=None, output_problematic: bool = True, force_update: bool
         The problem card messages of newly loaded data
     """
     names = [c.strip() for c in (cards or "").split(",") if c.strip()]
-    quiet = not verbose or _by_reminder(interaction)
+    quiet = _by_reminder(interaction)
     if force_update or names:
         request_run(interaction, force_update, names)
-        quiet = not verbose
+        quiet = False
     return sync(interaction, output_problematic, quiet)
 
 
-def fonts_text(folder: str = CARD_DATA_DIR) -> str:
+def fonts_text() -> str:
     """/fonts: the manifest's fonts report (the build judged each card PSD's fonts against MDW/Fonts)."""
-    manifest = card_db.read_json(join(folder, card_db.MANIFEST_JSON))
+    manifest = card_db.read_json(join(CARD_DATA_DIR, card_db.MANIFEST_JSON))
     if not manifest:
         return "No card data yet: run /update_stats."
-    fonts = manifest.get("fonts")
-    if not isinstance(fonts, dict):
-        return "The card data has no fonts report yet: the next Card sync run writes it."
+    fonts = manifest.get("fonts") or {}
     out = [f"From the card data ({built_line(manifest)}): {fonts.get('checked', 0)} card PSDs."]
     missing = fonts.get("missing") or {}
     for font, cards in missing.items():

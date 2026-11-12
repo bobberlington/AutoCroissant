@@ -15,7 +15,6 @@ config imports (the token: config through github_api, else GITHUB_TOKEN).
 from base64 import b64encode
 from os import environ
 from os.path import expanduser, isdir
-from re import findall
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from typing import Optional
@@ -46,7 +45,6 @@ RAW_LOOSE = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.loosecompression
 # Global State
 # ========================
 cant_write = False                              # POST git/blobs got a NO_WRITE status: commit over SSH until a restart
-_no_lazy: Optional[bool] = None                 # git honours GIT_NO_LAZY_FETCH (2.44+; the jetson's 2.25 fetches instead)
 
 
 # ========================
@@ -76,8 +74,7 @@ def status(reply) -> str:
     return f"GitHub {reply.status_code}" + (f": {message}" if message else "")
 
 
-def api(repository: str, method: str, path: str, check: bool = True, raw: bool = False, timeout: int = API_TIMEOUT,
-        **kwargs):
+def api(repository: str, method: str, path: str, check: bool = True, **kwargs):
     """
     A GitHub API call on a repo.
 
@@ -86,18 +83,17 @@ def api(repository: str, method: str, path: str, check: bool = True, raw: bool =
         method: GET (retried on 429 and 5xx as the bot's other GETs are), POST, PATCH...
         path: After /repos/<repository>/
         check: Raise Transient on an error status, with GitHub's message
-        raw: Accept a blob's bytes instead of its JSON envelope
 
     Returns:
         The response
     """
-    headers = {"Accept": github_api.RAW_MEDIA if raw else "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     if token():
         headers["Authorization"] = f"token {token()}"
     if method == "GET":
-        reply = get_with_retry(api_url(repository, path), headers=headers, timeout=timeout, **kwargs)
+        reply = get_with_retry(api_url(repository, path), headers=headers, timeout=API_TIMEOUT, **kwargs)
     else:
-        reply = request(method, api_url(repository, path), headers=headers, timeout=timeout, **kwargs)
+        reply = request(method, api_url(repository, path), headers=headers, timeout=API_TIMEOUT, **kwargs)
     if check and not reply.ok:
         raise Transient(f"{status(reply)} (on {method} {path})")
     return reply
@@ -275,18 +271,9 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
 
 def has_blobs(shas: list, clone: str = "", env: Optional[dict] = None) -> bool:
     """Whether a clone (the history clone) holds every one of shas, its alternates' too, never fetching one. False for
-    none, or when git can't tell (or can't help fetching: before 2.44)."""
-    global _no_lazy
+    none, or when git can't tell."""
     clone = clone or expanduser(HISTORY_CLONE)
     if not shas or not isdir(clone):
-        return False
-    if _no_lazy is None:
-        try:
-            found = findall(r"\d+", run_process(["git", "--version"], capture_output=True, timeout=GIT_TIMEOUT).stdout.decode())
-            _no_lazy = tuple(int(n) for n in found[:2]) >= (2, 44)
-        except (TimeoutExpired, OSError):
-            _no_lazy = False
-    if not _no_lazy:
         return False
     try:
         out = git(clone, "cat-file", "--batch-check", stdin="".join(f"{sha}\n" for sha in shas).encode(),

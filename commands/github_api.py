@@ -93,7 +93,7 @@ def get_with_retry(url: str, **kwargs):
         sleep(wait)
 
 
-def fetch_tree(repository: str, etag: str = "", retry: bool = True, timeout: int = 30):
+def fetch_tree(repository: str, etag: str = "", timeout: int = 30):
     """
     GET the recursive tree of CARD_BRANCH. With etag (If-None-Match), GitHub answers 304 when nothing changed.
 
@@ -102,9 +102,7 @@ def fetch_tree(repository: str, etag: str = "", retry: bool = True, timeout: int
     """
     headers = {**HEADERS, **({"If-None-Match": etag} if etag else {})}
     url = api_url(repository, f"git/trees/{CARD_BRANCH}?recursive=1")
-    if retry:
-        return get_with_retry(url, headers=headers, timeout=timeout)
-    return get(url, headers=headers, timeout=timeout)
+    return get_with_retry(url, headers=headers, timeout=timeout)
 
 
 def fetch_blob(repository: str, sha: str, stream: bool = False, timeout: int = 30):

@@ -347,7 +347,7 @@ def test_first_build_then_nothing_to_do(cards):
     assert (stats["Mini Doomer"].author, stats["The Freezer"].author, stats["The Freezer"].note) == ("Bob", "alice", "checked")
     assert stats["Mini Doomer"].timestamp == 1000.0 and stats["Mini Doomer"].version["cause"] == "psd"
     assert [(e["seq"], e["kind"], e["card"]) for e in events] == [(1, "new", "Mini Doomer"), (2, "new", "The Freezer")]
-    assert manifest["card_commit"] == cards.first and manifest["counts"]["cards"] == 2 and "seed" not in manifest
+    assert manifest["card_commit"] == cards.first and len(stats) == 2 and "seed" not in manifest
     assert set(details) == {blob_sha_bytes(cards.psds[DOOMER]), blob_sha_bytes(cards.psds[FREEZER])}
     assert cdb.check_db(str(cards.db)) == []
     times = {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
@@ -390,7 +390,7 @@ def test_changed_moved_archived(cards):
     c4 = commit(cards.repo, "dave", 4000)
     assert _build(cards)[0] == 0
     stats, old, _, manifest, events = _read(cards)
-    assert "The Freezer" not in stats and manifest["counts"]["archived"] == 1
+    assert "The Freezer" not in stats
     last_version = old["The Freezer"][len(old["The Freezer"]) - 1]
     tag = last_version.archived
     assert (tag["at"], tag["commit"], tag["path"]) == (4000.0, c4, moved)
@@ -427,7 +427,7 @@ def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
     monkeypatch.setattr(cd.GitBuild, "_download", lambda self, path, sha: read.append(path) or real(self, path, sha))
     assert _build(cards)[0] == cd.EXIT_OK and read == []
     stats, _, _, manifest, _ = _read(cards)
-    assert [f["path"] for f in manifest["pending"]["failed"]] == ["Items/Broken_Card.psd"] and manifest["counts"]["failed"] == 1
+    assert [f["path"] for f in manifest["pending"]["failed"]] == ["Items/Broken_Card.psd"]
     assert "The Freezer" in stats                                                             # still held
     assert _build(cards, "--cards", "Broken Card")[0] == cd.EXIT_OK and read == ["Items/Broken_Card.psd"]
     put(cards.repo, "Items/Broken_Card.psd", BROKEN + b"\0")

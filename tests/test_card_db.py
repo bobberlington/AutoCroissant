@@ -54,16 +54,6 @@ def test_missing_keys_default_and_unknown_keys_warn_once(capsys, monkeypatch):
     assert out.count("'sparkle'") == 1 and out.count("'glow'") == 1
 
 
-def test_a_missing_attribute_takes_the_default():
-    """A card without a field's attribute in its __dict__ records the field's default."""
-    card = _card()
-    for key in ("display_name", "subseries", "parser_version", "archived", "creatures", "types"):
-        del card.__dict__[key]
-    rec = cdb.record(card)
-    assert (rec["display_name"], rec["subseries"], rec["parser_version"], rec["archived"], rec["creatures"], rec["types"]) == \
-        (None, None, None, None, None, [])
-
-
 # ========================
 # Files
 # ========================

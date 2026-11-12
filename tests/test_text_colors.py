@@ -46,7 +46,7 @@ def test_field_rules_and_file():
     if spec and Path(spec.origin).is_file() and "def valid_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
         bs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bs)
-        lists = (good, [], [dict(BURNING), dict(BURNING)], *([note] if "note" not in bs.COLOR_FIELDS else []))   # the note's: TC since 11-11
+        lists = (good, [], [dict(BURNING), dict(BURNING)], note)
         assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in lists)
         assert "colors" in bs.PSD_FIELDS and "colors" in bs.SITE_FIELDS
         aco = CLONE / bs.SWATCHES[0]
