@@ -311,6 +311,20 @@ def test_raises_stop_at_the_display(monkeypatch):
     assert up["creatures"] == [{"hp": 3, "def": 3, "atk": 4, "spd": 4}, {"hp": 4, "def": 3, "atk": 5, "spd": 4}]
 
 
+def test_items_rows_bake_too(monkeypatch):
+    """An item's HP and DEF rows are bake-tested as well: a refused one is a note (Dirty Bed's DEF, 2026-11-11)."""
+    monkeypatch.setattr(cc.psd_edit, "stat_caps", lambda psd: None)
+    row = [([], [], None)]                      # (group, shown digits, box)
+    monkeypatch.setattr(cc, "stat_rows", lambda psd: {"hp": row, "def": row, "atk": [], "spd": []})
+    baked = []
+    monkeypatch.setattr(cc, "_real_bake", lambda ctx, rel, fields, png: (
+        baked.append(fields), ("refused", "unsupported-card: def 1: the parser would read 2 off 'def'", None))[1])
+    card = {"card": {"hp": 3, "def": 0, "atk": None, "spd": None}}
+    assert cc._stat_notes(None, "I.psd", None, card, "few", None) == \
+        ["Stat edits need Photoshop: def 1: the parser would read 2 off 'def'."]
+    assert baked == [{"hp": 2, "def": 1}]
+
+
 def test_to_check_and_file():
     """No result, or a new PNG: checked; --all, a shard; the file reads back."""
     tree = {"A.psd": ("", "11111111aa"), "A.png": ("", "22222222bb"), "B.psd": ("", "33333333cc")}

@@ -22,8 +22,9 @@ it flags. No Discord or config imports.
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
 tree): the plans alone for titles, stars and taking off a type, a made icon on a copy (adding a type is not tried: the
 website tells when someone tries it, owner 2026-11-08); a real bake only where a plan cannot tell:
-stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
-art (their pixels too; every creature's), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
+stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows (an item's too) or
+new bars under art (their pixels too; every creature's), a type on a very small PSD. A bake that breaks leaves no record:
+the next run tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -563,12 +564,15 @@ def _still(psd: PSDImage, moved: np.ndarray, style: str) -> list:
 
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
     """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
-    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels (new bars: each);
-    on a card of several creatures every creature's in the same bakes, a bar it shares with creature 1 moving with it."""
+    over them; those and digit rows by a real bake of all four (an item's: the rows it has, Dirty Bed's DEF), one down and
+    one up, which must move pixels (new bars: each); on a card of several creatures every creature's in the same bakes, a
+    bar it shares with creature 1 moving with it."""
     card = parsed["card"]
     have = {stat: card.get(stat) for stat in STAT_ORDER if isinstance(card.get(stat), int) and card.get(stat) >= 0}
-    if len(have) < len(STAT_ORDER) or not style:
+    rows = [stat for stat, found in stat_rows(psd).items() if found] if style == "few" else STAT_ORDER
+    if not style or not rows or any(stat not in have for stat in rows):
         return []
+    have = {stat: have[stat] for stat in rows}
     creatures = card.get("creatures") or []
     own = {(n, stat) for n in range(2, len(creatures) + 1) for stat in STAT_ORDER
            if psd_edit.creature_bar(psd, stat, n) != psd_edit.creature_bar(psd, stat, 1)}
