@@ -72,7 +72,7 @@ def test_login_js_refuses_what_the_build_refuses(bs, tmp_path):
     cases = {name: [stem, raw] for name, (stem, raw) in BAD.items() if name != "iterations a float"}   # 2e6 is an int in JSON
     out = node(tmp_path, f"""
 const cases = {json.dumps(cases)};
-process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(cases).map(([n, [stem, raw]]) => [n, !!auth.checkFile(raw, stem).file]))));
+process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(cases).map(([n, [stem, raw]]) => [n, !!auth.checkFile(raw, stem)]))));
 """)
     assert not any(out.values()), [n for n, ok in out.items() if ok]
 

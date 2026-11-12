@@ -65,7 +65,7 @@ CARD_EXTRAS = ("States", "AttachedDecals", "ChildObjects", "Tags", "Memo")      
 CARD_SCRIPTS = ("LuaScript", "LuaScriptState", "XmlUI", "GMNotes")          # emptied on new cards
 TEAM_FIELDS = ("Description", "GMNotes", "Memo", "Tags", "LuaScript", "LuaScriptState", "XmlUI")   # cards: never touched
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
-              "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
+              "auxiliary_items": "auxiliary items", "status_effects": "status effects"}
 HTTP_TIMEOUT = 30
 
 # ========================

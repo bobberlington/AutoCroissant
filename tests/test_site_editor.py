@@ -36,17 +36,18 @@ let now = 1000; const store = drafts.draftStore(storage, drafts.DRAFT_KEY, () =>
 
 def test_drafts_per_card_and_field_in_local_storage(tmp_path):
     """One entry per card id (the stage's key) with each field's typed text; an inline field joins the card's draft,
-    the Edit dialog's changed inputs replace it; dropping a field, a card, several; a broken or odd entry reads as none."""
+    the Edit dialog's changed inputs replace it; dropping a field, a card; a broken or odd entry reads as none."""
     out = node(tmp_path, STORE + """
+const ids = () => ["goombella", "mini-doomer", "a", "b", "c", "d", "e"].filter(id => store.get(id));
 store.put("goombella", { ability: "Burns." }); now = 2000; store.put("goombella", { hp: "7" });
 const joined = store.get("goombella");
 store.put("goombella", { name: "G" }, true); const whole = store.get("goombella").fields;
-store.put("mini-doomer", { note: "x" }); store.drop("goombella", ["name"]); const afterDrop = store.ids();
-store.put("a", { name: "A" }); store.put("b", { name: "B" }); store.dropAll(["a", "mini-doomer"]); const left = store.ids();
-store.put("b", {}, true); const emptied = store.ids();
-mem.set(drafts.DRAFT_KEY, "{not json"); const broken = store.ids();
+store.put("mini-doomer", { note: "x" }); store.drop("goombella", ["name"]); const afterDrop = ids();
+store.put("a", { name: "A" }); store.put("b", { name: "B" }); store.drop("a"); store.drop("mini-doomer"); const left = ids();
+store.put("b", {}, true); const emptied = ids();
+mem.set(drafts.DRAFT_KEY, "{not json"); const broken = ids();
 mem.set(drafts.DRAFT_KEY, JSON.stringify({ c: { at: 5, fields: { name: "ok", hp: 7, x: { y: 1 }, types: ["fire"] } }, d: { fields: [] }, e: 3 }));
-const odd = store.get("c"), oddIds = store.ids();
+const odd = store.get("c"), oddIds = ids();
 process.stdout.write(JSON.stringify({ joined, whole, afterDrop, left, emptied, broken, odd, oddIds, key: drafts.DRAFT_KEY, stored: [...mem.keys()] }));
 """)
     assert out["key"] == "edit-drafts"
@@ -83,22 +84,12 @@ process.stdout.write(JSON.stringify({ one, two, off: t(two, "fire"), read: palet
     assert 'data-count="2"' in out["chip"]
 
 
-def test_the_type_palette_vocabulary_and_search(tmp_path):
-    """The types only (no star icons), one entry per icon with its aliases; the token picker's ranking: an exact name
-    or alias, a name prefix, an alias prefix, then (2+ letters) inside a name or alias; one letter matches prefixes only."""
-    out = node(tmp_path, ICONS + """
-const q = s => names(palette.findTypes(vocab, s));
-process.stdout.write(JSON.stringify({ vocab, all: q(""), fi: q("fi"), flame: q("flame"), f: q("f"), e: q("e"), et: q("et"), min: q("Defensive Min"), none: q("zz"),
-  wet: q("wet"), wetn: q("wetn") }));
-""")
-    assert out["vocab"] == [{"name": "defensive_minion", "file": "icons/dm.webp", "keys": []}, {"name": "field", "file": "icons/field.webp", "keys": []},
-                            {"name": "fire", "file": "icons/fire.webp", "keys": ["flame"]}, {"name": "ice", "file": "icons/ice.webp", "keys": []},
-                            {"name": "water", "file": "icons/water.webp", "keys": ["wetness", "wet"]},
-                            {"name": "wetland", "file": "icons/wetland.webp", "keys": []}]
-    assert out["all"] == ["defensive_minion", "field", "fire", "ice", "water", "wetland"]
-    assert out["wet"] == ["water", "wetland"] and out["wetn"] == ["water"]   # an exact alias before a name prefix
-    assert out["fi"] == ["field", "fire"] and out["flame"] == ["fire"] and out["f"] == ["field", "fire"]
-    assert out["e"] == [] and out["et"] == ["wetland", "water"] and out["min"] == ["defensive_minion"] and out["none"] == []
+def test_the_type_palette_vocabulary(tmp_path):
+    """The types only (no star icons), one entry per icon, by name."""
+    out = node(tmp_path, ICONS + "process.stdout.write(JSON.stringify(vocab));")
+    assert out == [{"name": "defensive_minion", "file": "icons/dm.webp"}, {"name": "field", "file": "icons/field.webp"},
+                   {"name": "fire", "file": "icons/fire.webp"}, {"name": "ice", "file": "icons/ice.webp"},
+                   {"name": "water", "file": "icons/water.webp"}, {"name": "wetland", "file": "icons/wetland.webp"}]
 
 
 

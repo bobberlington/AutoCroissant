@@ -103,7 +103,7 @@ brisk = pytest.mark.skipif(not has(PREVIEW_JS, "POLL_BRISK"), reason="no 1 s che
 @needs_js
 @brisk
 def test_dispatch_first_and_brisk_checks(tmp_path):
-    """Start sends the dispatch at once; only its 404 asks for the workflow, to word it. Checks: none before 17 s, every
+    """Start sends the dispatch at once. Checks: none before 17 s, every
     second until a minute while at most 3 wait, else every 3 s, then 10 s past 2 minutes."""
     out = node(tmp_path, """
 const mem = new Map();
@@ -119,12 +119,11 @@ const run = async replies => {
   return [calls, e.state, e.error || ""];
 };
 const at = ages => p.pollDelay({ c: ages.map((a, i) => ({ request: `r${i}`, at: 1e6 - a, state: "running" })) }, 1e6);
-out([await run([0]), await run([404, 404]), await run([404, 0]), await run([401]),
+out([await run([0]), await run([404]), await run([401]),
   [at([5000]), at([17000]), at([59000]), at([60000]), at([1000, 2000, 30000]), at([1000, 2000, 3000, 30000]), at([130000])]]);""")
-    ok, missing, scope, expired, delays = out
+    ok, scope, expired, delays = out
     assert ok == [["POST dispatches"], "running", ""]
-    assert missing[0] == ["POST dispatches", "GET card-preview.yml"] and "isn't set up" in missing[2]
-    assert scope[0] == ["POST dispatches", "GET card-preview.yml"] and "can't start Actions" in scope[2]
+    assert scope[0] == ["POST dispatches"] and "can't start Actions" in scope[2]
     assert expired[0] == ["POST dispatches"] and "sign in again" in expired[2]
     assert delays == [12000, 1000, 1000, 3000, 1000, 3000, 10000]
 
@@ -220,7 +219,7 @@ kept = pytest.mark.skipif(not has(MOCKUP_JS, "statSite"), reason="no statSite in
 @kept
 def test_what_the_bake_wont_print(tmp_path):
     """The mock-up leaves what the bake won't print and says so: stars the bake keeps (no Stars group: the card only moves
-    folder; an older record's "folder sets them" is still redrawn), a title in the picture, a stat past an old bar's 10
+    folder), a title in the picture, a stat past an old bar's 10
     (a layer-comp bar bakes it)."""
     out = node(tmp_path, f"""
 const P = await import({json.dumps((ASSETS / "parts.js").as_uri())});
@@ -228,13 +227,13 @@ const none = {{ units: [], at: {{}}, refused: {{ "*": 'no group named "Stars" dr
 const rec = (title, so, stats) => ({{ canvas: {{ h: 1000 }}, parts: {{ title, ability: [{{ id: 1, text: "x" }}] }}, smart_objects: so, stats,
   text: [{{ layer: "Text/Ability", text: "x", visible: true, box: [0, 600, 10, 700] }}] }});
 const digits = rec([], [], {{ hp: "template" }}), why = m.statSite(digits, "hp", 12);
-out([P.starsKept(none, 3), P.starsKept({{ units: [{{}}], refused: {{ "*": "the '2 Stars' folder sets them" }} }}, 3),
+out([P.starsKept(none, 3),
   P.titleInPicture(rec([], [])), P.titleInPicture(rec([{{ id: 2, text: "Name" }}], [])),
   why, m.statSite(digits, "hp", 9), m.statSite(rec([], ["Stats Bars/Darks/Health"], {{ hp: "template" }}), "hp", 15),
   m.statSite(rec([], [], {{ hp: "two-row" }}), "hp", 15),
   p.mockNote({{ starsKept: {{ why: none.refused["*"], to: "Creatures/Mario/4 Stars/" }}, site: [["name", "title"], ["HP 12", why]] }})]);""")
-    stars, folder, pictured, titled, old, low, comp, rows, note = out
-    assert stars == 'no group named "Stars" draws them' and folder is None
+    stars, pictured, titled, old, low, comp, rows, note = out
+    assert stars == 'no group named "Stars" draws them'
     assert pictured is True and titled is False
     assert old == "the card's old-style bars print up to 10" and low is comp is rows is None   # several rows: can't tell
     assert "The printed stars stay as they are" in note and "only moves to the 4 Stars folder" in note
@@ -432,8 +431,8 @@ def test_first_type_at_the_template(tmp_path):
     token row or no spot: boxed."""
     out = node(tmp_path, """
 const spot = m.TEMPLATES.tall.first.map((v, i) => Math.round(v * (i % 2 ? 2400 : 1200)));
-out([spot, m.typePlan(null, [], ["fire"], spot), m.typePlan(null, [], ["fire", "water"], spot).boxed,
-  m.typePlan({ tokens: true, refused: "tokens" }, [], ["fire"], spot).boxed, m.typePlan(null, [], ["fire"]).boxed]);""")
+out([spot, m.typePlan(null, ["fire"], spot), m.typePlan(null, ["fire", "water"], spot).boxed,
+  m.typePlan({ tokens: true, refused: "tokens" }, ["fire"], spot).boxed, m.typePlan(null, ["fire"]).boxed]);""")
     spot, one, *boxed = out
     assert spot == [62, 27, 175, 183]   # template_icon on main's Creature_Template (11-08)
     assert one == {"erase": [], "draw": [{"name": "fire", "core": spot}], "refused": None, "boxed": False}
@@ -636,7 +635,7 @@ const measure = t => [...t].length * 10; measure.hx = 1;
 const fit = (c, now) => { const R = m.recordLayout(c, "Heal 3 HP.\\nInflict 2 Burn.", 1), p = m.geoPlan(R, now); return [p && p.splice, p && p.splice && m.spliceFit(R, p.splice, { measure, z: 20 })]; };
 const R = m.recordLayout(crop(), "Heal 3 HP.\\nInflict 2 Burn.", 1);
 out([fit(crop(), "Heal 12 HP.\\nInflict 2 Burn."), fit(crop([0, 105]), "Heal 12 HP.\\nInflict 2 Burn."), m.geoPlan(R, "Heal 3 HP.\\nInflict 2 Burn.\\nDraw 1."), m.geoPlan(R, "Heal 3 HP. \\nInflict 2 Burn.")]);""")
-    assert out[0] == [{"i": 0, "a": 5, "b": 6, "at": 5, "run": "12"}, {"xa": 60, "xb": 70, "cutA": 55, "cutB": 75, "dp": 0, "ds": 10, "w": 20, "hx": 1, "z": 20}]
+    assert out[0] == [{"i": 0, "a": 5, "b": 6, "at": 5, "run": "12"}, {"xa": 60, "cutA": 55, "cutB": 75, "dp": 0, "ds": 10, "hx": 1, "z": 20}]
     assert out[1][1] is None and out[3] is None
     assert {k: out[2][k] for k in ("splice", "keep", "gone", "after", "paras")} == {"splice": None, "keep": [0, 1], "gone": [], "after": [], "paras": [2, 3]}
 
@@ -714,8 +713,8 @@ def test_woff2_copies(bs, tmp_path, monkeypatch):
     tree = {f"MDW/Fonts/{n}": bs.blob_sha((tmp_path / "MDW" / "Fonts" / n).read_bytes()) for n in ("Tiny.ttf", "Bad.ttf", "stoogedings.ttf")}
     for k, v in {"REPO": tmp_path, "CACHE": tmp_path / "cache", "DIST": tmp_path / "dist"}.items():
         monkeypatch.setattr(bs, k, str(v))
-    fonts = lambda: {"Tiny-Regular": {"file": "MDW/Fonts/Tiny.ttf", "bytes": 1}, "Bad": {"file": "MDW/Fonts/Bad.ttf", "bytes": 1},
-                     "stoogedings-Regular": {"file": "MDW/Fonts/stoogedings.ttf", "bytes": 1}}
+    fonts = lambda: {"Tiny-Regular": {"file": "MDW/Fonts/Tiny.ttf"}, "Bad": {"file": "MDW/Fonts/Bad.ttf"},
+                     "stoogedings-Regular": {"file": "MDW/Fonts/stoogedings.ttf"}}
     real = importlib.util.find_spec("brotli") is not None
     if not real:                                   # no brotli here: the build's logic with a stand-in encoder
         monkeypatch.setattr(bs, "woff2_tag", lambda: "abc123")

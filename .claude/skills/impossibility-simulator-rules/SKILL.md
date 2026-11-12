@@ -173,7 +173,7 @@ last column exactly; 4 also moved from turns to global turns and gained (OYT): W
 Ahn'Qiraj (2CD) → (2GCD)(OYT), Crock Pot (1PT) → (1GCD)(OYT), The Temple of Ahn'Qiraj (-1/1CD) → (-1/1GCD)(OYT). The Bank (N.M.E.,
 `7cb4c867`) lost its only cooldown-family tag: its line "Will store individual uses of a multi-use (XPT) abilities." was deleted,
 and its cooldown line now reads "Cooldowns of stored actions/abilities recharge as if they were used." It keeps (ENDGT), so it is
-not among the 218. Website tooltips are ch 23's meanings (`build_site.py` GAME_TAGS and `tag_meanings`, `site/assets/text.js`):
+not among the 218. Website tooltips are ch 23's meanings (`build_site.py` `tag_meanings`, `site/assets/text.js`):
 (1/2CD) "Cooldown: starts with 1 of 2 turns of charge", (2CD) "Cooldown: needs 2 turns of charge", (2U) "2 uses per full charge".
 
 **Old card text in the pictures.** Ch 12's pictures still show Toy Bonnie as "(OPGT) Inflict up to 6 stacks of Softened for 1 turn
@@ -575,7 +575,7 @@ count, run the row below on the current card data (`git -C ~/Desktop/TTSCardMake
 | Cards that say "lane" | `python3 -I -c "import json;[print(k,'\|',v['ability']) for k,v in json.load(open('/tmp/s.json'))['cards'].items() if 'lane' in (v.get('ability') or '').lower()]"` |
 | Ban list (53) | `grep -c ' - ' ~/Desktop/TTSCardMaker/site/Constructed\ Ban\ List.txt` |
 | Website hand rule | `grep -n "HAND\|FIELD_MAX_STARS" ~/Desktop/TTSCardMaker/site/assets/deck.js` |
-| Tag tooltips | ch 23; `grep -n "GAME_TAGS\|tag_meanings" ~/Desktop/TTSCardMaker/site/build/build_site.py` |
+| Tag tooltips | ch 23; `grep -n "tag_meanings" ~/Desktop/TTSCardMaker/site/build/build_site.py` |
 | Slash commands | `grep -n 'name="query_rulebook"\|name="export_rulebook"' main.py`; `grep -n rulebook_dff commands/query_card.py` |
 | Rounding table (07: 20 rows, 6 change columns) | `python3 -I -c "import re,os,math;R=[[float(x) for x in re.findall(r'\d+(?:\.\d+)?',l)] for l in open(os.path.expanduser('~/Desktop/TTSCardMaker/site/rulebook/07-stats.md')) if re.match(r'\| \d',l)];print(len(R),sum(math.floor(2*r[0]*(1+k)+0.5)/2!=v for r in R for k,v in zip((-.25,-.5,-.75,.25,.5,.75),r[1:])),'mismatches')"` (prints `20 0 mismatches`) |
 | Old rules | `ls ~/Desktop/TTSCardMaker/MDW/Old\ Rules/Rulebook/*.psd \| wc -l` (48; `MDW/Old Rules/README.md`) |

@@ -47,6 +47,7 @@ AZAMOTH_KING = "Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd"   # hp 1
 ANUBISATH = "Auxiliary/Minions/Anubisath_Guardian.psd"            # left-aligned title 11 px short of the first star
 NAMED = ("Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",)   # Text/Name + one visible Text/Ability, fonts in MDW/Fonts
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"  # the one 10+ card: atk 12 as Top (its 10 marker) + Bottom 2
+GASOLINE = "Items/Support/2 Stars/Gasoline.psd"                    # layer effects (OuterGlow): an lfx2 block
 RED_BLOON = "Auxiliary/Minions/PoD01Red_Bloon.psd"                 # PNG exported raw (unconverted) from a non-sRGB profile
 BLOCK_HOPPER = "Creatures/Mario/2 Stars/Block_Hopper.psd"          # the same, its rows 18% bad when converted
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                 # its title layer is named after the card
@@ -166,8 +167,7 @@ def test_pixel_compares_match_numpy():
 
 def test_below_box(monkeypatch):
     """A new last line with letters below the box is found (Photoshop hides it: Croissant); an empty or undrawn one never
-    (Sumo Panda), nor one the old layout had below already; an added Ability's placeholder lines count as none; point
-    text has no box."""
+    (Sumo Panda), nor one the old layout had below already; point text has no box."""
     line = lambda text, y: SimpleNamespace(text=text, y=y, drawn=True)
     monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: (0, 0, 100, 50))
     keep = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Attack.", 40)]))
@@ -177,7 +177,6 @@ def test_below_box(monkeypatch):
     assert not pe.below_box(keep, [line("Attack", 50), line("now.", 50.0000001)])
     was = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Your", 40), line("ability", 60)]))
     assert not pe.below_box(was, [line("Attack", 40), line("now.", 60)])
-    assert pe.below_box(was, [line("Attack", 40), line("now.", 60)], added=True)
     monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: None)
     assert not pe.below_box(keep, [line("Attack", 40), line("now.", 60)])
 
@@ -1874,7 +1873,7 @@ def test_alternates_go_on_badges_and_stickers_only(clone):
 def test_bare_icons_under_a_tinted_ability(clone, tmp_path):
     """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is in the overlay's colour until
     it takes Stylistic Alternates (owner 2026-10-25: one colour on purpose); Blood Bomb's [machine] (Pin Light) is bare.
-    gate_fx tells neither under the Ability (a soft note: a title's still is, test_gate_fx_checks_a_title_edits_icons)."""
+    gate_fx tells neither under the Ability (a title's still is, test_gate_fx_checks_a_title_edits_icons)."""
     from psd_tools.composite.text import FontMap
     fonts_dir = str(clone / pe.FONTS_DIR)
     fonts = FontMap(dirs=[fonts_dir])
@@ -2013,6 +2012,18 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
 
 
 MIASMA = "Auxiliary/Minions/Miasma.psd"   # its merged image a third of the file
+
+
+def test_save_psd_writes_effects_photoshop_reads(clone, tmp_path):
+    """An effects block at version 1 (psd-tools' set_data, 11-08): Photoshop 2023 cannot read it; save_psd writes 0."""
+    psd = PSDImage.open(_card(clone, GASOLINE)[0])
+    layer = next(one for one in psd.descendants() if Tag.OBJECT_BASED_EFFECTS_LAYER_INFO in one.tagged_blocks)
+    layer.tagged_blocks[Tag.OBJECT_BASED_EFFECTS_LAYER_INFO].data.version = 1
+    assert pe.unreadable_effects(psd) == [layer]
+    old = pe.layer_records(psd)
+    pe.save_psd(psd, str(tmp_path / "fx.psd"))
+    assert pe.unreadable_effects(PSDImage.open(tmp_path / "fx.psd")) == []
+    pe.gate_bytes(old, str(tmp_path / "fx.psd"), [])          # the repair is no change to the gates
 
 
 def test_a_first_strip_passes_the_size_gate(clone, tmp_path):
@@ -2659,6 +2670,20 @@ def test_font_map_shared_while_the_fonts_stand(clone, tmp_path, monkeypatch):
     monkeypatch.setenv(pe.FONT_DIRS_ENV, str(fonts))
     once = pe.font_map(str(fonts))
     assert once.dirs == (str(fonts),) and once._user_index().exact == FontMap(dirs=[str(fonts)])._user_index().exact
+
+
+def test_bake_repairs_a_stale_story(clone, parser, tmp_path):
+    """A pre-fix bake's PSD has its stale Txt2 stories synced (commands.txt2_repair.sync_stories), told, whatever the
+    job; gate_stories lets the repaired stories change."""
+    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
+    path, _ = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    parsed = pe.parse_card(parser, path, MINI_DOOMER)
+    baked = pe.apply_jobs(path, _card(clone, MINI_DOOMER)[1], MINI_DOOMER, {"hp": 8}, parsed, parser, str(out),
+                          str(clone / pe.FONTS_DIR))
+    flagged(baked.fx_notes, r"^Txt2 story repaired \(commands.txt2_repair\): ")
+    assert pe.stale_stories(PSDImage.open(baked.psd_path)) == []
 
 
 # ========================

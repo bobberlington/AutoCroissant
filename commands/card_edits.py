@@ -161,7 +161,7 @@ class CardEdits:
             "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
             "creatures": "psd", "flags": "database", "colors": "psd", NAMES_OK: "database"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
-    SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures", "colors")    # what `_site` may name (edit.js SITE)
+    SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures")    # what `_site` may name (edit.js SITE)
 
     @classmethod
     def answered(cls, fields: dict) -> tuple:

@@ -331,7 +331,7 @@ def assign_pushes(new_events: list, pushes: list, commits: list, base: Optional[
         pushes: [{"after", "before", "by", "at", "commits": [sha, ...]}], oldest first (the activity list)
         commits: [(sha, at, author)] of the build's new commits, oldest first (the fallback)
         base: The commit before them (the last build's), the first fallback push's before
-        alone: Commits that are a push of their own by CARD_SYNC (the run's local bake commit B, never listed)
+        alone: Commits that are a push of their own by CARD_SYNC (card_data --own: the main commits the card sync pushed)
         guards: The guards' commits: a push of their own by GUARDS, listed or not
 
     Returns:

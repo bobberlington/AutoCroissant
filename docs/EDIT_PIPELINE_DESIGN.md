@@ -914,7 +914,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   another font, new validator problems. An FX layer whose style can't follow (follow_fx's refusals, a phrase the ability
   lacks, words now in a badge) is deleted, told, its words plain (styled status words get the chart's layer from
   `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for is hidden, told;
-  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. Typed badges and
+  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. A stale
+  Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
   tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
   the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
   (split/several titles, non-template rows, stars/types layouts, FX layers that are no pixel layers, two FX

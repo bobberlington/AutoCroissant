@@ -5298,7 +5298,7 @@ def on_panel_design(psd: PSDImage, layer, box: tuple) -> Optional[str]:
     return f"the new text prints on its panel's design ({count} px, {panel.name!r})" if count >= BEYOND[3] else None
 
 
-def below_box(keep, lines, added: bool = False) -> bool:
+def below_box(keep, lines) -> bool:
     """
     Whether lines (a new layout's) draw more baselines with letters below the text box's bottom than keep's layout did:
     Photoshop hides such a line (overset: Croissant, 2026-11-04), though the fork draws it. Point text has no box.
@@ -5306,7 +5306,6 @@ def below_box(keep, lines, added: bool = False) -> bool:
     Args:
         keep: The layer's capture before the change (its model's box, its layout's lines)
         lines: The new layout's lines (the engine's report)
-        added: An added Ability: its placeholder's lines count as none
 
     Returns:
         Whether a line more falls below the box
@@ -5316,7 +5315,7 @@ def below_box(keep, lines, added: bool = False) -> bool:
     if box is None:
         return False
     below = lambda ls: sum(1 for line in ls if line.drawn and line.text.strip() and line.y > box[1] + box[3] + 1e-6)
-    return below(lines) > (0 if added else below(keep.layout.lines))
+    return below(lines) > below(keep.layout.lines)
 
 
 def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool, check) -> tuple:
@@ -9766,7 +9765,7 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
 
 # The soft notes (owner 2026-11-07: non-issues): a bake's own remarks on a card that baked, told nowhere
 SOFT_NOTE = re_compile(r"^overflow: |^types: .*spot.*: check it$|^[a-z]+: cells by place|deleted: the edit changes"
-                       r"|^unsupported-card: ability: .* under the Ability|: also printed by ")
+                       r"|: also printed by ")
 
 
 def real_notes(notes: list) -> list:
@@ -9875,6 +9874,12 @@ def gate_size(old_path: str, new_path: str) -> None:
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
 
+def _fx_bytes(key, block) -> bytes:
+    """A block's bytes, an effects block's at version 0: save_psd's repair is no change to the gates."""
+    raw = block.tobytes()
+    return raw[:12] + bytes(4) + raw[16:] if key in EFFECT_BLOCKS[:3] and len(raw) >= 16 else raw
+
+
 def layer_records(path) -> list:
     """
     Each layer record's identity-free fingerprint: name, flags, rect, channels (id, length, pixel digest), mask, blend
@@ -9897,7 +9902,8 @@ def layer_records(path) -> list:
                                       for channel, part in zip_longest(record.channel_info, data)),
                     "mask": mask.tobytes() if mask is not None else b"",
                     "blend": (record.blend_mode, record.opacity, record.clipping),
-                    "blocks": tuple((bytes(key), block.tobytes()) for key, block in (record.tagged_blocks or {}).items()),
+                    "blocks": tuple((bytes(key), _fx_bytes(key, block))
+                                    for key, block in (record.tagged_blocks or {}).items()),
                     **(_mask_parts(mask) if mask is not None else {})})
     return out
 
@@ -11091,7 +11097,17 @@ def unreadable_effects(psd: PSDImage) -> list:
 
 def save_psd(psd: PSDImage, path) -> None:
     """Write the PSD with no merged image (Maximize Compatibility off, owner 2026-11-07): strip(), then saved without a
-    regenerated preview."""
+    regenerated preview. Effects blocks are written at Photoshop's version (unreadable_effects; layer_records ignores
+    the repair)."""
+    for layer in unreadable_effects(psd):
+        for key in EFFECT_BLOCKS[:3]:
+            block = layer.tagged_blocks[key] if key in layer.tagged_blocks else None
+            if block is None or not _fx_version(block.data):
+                continue
+            if isinstance(block.data, (bytes, bytearray)):
+                block.data = bytes(4) + bytes(block.data[4:])
+            else:
+                block.data.version = 0
     strip(psd)
     psd.save(path, update_preview=False)
 
@@ -11191,7 +11207,14 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     timings["open"] = perf_counter() - start
     if png.size != (new.width, new.height) or png.mode not in ("RGB", "RGBA"):
         raise Refused("shape", f"PNG {png.mode} {png.size} against a {new.width}x{new.height} canvas")
-    flags = []
+    stale, flags = stale_stories(new), []
+    repaired = set()
+    if stale:                                   # a pre-fix bake's PSD: Photoshop already shows the old text
+        from commands.txt2_repair import sync_stories
+        repaired = sync_stories(new)
+        if stale_stories(new):
+            raise Refused("unsupported-card", f"{stale[0][0]}'s Txt2 story is stale and txt2_repair could not sync it")
+        flags.append(f"Txt2 story repaired (commands.txt2_repair): {', '.join(name for name, _, _ in stale)}")
     drift = story_style_drift(new, kerning=False)   # kerning: the edited layers follow the story (follow_kerning)
     if drift:                                   # Photoshop shows the story's styles, not the layer's
         raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
@@ -11331,7 +11354,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 
     start = perf_counter()
     stories = {story for edit in edits if edit.field in (*TEXT_FIELDS, "colors") for story in [edit.story, *edit.stories]}
-    gate_stories(old, reopened, stories,
+    gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],
                  [index for edit in edits for index in edit.added_stories], filters=True,

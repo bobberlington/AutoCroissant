@@ -36,8 +36,8 @@ def test_field_rules_and_file():
     for bad in ([], [{**BURNING, "color": "#FF7A1A"}], [{**BURNING, "phrase": " Burning"}], [BURNING, dict(BURNING)],
                 [{"field": "series", "color": "#ffffff"}], [{**BURNING, "x": 1}], note):
         assert not CardEdits.valid("colors", bad), bad
-    edits = CardEdits.parse(json.dumps({"cards": {"A": {"colors": good, "_site": ["colors"]}, "B": {"colors": "red"}}}))
-    assert edits.cards["a"]["colors"] == good and edits.site("a") == ["colors"] and "colors" not in edits.cards["b"]
+    edits = CardEdits.parse(json.dumps({"cards": {"A": {"colors": good}, "B": {"colors": "red"}}}))
+    assert edits.cards["a"]["colors"] == good and "colors" not in edits.cards["b"]
     assert psd_fields({"colors": good}) == {"colors": good} and psd_fields({"colors": good}, ["colors"]) == {}
     entry = rewrite_entry({"colors": good, "hp": 3, "_by": "web"}, ["hp"], colors_done=good[:2])
     assert entry == {"colors": good[2:], "_by": "web"} and rewrite_entry({"colors": good[:1]}, colors_done=good[:1]) is None
@@ -48,7 +48,7 @@ def test_field_rules_and_file():
         spec.loader.exec_module(bs)
         lists = (good, [], [dict(BURNING), dict(BURNING)], note)
         assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in lists)
-        assert "colors" in bs.PSD_FIELDS and "colors" in bs.SITE_FIELDS
+        assert "colors" in bs.PSD_FIELDS
         aco = CLONE / bs.SWATCHES[0]
         if aco.is_file():
             names = dict(bs.parse_aco(aco.read_bytes()))
@@ -61,6 +61,7 @@ def test_menu_logic(tmp_path):
     card's own colours, on the card page and the mock-up), the plain words, and the file edit.js writes."""
     script = tmp_path / "probe.mjs"
     script.write_text(f"""const T = await import({json.dumps((ASSETS / 'textcolor.js').as_uri())});
+const X = await import({json.dumps((ASSETS / 'text.js').as_uri())});
 const E = await import({json.dumps((ASSETS / 'edit.js').as_uri())});
 const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
 const t = "Inflict Burning. Burning foes take +1 DEF.";
@@ -72,7 +73,7 @@ const out = {{
   list, ranges: T.colorRanges(t, [...list, {{ field: "ability", color: "#ffffff" }}], "ability"),
   cleared: T.withColor([...list, {{ field: "ability", phrase: "foes", color: "#000000" }}], "ability", "Burning#2", null, t),
   whole: T.withColor(list, "ability", undefined, null, t), valid: [T.validColors(list), T.validColors([{{ field: "x", color: "#000000" }}])],
-  html: T.paintHtml("<b>Fire</b>", [{{ start: 3, end: 7, color: "#ff0000" }}, {{ start: 0, end: 2, color: "red;x" }}]),
+  html: X.paintHtml("<b>Fire</b>", [{{ start: 3, end: 7, color: "#ff0000" }}, {{ start: 0, end: 2, color: "red;x" }}]),
   words: T.colorsChange([{{ field: "name", color: "#ffffff" }}], list),
   file: E.editsFile(JSON.stringify({{ cards: {{}} }}), [{{ key: "X", set: {{ note: "n", colors: list }}, unset: [] }}], "T", "web"),
   lines: E.describeItems({{ set: {{ colors: list }}, unset: [] }}, {{}}).map(x => [x.text, x.psd]),
@@ -90,7 +91,7 @@ const out = {{
     const base = T.inkOf(c, "ability");
     return {{ base, name: T.inkOf(c, "name"), drawn: T.colorRanges(c.ability, [{{ field: "ability", phrase: "now", color: "#ffffff" }}], "ability", null, base),
       at: T.colorAt(null, "ability", c.ability, 8, 15, null, base), cut: T.inkOf(c, "ability", "Inflict Freezing right now."),
-      low: T.paintHtml("ab", [{{ start: 0, end: 1, color: "#ffff00" }}, {{ start: 1, end: 2, color: "#202020" }}]) }};
+      low: X.paintHtml("ab", [{{ start: 0, end: 1, color: "#ffff00" }}, {{ start: 1, end: 2, color: "#202020" }}]) }};
   }})(),
   mock: (() => {{   // the mock-up keeps them as the card page does: the field's, a part's share
     const c = {{ ability: "Inflict Burning now.\\nGain 2 HP.", ink: {{ ability: [[8, 15, "#ff7a1a"], [26, 30, "#00ff00"]] }} }}, now = "Inflict Burning now.\\nGain 3 HP.";

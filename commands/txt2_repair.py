@@ -49,7 +49,8 @@ def _show(text: Optional[str]) -> str:
 # Public API Functions
 # ========================
 def sync_stories(psd: PSDImage) -> set:
-    """Rewrite every stale story of an open PSD to its layer's text (TypeLayer.sync_story); the indices rewritten."""
+    """Rewrite every stale story of an open PSD to its layer's text (TypeLayer.sync_story); the indices rewritten.
+    psd_edit.apply_jobs runs it on a card it bakes (owner 2026-10-24: repaired, not refused)."""
     return {psd_edit.story_index(layer) for layer in psd.descendants() if layer.kind == "type" and layer.sync_story()}
 
 

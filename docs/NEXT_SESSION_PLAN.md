@@ -91,7 +91,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
   edit (then move drift.py's BASELINE). No Lua patterns (MoonSharp). Test a Lua change with
   `~/.venvs/tts-checks/bin/python TTS/checks/lua_mock.py "TTS/Impossibility Simulator.json" TTS/Global.lua`; the whole
   suite: `TTS_HISTORY=~/Documents/Tools/wt/scratch/tts/history.git ~/.venvs/tts-checks/bin/python
-  TTS/checks/run_all.py` (24 checks, 4 at a time, about 1 minute).
+  TTS/checks/run_all.py` (17 checks, 4 at a time, about 1 minute).
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 - Every scripted TC commit that changes card PSDs or PNGs carries `Card-sweep: <kind>` (memory `maintenance-pushes-silent`).

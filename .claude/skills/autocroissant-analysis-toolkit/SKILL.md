@@ -180,8 +180,10 @@ The exact one-liners, and their real output (2026-07-11):
 
 ```bash
 python3 -c "
-import sys; sys.path.insert(0, '.')
-from pickle import load
+import pickle, commands.card_models as cm
+class U(pickle.Unpickler):
+    def find_class(self, m, n): return getattr(cm, n) if m == 'commands.psd_analyzer' else super().find_class(m, n)
+load = lambda f: U(f).load()
 from collections import Counter
 db = load(open('stats.pkl','rb'))
 print('entries:', len(db))
@@ -193,8 +195,10 @@ print('paths starting with Users/:', sum(1 for c in db.values() if c.path.starts
 # paths starting with Users/: 0
 
 python3 -c "
-import sys; sys.path.insert(0, '.')
-from pickle import load
+import pickle, commands.card_models as cm
+class U(pickle.Unpickler):
+    def find_class(self, m, n): return getattr(cm, n) if m == 'commands.psd_analyzer' else super().find_class(m, n)
+load = lambda f: U(f).load()
 from datetime import datetime, timezone
 db = load(open('stats.pkl','rb'))
 for c in sorted(db.values(), key=lambda c: c.timestamp)[-3:]:
@@ -224,13 +228,14 @@ cannot.
 
 ```bash
 python3 -c "
-import sys, pickle
+import pickle, commands.card_models as cm
 from collections import Counter
-sys.path.insert(0, '.')
-s = pickle.load(open('stats.pkl','rb'))
+class U(pickle.Unpickler):
+    def find_class(self, m, n): return getattr(cm, n) if m == 'commands.psd_analyzer' else super().find_class(m, n)
+s = U(open('stats.pkl','rb')).load()
 c = Counter(x.timestamp for x in s.values())
 print(len(s), len(c), c.most_common(1), sum(1 for x in s.values() if c[x.timestamp] > 1))
-" 2>&1 | grep -v "Git token"
+"
 # 813 103 [(1770523886.0, 64)] 769     <- epoch 1770523886 = 2026-02-08T04:11:26Z
 ```
 
@@ -435,9 +440,19 @@ commit>:stats.pkl`; the last one is the deletion commit's parent). `stats.pkl` v
 pickled as `commands.psd_analyzer.CardInfo` (the `__module__` pin was dropped with the pickle writers; card_db's
 allow-list mapped both paths until 2026-10-25). The card data's JSON reads the same way through `commands.card_db.read_cards` (a `db/`
 folder or a data commit). From 2026-10-22 to 2026-10-25 the forensics pattern was `commands.card_db.load_pickle` (its
-`SeedUnpickler` allow-list); it went with the rest of the pickle-era code on 2026-10-25 (owner), so a historical pickle now
-loads only through the raw `pickle.load` path, which imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools,
-config.py), as the older one-liners below do. The data's own history is the data branch's commits (read_cards).
+`SeedUnpickler` allow-list); it went with the rest of the pickle-era code on 2026-10-25 (owner), and since 2026-11-12
+`commands.psd_analyzer` no longer re-exports `CardInfo`/`CardStats`, so a historical pickle loads through a mapping
+unpickler, from the repo root (no config.py, discord or pandas needed; 820 and 704 records for 8f433f4e^'s stats.pkl and
+old_stats.pkl):
+
+```python
+import pickle, commands.card_models as cm
+class U(pickle.Unpickler):
+    def find_class(self, m, n): return getattr(cm, n) if m == "commands.psd_analyzer" else super().find_class(m, n)
+db = U(open('stats.pkl', 'rb')).load()
+```
+
+The data's own history is the data branch's commits (read_cards).
 
 Aggregate with one-liners (Counter over `c.path.split('/')[0]`, max over `c.timestamp`, filter on
 `c.problems` — e.g. on 2026-10-23 no card has a *stored/pickled* problem (0; on 2026-07-11 it was `('20 Creature
@@ -457,7 +472,7 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.
 ```
 
 (2026-07-11 run; since 2026-10-25 `diff_stats.py` and `inspect_card_data.py` read only the JSON card data: `db/`
-folders, `stats.json`, data commits. A pickle goes through the raw `pickle.load` one-liners.)
+folders, `stats.json`, data commits. A pickle goes through the mapping unpickler above.)
 
 **The motivating case — old_stats.pkl's size history** (bytes measured 2026-07-11 with
 `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)`; the four anchor commits only — the full
@@ -488,8 +503,10 @@ snapshot and its revert:
 git show cca0aaf:old_stats.pkl > /tmp/old_cca0aaf.pkl
 git show eb9aa84:old_stats.pkl > /tmp/old_eb9aa84.pkl   # 12041 and 3196 bytes on disk
 python3 -c "
-import sys; sys.path.insert(0, '.')
-from pickle import load
+import pickle, commands.card_models as cm
+class U(pickle.Unpickler):
+    def find_class(self, m, n): return getattr(cm, n) if m == 'commands.psd_analyzer' else super().find_class(m, n)
+load = lambda f: U(f).load()
 a = load(open('/tmp/old_cca0aaf.pkl','rb')); b = load(open('/tmp/old_eb9aa84.pkl','rb'))
 print(type(a).__name__, len(a), sum(len(v) for v in a.values()), max(len(v) for v in a.values()))
 print(type(b).__name__, len(b), sum(len(v) for v in b.values()), max(len(v) for v in b.values()))
@@ -503,8 +520,8 @@ What actually happened (report observations, not expectations):
   refactor" (366c8d9, 2025-10-20) pickles, and dataclass field access (`name`, `path`,
   `card_type`, `timestamp`, `author`, `stars`, `types`) works on every entry tested. The schema
   coupling did NOT bite for Nov-2025 snapshots. It remains real for PRE-refactor pickles (plain
-  dicts, different files — metadata.pkl-era) and for any future field rename; the requirement
-  (repo on sys.path + config.py) always stands.
+  dicts, different files — metadata.pkl-era) and for any future field rename; loading needs the
+  repo on sys.path (and, since 2026-11-12, Recipe 6's mapping unpickler).
 - The numbers overturned the naive mental model: cca0aaf = **39 names / 39 archived versions**,
   eb9aa84 = **13 / 13**, and **no name had >1 version in either**. The balloon was NOT many
   versions of the same card — it was **breadth**: 26 extra names archived in one sweep, eb9aa84's

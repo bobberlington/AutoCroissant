@@ -1600,9 +1600,9 @@ def test_workflow_shape(clone):
     assert "<@&" not in text and "ROLE" not in text and "DISCORD_FONT_WEBHOOK" not in text
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN", "DISCORD_STANDARDS_WEBHOOK"}
     check = steps["Check"]
-    for flag in ("--clone", "--repo", "--after", "--author", "--out", "--mode", "--before", "--cards", "--whole-tree"):
+    for flag in ("--clone", "--repo", "--after", "--out", "--mode", "--cards", "--whole-tree"):
         assert flag in check["run"]
-    assert check["env"]["AUTHOR"] == "${{ github.event_name == 'push' && github.actor || '' }}"   # never the dispatcher
+    assert "AUTHOR" not in check["env"] and "--author" in steps["Check start"]["run"]   # a push's alone: never the dispatcher
     # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
     assert not any("runner." in str(value) for one in (job, post, tell_job, finish) for value in one["env"].values())
     assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
@@ -2137,7 +2137,7 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     for job, wait in (("check", "Decided"), ("checks", "Card and font checks")):
         names = [s.get("name") or s.get("uses") for s in doc["jobs"][job]["steps"]]
         assert names[names.index("Pushed blobs start") - 1] == "actions/checkout@v7" and names.index("Pushed blobs start") < 4
-        assert names.index("Pushed blobs") == names.index(wait) + 1 and steps[wait if job == "checks" else "Check"]["env"][
+        assert names.index("Pushed blobs") == names.index(wait) + 1 and steps[wait if job == "checks" else "Check start"]["env"][
             gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
     rest = []
     monkeypatch.setattr(gh, "fetch_blob", lambda repo, sha, timeout: rest.append(sha) or SimpleNamespace(content=subprocess.run(
@@ -2430,7 +2430,7 @@ def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypa
         done, _ = _shell(check, env)
         assert (done.returncode, done.stdout, done.stderr.strip(), summary.read_text()) == (code, "report\n", "warn", "report\n")
         assert (tmp_path / "args").read_text().split() == ["-m", "commands.card_guards", "check", "--clone", "/w", "--repo",
-            "o/cards", "--after", "a" * 40, "--out", "/o", "--mode", "on", "--author", "maker", "--before", "b" * 40]
+            "o/cards", "--after", "a" * 40, "--out", "/o", "--mode", "on"] + ["--author", "maker", "--before", "b" * 40] * (event == "push")
     root, mark = tmp_path / "clone", tmp_path / "fonts.ready"
     (root / psd_edit.FONTS_DIR).mkdir(parents=True)
     (root / psd_edit.FONTS_DIR / "a.ttf").write_bytes(b"x")

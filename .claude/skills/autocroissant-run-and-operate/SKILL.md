@@ -393,7 +393,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
 - **Census fixes (2026-10-25, 1b17aba; deployed at 8b0ce02):** a stars edit moves a card out of any "N Stars" folder,
   debuffs too (`psd_edit.STAR_PATH`), except the folders whose stars come from the PSD; a copied smart object's star
   IDs are derived, so star edits on a PSD with several pictures bake; a type icon touching the title at the template's
-  first spot bakes, flagged; an edited split title keeps its pieces (`PSDParser._named_pieces`); a hidden star layer
+  first spot bakes; an edited split title keeps its pieces (`PSDParser._named_pieces`); a hidden star layer
   of another size (Toy Freddy's 'star test') is no star of the row.
 - **`+ability` (2026-10-25, f92fb5e; live since 2026-10-26, d7a6641e):** an ability added on the website to a card with
   no Ability layer makes one from the card kind's template (`psd_edit.insert_ability`/`add_ability`), flagged.
@@ -434,7 +434,8 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
   the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the canvas,
   more title lines, past the design below: `ink_beyond`), typed badges and tokens, FX layers that can't follow (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
-  file holds is drawn in the fork's stand-in, `font_map`), and new validator problems (`validator: new problems: ...`). Still refused: the waits (`head-moved`,
+  file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
+  a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`head-moved`,
   `edit-changed`, `blob`, `capped`; `recent` removed 2026-11-04), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
   stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
   `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
@@ -720,7 +721,7 @@ fresh data (card commands refresh on use, below); it still posts new builds' pro
 | `/update_stats` from a reminder | quiet: the first line goes to the console only, unless the sync failed or new data has problem cards |
 | `force_update` / `cards:` | admin only (a non-admin gets "You do not have permission.", a non-admin's reminder too). Dispatches Card sync with `ACTIONS_TOKEN`: `dry_run=false` and `full=true`, or `cards=<names>`; the run comes from the dispatch reply (`return_run_details`). The run's **Card data job** (jobs list; the run itself only while it lists none) is looked at every 15 s for 30 minutes at most, its state ("waiting for its turn", "running: Build") edited into the reply for its first 14 minutes (Discord's interaction lasts 15; a reminder's run gets none). Once it ends, "Card sync run's card data finished" (or "ended (failure)") and the sync, without waiting for the run's Bake and save (since 2026-10-25). A full re-parse continues over the next scheduled runs (the "Re-parse in progress" line) |
 | a cancelled run | judged by its Card data job: group `card-data` keeps one pending, so a newer run's (a push's, the cron's) replaced it before it started (no steps, even while the run's main lane runs): dispatched once more; said ("replaced by a newer request (<run>) … ask again once it is done") when another dispatch (not Card sync's retry) is unfinished, and "was cancelled." when it was seen running or nothing newer exists (cancelled by hand). A second cancel is said. Since 2026-10-25 Card sync's own retry ("Card sync (retry)", main moved during the bake) redoes only the main lane, so the run's data stands and the retry is not followed (until then a green run whose data was dropped was followed by its retry) |
-| no `ACTIONS_TOKEN` | the reply links the Action and gives `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false` (or `-f cards="…"`), then syncs. A refused token (401, 403, 404, at the run list before the dispatch too) is said the same way, a rate limit as one, and a dispatch with no answer as "the run may have started: look on <Action> before asking again"; the token is never printed |
+| no `ACTIONS_TOKEN` | the reply links the Action and gives `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false` (or `-f cards="…"`), then syncs. A refused token (401, 403, 404) is said the same way, a rate limit as one, and a dispatch with no answer as "the run may have started: look on <Action> before asking again"; the token is never printed |
 | `/update` | pull, then restart (section 5) |
 | `/pull` | a conflict takes the remote's file for every path ("AUTO-RESOLVE: Merge conflict resolved (accepted remote)"). Normally a fast-forward: the bot's clone commits nothing (its backups go from a separate clone, §9) |
 | `/fonts` | from `card_data/manifest.json`'s fonts report (since 2026-11-11; the build judged each current card PSD's fonts against MDW/Fonts in psd_details.json): `**font**: card (layers)` per font with `supplied: false`; a PSD without a record, or with fonts not judged, is an error line (10 shown). First line "From the card data (built …): N card PSDs." |

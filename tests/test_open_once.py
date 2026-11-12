@@ -1,5 +1,5 @@
-"""One PSDImage.open per card PSD: the parse and psd_details share it in the data build and the card check (two opens
-were most of a re-parse's CPU), and the shared open reads as two separate opens do."""
+"""The parse and psd_details share one PSDImage.open per card PSD in the data build and the card check (two opens were
+most of a re-parse's CPU): the shared open reads as two separate opens do."""
 import json
 import pickle
 from datetime import datetime, timezone

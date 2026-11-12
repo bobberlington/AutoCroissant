@@ -71,11 +71,13 @@ It is that day's record: `stats.pkl` went on 2026-10-25, and the rules now live 
 `~/Desktop/TTSCardMaker/site/rulebook/NN-slug.md`:
 
 ```bash
-cd /Users/michaelsrouji/Desktop/AutoCroissant   # unpickling CardInfo needs repo cwd + config.py
+cd /Users/michaelsrouji/Desktop/AutoCroissant   # the repo root: commands.card_models
 mkdir -p ~/frontier_corpus
 python3 - <<'EOF'
-import pickle, os
-db = pickle.load(open('stats.pkl', 'rb'))       # dict[name -> CardInfo]; READ ONLY, never write pickles
+import pickle, os, commands.card_models as cm
+class U(pickle.Unpickler):                      # pickled as commands.psd_analyzer.CardInfo
+    def find_class(self, m, n): return getattr(cm, n) if m == "commands.psd_analyzer" else super().find_class(m, n)
+db = U(open('stats.pkl', 'rb')).load()          # dict[name -> CardInfo]; READ ONLY, never write pickles
 out = os.path.expanduser('~/frontier_corpus')
 with open(f'{out}/rules.txt', 'w') as f:
     for name, card in db.items():

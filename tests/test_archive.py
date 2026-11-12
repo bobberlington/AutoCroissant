@@ -110,4 +110,3 @@ def test_an_untagged_equal_version_stays_history():
     db = _db([card], old=[deepcopy(card)], seen=["Other"])
     db.prune_clean_cards(AT)
     assert [c.archived is None for c in db.old_stats["Gone"]] == [True, False]
-

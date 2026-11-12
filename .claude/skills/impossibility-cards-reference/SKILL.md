@@ -115,8 +115,8 @@ since 2026-10-20.
   under it, the smart object copied, moved and masked to the star: `_paint_cover`); a backdrop is a banner only when
   plain round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is
   centred there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator 3, How To Jump
-  2, Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the
-  diagonal through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told).
+  2, Computer Virus 4); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the
+  diagonal through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6).
   Since 2026-11-10 (owner, option B) added stars with no room on their banner, at their spots or stepped down, shrink
   with every star there, 5% at a time down to half size, until a layout fits on it at its spots: every moved or new
   star as fully on the banner as the card's own (its core 0.9 on it, at most 0.5% of its ink off) and a banner row's

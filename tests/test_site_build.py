@@ -76,7 +76,7 @@ def repo(tmp_path):
     """A card repo of three commits and the bot's data for it:
     - Alpha: "Old text." (c1), "New text." (c2), the same data re-saved with new art (c3): the bot's card is dated c3,
       its start carried to c2 (version.from, no from_commit);
-    - Watermelon with its duplicate Watermelon2 (Inconspicuous Watermelon, its own PNG), one earlier text;
+    - Watermelon with its duplicate Watermelon2 (its own PNG), one earlier text;
     - White Palace, archived: its PSD moved into MDW/The Morgue in c3."""
     root = tmp_path / "repo"
     root.mkdir()
@@ -110,7 +110,7 @@ def repo(tmp_path):
     stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),
              "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
              "Watermelon2": _card("Watermelon2", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item",
-                                  duplicate_of="Watermelon", display_name="Inconspicuous Watermelon")}
+                                  duplicate_of="Watermelon")}
     stats["Alpha"].version = {"from": float(t2), "to": None, "cause": "psd"}     # a carried start (no from_commit)
     palace = _card("White Palace", PALACE, "Field.", t1, card_type="field", series="kirby")     # an old spelling
     palace.archived = {"at": float(t3), "path": PALACE, "commit": c3, "moved_to": "MDW/The Morgue/White_Palace.psd"}
@@ -132,7 +132,6 @@ def repo(tmp_path):
 def _build(bs, monkeypatch, repo, out, data_dir=None):
     """build_site.main() offline into out/ from repo's db/ (or data_dir); {name: data/<name> as JSON}."""
     monkeypatch.setattr(bs, "REPO", str(repo["root"]))
-    monkeypatch.setattr(bs, "HISTORY_REPO", str(repo["root"]))
     for name, sub in (("DIST", "dist"), ("CACHE", ".cache"), ("OG_CACHE", ".og-cache")):
         monkeypatch.setattr(bs, name, str(out / sub))
     (out / ".cache").mkdir(parents=True, exist_ok=True)
@@ -141,7 +140,7 @@ def _build(bs, monkeypatch, repo, out, data_dir=None):
     monkeypatch.setattr(bs, "CARD_DATA_DIR", str(repo["db"]) if data_dir is None else data_dir)
     monkeypatch.setattr(bs, "MIN_CARDS", 1)
 
-    def fetch(url, tries=3, accept=None):
+    def fetch(url, tries=3):
         raise OSError(f"offline: {url}")
     monkeypatch.setattr(bs, "fetch", fetch)
     monkeypatch.setattr(sys, "argv", ["build_site.py"])
@@ -200,7 +199,7 @@ def test_psd_sizes_come_by_blob_and_a_duplicate_has_its_psds(bs, repo, tmp_path,
         {"path": f"{ALPHA}.psd", "type": "blob", "sha": "0" * 40, "size": 9}]}))      # another blob than HEAD's
     monkeypatch.setattr(bs, "PSD_TREE", str(tree))
     cards = _by_name(_build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["cards"])
-    assert cards["Watermelon"]["psdSize"] == cards["Inconspicuous Watermelon"]["psdSize"] == 34_712_345
+    assert cards["Watermelon"]["psdSize"] == cards["Watermelon2"]["psdSize"] == 34_712_345
     assert "psdSize" not in cards["Alpha"]
 
 
@@ -416,7 +415,7 @@ def test_archived_author_and_created_precedence(bs):
     old = {"Gone": [v(start + 9 * DAY, version={"from": float(start)}), v(start + 20 * DAY, archived={"at": start + 30 * DAY, "author": "Tagged"})]}
     rows = lambda **kw: bs.archived_cards(old, lambda name: None, (), **kw)[0]
     day = datetime.fromtimestamp(start, bs.analytics.ZONE).strftime("%Y-%m-%d")
-    assert (rows()["author"], rows()["created"], rows()["tag"]) == ("Tagged", day, "deleted")
+    assert (rows()["author"], rows()["created"]) == ("Tagged", day)
     assert rows(credited={"gone": "Listed"}, people={"listed": "Shown"})["author"] == "Shown"
     del old["Gone"][1].archived["author"]
     old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
@@ -447,7 +446,7 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
     assert (maker["revisions"]["self"], maker["revisions"]["others"]) == (2, 0)
-    assert [(r["card"], r["tag"]) for r in maker["archived"]] == [("White Palace", "retired")]
+    assert [(r["card"], r["moved_to"]) for r in maker["archived"]] == [("White Palace", "MDW/The Morgue/White_Palace.psd")]
     assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
     assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
 
@@ -790,7 +789,7 @@ def test_rulebook_pictures_sized_before_they_load(tmp_path):
         pytest.skip("a rulebook without mascots")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"const rb = await import({json.dumps(book_js.as_uri())});\n"
-                     "const ctx = { size: f => (f === 'kirby' ? [120, 96] : null), card: n => (n === 'Alpha' ? { id: 'a1', name: 'Alpha', tw: 360, th: 504 } : null),\n"
+                     "const ctx = { render: s => s, size: f => (f === 'kirby' ? [120, 96] : null), card: n => (n === 'Alpha' ? { id: 'a1', name: 'Alpha', tw: 360, th: 504 } : null),\n"
                      "  cardImg: () => 't.avif', imgUrl: f => f + '.webp' };\n"
                      "const html = rb.chapterHtml({ id: 'x', source: '# X\\n\\n> [!kirby] Hi.\\n\\n![[Alpha]]\\n\\n> [!sonic] Who?\\n' }, ctx);\n"
                      "process.stdout.write(JSON.stringify([...html.matchAll(/<img [^>]*>/g)].map(m => [m[0].match(/width=\"(\\d+)\" height=\"(\\d+)\"/)?.slice(1)])));\n",

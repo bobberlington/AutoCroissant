@@ -22,14 +22,14 @@ the same pixels, banded) when that saves more than 3% and 64 KiB (our thresholds
 pushed one in a process of its own, beside the rest of the check (_overlap).
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
-                                         [--cards <names>] [--whole-tree] [--mode dry|report|on]
+                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] [--convert now|later|off]
                                          --out <dir>
     python -m commands.card_guards normalise --out <dir> --clone <dir> [--repo <owner/name>] [--deadline <epoch>]
     python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
 
 After the 11-07 pass (PLAN 7, all silent: no Discord, comment or changelog event): a pushed card, template or
 MDW/Unfinished PSD with an embedded picture, sub or superscript text, a merged image or a link to repair is converted
-by card_standards' normalise fix (G1; `normalise`, after the check's Decided), a
+by card_standards' normalise fix (G1; `normalise`, after the check's Decided, or in the check with --convert now), a
 renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked files no PSD links are deleted (G2,
 db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
 back (G4); one landing (git past GIT_LAND files or GIT_LAND_BYTES). A font pushed to MDW/Fonts whose tables share
@@ -154,6 +154,7 @@ NORMALISE = "normalise"                         # the 11-07 pass's fix (card_sta
 QUIET_PIXELS = (NORMALISE, "status words", "status font")   # pixel fixes that make no guard-event (owner 11-07, 11-09)
 FOLDERS = "folders as the templates'"           # card_standards.standard_folders: said in the commit message alone
 CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
+CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
 LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
 LINKED_DIR = "MDW/Linked/"
@@ -1901,11 +1902,11 @@ def font_fixes(source: Source, pushed: list, author: str, head: str, out: str) -
 def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_MINUTES, workers: int = 0,
                  deadline: float = 0.0) -> dict:
     """
-    G1-G4 after the check (the CLI's `normalise`, or check's when none converts): every PSD the check marked (an
-    embedded picture, sub or superscript, a merged image, a link to repair, a linked stat bar) converted by the
-    normalise fix with the parent's names, then the linked files' housekeeping (data["linked"]). No PSD starts past
-    deadline (else `minutes` from now); the rest stay as pushed (their next push converts them). Silent throughout.
-    Edits data in place and returns it.
+    G1-G4 after the check (the CLI's `normalise`, or check's --convert now): every PSD the check marked (an embedded
+    picture, sub or superscript, a merged image, a link to repair, a linked stat bar) converted by the normalise fix
+    with the parent's names, then the linked files' housekeeping (data["linked"]). No PSD starts past deadline (else
+    `minutes` from now); the rest stay as pushed (their next push converts them). Silent throughout. Edits data in place
+    and returns it.
     """
     tree = {path: sha for path, (_, sha) in source.checked.items()}
     index = links_index(source)
@@ -2312,11 +2313,12 @@ def pool_size(jobs: int) -> int:
 
 
 def check(clone: str, after: str, before: str = "", repository: str = "", author: str = NOBODY, cards: Optional[set] = None,
-          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0) -> dict:
+          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0, convert: str = "later") -> dict:
     """
     Both guards on a push (or a whole tree); writes report.md, discord.json and plan.json (with the artifacts) to out.
-    The 11-07 pass's conversions and linked-file housekeeping (convert_plan, G1-G4, silent): left to the normalise step
-    after Decided (summary.json's normalise counts them; with none, the housekeeping runs here; a whole tree never).
+    The 11-07 pass's conversions and linked-file housekeeping (convert_plan, G1-G4, silent): in the check (convert
+    "now"), left to the normalise step after Decided ("later", card-guards.yml's: summary.json's normalise counts them;
+    with none, the housekeeping runs here), or none ("off"; a whole tree never).
 
     Returns:
         plan.json's data (with "markdown" and "discord")
@@ -2366,11 +2368,11 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
                 if not cards or CardAuthors.key(card_name(old)) in cards}
         data["deleted_linked"] = {c.path: c.old for c in changed if c.status == "D" and _restorable(c.path)}   # G4b
         data["fonts"] = font_fixes(source, [] if cards else [c for c in pushed if c.path not in skipped], author, head, out)
-        if whole_tree:
+        if whole_tree or convert == "off":
             for entry in data["cards"]:
                 entry["convert"] = []
-        elif not any(entry["convert"] for entry in data["cards"]):
-            convert_plan(data, source, out, workers=workers)    # nothing to convert: G2-G4 counted by Decided
+        elif convert == "now" or not any(entry["convert"] for entry in data["cards"]):
+            convert_plan(data, source, out, workers=workers)    # later, nothing to convert: G2-G4 counted by Decided
     errors += [f"{r.job.psd}: {r.error}" for r in results if r.error]
     data["report"] = {"notes": notes, "skipped": sorted(skipped), "errors": errors}   # landed_markdown re-renders from these
     data["markdown"] = markdown(data, notes, skipped, errors)
@@ -2395,7 +2397,7 @@ def _write_plan(data: dict, out: str) -> None:
 def convert(plan_path: str, clone: str, repository: str = "", minutes: float = CONVERT_MINUTES, workers: int = 0,
             deadline: float = 0.0) -> dict:
     """
-    The normalise step (card-guards.yml, after Decided): a check plan's conversions and linked-file
+    The normalise step (card-guards.yml, after Decided): a `check --convert later` plan's conversions and linked-file
     housekeeping (convert_plan; no PSD starts past deadline, epoch seconds, else minutes from now), plan.json and
     summary.json written again beside it; report.md and discord.json stand (it is silent). Raises Transient when the
     clone lacks the push.
@@ -2427,7 +2429,7 @@ def summary(data: dict, errors: list) -> dict:
     (the Comment step: a context error alone, a standing manifest or chart one say, comments on no push) and with an error
     (a red run); writes planned; errors (the cards' and the context's)."""
     cards = data["cards"]
-    pending = sum(1 for c in cards if c.get("convert") and "converted" not in c)    # the normalise step's
+    pending = sum(1 for c in cards if c.get("convert") and "converted" not in c)    # --convert later: the normalise step's
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
             "comment": sum(1 for c in cards if _for_comment(c)),
             "writes": sum(len(c["writes"]) for c in cards) + pending
@@ -2837,7 +2839,9 @@ def main(args: Optional[list] = None) -> int:
                      help="dry, report or on (CARD_GUARDS, any case): the report's wording")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: every core on a runner, else half the cores, at most 4)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
-    three = sub.add_parser("normalise", help="a check plan's conversions and linked files (silent)")
+    one.add_argument("--convert", default="later", choices=CONVERTS,
+                     help="the pass's conversions and linked files: in the check (now), in the normalise step (later), none (off)")
+    three = sub.add_parser("normalise", help="a check --convert later plan's conversions and linked files (silent)")
     three.add_argument("--out", required=True, metavar="DIR", help="check's --out (plan.json and summary.json rewritten)")
     three.add_argument("--clone", required=True, metavar="DIR", help="the clone the check read")
     three.add_argument("--repo", default="", metavar="OWNER/NAME", help="blobs the clone lacks by API (default: the plan's)")
@@ -2861,7 +2865,7 @@ def main(args: Optional[list] = None) -> int:
         cards = {CardAuthors.key(n) for n in options.cards.split(",") if n.strip()} or None
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
-                         options.mode, options.out, options.workers)
+                         options.mode, options.out, options.workers, options.convert)
         except (Transient, Refused) as error:   # the clone or the API failed: one line; the run fails (card-guards.yml alerts)
             print(f"## Card guards\n\nNot checked: {error}\n")
             return 1

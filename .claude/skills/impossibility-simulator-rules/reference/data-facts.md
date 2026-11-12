@@ -195,7 +195,7 @@ These match the status effects' own "can't affect [type]" text (checked for ever
 ### Timing tags (badge_tags)
 `stoogedings.json` has NO badge_tags key. The tag list lives in `build_stoogedings.py` `badge_tags()` and `BADGE_GROUPS`
 (cooldown and uses badges since `8ec1b925`, 2026-10-21), mirrored by `site/assets/text.js` `tagInfo()`, whose meanings come
-from ch 23's tables (`build_site.py` `tag_meanings`); `GAME_TAGS` in `site/build/build_site.py` gives game.txt the same words. n = 1-9 or X; in a pair a/b, a = -1, 0-9 or X and b = 1-9 or X; a "-" is drawn as a minus sign. Groups and
+from ch 23's tables (`build_site.py` `tag_meanings`). n = 1-9 or X; in a pair a/b, a = -1, 0-9 or X and b = 1-9 or X; a "-" is drawn as a minus sign. Groups and
 colors (ch 02 and ch 23; old tags appear only in ch 23's conversion table):
 
 | Group (color) | Tags | Website tooltip (ch 23) |

@@ -11,7 +11,7 @@ SmartObject.link_target), never from the filesystem.
     items(psd, vocab) -> [dict]                      a PSD's picture items (the catalogue's worker)
     kept_embedded(data) -> bool                      contents edited inside: they stay embedded
     assign(psds, types, linked) -> dict              every item's class and target (PLAN 5.1), new files named
-    link_card(psd, rel, entries, read) -> Linked     one PSD's pictures linked in place (5.2 step 4)
+    link_card(psd, rel, entries, read, tree, ppis) -> Linked     one PSD's pictures linked in place (5.2 step 4)
     link_pixels(layer, rel, path, data, corners)     a pixel layer made a smart object linking a Types/ file (Q4)
     ppi(data, path) / set_ppi(layers, value)         a file's resolution as Photoshop reads it, the Rslt a link stores
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
@@ -1979,10 +1979,10 @@ def main(args: Optional[list] = None) -> int:
     with open(posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
         links = load(fh)
     details, cleared = None, {}                 # psd_glyphs' texts (the data's psd_details.json), people's flags that went
-    if opts.db and isfile(posixpath_join(opts.db, "psd_details.json")):
+    if isfile(posixpath_join(opts.db, "psd_details.json")):
         with open(posixpath_join(opts.db, "psd_details.json"), encoding="utf-8") as fh:
             details = load(fh)
-    if opts.db and isfile(posixpath_join(opts.db, "card_checks.json")):
+    if isfile(posixpath_join(opts.db, "card_checks.json")):
         with open(posixpath_join(opts.db, "card_checks.json"), encoding="utf-8") as fh:
             cleared = load(fh).get("cleared") or {}
     if opts.command == "due":

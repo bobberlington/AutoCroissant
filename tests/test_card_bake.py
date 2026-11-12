@@ -750,7 +750,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path, monkeypatch):
 
 
 def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
-    """One PSDImage.open per PSD file per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
+    """One PSDImage.open per PSD file per bake: the old card's is shared by the parse,
     classify and apply_jobs, the saved card's by gate_bytes, the re-parse and the FX gates; the status chart's once.
     apply_jobs' copies (edit_copy) open the old card's bytes again (K-3). A stat and an ability edit (its FX layer
     deleted, the parser's every gate run)."""
