@@ -4,8 +4,8 @@ timelines keep out for the owner, with stable ids and radio answers that export 
 
     python -m commands.timeline_review build [--root <dir>]
 
-Reads the parts' outputs under the archive's derived/ (chain, match, matcher, oldrows, facts, morgue; never a repo) and
-writes derived/review/:
+Reads the parts' outputs under the archive's derived/ (chain, match, matcher, oldrows, facts, morgue; never a repo; the
+preview's eye.json: its leave_out pictures, no version of the card, are not asked about) and writes derived/review/:
     index.html   the page (open it in a browser: its pictures are the archive's own thumbnails, by relative path)
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
 Sections: the owner's answers (Q1-Q6, read only; Q5's first-repo rows listed), the unsure old maps, unsure matches and
@@ -42,6 +42,7 @@ FACTS, FACT_REVIEW = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 MORGUE, IDEAS = ("derived", "morgue", "candidates.json"), ("derived", "morgue", "ideas.json")
 RULINGS = ("derived", "review", "rulings.json")
+EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
 PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"   # discord_chain's (owner Q6)
 RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
@@ -106,6 +107,7 @@ class Inputs:
         self.ideas = (dm.read_json(at(IDEAS), {}) or {}).get("ideas") or []
         self.rulings = (dm.read_json(at(RULINGS), {}) or {}).get("rulings") or {}
         self.used = set((dm.read_json(at(USED), {}) or {}).get("used") or [])
+        self.left_out = {tuple(k.split("|")) for k in (dm.read_json(at(EYE), {}) or {}).get("leave_out") or {}}
         names = Counter(str(c.get("name") or cid).casefold() for cid, c in self.cards.items())
         self.shared = {n for n, k in names.items() if k > 1}          # a name two cards share: shown with the id
 
@@ -293,6 +295,8 @@ def chain_items(inputs: Inputs) -> list:
     out = []
     for r in inputs.chain:
         kind, cid = r["kind"], r.get("card")
+        if (cid, r.get("entry")) in inputs.left_out:          # no version of the card (the preview's eye): not asked
+            continue
         row = inputs.verdicts.get(r.get("picture")) or {}
         head = f"{inputs.label(cid)}: " if cid else ""
         date = f"{when(r.get('date'))} #{r.get('channel')}" if r.get("channel") else when(r.get("date"))

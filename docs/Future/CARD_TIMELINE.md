@@ -112,13 +112,15 @@ the card's Image versions on the website before the git versions. Cards that nev
    committed, approximate when the card had versions before that one; an MDW Morgue card's Discord pictures end at its
    first record in the old repo (oldgit `map.json`) or the card repo. A confirmed changelog fact names its version
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
-   so. The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
+   so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field, caption a covered photo, and leave out a
+   picture that is no version of the card (OMORI's 16 AI restyles; the next version is diffed again, the review page
+   doesn't ask about it). The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
    lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo";
    Discord: date and channel; a paper card "Before 2020"; first repo: text only), each compared with the current card
    as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
-   version there; their changes and the changelog facts (data only, owner Q4; a fact its confirming version also
-   records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
+   version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
+   its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
    joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
    first posts as Pacific days), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020" counts in

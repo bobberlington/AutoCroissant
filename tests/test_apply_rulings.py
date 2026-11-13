@@ -89,9 +89,10 @@ def test_the_page_offers_the_answers_and_the_morgue_list(tmp_path):
 
 def test_the_page_s_items_from_the_parts(tmp_path):
     """Built from the parts' outputs: a shared name needs the id (typed and listed), stats typed as hp/def or two
-    creatures, a map to a card that isn't live takes no 'yes', the rival card a reason names is a radio, Morgue hints
-    only before the Created date in use (no meme ones), an answer whose item left the page: taken in or changed, and a
-    look answered by its version's key (a stored number no radio takes: not applied, kept as stored)."""
+    creatures, a map to a card that isn't live takes no 'yes', the rival card a reason names is a radio, a picture the
+    preview's eye leaves out isn't asked about, Morgue hints only before the Created date in use (no meme ones), an
+    answer whose item left the page: taken in or changed, and a look answered by its version's key (a stored number no
+    radio takes: not applied, kept as stored)."""
     ar = load()
     derived = tmp_path / "derived"
     put = lambda parts, data: ((derived.joinpath(*parts)).parent.mkdir(parents=True, exist_ok=True),
@@ -117,7 +118,10 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                            "field": "stats", "proposed": {"creatures": [{"hp": 7, "def": 4, "atk": 6,
                                                                                         "spd": 6}] * 2}},
                                           {"id": "chain-l1", "kind": "look not told", "card": "bolt", "picture": "P-1",
-                                           "near": 1}]))
+                                           "near": 1},
+                                          {"id": "chain-f3", "kind": "field", "card": "bolt", "entry": "D-ai",
+                                           "field": "stars", "proposed": 9}]))
+    put(("preview", "eye.json"), {"leave_out": {"bolt|D-ai": "an AI restyle"}})
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
         "Kit": {"card": "kit", "status": "owner", "date": "2020-01-01", "sort": "2020-01-01",
@@ -140,6 +144,7 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     inputs = tr.Inputs(str(tmp_path))
     got = {i["id"]: i for i in tr.gather(inputs)}
     assert [c["c"] for c in got["oldrows-a"]["choices"]] == ["no"] and got["oldrows-a"]["other"]["c"] == "card"
+    assert "chain-f3" not in got                                                   # no version (the preview's eye)
     assert [(c["c"], c.get("value")) for c in got["oldrows-b"]["choices"]] == [("yes", "Bolt"), ("no", None)]
     assert [c.get("value") for c in got["match:P-1"]["choices"]] == ["tentacle", "blooper-tentacle", None]
     assert sorted(i for i in got if i.startswith("hint:")) == ["hint:LC-1:bolt", "hint:LC-3:kit"]

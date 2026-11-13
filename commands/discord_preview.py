@@ -22,9 +22,10 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
         only: its PNG's moves followed as the website follows them, lineage); its git_first is dated when its card-data
         version was committed, approx when the card had versions before it; an MDW Morgue card's Discord pictures end
         at its first record in the old repo (oldgit map.json) or the card repo (mdw_firsts). A confirmed changelog fact
-        names the version that confirms it (confirmed_by). Old-repo versions come from the old .git (read only,
-        cat-file). Webps already there are kept (--force: made again); webps and timelines no entry names any more are
-        deleted.
+        names the version that confirms it (confirmed_by). The eye's leave_out (derived/preview/eye.json: pictures
+        that are no version of the card, e.g. AI restyles) are left out, the next version diffed again (leave_out).
+        Old-repo versions come from the old .git (read only, cat-file). Webps already there are kept (--force: made
+        again); webps and timelines no entry names any more are deleted.
 check   Every published version's fields read again from its webp (title OCR and its nearest name, the stars, the
         bars, the ability's words, the types' icons) against its timeline.json -> derived/preview/check.jsonl and
         check.txt. A field the readers can't read again is counted apart from a disagreement.
@@ -56,7 +57,8 @@ CREATED = ("derived", "chain", "created.json")
 MORGUE = ("derived", "morgue", "candidates.json")
 MORGUE_DIR = ("derived", "morgue")
 EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why},
-#                                             "covered": {"<card>|<entry id>": why}: a photo whose card lies under another}
+#                                             "covered": {"<card>|<entry id>": why}: a photo whose card lies under another,
+#                                             "leave_out": {"<card>|<entry id>": why}: no version of the card}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
 OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> today's (an MDW card's first old record)
@@ -206,6 +208,38 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
     if created:
         out["created"] = created
     return out, jobs
+
+
+def leave_out(t: dict, ids) -> list:
+    """A chain timeline without the entries the eye left out (ids: pictures that are no version of the card): the version
+    after them is diffed again against the one before them (as the chain's diff), git_first too when the last ones went,
+    and a fact they confirmed loses confirmed_by. Returns the entries taken out."""
+    gone = [e for e in t["entries"] if e["id"] in ids]
+    if not gone:
+        return []
+    kept, before, redo = [], None, False
+    for e in t["entries"]:
+        if e["id"] in ids:
+            redo = True
+            continue
+        kept.append(e)
+        if e["kind"] in TEXT_KINDS:
+            if e.get("confirmed_by") in ids:
+                e.pop("confirmed_by")
+            continue
+        if e["kind"] == "paper":
+            continue
+        if redo:
+            e["changes"] = dc.compare(before["fields"], e["fields"]) if before else \
+                ({"ability_change": "first"} if e["fields"].get("ability") else {})
+            if e["kind"] == "discord":
+                e["minor"] = bool(before) and before["kind"] == "discord" and dc.settled(before["fields"], e["fields"])
+            redo = False
+        before = e
+    if redo and t.get("git_first"):
+        t["git_first"]["changes"] = dc.compare(before["fields"], t["git_first"].get("fields") or {}) if before else {}
+    t["entries"] = kept
+    return gone
 
 
 def created_proposals(created: dict) -> dict:
@@ -490,6 +524,10 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         card, entry, field = key.split("|")
         eye.setdefault(card, {}).setdefault(entry, set()).add(field)
     covered = {tuple(key.split("|")) for key in rulings.get("covered") or {}}
+    out_of = defaultdict(set)                    # {card: {entry id}}: the eye's leave_out
+    for key in rulings.get("leave_out") or {}:
+        card, entry = key.split("|")
+        out_of[card].add(entry)
     reads = title_reads(root)
     # stop at git: each card's first record in the card repo, its moves followed as the website follows them
     commits = repo_log(expanduser(cards_repo)) if cards_repo else []
@@ -499,7 +537,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
     data = dc.first_versions(dm.git_dir_of(expanduser(cards_repo))) if commits else {}
     if not commits:
         log("build: no card repo history: the chain's stops as they are")
-    cut = []
+    cut, left = [], {}
     by_key = (created.get("cards") or {})
     index = {"version": 1, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "about": ABOUT,
              "cards": {}, "morgue": [], "mdw": [], "created": created_proposals(created)}
@@ -512,13 +550,22 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         t = dm.read_json(join(chain_dir, name))
         if not t or not t.get("entries"):
             continue
+        c = by_key.get(t["key"]) or {}
+        taken = leave_out(t, out_of.get(t["card"]) or ())
+        if taken:
+            left[t["card"]] = len(taken)
+            if (c.get("ours") or {}).get("picture") in {p["id"] for e in taken for p in e.get("pictures") or ()}:
+                index["created"].pop(t["key"], None)      # its Created came from a picture left out: no proposal
+                c = {}
+                log(f"build: {t['card']}: its Created source was left out by the eye: no proposal")
+            if not t["entries"]:
+                continue
         if commits:
             moved = stop_at_git(t, pngs.get(t["card"]) or [], psds.get(t["card"]) or [], data.get(t["key"]))
             if moved:
                 cut.append((t["card"], moved))
             if not t["entries"]:
                 continue
-        c = by_key.get(t["key"]) or {}
         mine = {"date": c.get("date"), "sort": c.get("sort"), "source": (c.get("ours") or {}).get("source"),
                 "status": c.get("status")} if c else None
         out, pics = timeline_out(t, mine, eye.get(t["card"]), reads, {e for card, e in covered if card == t["card"]})
@@ -612,6 +659,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); {total / 1e6:.1f} MB")
     for path, err in failed[:20]:
         log(f"build: failed {path[len(out_dir) + 1:]}: {err}")
+    log(f"build: the eye's leave_out: {sum(left.values())} entries left out "
+        f"({', '.join(f'{k} {n}' for k, n in sorted(left.items())) or 'none'})")
     log(f"build: MDW Morgue cards, stop at git: {sum(mdw_gone.values())} Discord pictures at or after the card's first "
         f"git record left out ({', '.join(f'{k} {n}' for k, n in sorted(mdw_gone.items())) or 'none'})")
     if commits:

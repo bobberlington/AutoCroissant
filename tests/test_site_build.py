@@ -491,6 +491,7 @@ def _timelines(root):
         {"id": "F-1", "kind": "text", "date": "2022-10-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4}},
         {"id": "F-2", "kind": "text", "date": "2023-04-20T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4},
          "confirmed": True, "confirmed_by": "O-1"},
+        {"id": "F-3", "kind": "text", "date": "2022-11-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "type", "to": "dark", "op": "remove"}},
         {"id": "O-1", "kind": "old repo", "date": "2023-05-01T00:00:00+00:00", "author": "Maker", "subject": "Alpha art",
          "image": pic("alpha", "O-1.webp"), "w": 40, "h": 80, "fields": {"stats": stats(3, 4)},
          "changes": {"stats": [{"hp": 3, "def": 2, "atk": 5, "spd": 1}, {"hp": 3, "def": 2, "atk": 4, "spd": 1}], "bal": "nerf"}},
@@ -520,7 +521,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     after the repo's (versions.json early) with their webps, none at or after the card's first version here, the Morgue's
     entries from Discord (never cards[], never on a renamed card's old page), an MDW Morgue card's pictures after its
     PNG's current version (none after its first record here), a paper card's Created ("Before 2020") and their changes
-    under Recorded changes, a confirmed fact once; without HISTORY_DIR, none of it."""
+    under Recorded changes (a type fact's "remove" as a removal), a confirmed fact once; without HISTORY_DIR, none of it."""
     if not hasattr(bs, "HISTORY_DIR"):
         pytest.skip("a site before HISTORY_DIR")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
@@ -555,6 +556,8 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     changes = out["analytics.json"]["cards"][alpha["id"]]["changes"]
     assert {"ts": 1682899200, "stats": [[3, 2, 5, 1], [3, 2, 4, 1]], "bal": "nerf", "early": "old repo"} in changes
     assert {"ts": 1664582400, "fact": {"field": "atk", "from": 5, "to": 4}, "early": "text"} in changes
+    assert {"ts": 1667260800, "types": {"add": [], "drop": ["dark"]}, "early": "text"} in changes   # a type removed
+    assert bs.history_shown({"field": "type", "to": "dark", "op": "remove"}, {"types": {"add": [], "drop": ["dark"]}})
     assert not [r for r in changes if r["ts"] == 1681948800]                         # confirmed: the old repo's nerf says it
     assert {"ts": 1685577600, "stats": [[3, 2, 4, 1], [3, 2, 3, 1]], "bal": "nerf", "early": "git", "approx": True} in changes
     # without the timelines: none of it

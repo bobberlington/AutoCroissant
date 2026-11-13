@@ -1,8 +1,9 @@
 """discord_preview build on a made-up archive: only sure fields are published (value, method, confidence; not one of
 the wrong kind or one the eye dropped; a title snapped to an old casing as the picture prints it), no message, poster,
 note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read from its git
-dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new. Stop at git: a card moved and
-redrawn in one commit starts at its first file."""
+dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new; the eye's leave_out (no version
+of the card: the next one diffed again, no Created from it). Stop at git: a card moved and redrawn in one commit starts
+at its first file."""
 import json
 import subprocess
 from os import environ
@@ -48,6 +49,8 @@ def test_build(tmp_path):
              {"id": "D-P-s-c2", "kind": "discord", "date": "2021-02-01T00:00:00+00:00", "day": "2021-02-01", "channel": "ideas",
               "look": {"git": {"commit": "c"}}, "pictures": [pic("P-s-c2", "s.png", 2, [0.5, 0.0, 1.0, 1.0])], "minor": False,
               "fields": {"stars": sure(3, "eye")}, "changes": {"ability_change": "unknown"}},
+             {"id": "D-P-x", "kind": "discord", "date": "2021-03-01T00:00:00+00:00", "day": "2021-03-01", "channel": "random-images",
+              "look": {"draft": True}, "era": "other", "pictures": [pic("P-x", "a.png")], "minor": False, "fields": {}, "changes": {}},
              {"id": "F-1", "kind": "text", "date": "2022-01-01T00:00:00+00:00", "day": "2022-01-01", "channel": "update-05",
               "source": "changelog", "change": {"field": "atk", "from": 5, "to": 4, "stated": {"from": 5}}, "confidence": "sure",
               "confirmed_by": "O-1"},
@@ -72,8 +75,9 @@ def test_build(tmp_path):
                                   "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord", "printed": True}]}]}
     (root / "derived" / "morgue" / "candidates.json").write_text(json.dumps(morgue))
     (root / "derived" / "preview").mkdir(parents=True)
-    (root / "derived" / "preview" / "eye.json").write_text(json.dumps({"drop": {"bolt|O-1|stats": "the eye: another value"},
-                                                                    "covered": {"bolt|D-P-a": "under another card"}}))
+    eye = {"drop": {"bolt|O-1|stats": "the eye: another value"}, "covered": {"bolt|D-P-a": "under another card"},
+           "leave_out": {"bolt|D-P-x": "an AI restyle"}}
+    (root / "derived" / "preview" / "eye.json").write_text(json.dumps(eye))
     (root / "derived" / "readers" / "text").mkdir(parents=True)
     (root / "derived" / "readers" / "text" / "reads.jsonl").write_text(json.dumps(
         {"src": "discord", "file": "attachments/a.png", "title": {"ocr": "* Bolt", "value": "BOLT"}}) + "\n")
@@ -82,7 +86,8 @@ def test_build(tmp_path):
     index = dp.build(str(root), str(git), workers=1, cards_repo=None)
     out = root / "derived" / "preview" / "history"
     got = json.loads((out / "bolt" / "timeline.json").read_text())
-    assert [e["kind"] for e in got["entries"]] == ["discord", "discord", "text", "old repo"]
+    assert [e["kind"] for e in got["entries"]] == ["discord", "discord", "text", "old repo"]       # D-P-x left out
+    assert not (out / "bolt" / "P-x.webp").exists()
     first, cell, fact, old = got["entries"]
     assert first["fields"] == {"name": {"value": "Bolt", "method": "ocr+name", "confidence": "sure"}}   # the review field left out
     assert first["covered"] and "covered" not in cell and fact["confirmed_by"] == "O-1"
@@ -103,6 +108,25 @@ def test_build(tmp_path):
     (out / "bolt" / "stale.webp").write_bytes(b"x")
     dp.build(str(root), str(git), workers=1, cards_repo=None)
     assert not (out / "bolt" / "stale.webp").exists() and (out / "bolt" / "P-a.webp").exists()
+    # the eye leaves out the picture Created came from: no proposal from it
+    eye["leave_out"]["bolt|D-P-a"] = "not this card"
+    (root / "derived" / "preview" / "eye.json").write_text(json.dumps(eye))
+    assert dp.build(str(root), str(git), workers=1, cards_repo=None)["created"] == {}
+    got = json.loads((out / "bolt" / "timeline.json").read_text())
+    assert [e["id"] for e in got["entries"]] == ["D-P-s-c2", "F-1", "O-1"] and not (out / "bolt" / "P-a.webp").exists()
+    assert "created" not in got
+    # the version after the ones left out is diffed again; a fact they confirmed loses it; so does git_first
+    line = lambda atk: {"value": {"hp": 3, "def": 2, "atk": atk, "spd": 1}, "method": "picture", "confidence": "sure"}
+    t = {"entries": [{"id": "D-1", "kind": "discord", "fields": {"stats": line(5)}, "changes": {}},
+                     {"id": "D-X", "kind": "discord", "fields": {}, "changes": {}},
+                     {"id": "F-1", "kind": "text", "change": {"field": "atk", "from": 5, "to": 4}, "confirmed_by": "D-X"},
+                     {"id": "D-2", "kind": "discord", "fields": {"stats": line(4)}, "changes": {"unknown": ["stats"]}},
+                     {"id": "D-Y", "kind": "discord", "fields": {"stats": line(9)}, "changes": {}}],
+         "git_first": {"fields": {"stats": line(3)}, "changes": {"stats": [line(9)["value"], line(3)["value"]]}}}
+    assert [e["id"] for e in dp.leave_out(t, {"D-X", "D-Y"})] == ["D-X", "D-Y"]
+    assert [e["id"] for e in t["entries"]] == ["D-1", "F-1", "D-2"] and "confirmed_by" not in t["entries"][1]
+    assert t["entries"][2]["changes"]["nerfs"] == ["ATK 5 -> 4"] and t["entries"][2]["minor"] is False
+    assert t["git_first"]["changes"]["nerfs"] == ["ATK 4 -> 3"]
 
 
 def test_stop_at_git(tmp_path):
