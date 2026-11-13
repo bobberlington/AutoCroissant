@@ -251,7 +251,8 @@ def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
 
 def test_the_owner_s_answers():
     """The review page's answers (rulings.json): a named-only picture confirmed enters and dates Created, a look told,
-    'not this card', a card named, a paper photo named, a field given, an unsure fact right, Created picked."""
+    'not this card', a card named, a paper photo named, a field given, an unsure fact right, Created picked with its
+    source, earlier hints only before the Created date in use, a map to a card that isn't live, the ids acted on."""
     rid = dc.review_id
     text = {"attachments/1.png": {"title": {"value": "Bolt", "sure": False, "conf": 0.5, "method": "ocr+name"}}}
     verdicts = [picture(1, T, created_review="named only, before its first picture evidence (x)"),
@@ -267,10 +268,18 @@ def test_the_owner_s_answers():
                rid("paper photo", "P-000000000005"): {"choice": "card", "value": "bolt"},
                rid("field", "bolt|D-P-000000000001|name"): {"choice": "yes"},
                "R1": {"kind": "unsure fact", "choice": "yes", "value": "points", "item": {"fact": "f9"}},
-               rid("created earlier", "bolt"): {"choice": "file"}}
-    got = inputs(verdicts, text, facts=facts, created={"Bolt": {"date": dc.day(T + 9 * DAY), "from": "discord"}})
+               rid("created earlier", "bolt"): {"choice": "file"}, rid("changelog earlier", "bolt"): {"choice": "yes"},
+               "oldrows-m1": {"kind": "unsure map", "choice": "yes"}}
+    gone = {"id": "oldrows-m1", "kind": "unsure map", "card": "Zed Old", "status": "archived",
+            "rows": [old_row("Zed", T + 50 * DAY, "d" * 40, 5)]}
+    got = inputs(verdicts, text, facts=facts, created={"Bolt": {"date": dc.day(T + 9 * DAY), "from": "discord"}},
+                 old_review=[gone])
     got.rulings = rulings
-    assert dc.owner_rows(got)["owner: not this card"] == 1
+    done = dc.owner_rows(got)
+    assert done["owner: not this card"] == 1 and "Zed Old" not in got.old_rows                 # no live card: none
+    assert got.used == {rid("named only", "P-000000000001"), rid("look not told", "P-000000000002"),
+                        rid("look not told", "P-000000000003"), "match:P-000000000004",
+                        rid("paper photo", "P-000000000005"), "R1"}
     chain = dc.Chain(got)
     found, split = chain.discord_rows()
     t = chain.card("bolt", found["bolt"], split.get("bolt", []))
@@ -283,4 +292,24 @@ def test_the_owner_s_answers():
     assert {i["picture"] for i in chain.review.values() if i["kind"] == "look not told"} == {"P-000000000004"}
     made = chain.created("bolt", {**t, "entries": [e for e in t["entries"] if e["kind"] != "paper"]},
                          [r for r in verdicts if r.get("card") == "bolt"])
-    assert (made["status"], made["date"], made["owner"]["was"]) == ("owner", dc.day(T + 9 * DAY), "earlier")
+    # ours is T; the website's T+9 picked, so the changelog line (T+4) is a hint, answered yes: it wins, with its source
+    assert (made["status"], made["date"], made["owner"]["was"], made["owner"]["base"]) == (
+        "owner", dc.day(T + 4 * DAY), "earlier", dc.day(T + 9 * DAY)) and made["proposed"]
+    assert made["owner"]["source"] == {"day": dc.day(T + 4 * DAY), "source": "changelog", "from": "changelog line",
+                                       "fact": "f9", "channel": "update-01"}
+    assert {rid("created earlier", "bolt"), rid("changelog earlier", "bolt"),
+            rid("field", "bolt|D-P-000000000001|name")} <= chain.used and "oldrows-m1" not in chain.used
+    # a 'later' card: a line after the website's date is no hint; answered 'ours', a line before ours is one
+    sure_fact = {**facts[0], "id": "f7", "confidence": "sure", "date": iso(T + 2 * DAY)}
+    later = inputs([picture(21, T + 3 * DAY, "version_sure", look=1)], facts=[sure_fact],
+                   created={"Bolt": {"date": dc.day(T - 5 * DAY), "from": "discord"}})
+    for answers, status, hint in (({}, "later", None), ({rid("created later", "bolt"): {"choice": "ours"}}, "owner",
+                                                        dc.day(T + 2 * DAY))):
+        later.rulings = answers
+        chain = dc.Chain(later)
+        found, split = chain.discord_rows()
+        t = chain.card("bolt", found["bolt"], split.get("bolt", []))
+        made = chain.created("bolt", t, later.verdicts)
+        assert (made["status"], (made.get("changelog_earlier") or {}).get("day")) == (status, hint)
+    assert made["date"] == dc.day(T + 3 * DAY) and made["proposed"] and made["owner"]["source"]["picture"] == \
+        "P-000000000021" and made["owner"]["source"]["from"] == "ours"

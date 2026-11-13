@@ -31,7 +31,9 @@ build   Under derived/chain/:
         created.json    Created = the earliest confident appearance (a named paper photo: "Before 2020", owner Q6; a
                         card-sure Discord picture, the old repo, the card repo) with its source, against site/Card
                         Creation Dates.json: same, earlier (proposed), later (review only: never moved later), new (no
-                        date yet), hand (never touched). sort orders "Before 2020" first.
+                        date yet), hand (never touched). sort orders "Before 2020" first. A changelog line or a
+                        first-repo push is a hint to review only when earlier than the Created date in use (the
+                        file's for 'later', the owner's pick when answered).
         review.jsonl    what the chain keeps out (stable ids): looks not told, named-only pictures before the card's
                         first picture evidence (one section to confirm in bulk), joke drafts, unsure fields, facts a
                         picture contradicts, Created changes, splits, unnamed paper photos, and the owner's answers
@@ -39,7 +41,9 @@ build   Under derived/chain/:
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
         scripts/apply_rulings.py) are honoured: pictures named, told or refused, fields given (method 'owner'), unsure
-        changelog facts and old maps, older templates shown, facts against pictures, Created picked.
+        changelog facts and old maps, older templates shown, facts against pictures, Created picked (status 'owner',
+        owner.source shaped like ours: where the date came from).
+        ruled.json      the answers this build acted on (only while rulings.json has answers).
 checks  Contact sheets of n random cards' whole timelines (each version's picture beside its fields) for the by-eye
         check, under derived/chain/checks/.
 No message text, posters, authors of Discord posts or links anywhere: dates, channels, picture ids and read fields only
@@ -128,7 +132,7 @@ class Paths:
         self.root, self.out = root, join(root, *OUT)
         self.timelines, self.checks = join(self.out, "timelines"), join(self.out, "checks")
         self.created, self.review = join(self.out, "created.json"), join(self.out, "review.jsonl")
-        self.stats = join(self.out, "stats.txt")
+        self.stats, self.ruled = join(self.out, "stats.txt"), join(self.out, "ruled.json")
 
     def at(self, parts: tuple) -> str:
         return join(self.root, *parts)
@@ -605,59 +609,77 @@ def owner_rows(inputs) -> Counter:
     """The owner's answers that change what enters, applied to the inputs in place: a picture's card named, its look
     told (a git look or a draft), a named-only picture confirmed, 'not this card', a joke picture that is the live
     card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's rows given to a card.
-    Fields, older templates, facts against pictures and Created are answered where the chain makes them."""
+    Fields, older templates, facts against pictures and Created are answered where the chain makes them. The ids
+    acted on go into inputs.used (ruled.json: the review page tells an answer taken in from one whose item changed)."""
     rulings, done = getattr(inputs, "rulings", None) or {}, Counter()
+    used = inputs.used = getattr(inputs, "used", None) or set()
     if not rulings:
         return done
     cards = inputs.cards
     for row in inputs.verdicts:
         rid = row["id"]
-        named, told = rulings.get(review_id("named only", rid)), rulings.get(review_id("look not told", rid))
-        joke, paper, match = (rulings.get(review_id("joke picture", rid)), rulings.get(review_id("paper photo", rid)),
-                              rulings.get("match:" + rid))
+        ids = {k: review_id(k, rid) for k in ("named only", "look not told", "joke picture", "paper photo")}
+        named, told, joke, paper = (rulings.get(ids[k]) for k in ids)
+        match = rulings.get("match:" + rid)
         if match and match.get("choice") == "card" and match.get("value") in cards and \
                 row["verdict"] not in SURE_CLASSES:
             row.update(card=match["value"], cards=[match["value"]], verdict="version_unsure", owner="card named",
                        version={"unsure": "the owner named its card: which look?"})
+            used.add("match:" + rid)
             done["owner: a picture's card named"] += 1
-        if any(r and r.get("choice") == "no" for r in (named, told)):
+        elif match and match.get("choice") == "none":
+            used.add("match:" + rid)
+        no = [k for k, r in (("named only", named), ("look not told", told)) if r and r.get("choice") == "no"]
+        if no:
             row.update(verdict="none", owner="not this card")
+            used.update(ids[k] for k in no)
             done["owner: not this card"] += 1
             continue
         if named and named.get("choice") == "yes":
             row.pop("created_review", None)
             row["owner"] = "the card's picture"
+            used.add(ids["named only"])
             done["owner: a named-only picture confirmed"] += 1
         if told and told.get("choice") == "draft":
             row.update(verdict="draft", version={**(row.get("version") or {}), "shows": "draft", "look": None},
                        owner="a look not in git")
+            used.add(ids["look not told"])
             done["owner: a look not in git"] += 1
         elif told and told.get("choice") == "look" and told.get("value") is not None:
             row.update(verdict="version_sure", version={**(row.get("version") or {}), "look": told["value"]},
                        owner="a git look")
+            used.add(ids["look not told"])
             done["owner: a git look told"] += 1
         if joke and joke.get("choice") == "live":
             row.pop("joke_draft", None)
             row.update(joke=False, owner="the live card's picture")
+            used.add(ids["joke picture"])
             done["owner: a joke picture is the live card's"] += 1
         if paper and paper.get("choice") == "card" and paper.get("value") in cards:
             inputs.paper_eye[rid] = {"card": paper["value"], "how": "named by the owner"}
+            used.add(ids["paper photo"])
             done["owner: a paper photo named"] += 1
     facts = {f["id"]: f for f in inputs.facts}
     maps = {i["id"]: i for i in inputs.old_review if i.get("kind") == "unsure map" and not i.get("split")}
+    live = {c.get("key") for c in cards.values()}
     for rid, r in rulings.items():
         fact = facts.get((r.get("item") or {}).get("fact")) if r.get("kind") == "unsure fact" else None
-        if fact and fact.get("confidence") == "unsure":
+        if fact and fact.get("confidence") == "unsure" and r.get("choice") in ("yes", "no"):
             if r.get("choice") == "yes":
                 fact.update(confidence="sure", owner=True, **({"unit": r["value"]} if r.get("value") else {}))
-            elif r.get("choice") == "no":
+            else:
                 fact["confidence"] = "refused"
+            used.add(rid)
             done[f"owner: an unsure fact {r.get('choice')}"] += 1
         if rid in maps:
             key = maps[rid].get("card") if r.get("choice") == "yes" else \
                 (cards.get(r.get("value")) or {}).get("key") if r.get("choice") == "card" else None
+            if key not in live and r.get("choice") != "no":
+                done["owner: an unsure old map's card is no live card (nothing added)"] += 1
+                continue
             for row in maps[rid].get("rows") or [] if key else []:
                 inputs.old_rows[key].append({**row, "card": key, "owner": True})
+            used.add(rid)
             done[f"owner: an unsure old map {r.get('choice')}"] += 1
     return done
 
@@ -678,6 +700,7 @@ class Chain:
                           if item.get("row") and item.get("field")}
         self.splits = {g["id"]: g for g in inputs.lost if g.get("split_of")}
         self.rulings = getattr(inputs, "rulings", None) or {}
+        self.used = getattr(inputs, "used", None) or set()   # rulings acted on (owner_rows' too): ruled.json
         self.old_proposed = {i["id"]: i.get("proposed") for i in inputs.old_review}
         self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
@@ -946,8 +969,9 @@ class Chain:
             rank = ERA_RANK.get(e.get("era"))
             when = dm.epoch(e["date"]) if e.get("date") else None
             if rank and when and (rank < top) and (rank < 2 or when - since.get(top, when) > REPOST_DAYS * 86400):
-                if (self.rulings.get(review_id("older template later", f"{cid}|{e['id']}")) or {}).get(
-                        "choice") == "show":
+                older = review_id("older template later", f"{cid}|{e['id']}")
+                if (self.rulings.get(older) or {}).get("choice") == "show":
+                    self.used.add(older)
                     self.tally["owner: an older template shown"] += 1
                     kept.append(e)
                     continue
@@ -1096,8 +1120,10 @@ class Chain:
                         if seen[1] is not None:
                             break
             if seen and seen[1] is not None and seen[1] != to:
-                choice = (self.rulings.get(review_id("fact vs picture", e["id"])) or {}).get("choice")
+                against = review_id("fact vs picture", e["id"])
+                choice = (self.rulings.get(against) or {}).get("choice")
                 if choice in ("fact", "picture"):
+                    self.used.add(against)
                     self.tally[f"owner: fact vs picture, the {choice} kept"] += 1
                     if choice == "fact":
                         kept.append(e)
@@ -1149,6 +1175,7 @@ class Chain:
                     field.get("proposed", self.old_proposed.get(rid)) if r.get("choice") == "yes" else None
                 if value is not None:
                     e["fields"][key] = sure(value, "owner", ruled=rid)
+                    self.used.add(rid)
                     self.tally[f"owner: {e['kind']} field {key} given"] += 1
 
     def field_reviews(self, cid: str, entries: list) -> None:
@@ -1258,12 +1285,17 @@ class Chain:
             if day(dm.epoch(row["first"]["date"])) < key:
                 out["named_only_earlier"] = {"day": day(dm.epoch(row["first"]["date"])), "picture": row["id"],
                                              "review": review_id("named only", row["id"])}
+        if out["status"] == "hand":                # never touched: no hint to answer
+            return out
+        pick, base = self.owner_pick(out)
+        before = created_sort(base[0])            # a hint only when it is earlier than the Created date in use
         facts = [f for f in inputs.facts if f.get("card") == card["key"] and f.get("source") == "changelog"
                  and f.get("confidence") == "sure" and dm.epoch(f.get("date"))]
         if facts:
             fact = min(facts, key=lambda f: dm.epoch(f["date"]))
-            if day(dm.epoch(fact["date"])) < key:
+            if day(dm.epoch(fact["date"])) < before:
                 out["changelog_earlier"] = {"day": day(dm.epoch(fact["date"])), "fact": fact["id"],
+                                            "channel": fact.get("channel"),
                                             "review": self.add_review("changelog earlier", cid, card=cid,
                                                                       fact=fact["id"], date=fact["date"],
                                                                       why="a sure changelog line names it before "
@@ -1271,33 +1303,71 @@ class Chain:
         pushes = [r for r in inputs.first_repo if r.get("card") == card["key"] and dm.epoch(r.get("date"))]
         if pushes:
             push = min(pushes, key=lambda r: dm.epoch(r["date"]))
-            if day(dm.epoch(push["date"])) < key:
+            if day(dm.epoch(push["date"])) < before:
                 out["first_repo_earlier"] = {"day": day(dm.epoch(push["date"])), "row": "Q-" + push["id"],
                                              "review": self.add_review("first repo earlier", cid, card=cid,
                                                                        row="Q-" + push["id"], date=push["date"],
                                                                        why="a first-repo push notice names it "
                                                                            "before its Created date")}
-        self.owner_created(cid, out)
+        self.owner_created(cid, out, pick, base)
         return out
 
-    def owner_created(self, cid: str, out: dict) -> None:
-        """The owner's answers on Created: a status item's pick (ours, the file's, a date given) and the earlier
-        hints said yes to (a changelog line, a first-repo row, a Morgue entry's picture); the earliest wins.
-        'hand' is never touched."""
-        if out["status"] == "hand" or not self.rulings:
+    def owner_pick(self, out: dict) -> tuple:
+        """(the owner's answer on the card's Created item, (the date it gives, its source)): ours, the file's or a date
+        given; else the date as built."""
+        r = (self.rulings.get(out["review"]) or {}) if out.get("review") else {}
+        file, ours = out.get("file") or {}, out["ours"]
+        given = {"ours": (ours.get("day"), {**ours, "from": "ours"}),
+                 "file": (file.get("date"), {"day": file.get("date"), "source": "website", "from": "file",
+                                             "file_from": file.get("from")}),
+                 "date": (r.get("value"), {"day": r.get("value"), "source": "owner", "from": "typed"})}
+        if r.get("choice") in given and given[r["choice"]][0]:
+            return r, given[r["choice"]]
+        if out["date"] == ours.get("day"):
+            return {}, (out["date"], {**ours, "from": "ours"})
+        return {}, (out["date"], {"day": out["date"], "source": "website", "from": "file",
+                                  "file_from": file.get("from")})
+
+    def owner_created(self, cid: str, out: dict, r: dict, base: tuple) -> None:
+        """The owner's answers on Created: a status item's pick (base: ours, the file's, a date given) and the earlier
+        hints said yes to (a changelog line, a first-repo row, a Morgue entry's picture); the earliest wins and its
+        source is kept (owner.source, shaped like ours: the preview's source for status 'owner'). 'hand' is never
+        touched; a hint not earlier than base is never one (the review page leaves it out)."""
+        if not self.rulings:
             return
-        r = self.rulings.get(out.get("review")) or {} if out.get("review") else {}
-        base = {"ours": out["ours"].get("day"), "file": (out.get("file") or {}).get("date"),
-                "date": r.get("value")}.get(r.get("choice")) or out["date"]
-        picks = [base] + [out[k]["day"] for k in ("changelog_earlier", "first_repo_earlier") if out.get(k) and
-                          (self.rulings.get(out[k]["review"]) or {}).get("choice") == "yes"]
-        picks += [str(h.get("item", {}).get("date") or "")[:10] for h in self.rulings.values()
-                  if h.get("kind") == "morgue hint" and h.get("choice") == "yes" and
-                  (h.get("item") or {}).get("card") == cid and (h.get("item") or {}).get("date")]
-        date = min(picks, key=created_sort)
+        ruled = [out["review"]] if r else []
+        picks = [base]
+        for k, source, what in (("changelog_earlier", "changelog", "changelog line"),
+                                ("first_repo_earlier", "first repo", "first repo push")):
+            hint = out.get(k)
+            answer = (self.rulings.get(hint["review"]) or {}) if hint else {}
+            if answer.get("choice") in ("yes", "no"):
+                ruled.append(hint["review"])
+                self.used.add(hint["review"])
+            if answer.get("choice") == "yes":
+                picks.append((hint["day"], {"day": hint["day"], "source": source, "from": what,
+                                            **{x: hint[x] for x in ("fact", "row", "channel") if hint.get(x)}}))
+        for hid, h in sorted(self.rulings.items()):
+            item = h.get("item") or {}
+            if h.get("kind") != "morgue hint" or item.get("card") != cid or item.get("meme"):
+                continue
+            when = item.get("day") or str(item.get("date") or "")[:10]
+            if not when or created_sort(when) >= created_sort(base[0]) or h.get("choice") not in ("yes", "no"):
+                continue
+            ruled.append(hid)
+            self.used.add(hid)
+            if h.get("choice") == "yes":
+                picks.append((when, {"day": when, "source": "paper card" if when == PAPER_DAY else "discord",
+                                     "from": "morgue picture", "entry": item.get("entry"),
+                                     **{x: item[x] for x in ("picture", "channel") if item.get(x)}}))
+        date, source = min(picks, key=lambda p: created_sort(p[0]))
         if r or date != out["date"]:
-            out.update(status="owner", date=date, sort=created_sort(date), proposed=True,
-                       owner={"was": out["status"], "pick": r.get("choice"), "hints": len(picks) - 1})
+            if r:
+                self.used.add(out["review"])
+            file = (out.get("file") or {}).get("date")
+            out.update(status="owner", date=date, sort=created_sort(date), proposed=date != file,
+                       owner={"was": out["status"], "pick": r.get("choice"), "base": base[0],
+                              "hints": len(picks) - 1, "source": source, "ruled": ruled})
             self.tally["owner: Created picked"] += 1
 
 
@@ -1345,6 +1415,13 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
                  "kept), new (proposed), hand (untouched). date = what the preview uses, sort orders 'Before 2020' "
                  "first. Named-only pictures, changelog lines and first-repo rows before it are review only.",
         "generated": dm.now_iso(), "cards": created})
+    if inputs.rulings:
+        dm.write_json(paths.ruled, {"about": "The review page's answers (derived/review/rulings.json) this build acted "
+                                             "on: an answer whose item left the page is 'taken in' only when listed "
+                                             "here, else its item changed.",
+                                    "generated": dm.now_iso(), "used": sorted(chain.used)})
+    elif exists(paths.ruled):
+        remove(paths.ruled)
     items = sorted(chain.review.values(), key=lambda i: (i["kind"], i["id"]))
     dm.write_text(paths.review, "".join(dumps(i, ensure_ascii=False) + "\n" for i in items))
     text = stats_text(timelines, created, items, chain.tally, kinds)

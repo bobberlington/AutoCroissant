@@ -85,11 +85,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    local, never published): the owner's answers Q1-Q6 (read only, Q5's first-repo rows listed), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
    templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields, Created dates (earlier,
-   new, later, earlier hints), the Morgue list (candidates, ideas never ported, the rest) and splits; stable ids, the
-   archive's thumbnails, radio answers kept in the browser and exported as JSON. `scripts/apply_rulings.py <export>`
-   checks every answer against `items.json` (one error stores nothing), keeps them in `derived/review/rulings.json`,
-   reruns the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked),
-   writes the Morgue list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked.
+   new, later, and earlier hints: only those earlier than the Created date in use), the Morgue list (candidates, ideas
+   never ported, the rest) and splits; stable ids, the archive's thumbnails, radio answers kept in the browser and
+   exported as JSON. `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores
+   nothing; a typed card is its id or a name only one card has), keeps them in `derived/review/rulings.json`, reruns the
+   chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
+   shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
+   list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
+   item left the page shows as taken in (in `ruled.json`) or as not applied (its item changed: answer it again).
 6. **Publish:** the `history` branch holds per card `history/<card id>/timeline.json` (versions: date, fields, method and
    confidence per field, image name, text entries) and one webp per version (the card's PNG size class), plus an index. Written
    by a script run by hand (no Action), one commit per run.

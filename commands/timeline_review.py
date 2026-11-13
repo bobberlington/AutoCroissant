@@ -10,10 +10,11 @@ writes derived/review/:
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
 Sections: the owner's answers (Q1-Q6, read only; Q5's first-repo rows listed), the unsure old maps, unsure matches and
 versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, paper
-photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates, the Morgue list (candidates,
-ideas never ported, the rest) and splits. Answers already applied (derived/review/rulings.json) show checked, also when
-the rerun took the item in. No message text or posters: pictures, dates, channels, read fields, and a Discord link for a
-changelog line (the page stays local).
+photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
+earlier than the Created date in use), the Morgue list (candidates, ideas never ported, the rest) and splits. A name
+two cards share shows its id. Answers already applied (derived/review/rulings.json) show checked; one whose item left
+the page says whether the rerun took it in (derived/chain/ruled.json) or the item changed. No message text or posters:
+pictures, dates, channels, read fields, and a Discord link for a changelog line (the page stays local).
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
@@ -21,6 +22,7 @@ from html import escape
 from json import dumps
 from os import listdir
 from os.path import exists, join
+from re import search
 from typing import Callable, Optional
 
 from commands import discord_match as dm
@@ -36,6 +38,9 @@ FACTS, FACT_REVIEW = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 MORGUE, IDEAS = ("derived", "morgue", "candidates.json"), ("derived", "morgue", "ideas.json")
 RULINGS = ("derived", "review", "rulings.json")
+USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
+PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"   # discord_chain's (owner Q6)
+RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
 GUILD = "545138546021892096"                          # Impossibility Simulator (a changelog line's Discord link)
 FORMAT = "card-timelines-rulings/1"                   # the export's format (apply_rulings checks it)
 STORE = "timelines-review"                            # the browser's saved answers (localStorage key prefix)
@@ -57,7 +62,7 @@ SUBS = {                                              # section -> its parts in 
     "created": (("earlier", "Earlier than the website's date (proposed: the preview uses ours)", None),
                 ("new", "No date on the website yet", None),
                 ("later", "Later than the website's date (the website's date kept)", None),
-                ("hints", "Earlier hints", None)),
+                ("hints", "Earlier hints (each earlier than the Created date in use)", None)),
     "morgue": (("candidates", "Morgue candidates", "yes"), ("ideas", "Ideas never ported (not published)", None),
                ("not", "Not candidates (as decided by eye)", None))}
 MORGUE_KINDS = {"candidates": "morgue candidate", "ideas": "morgue idea", "not": "morgue not candidate"}
@@ -96,9 +101,26 @@ class Inputs:
         self.morgue = dm.read_json(at(MORGUE), {}) or {}
         self.ideas = (dm.read_json(at(IDEAS), {}) or {}).get("ideas") or []
         self.rulings = (dm.read_json(at(RULINGS), {}) or {}).get("rulings") or {}
+        self.used = set((dm.read_json(at(USED), {}) or {}).get("used") or [])
+        names = Counter(str(c.get("name") or cid).casefold() for cid, c in self.cards.items())
+        self.shared = {n for n, k in names.items() if k > 1}          # a name two cards share: shown with the id
 
     def name(self, cid: Optional[str]) -> str:
         return (self.cards.get(cid) or {}).get("name") or cid or "?"
+
+    def label(self, cid: Optional[str]) -> str:
+        """A card's name, with its id when another card has the same name."""
+        name = self.name(cid)
+        return f"{name} ({cid})" if name.casefold() in self.shared else name
+
+    def created_before(self, cid: Optional[str]) -> Optional[str]:
+        """The sort of the Created date in use for a card (the owner's pick when answered, before any hint): a hint
+        counts only when earlier. None for 'hand' dates or no Created."""
+        made = self.created.get((self.cards.get(cid) or {}).get("key")) or {}
+        if not made or made.get("status") == "hand":
+            return None
+        base = (made.get("owner") or {}).get("base")
+        return created_sort(base) if base else made.get("sort") or made.get("date")
 
     def cid(self, card: Optional[str]) -> Optional[str]:
         """A card id from an id or a card key (the old rows' and facts' names)."""
@@ -148,6 +170,37 @@ def when(stamp) -> str:
     return str(stamp or "")[:10] or "no date"
 
 
+def created_sort(date: Optional[str]) -> str:
+    return PAPER_SORT if date == PAPER_DAY else date or "9999"
+
+
+def stats_shape(*values) -> Optional[str]:
+    """'creatures' or 'hp/def' when the first stats value given has that shape (a typed answer may then take it)."""
+    for v in values:
+        if isinstance(v, dict) and v.get("creatures"):
+            return "creatures"
+        if isinstance(v, dict) and v:
+            return "hp/def" if {k for k, x in v.items() if x is not None} <= {"hp", "def"} else None
+    return None
+
+
+def card_stats(inputs, cid: Optional[str]):
+    """The card's latest stats value in its timeline (its shape, for an item that read none)."""
+    for e in reversed((inputs.timelines.get(cid) or {}).get("entries") or []):
+        value = ((e.get("fields") or {}).get("stats") or {}).get("value")
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def value_other(field: str, shape: Optional[str]) -> dict:
+    """A typed value's answer: stats say the form they take (hp/def only, or two creatures)."""
+    form = {"hp/def": " (hp/def)", "creatures": " (hp/def/atk/spd | hp/def/atk/spd)"}.get(shape, " (hp/def/atk/spd)") \
+        if field == "stats" else ""
+    return {"c": "value", "kind": FIELD_OTHER.get(field, "name"), "label": f"the {field} it shows{form}",
+            **({"shape": shape} if field == "stats" and shape else {})}
+
+
 def item(kind: str, iid: str, section: str, sub: Optional[str], title: str, **extra) -> dict:
     return {"id": iid, "kind": kind, "section": section, "sub": sub, "title": title, "meta": [], "pics": [],
             "choices": [], "other": None, "read_only": False, **extra}
@@ -190,6 +243,11 @@ def old_maps(inputs: Inputs) -> list:
         if r.get("split"):
             it["read_only"] = True
             it["meta"].append("Your Q3 answer: both halves start with these versions (see below).")
+        elif not cid:                             # an archived card: no live timeline to take them
+            it["meta"].append(f"{r.get('card')} is not a live card ({r.get('status')}): it has no timeline, so a "
+                              "'yes' would change nothing. Give the live card they belong to, or no.")
+            it["choices"] = [choice("no", "no: not a live card's version (leave them out)")]
+            it["other"] = {"c": "card", "kind": "card", "label": "a live card"}
         else:
             it["choices"] = [choice("yes", f"yes: {r.get('card')}'s versions"),
                              choice("no", "no: not a live card's version (leave them out)")]
@@ -210,12 +268,17 @@ def match_items(inputs: Inputs) -> list:
         date = dm.epoch(row["first"]["date"])
         if not maybe or not any(not inputs.cards[c].get("fs") or date < inputs.cards[c]["fs"] for c in maybe):
             continue
+        rival = search(RIVAL, row.get("reason") or "")
+        rival = rival.group(1) if rival and rival.group(1) in inputs.cards and rival.group(1) not in maybe else None
         it = item("card not told", "match:" + row["id"], "matches", "card",
                   f"{when(row['first']['date'])} #{row['first'].get('channel')}", picture=row["id"],
                   date=row["first"]["date"])
         it["meta"] = [row.get("reason") or "", "Named here, the picture's look is asked next (after the rerun)."]
         it["pics"] = [row_pic(row, "the picture")]
-        it["choices"] = [choice("card", inputs.name(c), c, card_pic(inputs, c)) for c in maybe[:6]]
+        it["choices"] = [choice("card", inputs.label(c), c, card_pic(inputs, c)) for c in maybe[:6]]
+        if rival:                                 # the card the reason says its text reads better
+            it["choices"].append(choice("card", f"{inputs.label(rival)} (its text reads better)", rival,
+                                        card_pic(inputs, rival)))
         it["choices"].append(choice("none", "none of these"))
         it["other"] = {"c": "card", "kind": "card", "label": "another card"}
         out.append(it)
@@ -227,7 +290,7 @@ def chain_items(inputs: Inputs) -> list:
     for r in inputs.chain:
         kind, cid = r["kind"], r.get("card")
         row = inputs.verdicts.get(r.get("picture")) or {}
-        head = f"{inputs.name(cid)}: " if cid else ""
+        head = f"{inputs.label(cid)}: " if cid else ""
         date = f"{when(r.get('date'))} #{r.get('channel')}" if r.get("channel") else when(r.get("date"))
         common = dict(card=cid, picture=r.get("picture"), date=r.get("date"))
         if kind == "look not told":
@@ -266,7 +329,7 @@ def chain_items(inputs: Inputs) -> list:
             it["meta"] = [f"title as photographed: {r.get('title')}" if r.get("title") else "", r.get("note") or "",
                           r.get("why") or ""]
             it["pics"] = [row_pic(row, "the photo")]
-            it["choices"] = [choice("card", inputs.name(c), c, card_pic(inputs, c))
+            it["choices"] = [choice("card", inputs.label(c), c, card_pic(inputs, c))
                              for c in (r.get("maybe") or [])[:4] if c in inputs.cards]
             it["choices"].append(choice("none", "no live card"))
             it["other"] = {"c": "card", "kind": "card", "label": "a live card"}
@@ -306,7 +369,7 @@ def field_item(inputs: Inputs, r: dict) -> dict:
     entry = inputs.entries.get((cid, eid)) or {}
     old = entry.get("kind") == "old repo"
     section, sub = ("splits", None) if entry.get("as") else ("psd", None) if old else ("matches", "fields")
-    it = item("field", r["id"], section, sub, f"{inputs.name(cid)}: {field} on {when(r.get('date'))}"
+    it = item("field", r["id"], section, sub, f"{inputs.label(cid)}: {field} on {when(r.get('date'))}"
               + (f" #{entry.get('channel')}" if entry.get("channel") else " (old repo)" if old else ""),
               card=cid, entry=eid, field=field, date=r.get("date"))
     it["meta"] = [f"read: {show(r.get('proposed'))}" if r.get("proposed") is not None else "nothing read",
@@ -316,7 +379,8 @@ def field_item(inputs: Inputs, r: dict) -> dict:
     if r.get("proposed") is not None:
         it["choices"].append(choice("yes", f"yes: {show(r['proposed'])}"))
     it["choices"].append(choice("no", "no, or can't tell (stays out)"))
-    it["other"] = {"c": "value", "kind": FIELD_OTHER.get(field, "name"), "label": f"the {field} it shows"}
+    it["other"] = value_other(field, stats_shape(r.get("proposed"), card_stats(inputs, cid)) if field == "stats"
+                              else None)
     return it
 
 
@@ -344,7 +408,8 @@ def psd_items(inputs: Inputs) -> list:
             seen.append(dumps(value, sort_keys=True))
             it["choices"].append(choice("value", f"the {src}'s: {show(value)}", value))
         it["choices"].append(choice("no", "no, or can't tell (stays out)"))
-        it["other"] = {"c": "value", "kind": FIELD_OTHER.get(field, "name"), "label": f"the {field} it shows"}
+        it["other"] = value_other(field, stats_shape(r.get("proposed"), *reads.values(), card_stats(inputs, cid))
+                                  if field == "stats" else None)
         out.append(it)
     return out
 
@@ -400,7 +465,7 @@ def created_item(inputs: Inputs, r: dict) -> dict:
     made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
     file, ours = r.get("file") or made.get("file") or {}, r.get("ours") or made.get("ours") or {}
     sub = {"created earlier": "earlier", "created new": "new", "created later": "later"}.get(kind, "hints")
-    it = item(kind, r["id"], "created", sub, inputs.name(cid), card=cid, date=r.get("date") or ours.get("date"))
+    it = item(kind, r["id"], "created", sub, inputs.label(cid), card=cid, date=r.get("date") or ours.get("date"))
     where = f"#{ours['channel']}" if ours.get("channel") else ""
     it["meta"] = [f"website: {file.get('date') or 'none'} ({file.get('from') or '-'}); ours: {ours.get('day')} "
                   f"from {ours.get('source')} {where}".rstrip(), r.get("why") or ""]
@@ -482,17 +547,23 @@ def morgue_items(inputs: Inputs) -> list:
             it["choices"] = [choice("yes", label["yes"] + (" (as now)" if now == "yes" else "")),
                              choice("no", label["no"] + (" (as now)" if now == "no" else ""))]
             out.append(it)
-    thumbs = {e["id"]: e.get("thumb") for es in (inputs.morgue.get("candidates") or [], inputs.ideas,
-                                                  inputs.morgue.get("not_candidates") or []) for e in es}
+    groups = (inputs.morgue.get("candidates") or [], inputs.ideas, inputs.morgue.get("not_candidates") or [])
+    thumbs = {e["id"]: e.get("thumb") for es in groups for e in es}
+    pictures = {e["id"]: e.get("pictures") or [] for es in groups for e in es}
     for h in inputs.morgue.get("created_hints") or []:
-        cid = h.get("card")
-        it = item("morgue hint", f"hint:{h['entry']}:{cid}", "created", "hints", inputs.name(cid), card=cid,
-                  entry=h["entry"], date=h.get("date"))
-        it["meta"] = [f"a Morgue list picture '{h.get('name')}' may be its early look: {when(h.get('date'))} "
+        cid, day = h.get("card"), h.get("day") or (str(h["date"])[:10] if h.get("date") else None)
+        before = inputs.created_before(cid)
+        if h.get("meme") or not day or not before or created_sort(day) >= before:
+            continue                              # a meme channel's date, or not earlier than the Created in use
+        shot = next((q for q in pictures.get(h["entry"]) or [] if h.get("date") and q.get("date") == h["date"]), {})
+        it = item("morgue hint", f"hint:{h['entry']}:{cid}", "created", "hints", inputs.label(cid), card=cid,
+                  entry=h["entry"], date=h.get("date"), **({"day": h["day"]} if h.get("day") else {}),
+                  **({"picture": shot["id"]} if shot.get("id") else {}), channel=h.get("channel"))
+        it["meta"] = [f"a Morgue list picture '{h.get('name')}' may be its early look: {day} "
                       f"#{h.get('channel')}" + (" (weak)" if h.get("weak") else "")]
         it["pics"] = [p for p in (pic("../morgue/" + thumbs[h["entry"]], "the Morgue picture")
                                   if thumbs.get(h["entry"]) else None, card_pic(inputs, cid)) if p]
-        it["choices"] = [choice("yes", f"yes: Created {when(h.get('date'))}"), choice("no", "no")]
+        it["choices"] = [choice("yes", f"yes: Created {day}"), choice("no", "no")]
         out.append(it)
     return out
 
@@ -503,9 +574,9 @@ def gather(inputs: Inputs) -> list:
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]
     have = {i["id"] for i in items}
-    for rid, r in inputs.rulings.items():            # answered and taken in by the rerun: shown from the answer
-        if rid not in have and r.get("item"):
-            items.append({**r["item"], "gone": True})
+    for rid, r in inputs.rulings.items():            # answered, its item gone: taken in (the chain acted on it) or
+        if rid not in have and r.get("item"):        # changed (a regrouped look, a Created status that moved)
+            items.append({**r["item"], "gone": "taken" if rid in inputs.used else "changed"})
     order = {s[0]: n for n, s in enumerate(SECTIONS)}
     subs = {s: {p[0]: n for n, p in enumerate(parts)} for s, parts in SUBS.items()}
     return sorted(items, key=lambda i: (order[i["section"]], subs.get(i["section"], {}).get(i.get("sub"), 0),
@@ -526,6 +597,7 @@ nav a{color:#00a8fc;margin-right:1rem;text-decoration:none}nav .n{color:#949ba4}
 details.sec>summary,details.sub>summary{cursor:pointer;list-style:revert}
 .item{margin:.6rem 1.5rem;padding:.7rem 1rem;background:#2b2d31;border-radius:8px;border-left:4px solid #4e5058}
 .item.done{border-left-color:#23a55a}.item.ro{border-left-color:#5865f2}.item.gone{opacity:.75}
+.item.changed{border-left-color:#f0b232}
 .item .id{color:#949ba4;font:12px ui-monospace,monospace;float:right}
 .item .t{font-weight:600}.meta{color:#b5bac1;margin:.2rem 0 .4rem}.meta div{margin:.1rem 0}
 .pics{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-start}
@@ -546,6 +618,12 @@ SCRIPT = """
 const STORE = PAGE.store, saved = JSON.parse(localStorage.getItem(STORE) || "{}");
 function state(id) { return saved[id] || RULED[id] || null; }
 function same(a, b) { return JSON.stringify(a ?? null) === JSON.stringify(b ?? null); }
+function typedText(v) {                                         // a stored value as typed (stats: hp/def/atk/spd)
+  if (Array.isArray(v)) return v.join(", ");
+  if (v && typeof v === "object" && v.creatures) return v.creatures.map(typedText).join(" | ");
+  if (v && typeof v === "object") return Object.values(v).join("/");
+  return v ?? "";
+}
 function show(id) {
   const box = document.getElementById(id); if (!box) return;
   const s = state(id), radios = [...box.querySelectorAll("input[type=radio]")];
@@ -555,7 +633,7 @@ function show(id) {
                        radios.find(r => r.dataset.other !== undefined && r.dataset.c === s.choice));
   radios.forEach(r => { r.checked = r === hit; });
   const text = box.querySelector("input.other");
-  if (text) text.value = hit && hit.dataset.other !== undefined ? s.value ?? "" : "";
+  if (text) text.value = hit && hit.dataset.other !== undefined ? typedText(s.value) : "";
   box.classList.toggle("done", !!hit);
 }
 function pick(r) {
@@ -632,12 +710,16 @@ def pic_html(p: dict) -> str:
 
 
 def item_html(it: dict) -> str:
-    cls = ["item"] + (["ro"] if it.get("read_only") else []) + (["gone"] if it.get("gone") else [])
+    cls = ["item"] + (["ro"] if it.get("read_only") else []) + (["gone"] if it.get("gone") else []) + \
+        (["changed"] if it.get("gone") == "changed" else [])
     head = (f"<div class='{' '.join(cls)}' id='{escape(it['id'], quote=True)}' data-sec='{it['section']}'"
             + (f" data-sub='{it['section']}-{it['sub']}'" if it.get("sub") else "") + ">"
             + f"<span class=id>{escape(it['id'])}</span><div class=t>{escape(it['title'])}</div>")
     meta = "".join(f"<div>{escape(m)}</div>" for m in it.get("meta") or [] if m)
-    if it.get("gone"):
+    if it.get("gone") == "changed":
+        meta += ("<div><b>Not applied: this item changed or left the page since you answered (a look regrouped, a "
+                 "Created date that moved). Answer it again where it is now, or clear this one.</b></div>")
+    elif it.get("gone"):
         meta += "<div><b>Answered and taken in by the rerun.</b></div>"
     if it.get("link"):
         meta += f"<div><a href='{escape(it['link'], quote=True)}' target=_blank>open the line in Discord</a></div>"
@@ -675,7 +757,9 @@ def page(items: list, inputs: Inputs, built: str) -> str:
         by_sec[it["section"]].append(it)
     ruled = {rid: {k: r[k] for k in ("choice", "value") if k in r} for rid, r in inputs.rulings.items()}
     data = {"store": f"{STORE}:{inputs.root}", "format": FORMAT, "built": built}
-    cards_list = "<datalist id=cards>" + "".join(
+    cards_list = "<datalist id=cards>" + "".join(       # a name two cards share: its id typed, the name shown
+        f"<option value='{escape(cid, quote=True)}' label='{escape(inputs.label(cid), quote=True)}'>"
+        if (c.get("name") or cid).casefold() in inputs.shared else
         f"<option value='{escape(c.get('name') or cid, quote=True)}'>" for cid, c in sorted(inputs.cards.items())) + \
         "</datalist>"
     open_n = sum(1 for i in items if not i.get("read_only") and i["id"] not in ruled)

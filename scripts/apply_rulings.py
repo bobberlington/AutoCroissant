@@ -7,13 +7,15 @@ The owner's answers on the card timelines' review page (commands/timeline_review
 
 <export.json> is the page's "Export answers" file. Every answer is checked against the page's items
 (derived/review/items.json: its id, that it isn't read only, a choice the item offers, a typed value parsed: a card's
-name or id, stats as hp/def/atk/spd, stars, types, a date YYYY-MM-DD or "Before 2020"); one error stores nothing.
+id, or a name only one card has; stats as hp/def/atk/spd, hp/def where the item's stats have only those, 'a | b' for
+two creatures; stars, types, a date YYYY-MM-DD or "Before 2020"); one error stores nothing.
 Good answers go into derived/review/rulings.json (a later answer of an id wins; "clear" withdraws one), then the
 timelines are rebuilt (python -m commands.discord_chain build reads rulings.json), the Morgue list with the answers
 written to derived/review/morgue.json, and the page rebuilt with the answers checked. Never a repo; no message text.
 """
 import sys
 from argparse import ArgumentParser
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from json import dumps, load
 from os.path import abspath, dirname, join
@@ -28,20 +30,58 @@ FIRST_DAY = date(2018, 1, 1)                                    # no card is old
 STATS = ("hp", "def", "atk", "spd")
 
 
-def parse(kind: str, text, cards: dict):
-    """A typed answer's value, or raise ValueError saying why."""
+def stats_text(value) -> str:
+    """A stats value (a stored answer coming back) as typed."""
+    if isinstance(value, dict) and value.get("creatures"):
+        return " | ".join(stats_text(c) for c in value["creatures"])
+    return "/".join(str(value[k]) for k in STATS if k in value) if isinstance(value, dict) else str(value)
+
+
+def card(text: str, cards: dict) -> str:
+    """A card id from its exact id, else a name or slug only one card has (two cards share some names)."""
+    if text in cards:
+        return text
+    forms = (defaultdict(set), defaultdict(set))
+    for cid, name in cards.items():
+        forms[0][str(name).casefold()].add(cid)
+        forms[1][dm.slugify(str(name))].add(cid)
+    for found in (forms[0].get(text.casefold()), forms[1].get(dm.slugify(text))):
+        if found and len(found) > 1:
+            raise ValueError(f"{text!r} names {len(found)} cards ({', '.join(sorted(found))}): type the card's id")
+        if found:
+            return next(iter(found))
+    if dm.slugify(text) in cards:
+        return dm.slugify(text)
+    raise ValueError(f"no live card named {text!r}")
+
+
+def stats(text: str, shape: str = None) -> dict:
+    """hp/def/atk/spd; hp/def when the item's stats have only those (shape 'hp/def'); 'a | b' for two creatures."""
+    parts = text.split("|")
+    if len(parts) > 1:
+        return {"creatures": [stats(part.strip(), "creature") for part in parts]}
+    numbers = findall(r"\d+", text)
+    if any(int(n) > 99 for n in numbers):
+        raise ValueError(f"{text!r} has a stat over 99")
+    if len(numbers) == 4:
+        return dict(zip(STATS, map(int, numbers)))
+    if len(numbers) == 2 and shape == "hp/def":
+        return dict(zip(STATS[:2], map(int, numbers)))
+    want = "hp/def (or four stats)" if shape == "hp/def" else "four stats (hp/def/atk/spd)" + \
+        ("" if shape == "creature" else ", or 'a | b' for two creatures")
+    raise ValueError(f"{text!r} is not {want}")
+
+
+def parse(kind: str, text, cards: dict, shape: str = None):
+    """A typed answer's value, or raise ValueError saying why. shape: the item's stats form (items.json other.shape)."""
     if kind == "stats" and isinstance(text, dict):
-        text = "/".join(str(text.get(k)) for k in STATS)
+        shape = shape or ("hp/def" if set(text) <= {"hp", "def"} else None)
+        text = stats_text(text)
     text = str(text if text is not None else "").strip()
     if not text:
         raise ValueError("nothing typed")
     if kind == "card":
-        folded = {**{cid: cid for cid in cards}, **{str(n).casefold(): cid for cid, n in cards.items()},
-                  **{dm.slugify(str(n)): cid for cid, n in cards.items()}}
-        cid = folded.get(text) or folded.get(text.casefold()) or folded.get(dm.slugify(text))
-        if not cid:
-            raise ValueError(f"no live card named {text!r}")
-        return cid
+        return card(text, cards)
     if kind == "date":
         if text.casefold() == PAPER_DAY.casefold():
             return PAPER_DAY
@@ -57,10 +97,7 @@ def parse(kind: str, text, cards: dict):
             raise ValueError(f"{text!r} is not a star count (0-20)")
         return int(text)
     if kind == "stats":
-        numbers = findall(r"\d+", text)
-        if len(numbers) != 4 or any(int(n) > 99 for n in numbers):
-            raise ValueError(f"{text!r} is not four stats (hp/def/atk/spd)")
-        return dict(zip(STATS, map(int, numbers)))
+        return stats(text, shape)
     if kind == "types":
         return sorted({t.strip().lower() for t in text.split(",") if t.strip()})
     return text                                                 # a name or an ability
@@ -90,7 +127,7 @@ def check(answers: dict, items: dict, stored: dict, cards: dict) -> tuple:
             got = {"choice": c, **({"value": listed["value"]} if "value" in listed else {})}
         elif other and c == other.get("c"):
             try:
-                got = {"choice": c, "value": parse(other["kind"], value, cards)}
+                got = {"choice": c, "value": parse(other["kind"], value, cards, other.get("shape"))}
             except ValueError as e:
                 errors.append(f"{rid}: {e}")
                 continue
