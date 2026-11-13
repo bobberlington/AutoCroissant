@@ -168,6 +168,26 @@ def test_a_variant_picture_goes_back_through_its_picture_1(db):
         f"**Bethany Two** as of 2026-10-21 {HEAD}the current card (version 5 of 5)")
 
 
+def test_a_renamed_card_goes_back_through_its_old_names(db):
+    """Versions under names renamed into the card (a case-only rename, a chain of two), by start, as the website."""
+    def renamed(name, path, when, to):
+        old = _card(name, path, _at(*when), f"{name} text.")
+        old.archived = {"at": _at(2026, 11, 11), "path": f"{path}.psd", "blob": None, "commit": "b" * 40, "renamed_to": to}
+        return [old]
+    omori, panda = "Creatures/Omori/5 Stars/Omori", "Creatures/Pandas/3 Stars/PANDA_Mk_A"
+    cm.stats_db.stats.update({"Omori": _card("Omori", omori, _at(2026, 11, 11, 12), "Now."),
+                              "PANDA Mk A": _card("PANDA Mk A", panda, _at(2026, 11, 11, 12), "Now.")})
+    cm.stats_db.old_stats.update({"omori": renamed("omori", omori.lower(), (2025, 4, 3), "Omori"),
+                                  "P.A.N.D.A. Mk A": renamed("P.A.N.D.A. Mk A", "x/B", (2025, 9, 2), "PANDA Mk A"),
+                                  "P.A.N.D.A Mk A": renamed("P.A.N.D.A Mk A", "x/A", (2025, 3, 22), "P.A.N.D.A. Mk A")})
+    qc.card_repo.git_files.update({"omori.png": f"{omori}.png", "panda_mk_a.png": f"{panda}.png"})
+    for query in ("Omori", "omori"):
+        assert "Omori** as of 2025-06-01 " + HEAD + "version 1 of 2, from 2025-04-03" in _texts(query, "2025-06-01")[0]
+    assert "omori text." in _texts("Omori", "2025-06-01")[0]
+    assert "P.A.N.D.A Mk A text." in _texts("PANDA Mk A", "2025-06-01")[0]
+    assert f"{HEAD}version 2 of 3, from 2025-09-02" in _texts("PANDA Mk A", "2025-10-01")[0]
+
+
 def test_no_as_of_is_the_plain_query(db):
     assert _texts("Tainted Bethany", None) == ["https://img/tainted_bethany.png"]
     assert _texts("Tainted Bethany", "  ") == ["https://img/tainted_bethany.png"]

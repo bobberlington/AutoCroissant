@@ -1074,6 +1074,33 @@ def _since(card) -> float:
     return version_start(card)[0] or 0.0
 
 
+def renamed_into(old_stats: dict, stats: dict) -> dict:
+    """{card name: the names renamed into it}, along the archive tags' renamed_to chains; a name that is a card again
+    keeps its own history. As TTSCardMaker site/build/build_site.py renamed_into (0.1 ms: not cached)."""
+    to = {}
+    for name, versions in old_stats.items():
+        tag = getattr(versions[len(versions) - 1], "archived", None) if versions and name not in stats else None
+        if isinstance(tag, dict) and isinstance(tag.get("renamed_to"), str) and tag["renamed_to"] != name:
+            to[name] = tag["renamed_to"]
+    into = {}
+    for name in to:
+        seen, end = {name}, to[name]
+        while end in to and end not in seen:
+            seen.add(end)
+            end = to[end]
+        into.setdefault(end, []).append(name)
+    return into
+
+
+def history_of(name: str) -> list:
+    """name's old versions: those of the names renamed into it (by start), then its own old_stats. The card data keeps
+    each name's apart; were it to carry them across a rename itself, they would count twice."""
+    from commands.psd_analyzer import stats_db
+    old = stats_db.old_stats
+    carried = [v for n in renamed_into(old, stats_db.stats).get(name, ()) for v in old.get(n) or []]
+    return sorted(carried, key=_since) + list(old.get(name) or [])
+
+
 def _day(stamp) -> str:
     """A stamp's date in TIMEZONE."""
     if not stamp:
@@ -1127,7 +1154,7 @@ def _history_lookup(query: str) -> Optional[tuple]:
 
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     """
-    /query as_of: the card at the end of that day in TIMEZONE. Its versions are old_stats (oldest first) then the
+    /query as_of: the card at the end of that day in TIMEZONE. Its versions are history_of's (oldest first) then the
     current card (a variant picture's after its picture 1's from before them); each runs from its start (_since) to
     the next one's, the last of an archived card to its archive.
 
@@ -1157,7 +1184,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         name = current.duplicate_of
         current = stats_db.stats.get(name)
     label = f"Closest match: {label}" if guess else label
-    versions = list(stats_db.old_stats.get(name) or [])
+    versions = history_of(name)
     if current is not None:
         versions.append(current)
     if not versions:
@@ -1166,7 +1193,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     picture1, theirs = getattr(current, "variant_of", None), []
     starts = [t for t in map(_since, versions) if t]
     if picture1 and starts:          # a variant picture: before its own, its picture 1's (the same card then, owner 10-25)
-        theirs = [v for v in stats_db.old_stats.get(picture1) or [] if 0 < _since(v) < min(starts)]
+        theirs = [v for v in history_of(picture1) if 0 < _since(v) < min(starts)]
         versions = theirs + versions
     index = version_at(versions, end)
     if index is not None and index < len(theirs):
