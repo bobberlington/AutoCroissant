@@ -92,6 +92,9 @@ def test_rows_ocr_missed_and_items():
     assert got["era"] == "D-item" and got["labels"] == 2
     assert {s: v["v"] for s, v in got["stats"].items()} == {"hp": 6, "def": 2, "atk": None, "spd": None}
     assert got["stats"]["atk"]["row"] == "none"
+    one = {"hp": {"v": 1, "margin": 14.0}, "def": {"v": 0, "flat": True}, "atk": {"v": 10, "flat": True}}
+    eb.flat_holds(one)                                       # one weak split row: one-colour rows can't be told
+    assert one["def"]["hold"] and one["atk"]["hold"] and "hold" not in one["hp"]
 
 
 def test_raid_rows_of_twenty():

@@ -61,6 +61,7 @@ TEMPLATE_PRIOR = 1.15                               # a 1:2 card: its fixed box 
 SURE = 0.98                                         # 'sure' reads are at least this share right on their era's truth
 MARGIN_FULL = 30.0                                  # a split this far (Lab) ahead of the runner-up count: a sure row
 TELL_LOW, TELL_FULL = 0.4, 0.8                      # a one-colour row's tell: worthless under, sure from
+FLAT_REF = 25.0                                     # a one-colour row needs 2 split rows or one this clear (margin)
 AGREE_ALONE = 0.4                                   # the agreement a read gets when no other reader ran
 MIN_TRUTH = 30                                      # stats an era's bar needs under it (else nothing there is sure)
 WINDOW = 50                                         # the least sure reads above a bar that must be SURE right too
@@ -463,6 +464,17 @@ def confidence(st: dict) -> float:
     return round(0.5 * min(1.0, max(0.0, st.get("margin", 0.0) / MARGIN_FULL)) + 0.5 * agree, 3)
 
 
+def flat_holds(stats: dict):
+    """One-colour rows hold (never sure) when the card's other rows give no clear lit/empty colours to tell them by:
+    under two split rows and none with a FLAT_REF margin (a picture in every cell reads so)."""
+    split = [st for st in stats.values() if st.get("v") is not None and not st.get("flat") and st.get("row") != "none"]
+    if len(split) >= 2 or any(st.get("margin", 0.0) >= FLAT_REF for st in split):
+        return
+    for st in stats.values():
+        if st.get("flat") and st.get("v") is not None:
+            st.setdefault("hold", "one colour, no clear lit/empty rows to tell it by")
+
+
 def _names(names) -> list:
     return [sub(r"[-_\s]+", " ", n.lower()).strip() for n in ([names] if isinstance(names, str) else names) if n]
 
@@ -562,6 +574,7 @@ def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional
                     st["hold"] = "row placed by the other labels"
             st["conf"] = confidence(st)
             vals[s] = st
+        flat_holds(vals)
         out[key] = vals
     return out
 
@@ -921,36 +934,50 @@ def calibrate(root: str):
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
                 st["conf"] = confidence(st)
+            if r.get(key):
+                flat_holds(r[key])
     truth = load_truth(root)
+    for r in rows:                                           # a picture's truth rides along (eye or psd: use it first)
+        t = truth.get(row_key(r))
+        r.pop("truth", None)
+        if t:
+            r["truth"] = {**{k: t[k] for k in ("stats", "stats2") if t.get(k)}, "from": t["from"]}
     pts = scored(rows, truth)
     cal = {"about": f"Per era (two: two-creature cards, icons: icon rows; {' and '.join(NEVER_SURE)}: never sure) the "
                     f"confidence bar whose reads at or above it are at least {SURE:.0%} right on that era's truth, the "
                     f"{WINDOW} least sure of them too; per stat n, accuracy at the bar, share above it; 'discord_truth': "
-                    f"the same on the group's Discord pictures alone, with the Wilson 95% lower bound at the bar; "
+                    f"the group's Discord pictures alone: their bar (the higher of the group's and their own truth's "
+                    f"when old-repo PNGs share the group; it marks Discord reads), n, accuracy and share at it, the Wilson "
+                    f"95% lower bound; "
                     f"'discord': the share of every Discord read above it. A row placed by the other labels (hold) is "
                     f"never sure.", "sure": SURE, "groups": {}}
     for g in sorted({p[0] for p in pts if p[0]}):
         gp = [p for p in pts if p[0] == g]
         bar = None if g in NEVER_SURE else bar_for([(p[3], p[4]) for p in gp])
+        dp = [p for p in gp if p[1] == "discord"]
+        bar_d = bar                                          # Discord reads: their own truth's bar too, when mixed
+        if bar is not None and len(dp) < len(gp) and len(dp) >= MIN_TRUTH:
+            own = bar_for([(p[3], p[4]) for p in dp])
+            bar_d = None if own is None else max(bar, own)
         entry = {"bar": bar, **_at_bar(gp, bar), "accuracy_all": round(sum(p[4] for p in gp) / len(gp), 4),
                  "pictures": len({p[5] for p in gp}), "truth": dict(Counter(truth[p[5]]["from"] for p in gp))}
         above = [p for p in gp if bar is not None and p[3] >= bar]
         entry["wilson_low"] = round(_wilson(sum(p[4] for p in above), len(above)), 4) if above else None
         entry["fields"] = {s: _at_bar([p for p in gp if p[2] == s], bar) for s in ORDER}
         entry["variants"] = {v: _at_bar([p for p in gp if p[1] == v], bar) for v in sorted({p[1] for p in gp})}
-        dp = [p for p in gp if p[1] == "discord"]
-        dabove = [p for p in dp if bar is not None and p[3] >= bar]
-        entry["discord_truth"] = {**_at_bar(dp, bar), "pictures": len({p[5] for p in dp}),
+        dabove = [p for p in dp if bar_d is not None and p[3] >= bar_d]
+        entry["discord_truth"] = {"bar": bar_d, **_at_bar(dp, bar_d), "pictures": len({p[5] for p in dp}),
                                   "wilson_low": round(_wilson(sum(p[4] for p in dabove), len(dabove)), 4) if dabove else None,
-                                  "fields": {s: _at_bar([p for p in dp if p[2] == s], bar) for s in ORDER}}
+                                  "fields": {s: _at_bar([p for p in dp if p[2] == s], bar_d) for s in ORDER}}
         cal["groups"][g] = entry
     reads = defaultdict(lambda: [0, 0])
     for r in rows:
-        bar = cal["groups"].get(group_of(r), {}).get("bar")
+        got = cal["groups"].get(group_of(r), {})
+        bar = got.get("discord_truth", {}).get("bar") if r["src"] == "discord" else got.get("bar")
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
                 st["sure"] = bar is not None and st["conf"] >= bar and not st.get("hold")
-                if r["src"] == "discord" and group_of(r) in cal["groups"]:
+                if r["src"] == "discord" and group_of(r) in cal["groups"] and st.get("row") != "none":
                     reads[group_of(r)][0] += st["sure"]
                     reads[group_of(r)][1] += 1
     for g, (k, n) in reads.items():
