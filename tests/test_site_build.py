@@ -154,8 +154,9 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
 
 
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
-    """The editor (editing.js), Stats (charts.js), People (profile.js), the font box (tokens.js) and the rulebook (rulebook.js, its
-    editor rulebook-edit.js) are imported by app.js with import(): without
+    """The editor (editing.js, with the sign-in: signin.js), Stats (charts.js), People (profile.js), the font box (tokens.js), the
+    rulebook (rulebook.js, its editor rulebook-edit.js), the Changes tabs (changelog.js), the published decks (decks.js) and the
+    deck builder's picker (pick.js) are imported by app.js with import(): without
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
     each one's files (app.js early()). Share pages preload the chunks app.js imports, index.html doesn't; its head script
@@ -164,10 +165,10 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
     assets, page = tmp_path / "a" / "dist" / "assets", (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
-    lazy = ("editing.js", "charts.js", "profile.js", "tokens.js", "rulebook.js", "rulebook-edit.js")
+    lazy = ("editing.js", "charts.js", "profile.js", "tokens.js", "rulebook.js", "rulebook-edit.js", "changelog.js", "decks.js", "pick.js")
     app = (assets / "app.js").read_text(encoding="utf-8")
     assert all(re.search(rf'import\("\./{re.escape(m)}\?v=\w+"\)', app) for m in lazy)
-    assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance)\.js', page)
+    assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance|decks|pick|signin|changelog)\.js', page)
     if not exe:
         pytest.skip("no esbuild: the local build only")
     monkeypatch.setattr(bs, "esbuild", lambda: exe)
@@ -193,8 +194,8 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     loaded = set().union(*(sources[f] for f in first))
     assert {"app.js", "grid.js", "text.js"} <= loaded
     assert not loaded & {"edit.js", "inline.js", "preview.js", "mockup.js", "tokens.js", "stats.js", "balance.js", "insights.js", "profile.js",
-                         "rulebook.js", "rulebook-edit.js"}
-    assert {"edit.js", "mockup.js"} <= set().union(*(sources[f] for f in chunks["editing.js"]))
+                         "rulebook.js", "rulebook-edit.js", "changelog.js", "decks.js", "pick.js", "signin.js"}
+    assert {"edit.js", "mockup.js", "signin.js"} <= set().union(*(sources[f] for f in chunks["editing.js"]))
     assert {"stats.js", "balance.js"} <= set().union(*(sources[f] for f in chunks["charts.js"]))
 
 
