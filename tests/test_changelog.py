@@ -90,13 +90,13 @@ def test_every_kind():
     before = {"Changed": _card("Changed"), "Art": _card("Art"), "Reparse": _card("Reparse"), "Moved": _card("Moved"),
               "Moved2": _card("Moved2", path="Items/1 Stars/Moved2.psd", stars=1), "Edited": _card("Edited"),
               "Authors": _card("Authors"), "Gone": _card("Gone"), "Old": _card("Old"), "Same": _card("Same"),
-              "Dup2": _card("Dup2", duplicate_of="Same")}
+              "Dup2": _card("Dup2", duplicate_of="Same", path=_card("Same").path)}     # a PNG-only duplicate
     after = {"Changed": _card("Changed", blob_sha="b2", stats=cm.CardStats(5, 2, 3, 9)), "Art": _card("Art", blob_sha="b2"),
              "Reparse": _card("Reparse", ability="(1CD) Hit hard."), "Moved": _card("Moved", path="Items/Moved.psd"),
              "Moved2": _card("Moved2", path="Items/Moved2.psd", stars=2), "Edited": _card("Edited", note="checked"),
              "Authors": _card("Authors", author="Alice"), "New": _card("New"), "Fresh": _card("Fresh"), "Back": _card("Back"),
              "Same": _card("Same"),
-             "Dup2": _card("Dup2", duplicate_of="Same", display_name="Other")}
+             "Dup2": _card("Dup2", duplicate_of="Same", display_name="Other", path=_card("Same").path)}
     archived_before = {"Back": _card("Back")}
     archived_after = {"Gone": _card("Gone", archived={"commit": "cd"}),
                       "Old": _card("Old", archived={"commit": "cd", "renamed_to": "New"})}

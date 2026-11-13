@@ -118,6 +118,32 @@ def test_variant_pictures_are_duplicates():
     assert tr._variant_duplicates() == 1 and cards["Kit2"].duplicate_of == "Kit"       # no dup_of: picture 1
 
 
+def test_a_card_with_its_own_psd_marked_a_duplicate():
+    """A person's dup_of on a card with its own PSD (owner 11-13, as the website does): counted once, its own parse and
+    version kept; a marked card is no one's original; unmarked, it is a card again; Card Edits.json unread: kept."""
+    from copy import deepcopy
+    from commands import card_sync
+    from commands.card_edits import CardEdits
+    from commands.card_models import picture_only
+    cards = {n: pa.CardInfo(name=n, card_type="creature", path=f"Creatures/Other/2 Stars/{n}.psd", ability=f"{n}.")
+             for n in ("Main", "Alt", "Third")}
+    cards["Alt"].version = {"from": 2.0}
+    cards["Queen"] = pa.CardInfo(name="Queen", card_type="creature", path=cards["Main"].path, duplicate_of="Main")
+    before = deepcopy(cards)
+    tr = _traverser(cards)
+    tr.edits = CardEdits.parse('{"cards": {"Alt": {"dup_of": "main"}, "Third": {"dup_of": "Alt"}}}')
+    assert tr._variant_duplicates() == 1 and tr._variant_duplicates() == 0
+    tr.duplicate_versions()
+    assert {n: c.duplicate_of for n, c in cards.items()} == {"Main": None, "Alt": "Main", "Third": None, "Queen": "Main"}
+    assert (cards["Alt"].ability, cards["Alt"].version) == ("Alt.", {"from": 2.0})
+    assert [picture_only(c) for c in (cards["Alt"], cards["Queen"], vars(cards["Queen"]))] == [False, True, True]
+    assert card_sync.changes(before, cards) == {"changed": 0, "new": 0, "archived": 0}
+    tr.edits, tr.edits_unread = None, True
+    assert tr._variant_duplicates() == 0 and cards["Alt"].duplicate_of == "Main"
+    tr.edits, tr.edits_unread = CardEdits.parse('{"cards": {}}'), False
+    assert tr._variant_duplicates() == 1 and cards["Alt"].duplicate_of is None and cards["Queen"].duplicate_of == "Main"
+
+
 KIT_REV = "e9b00260fd030fb30e8e968605cf1d1a18ec0d87"     # the card repo before All_Purpose_Medical_Kit was renamed
 
 

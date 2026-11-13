@@ -52,7 +52,7 @@ def db(monkeypatch):
     monkeypatch.setattr(repo, "ambiguous_names", {})
     monkeypatch.setattr(repo, "match_ratio", 0.6)
     monkeypatch.setattr(repo, "get_card_url", lambda name: f"https://img/{name}")
-    copy = _card("Bethany Copy", "Extra/Bethany_Copy", current.timestamp, "Current text.", blob="d" * 40,
+    copy = _card("Bethany Copy", BETHANY, current.timestamp, "Current text.", blob="d" * 40,    # its original's PSD
                  duplicate_of="Tainted Bethany")
     monkeypatch.setattr(cm.stats_db, "stats", {"Tainted Bethany": current, "Bethany Copy": copy})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list, {"Tainted Bethany": old,

@@ -27,7 +27,7 @@ from global_config import SITE_URL, TIMEZONE
 from commands.card_db import write_text
 from commands.card_edits import art_list, as_parsed
 from commands.card_history import same_series, unknown
-from commands.card_models import CardInfo
+from commands.card_models import CardInfo, picture_only
 
 # ========================
 # Configuration
@@ -265,8 +265,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
     out = []
     for name in sorted(set(before) | set(after) | set(archived_after)):
         old, new = before.get(name), after.get(name)
-        if any(c is not None and getattr(c, "duplicate_of", None) and not getattr(c, "variant_of", None) for c in (old, new)):
-            # a PNG-only duplicate (a variant picture's events are its own)
+        if any(c is not None and picture_only(c) for c in (old, new)):
+            # a PNG-only duplicate (a variant picture's or a marked PSD's events are its own)
             both = old is not None and new is not None
             own = {k: v for k, v in field_changes(old, new).items() if k in OWN_FIELDS} if both else {}
             if own:                                       # a duplicate's own artwork sources: its own edit

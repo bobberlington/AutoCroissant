@@ -34,7 +34,7 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, 
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
-from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
+from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, picture_only, straight, straighten_card
 from commands.github_api import HEADERS, api_url, blob_text, fetch_blob, get_with_retry
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
 from commands.psd_remote import RangeError, RemotePSD
@@ -326,8 +326,7 @@ class CardBuild:
         """
         paths = [item.get("path", "") for item in self._tree_items()]
         found = duplicate_pngs(paths, self.db.stats, self.edits)
-        before = {n: repr(c) for n, c in self.db.stats.items()
-                  if getattr(c, "duplicate_of", None) and not getattr(c, "variant_of", None)}
+        before = {n: repr(c) for n, c in self.db.stats.items() if picture_only(c)}
         if self.edits_unread:
             lower = {p.lower() for p in paths}
             for name in before:
@@ -348,11 +347,15 @@ class CardBuild:
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n]))
 
     def _variant_duplicates(self) -> int:
-        """Each variant picture's duplicate_of (variant_duplicates): the same card, counted once; it keeps its own parse,
-        PNG, parts and history. Card Edits.json unread: one already set stays. Returns how many changed."""
+        """Each variant picture's duplicate_of (variant_duplicates), and a card with its own PSD a person marked a
+        duplicate (marked_duplicates; unmarked: none): the same card, counted once; it keeps its own parse, PNG, parts
+        and history. Card Edits.json unread: one already set stays. Returns how many changed."""
+        edits = None if self.edits_unread else self.edits
+        found = {**marked_duplicates(self.db.stats, edits), **variant_duplicates(self.db.stats, edits)}
+        own = [n for n, c in self.db.stats.items() if not picture_only(c) and not getattr(c, "variant_of", None)]
         changed = 0
-        for name, original in variant_duplicates(self.db.stats, None if self.edits_unread else self.edits).items():
-            card = self.db.stats[name]
+        for name in [*found, *(n for n in own if n not in found)]:
+            card, original = self.db.stats[name], found.get(name)
             if self.edits_unread and getattr(card, "duplicate_of", None) in self.db.stats:
                 continue
             changed += getattr(card, "duplicate_of", None) != original
@@ -364,7 +367,7 @@ class CardBuild:
         original gets it after _sync_duplicates copied it): the same whether or not the original was re-parsed."""
         for card in self.db.stats.values():
             original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
-            if original is None or original is card or getattr(card, "variant_of", None):     # a variant: its own
+            if original is None or original is card or not picture_only(card):     # a variant, a marked PSD: its own
                 continue
             info = getattr(original, "version", None)
             if info is None:
@@ -471,7 +474,7 @@ class CardBuild:
         names = {card_name(item.get("path", "")) for item in items}
         gone: dict = {}                                 # blob -> a listed name gone from the tree
         for listed, card in self.db.stats.items():
-            if (listed not in names and getattr(card, "blob_sha", None) and not getattr(card, "duplicate_of", None)
+            if (listed not in names and getattr(card, "blob_sha", None) and not picture_only(card)
                     and not getattr(card, "variant_of", None)):
                 gone.setdefault(card.blob_sha, listed)
         for item in items:
@@ -637,8 +640,7 @@ class CardBuild:
         out: dict = {}
         for card in self.db.stats.values():
             original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
-            if original is not None and original.path and not getattr(card, "variant_of", None) \
-                    and duplicate_png(card) in self.shas:
+            if original is not None and original.path and picture_only(card) and duplicate_png(card) in self.shas:
                 out.setdefault(original.path, []).append(duplicate_png(card))
         return out
 
@@ -1158,6 +1160,20 @@ def variant_duplicates(stats: dict, edits: Optional[CardEdits]) -> dict:
         target = (edits.cards.get(CardAuthors.key(name)) or {}).get("dup_of") if edits is not None else None
         out[name] = by_key.get(CardAuthors.key(target), first) if target else first
     return out
+
+
+def marked_duplicates(stats: dict, edits: Optional[CardEdits]) -> dict:
+    """
+    {card: original} for every card with its own PSD whose Card Edits.json dup_of names another listed card (owner
+    11-13, as the website marks it): no variant picture or picture-only duplicate, the original none either, nor marked.
+    """
+    entries = edits.cards if edits is not None else {}
+    marked = {n: (entries.get(CardAuthors.key(n)) or {}).get("dup_of") for n, c in stats.items()
+              if not picture_only(c) and not getattr(c, "variant_of", None)}
+    marked = {n: target for n, target in marked.items() if isinstance(target, str) and target.strip()}
+    by_key = {CardAuthors.key(n): n for n, c in stats.items() if n not in marked and not picture_only(c)
+              and not getattr(c, "variant_of", None)}
+    return {n: by_key[CardAuthors.key(target)] for n, target in marked.items() if CardAuthors.key(target) in by_key}
 
 
 def can_prune(build: CardBuild) -> bool:

@@ -15,7 +15,7 @@ from typing import Optional
 from global_config import MAILMAP_PATH
 from commands.card_db import record
 from commands.card_edits import as_parsed
-from commands.card_models import RAID_STARS, RENAMED, CardInfo, card_name, rename_trailer
+from commands.card_models import RAID_STARS, RENAMED, CardInfo, card_name, picture_only, rename_trailer
 
 # ========================
 # Configuration
@@ -399,7 +399,7 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex) -> None:
     name starts there too: intro_of). A deletion or rename older than the record's own reading, or an index that lacks
     the tag's commit (a clone not fetched since: a path deleted, added back and deleted again), changes nothing."""
     def copy_of(card) -> Optional[str]:
-        return None if getattr(card, "variant_of", None) else getattr(card, "duplicate_of", None)   # a variant: its own
+        return getattr(card, "duplicate_of", None) if picture_only(card) else None   # a variant, a marked PSD: its own
     for name, versions in sorted(old_stats.items(), key=lambda item: bool(copy_of(
             item[1][len(item[1]) - 1]) if item[1] else False)):     # originals before their copies
         if not versions or name in stats:
@@ -461,10 +461,9 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     others = set(db.stats) | set(db.old_stats)          # a rename's new name starts where its archive ends (intro_of)
     made = []
     for name, card in db.stats.items():
-        variant = bool(getattr(card, "variant_of", None))     # a variant picture duplicate: its own versions
-        if getattr(card, "duplicate_of", None) and not variant:
+        if picture_only(card):                                # a variant, a marked PSD: its own versions
             continue
-        ignore = ("duplicate_of",) if variant else ()         # marked a duplicate: no version
+        ignore = ("duplicate_of",)                            # marked a duplicate: no version
         old = before.get(name)
         if name in restored:
             versions = db.old_stats.get(name) or []

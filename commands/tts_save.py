@@ -31,7 +31,7 @@ from urllib.parse import quote, unquote
 from requests import get
 
 from commands.card_edits import CardAuthors
-from commands.card_models import RENAMED, card_name as _stem, rename_trailer
+from commands.card_models import RENAMED, card_name as _stem, picture_only, rename_trailer
 from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import batch_env, pinned_ref, refresh
 from commands.rulebook_pages import PAGES_JSON, PDF_FILE, read_pages
@@ -364,7 +364,7 @@ def db_names(stats_path: str, tree: dict) -> dict:
     out, seen, dup_names, known = {}, set(), {}, set()
     for name, card in sorted(stats.items(), key=lambda kv: kv[0].lower()):
         path = getattr(card, "path", "") or ""
-        if getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None):     # a variant: its own card
+        if picture_only(card):                  # a variant, a marked PSD: its own card
             if getattr(card, "display_name", None):
                 dup_names[name.replace(" ", "_").lower() + ".png"] = card.display_name
             continue

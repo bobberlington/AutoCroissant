@@ -40,6 +40,7 @@ from psd_tools import PSDImage
 from requests import HTTPError
 
 import commands.github_api as github_api
+from commands.card_models import picture_only
 from commands.github_api import api_url, blob_sha, fetch_tree, fetch_verified, get_with_retry, token_from_env
 from global_config import FONT_DIRS_ENV, LOCAL_DIR_LOC
 
@@ -326,7 +327,7 @@ def details_report(details: dict, cards: dict) -> Report:
     paths = {}
     for card in cards.values():
         path = getattr(card, "path", "") or ""
-        if not getattr(card, "duplicate_of", None) and is_card_psd(path):
+        if not picture_only(card) and is_card_psd(path):     # a marked PSD: its own
             paths[path] = getattr(card, "blob_sha", None)
     for path in sorted(paths):
         record = details.get(paths[path] or "")

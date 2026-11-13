@@ -80,7 +80,7 @@ class CardInfo:
     allow_high_stats: bool = False
     parsed_values: Optional[dict] = None      # PSD values of edited fields
     creatures: Optional[list] = None          # CardStats per creature (multi-creature cards)
-    duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
+    duplicate_of: Optional[str] = None        # original card (same PSD, another PNG; or marked by hand: picture_only)
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
     subseries: Optional[str] = None           # from Card Edits.json, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older records
@@ -210,10 +210,18 @@ class StatsDatabase:
         for name in archived:
             card = self.stats.pop(name)
             card.archived = _archive_tag(card, at)
-            if getattr(card, "duplicate_of", None) or getattr(card, "variant_of", None):    # its own file is its PNG
+            if picture_only(card) or getattr(card, "variant_of", None):    # its own file is its PNG
                 card.archived["path"], card.archived["blob"] = duplicate_png(card), None
             self.old_stats.setdefault(name, []).append(card)
         return sorted(archived)
+
+
+def picture_only(card) -> bool:
+    """A duplicate drawn by its original's PSD (its record the original's copy, path and all): duplicate_of set, no
+    variant picture, nor a card with its own PSD that a person marked a duplicate (owner 11-13: counted once, its own
+    parse). card: a CardInfo or its stats.json dict."""
+    get = card.get if isinstance(card, dict) else lambda key: getattr(card, key, None)
+    return bool(get("duplicate_of")) and not get("variant_of") and card_name(get("path") or "") != get("name")
 
 
 def duplicate_png(card: CardInfo) -> str:
