@@ -120,14 +120,15 @@ def test_eras_and_the_bar():
     assert eb.bar_for([(0.9, True)] * 5) is None              # too few to set a bar
 
 
-def test_truth_keeps_the_psd(tmp_path):
+def test_truth_eye_none_drops_the_psd(tmp_path):
     base = tmp_path.joinpath(*eb.OUT, "truth")
     base.mkdir(parents=True)
-    base.joinpath("psd.json").write_text(json.dumps({"versions": {"b1": {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 5}}}}))
+    base.joinpath("psd.json").write_text(json.dumps({"versions": {"b1": {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 5}},
+                                                                     "b2": {"stats": {"hp": 1, "def": 1, "atk": 1, "spd": 1}}}}))
     base.joinpath("eye_x.json").write_text(json.dumps({"items": {"b1": {"stats": None}, "f1": {
         "stats": {"hp": 6, "def": 1, "atk": "none", "spd": "none"}}}}))
     truth = eb.load_truth(str(tmp_path))
-    assert truth["b1"]["from"] == "psd"                       # the eye can't read it: the PSD stands
+    assert "b1" not in truth and truth["b2"]["from"] == "psd"  # three forms / upside down: no truth at all
     row = {"file": "f1", "era": "D-item", "stats": {"hp": {"v": 6, "conf": 1.0}, "def": {"v": 1, "conf": 1.0},
                                                     "atk": {"v": None}, "spd": {"v": 4, "conf": 0.9}}}
     assert [(p[2], p[4]) for p in eb.scored([row], truth)] == [("hp", True), ("def", True), ("spd", False)]

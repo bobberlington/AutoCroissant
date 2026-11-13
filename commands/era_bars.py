@@ -825,8 +825,8 @@ def row_key(row: dict) -> str:
 
 
 def load_truth(root: str) -> dict:
-    """{picture key: {'stats': {stat: v}, 'stats2', 'from'}}: old-repo PSD stats, then by-eye readings (win; one the
-    eye can't read keeps the PSD's)."""
+    """{picture key: {'stats': {stat: v}, 'stats2', 'from'}}: old-repo PSD stats, then by-eye readings (win; stats
+    None, e.g. three forms or a card upside down, drops the PSD's: one picture, no single stat set)."""
     base = join(root, *OUT, "truth")
     out = {}
     psd = join(base, "psd.json")
@@ -837,7 +837,7 @@ def load_truth(root: str) -> dict:
     for name in sorted(n for n in listdir(base) if n.startswith("eye_") and n.endswith(".json")):
         for key, t in load(open(join(base, name)))["items"].items():
             if t.get("stats") is None:
-                continue                                     # unreadable by eye: a PSD truth stands
+                out.pop(key, None)                           # no truth: the PSD's would publish wrong stats
             else:
                 out[key] = {**t, "from": "eye"}
     return out
