@@ -71,8 +71,8 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js draws them)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
 # what the pages draw (key()): the sheets' HTML (text, and the pictures' and assets' URLs, which carry their content's
-# stamp), the style sheets (an inline <style>'s text: index.html's style.css), the loaded fonts; with UNSTAMPED, the
-# folders the CSS reads by plain URL
+# stamp), the style sheets (an inline <style>'s text: index.html's style.css; a linked one's stamped URL: the
+# rulebook's own, build_site split_css), the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain URL
 KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", '
           '[...document.styleSheets].map(s => s.href || s.ownerNode?.textContent || ""), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
@@ -93,9 +93,13 @@ SITE_PATHS = (*(f":(glob,icase)site/rulebook/img/*.{x}" for x in PICTURES), "sit
 LAGS = "the website lags main's rulebook"     # in the report of a look that waited in vain: exit 3
 INPUTS = (f"{RULEBOOK_SRC}/", f"{RULEBOOK_PAGES}/", f"{FONTS_DIR}/", *SITE_PATHS)   # what a look reads off the checkout
 LOOK_FILE = "inputs"                           # --out's: HEAD's sha, then INPUTS
-# Chrome's copies of the fonts and pictures the page's CSS loads by plain URL (no stamp: the CDN's, up to 10 minutes
-# old; force-cache: those the page drew with): {url: git blob id, null when missing}
-PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].flatMap(s => [...s.textContent.matchAll(/url\(\s*["']?(rulebook\/[^"')?#\s]+)/g)].map(m => m[1])))]
+# Chrome's copies of the fonts and pictures the page's CSS (inline, and the rulebook's sheet) loads by plain URL (no
+# stamp: the CDN's, up to 10 minutes old; force-cache: those the page drew with): {url from the site root: git blob id,
+# null when missing}
+PLAIN_JS = r"""Promise.all([...new Set([...document.styleSheets].flatMap(s => { const root = new URL(".", document.baseURI).href; let css;
+    try { css = s.href ? [...s.cssRules].map(r => r.cssText).join("\n") : s.ownerNode?.textContent || ""; } catch { return []; }
+    return [...css.matchAll(/url\(\s*["']?([^"')?#\s]+)/g)].map(m => { try { return new URL(m[1], s.href || document.baseURI).href; } catch { return ""; } })
+      .filter(u => u.startsWith(root + "rulebook/")).map(u => u.slice(root.length)); }))]
   .map(async u => { const r = await fetch(u, { cache: "force-cache" }).catch(() => null);
     if (!r || !r.ok) return [u, null];
     const b = new Uint8Array(await r.arrayBuffer()), h = new TextEncoder().encode(`blob ${b.length}\0`), all = new Uint8Array(h.length + b.length);
