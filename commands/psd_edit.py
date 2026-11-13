@@ -127,6 +127,7 @@ ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be th
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
 FIT_STEP, FIT_MIN = 0.94, 0.4  # fit_below: smaller by this, down to this share of its size (the website's preview)
+BOX_DESCENT = 0.35          # hold_lines: em of the layer's largest size a grown box keeps under its last baseline
 BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
                             # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
@@ -325,6 +326,7 @@ class Edit:
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
     lines: Optional[tuple] = None  # a plain layer spliced in place: the splice zone, the only pixels it changes
     lifted: int = 0         # px an Ability edit moved its layer up (lift)
+    boxed: bool = False     # its box grown to hold its lines (hold_lines): its Txt2 frames change (gate_stories)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
@@ -5062,6 +5064,32 @@ def below_box(keep, lines) -> bool:
     return below(lines) > below(keep.layout.lines)
 
 
+def hold_lines(layer, fonts) -> int:
+    """
+    A paragraph box with drawn lines below its bottom grown down to hold them (set_text_box, its pixels kept): Photoshop
+    hides such a line when it lays the text out again (below_box). Its top, sides and transform stay; the bottom goes
+    BOX_DESCENT em of its largest size under the last baseline. Not point text, a rotated or offset box, nor one with a
+    line the engine left undrawn.
+
+    Returns:
+        px the box grew (0: not)
+    """
+    from psd_tools.composite.text.layout import frame, layout
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    box = frame(model)
+    xx, xy, yx, yy, tx, ty = model.transform
+    if box is None or abs(xy) > 1e-6 or abs(yx) > 1e-6 or any(abs(v) > 1e-6 for v in model.box[:2]):
+        return 0
+    lines = [line for line in layout(model, fonts).lines if line.text.strip()]
+    past = [line for line in lines if line.y > box[1] + box[3] + 1e-6]
+    if not past or not all(line.drawn for line in lines):
+        return 0
+    bottom = past[-1].y + BOX_DESCENT * max(run.style.size for run in model.runs if run.end > run.start)
+    set_text_box(layer, (tx, ty, tx + xx * box[2], ty + yy * bottom), pixels=False)
+    return max(1, round(yy * (bottom - box[3])))
+
+
 def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool, check) -> tuple:
     """
     An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
@@ -5711,6 +5739,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flags.append(f"overflow: name: moved {moved:+d} px to stay on the card")
     elif anchor:
         flags.append(f"name: back where the card maker put it ({-anchor:+d} px)")
+    boxed = hold_lines(layer, fonts)
+    if boxed:                                   # else Photoshop hides its last line when it lays it out again (soft)
+        flags.append(f"overflow: {which}: its box {boxed} px taller to hold its last line")
     bbox = tuple(layer.bbox)
     spliced = report.splice
     band = bbox if spliced is None or spliced.fallback or moved or anchor or up else spliced.zone
@@ -5756,7 +5787,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
                 whole=spliced is None or bool(spliced.fallback), lifted=up,
-                lines=lines)
+                lines=lines, boxed=bool(boxed))
 
 
 # ========================
@@ -10099,7 +10130,7 @@ def _story_font_name(entry) -> str:
 
 
 def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
-                 links=(), also: frozenset = frozenset(), relinked=()) -> list:
+                 links=(), also: frozenset = frozenset(), frames=(), relinked=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -10119,6 +10150,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
         links: uuids of the links the edits added (made type icons): lnkE is the old items and those, appended
         also: Other document blocks (keys) that may change: the link step's (card_standards.normalise)
+        frames: TextIndex of each edited layer whose box was resized (set_text_box): its own Txt2 frames may change
         relinked: uuids of the links the edits rewrote (Edit.relinked): lnkE the old items, those changed only in
             their file's size and contentID
 
@@ -10180,6 +10212,11 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         trimmed = _story_fonts(root_b)
         while len(trimmed) > len(faces_a):
             trimmed.pop()
+    frames = [renumber(i) for i in frames if i not in gone]
+    if frames:                                  # the resized boxes' own frames left out of both
+        root_a, root_b = _frames_out(root_a, frames), _frames_out(root_b, frames)
+        objects_a, objects_b = _story_list(root_a)[0], _story_list(root_b)[0]
+        items_a, items_b = _story_list(root_a)[2], _story_list(root_b)[2]
     rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
             + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
@@ -11063,6 +11100,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],
                  [index for edit in edits for index in edit.added_stories], filters=True,
+                 frames=[one.story for edit in edits for one in ([p for _, p, _ in edit.parts] or [edit])
+                         if one.boxed and one.story is not None],
                  links=[done[1].smart_object.unique_id for edit in edits if edit.icons is not None
                         for done in edit.icons.done if done[0] == "made" and done[1].kind == "smartobject"],
                  relinked=[uuid for edit in edits for uuid in edit.relinked])
@@ -11254,6 +11293,20 @@ def _drop_story(psd: PSDImage, index: int) -> list:
             at.value = int(at.value) - 1
             moved.append(layer)
     return moved
+
+
+def _frames_out(root, indices):
+    """A copy of a Txt2 root with the frames only these stories use blanked (gate_stories' frames)."""
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    root = deepcopy(root)
+    keys, items = _story_keys(root)
+    own = {i for index in indices for i in text_edit._frame_refs(items[index], keys)}
+    shared = {i for k, story in enumerate(items) if k not in set(indices) for i in text_edit._frame_refs(story, keys)}
+    frames = text_edit._resource_items(root, keys, keys.frame_set)
+    for i in own - shared:
+        frames[i] = engine_data.Dict()
+    return root
 
 
 def _drop_story_in(root, keys, items, index: int) -> None:
