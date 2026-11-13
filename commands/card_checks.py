@@ -461,11 +461,11 @@ def bar_looks(psd: PSDImage, raw: bytes) -> list:
     """
     The shown layer-comp bars as the bake draws them: [(label, value 0-10, lit cells, empty cells)] (_look_cells of the
     card with every bar at comp 10, then at comp 0: comp_render, as set_comp stores it); a bar the bake cannot draw
-    raises Refused.
+    raises Refused; one printing its stat (Baba: set_comp refuses it) is left out.
     """
     from psd_tools.api.layers import TypeLayer
     found = [(stat, layer, value, tuple(box)) for stat, bars in comp_bars(psd).items() for layer, value, box in bars
-             if value is not None and layer.is_visible()]
+             if value is not None and layer.is_visible() and psd_edit.bar_text(psd, box) is None]
     if not found:
         return []
     x0, y0, x1, y1 = union_box([box for *_, box in found])
@@ -489,15 +489,20 @@ def bar_looks(psd: PSDImage, raw: bytes) -> list:
 def unlike_looks(rows: list) -> list:
     """
     [(label, "lit" | "dark")] of the bars whose hidden looks a stat edit would bake unlike the card's (bar_looks' rows):
-    lit cells (a raise) off the bars of its look showing them lit (2 or more, alike), or a flat run of them to the bar's
-    end unlike every lit cell its look shows (a texture stopping at the value: PoD05 Lead Bloon); empty cells (a
-    lowering) off the bars showing them empty with a like lit cell there (2 or more, alike: Halberd Reactor's plain dark).
+    lit cells (a raise) off the bars of its look showing them lit (2 or more, alike; not on a texture, whose cells are
+    unlike each other: Frog), or a flat run of them to the bar's end unlike every lit cell its look shows (a texture
+    stopping at the value: PoD05 Lead Bloon; not among rows of their own colours: Pizza); empty cells (a lowering) off
+    the bars showing them empty with a like lit cell there (2 or more, alike: Halberd Reactor's plain dark). A bar at 0
+    is of the look whose empty cells it shares: a row of its own colour has its own (King Bob-omb's ATK), a leftover the
+    others' (Abigail's DEF before 11-13).
     """
     far = lambda a, b: float(np.abs(a - b).max())
     alike = lambda cells: all(far(cell, cells[0]) <= LOOK_SAME for cell in cells)
 
     def one_look(a, b) -> bool:
         both = range(min(a[1], b[1]))
+        if not both:                            # a bar at 0: its empty cells tell
+            return sum(far(a[3][k], b[3][k]) <= LOOK_SAME for k in range(10)) >= LOOK_SHARE * 10
         return sum(far(a[2][k], b[2][k]) <= LOOK_LIT for k in both) >= LOOK_SHARE * len(both)
     out = []
     for row in rows:
@@ -505,14 +510,16 @@ def unlike_looks(rows: list) -> list:
         others = [other for other in rows if other is not row]
         kin = [other for other in others if one_look(row, other)]
         bad = False
-        for c in range(value, 10):
+        for c in range(value, 10) if alike(list(lit[value:])) else ():
             refs = [other[2][c] for other in kin if c < other[1]]
             bad = bad or len(refs) >= 2 and alike(refs) and far(lit[c], np.mean(refs, 0)) > LOOK_LIT
         run = 0
         while run < 10 - value and far(lit[9 - run], lit[9]) <= LOOK_SAME:
             run += 1
         shown = [one[2][k] for one in (row, *kin) for k in range(one[1])]
-        bad = bad or run >= 2 and bool(shown) and min(far(lit[9], cell) for cell in shown) > LOOK_LIT
+        lits = [other for other in kin if other[1]]
+        same = all(one_look(a, b) for n, a in enumerate(lits) for b in lits[n + 1:])
+        bad = bad or same and run >= 2 and bool(shown) and min(far(lit[9], cell) for cell in shown) > LOOK_LIT
         if bad:
             out.append((label, "lit"))
         for c in range(value):

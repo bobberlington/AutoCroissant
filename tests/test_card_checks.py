@@ -459,18 +459,29 @@ def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
 
 ABIGAIL = ("69876f29527feae72106a91cf0aba6e59197851a", "0e0cf53cfd524eee909c05e1d729097d4bde8212")   # before / after 11-13
 HALBERD = "ab6eb4738ce468e4bb1ba0700703899415c0e1cc"     # Halberd Reactor: DEF at 10 over a plain dark
+OWN_LOOKS = ("193ca223f27b71fe410e702c0ef9c1023fa1eb2f",     # King Bob-omb: a silver ATK row among orange
+             "e8655fcc6e586b11a6dffce5e58e8b2499260d07",     # Massive Moss Charger: a split ATK row
+             "a61ae7a8575d4548cd9adb5a8ab9e4c417041ac4",     # Pizza: a colour per row, the empties shared
+             "93c385b61bfd868aabfde9ae5903aadcc5802e07",     # Frog: a texture per row
+             "2746abaa00679647b385787c4bb4e384b135ad87")     # Baba: bars printing 'IS 6' (no stat edit)
 
 
 def test_hidden_bar_looks_are_flagged():
     """A bar's hidden cells a stat edit bakes unlike the card's look (cardissues 11-13): Abigail's DEF before its repaint
-    (plain white under the darks), not after; Halberd Reactor's DEF at 10 (a plain dark). A row of its own colour, a
-    texture across every bar and one stopping at the value (PoD05 Lead Bloon) read as they are."""
+    (plain white under the darks), not after; Halberd Reactor's DEF at 10 (a plain dark). A card maker's own looks
+    flag at no value of any bar (cardfix2's sweep). A row of its own colour, a texture across every bar and one stopping
+    at the value (PoD05 Lead Bloon) read as they are."""
     from io import BytesIO
     from psd_tools import PSDImage
     from conftest import CLONE, card_blob
-    notes = lambda sha: cc.look_notes(PSDImage.open(BytesIO(raw := card_blob(CLONE, sha))), raw)
-    assert notes(ABIGAIL[0]) == [cc.LIT_LOOK_NOTE.format("DEF bar's")] and notes(ABIGAIL[1]) == []
-    assert notes(HALBERD) == [cc.DARK_LOOK_NOTE.format("DEF bar's")]
+    psd = lambda sha: (PSDImage.open(BytesIO(raw := card_blob(CLONE, sha))), raw)
+    assert cc.look_notes(*psd(ABIGAIL[0])) == [cc.LIT_LOOK_NOTE.format("DEF bar's")]
+    assert cc.look_notes(*psd(ABIGAIL[1])) == []
+    assert cc.look_notes(*psd(HALBERD)) == [cc.DARK_LOOK_NOTE.format("DEF bar's")]
+    for sha in OWN_LOOKS:
+        rows = cc.bar_looks(*psd(sha))
+        assert [(n, v) for n, (label, _, lit, dark) in enumerate(rows) for v in range(11)
+                if cc.unlike_looks([*rows[:n], (label, v, lit, dark), *rows[n + 1:]])] == [], sha
     flat = lambda rgb: np.tile(np.asarray(rgb, float), (10, 3, 1))
     pink, red, grey = flat((250, 210, 215)), flat((95, 30, 45)), flat((80, 70, 70))
     row = lambda label, value, lit, dark=grey: (label, value, lit, dark)
