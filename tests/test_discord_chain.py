@@ -247,3 +247,40 @@ def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
     assert dc.merge_fields(mine, other, "repost P-1")["stars"]["confidence"] == "review"
     assert dc.is_sure(dc.merge_fields({"stars": dc.sure(2, "eye")}, other, "repost P-1")["stars"])
     assert dc.is_sure(dc.merge_fields(mine, other, "the picture", fill=False)["stars"])
+
+
+def test_the_owner_s_answers():
+    """The review page's answers (rulings.json): a named-only picture confirmed enters and dates Created, a look told,
+    'not this card', a card named, a paper photo named, a field given, an unsure fact right, Created picked."""
+    rid = dc.review_id
+    text = {"attachments/1.png": {"title": {"value": "Bolt", "sure": False, "conf": 0.5, "method": "ocr+name"}}}
+    verdicts = [picture(1, T, created_review="named only, before its first picture evidence (x)"),
+                picture(2, T + DAY, "version_unsure"), picture(3, T + 2 * DAY, "version_unsure"),
+                dict(picture(4, T + 3 * DAY, "unsure", card=None), cards=None, maybe=["bolt"]),
+                picture(5, None, "none", card=None, paper=True)]
+    facts = [{"id": "f9", "card": "Bolt", "source": "changelog", "confidence": "unsure", "date": iso(T + 4 * DAY),
+              "field": "hp", "by": -2, "unit": "unknown", "channel": "update-01"}]
+    rulings = {rid("named only", "P-000000000001"): {"choice": "yes"},
+               rid("look not told", "P-000000000002"): {"choice": "look", "value": 1},
+               rid("look not told", "P-000000000003"): {"choice": "no"},
+               "match:P-000000000004": {"choice": "card", "value": "bolt"},
+               rid("paper photo", "P-000000000005"): {"choice": "card", "value": "bolt"},
+               rid("field", "bolt|D-P-000000000001|name"): {"choice": "yes"},
+               "R1": {"kind": "unsure fact", "choice": "yes", "value": "points", "item": {"fact": "f9"}},
+               rid("created earlier", "bolt"): {"choice": "file"}}
+    got = inputs(verdicts, text, facts=facts, created={"Bolt": {"date": dc.day(T + 9 * DAY), "from": "discord"}})
+    got.rulings = rulings
+    assert dc.owner_rows(got)["owner: not this card"] == 1
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    t = chain.card("bolt", found["bolt"], split.get("bolt", []))
+    entries = {e["id"]: e for e in t["entries"]}
+    assert set(entries) == {"D-P-000000000005", "D-P-000000000001", "D-P-000000000002", "F-f9"}
+    assert entries["D-P-000000000001"]["fields"]["name"] == dc.sure("Bolt", "owner", ruled=rid(
+        "field", "bolt|D-P-000000000001|name"))
+    assert entries["D-P-000000000002"]["look"]["git"]["commit"] == "c1"
+    assert entries["F-f9"]["change"]["unit"] == "points"
+    assert {i["picture"] for i in chain.review.values() if i["kind"] == "look not told"} == {"P-000000000004"}
+    made = chain.created("bolt", {**t, "entries": [e for e in t["entries"] if e["kind"] != "paper"]},
+                         [r for r in verdicts if r.get("card") == "bolt"])
+    assert (made["status"], made["date"], made["owner"]["was"]) == ("owner", dc.day(T + 9 * DAY), "earlier")

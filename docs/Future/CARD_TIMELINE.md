@@ -1,7 +1,7 @@
 # Card timelines from Discord
 
 **Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post, fields read, chains
-and Created built; review page and a local preview next. Nothing published (preview first, owner 11-13).
+and Created built, review page built; a local preview next. Nothing published (preview first, owner 11-13).
 
 ## Goal
 
@@ -81,8 +81,15 @@ the card's Image versions on the website before the git versions. Cards that nev
    (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and
    first-repo rows before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
    check.
-5. **Review page:** the unsure matches, readings and dates, with stable ids and the owner's answers applied by a rerun (as
-   10-22's `apply_rulings.py`).
+5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
+   local, never published): the owner's answers Q1-Q6 (read only, Q5's first-repo rows listed), the unsure old maps,
+   unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
+   templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields, Created dates (earlier,
+   new, later, earlier hints), the Morgue list (candidates, ideas never ported, the rest) and splits; stable ids, the
+   archive's thumbnails, radio answers kept in the browser and exported as JSON. `scripts/apply_rulings.py <export>`
+   checks every answer against `items.json` (one error stores nothing), keeps them in `derived/review/rulings.json`,
+   reruns the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked),
+   writes the Morgue list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked.
 6. **Publish:** the `history` branch holds per card `history/<card id>/timeline.json` (versions: date, fields, method and
    confidence per field, image name, text entries) and one webp per version (the card's PNG size class), plus an index. Written
    by a script run by hand (no Action), one commit per run.

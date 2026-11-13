@@ -37,6 +37,9 @@ build   Under derived/chain/:
                         picture contradicts, Created changes, splits, unnamed paper photos, and the owner's answers
                         (Q1-Q6, read only).
         stats.txt       counts.
+        The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
+        scripts/apply_rulings.py) are honoured: pictures named, told or refused, fields given (method 'owner'), unsure
+        changelog facts and old maps, older templates shown, facts against pictures, Created picked.
 checks  Contact sheets of n random cards' whole timelines (each version's picture beside its fields) for the by-eye
         check, under derived/chain/checks/.
 No message text, posters, authors of Discord posts or links anywhere: dates, channels, picture ids and read fields only
@@ -72,6 +75,7 @@ OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrow
 FACTS, FACT_SWITCHES = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "switches.json")
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
+RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
 SURE_CLASSES = ("version_sure", "version_unsure", "draft")    # the card is sure (discord_verdicts)
@@ -91,7 +95,7 @@ CLASS_Y, CLASS_MID, CLASS_WORDS = 0.96, 0.13, 5               # a class line: mi
 LOCAL_W, LOCAL_CELL = 240, 12                                 # drafts compared in grey at this width, by these cells
 LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a cell this far apart (grey levels) and
                                                               # this many times the pair's 90th percentile cell (floored)
-BACKED = ("eye", "psd", "git look")                           # star reads no icon reader made
+BACKED = ("eye", "psd", "git look", "owner")                  # star reads no icon reader made
 APART_DAYS = 30                                               # two icon reads this far apart: read separately
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
 ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "attack", "infliction", "counter",
@@ -262,6 +266,7 @@ class Inputs:
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
         self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
         self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
+        self.rulings = (dm.read_json(p.at(RULINGS), {}) or {}).get("rulings") or {}
         git_dir = dm.git_dir_of(cards_repo)
         if not git_dir:
             raise SystemExit(f"no card repo at {cards_repo}")
@@ -596,6 +601,71 @@ def same_words(a: dict, b: dict) -> bool:
                 lone_words(b.get("words") or set(), a.get("words") or set(), b.get("labels") or set()))
 
 
+def owner_rows(inputs) -> Counter:
+    """The owner's answers that change what enters, applied to the inputs in place: a picture's card named, its look
+    told (a git look or a draft), a named-only picture confirmed, 'not this card', a joke picture that is the live
+    card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's rows given to a card.
+    Fields, older templates, facts against pictures and Created are answered where the chain makes them."""
+    rulings, done = getattr(inputs, "rulings", None) or {}, Counter()
+    if not rulings:
+        return done
+    cards = inputs.cards
+    for row in inputs.verdicts:
+        rid = row["id"]
+        named, told = rulings.get(review_id("named only", rid)), rulings.get(review_id("look not told", rid))
+        joke, paper, match = (rulings.get(review_id("joke picture", rid)), rulings.get(review_id("paper photo", rid)),
+                              rulings.get("match:" + rid))
+        if match and match.get("choice") == "card" and match.get("value") in cards and \
+                row["verdict"] not in SURE_CLASSES:
+            row.update(card=match["value"], cards=[match["value"]], verdict="version_unsure", owner="card named",
+                       version={"unsure": "the owner named its card: which look?"})
+            done["owner: a picture's card named"] += 1
+        if any(r and r.get("choice") == "no" for r in (named, told)):
+            row.update(verdict="none", owner="not this card")
+            done["owner: not this card"] += 1
+            continue
+        if named and named.get("choice") == "yes":
+            row.pop("created_review", None)
+            row["owner"] = "the card's picture"
+            done["owner: a named-only picture confirmed"] += 1
+        if told and told.get("choice") == "draft":
+            row.update(verdict="draft", version={**(row.get("version") or {}), "shows": "draft", "look": None},
+                       owner="a look not in git")
+            done["owner: a look not in git"] += 1
+        elif told and told.get("choice") == "look" and told.get("value") is not None:
+            row.update(verdict="version_sure", version={**(row.get("version") or {}), "look": told["value"]},
+                       owner="a git look")
+            done["owner: a git look told"] += 1
+        if joke and joke.get("choice") == "live":
+            row.pop("joke_draft", None)
+            row.update(joke=False, owner="the live card's picture")
+            done["owner: a joke picture is the live card's"] += 1
+        if paper and paper.get("choice") == "card" and paper.get("value") in cards:
+            inputs.paper_eye[rid] = {"card": paper["value"], "how": "named by the owner"}
+            done["owner: a paper photo named"] += 1
+    facts = {f["id"]: f for f in inputs.facts}
+    maps = {i["id"]: i for i in inputs.old_review if i.get("kind") == "unsure map" and not i.get("split")}
+    for rid, r in rulings.items():
+        fact = facts.get((r.get("item") or {}).get("fact")) if r.get("kind") == "unsure fact" else None
+        if fact and fact.get("confidence") == "unsure":
+            if r.get("choice") == "yes":
+                fact.update(confidence="sure", owner=True, **({"unit": r["value"]} if r.get("value") else {}))
+            elif r.get("choice") == "no":
+                fact["confidence"] = "refused"
+            done[f"owner: an unsure fact {r.get('choice')}"] += 1
+        if rid in maps:
+            key = maps[rid].get("card") if r.get("choice") == "yes" else \
+                (cards.get(r.get("value")) or {}).get("key") if r.get("choice") == "card" else None
+            for row in maps[rid].get("rows") or [] if key else []:
+                inputs.old_rows[key].append({**row, "card": key, "owner": True})
+            done[f"owner: an unsure old map {r.get('choice')}"] += 1
+    return done
+
+
+def created_sort(date: Optional[str]) -> str:
+    return PAPER_SORT if date == PAPER_DAY else date or "9999"
+
+
 # ========================
 # The chain
 # ========================
@@ -607,6 +677,8 @@ class Chain:
         self.review_of = {(item.get("row"), item.get("field")): item["id"] for item in inputs.old_review
                           if item.get("row") and item.get("field")}
         self.splits = {g["id"]: g for g in inputs.lost if g.get("split_of")}
+        self.rulings = getattr(inputs, "rulings", None) or {}
+        self.old_proposed = {i["id"]: i.get("proposed") for i in inputs.old_review}
         self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
         for row in sorted((r for r in inputs.verdicts if r.get("first") and r["verdict"] == "unsure"),
@@ -874,6 +946,11 @@ class Chain:
             rank = ERA_RANK.get(e.get("era"))
             when = dm.epoch(e["date"]) if e.get("date") else None
             if rank and when and (rank < top) and (rank < 2 or when - since.get(top, when) > REPOST_DAYS * 86400):
+                if (self.rulings.get(review_id("older template later", f"{cid}|{e['id']}")) or {}).get(
+                        "choice") == "show":
+                    self.tally["owner: an older template shown"] += 1
+                    kept.append(e)
+                    continue
                 self.add_review("older template later", f"{cid}|{e['id']}", card=cid, entry=e["id"],
                                 pictures=[p["id"] for p in e["pictures"]], date=e["date"], era=e.get("era"),
                                 why="an older template than a version posted before it: an earlier look posted "
@@ -1019,6 +1096,12 @@ class Chain:
                         if seen[1] is not None:
                             break
             if seen and seen[1] is not None and seen[1] != to:
+                choice = (self.rulings.get(review_id("fact vs picture", e["id"])) or {}).get("choice")
+                if choice in ("fact", "picture"):
+                    self.tally[f"owner: fact vs picture, the {choice} kept"] += 1
+                    if choice == "fact":
+                        kept.append(e)
+                    continue
                 self.add_review("fact vs picture", e["id"], card=cid, fact=e["id"][2:], entry=seen[0]["id"],
                                 field=field, fact_to=to, picture_reads=seen[1], date=e["date"],
                                 why="the next picture reads another value")
@@ -1051,6 +1134,23 @@ class Chain:
         for e in entries:
             e.pop("old_ability_change", None)
 
+    def owner_fields(self, cid: str, entries: list) -> None:
+        """The owner's answers on fields to review: yes takes the proposed value, a value given takes that (both
+        sure, method 'owner'); no leaves it to review."""
+        for e in entries if self.rulings else []:
+            if e["kind"] not in ("discord", "paper", "old repo"):
+                continue
+            for key, field in list(e["fields"].items()):
+                if field.get("confidence") != "review":
+                    continue
+                rid = field.get("review") or review_id("field", f"{cid}|{e['id']}|{key}")
+                r = self.rulings.get(rid) or {}
+                value = r.get("value") if r.get("choice") == "value" else \
+                    field.get("proposed", self.old_proposed.get(rid)) if r.get("choice") == "yes" else None
+                if value is not None:
+                    e["fields"][key] = sure(value, "owner", ruled=rid)
+                    self.tally[f"owner: {e['kind']} field {key} given"] += 1
+
     def field_reviews(self, cid: str, entries: list) -> None:
         """Every field to review gets its item (an old row's from oldrows, else the chain's own); types with nothing
         read are 'unread' (nothing to confirm)."""
@@ -1076,7 +1176,9 @@ class Chain:
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
                                     {"paper": 0, "discord": 1, "text": 2, "first repo": 3, "old repo": 4}[e["kind"]],
                                     e["id"]))
+        self.owner_fields(cid, entries)
         self.star_guard(entries)
+        self.owner_fields(cid, entries)                  # a star the guard took to review, answered
         entries = self.check_facts(cid, entries)
         self.diff(entries)
         self.field_reviews(cid, entries)
@@ -1175,14 +1277,37 @@ class Chain:
                                                                        row="Q-" + push["id"], date=push["date"],
                                                                        why="a first-repo push notice names it "
                                                                            "before its Created date")}
+        self.owner_created(cid, out)
         return out
+
+    def owner_created(self, cid: str, out: dict) -> None:
+        """The owner's answers on Created: a status item's pick (ours, the file's, a date given) and the earlier
+        hints said yes to (a changelog line, a first-repo row, a Morgue entry's picture); the earliest wins.
+        'hand' is never touched."""
+        if out["status"] == "hand" or not self.rulings:
+            return
+        r = self.rulings.get(out.get("review")) or {} if out.get("review") else {}
+        base = {"ours": out["ours"].get("day"), "file": (out.get("file") or {}).get("date"),
+                "date": r.get("value")}.get(r.get("choice")) or out["date"]
+        picks = [base] + [out[k]["day"] for k in ("changelog_earlier", "first_repo_earlier") if out.get(k) and
+                          (self.rulings.get(out[k]["review"]) or {}).get("choice") == "yes"]
+        picks += [str(h.get("item", {}).get("date") or "")[:10] for h in self.rulings.values()
+                  if h.get("kind") == "morgue hint" and h.get("choice") == "yes" and
+                  (h.get("item") or {}).get("card") == cid and (h.get("item") or {}).get("date")]
+        date = min(picks, key=created_sort)
+        if r or date != out["date"]:
+            out.update(status="owner", date=date, sort=created_sort(date), proposed=True,
+                       owner={"was": out["status"], "pick": r.get("choice"), "hints": len(picks) - 1})
+            self.tally["owner: Created picked"] += 1
 
 
 def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> dict:
     root = dm.check_root(root)
     paths = Paths(root)
     inputs = Inputs(root, cards_repo)
+    owned = owner_rows(inputs)
     chain = Chain(inputs)
+    chain.tally.update(owned)
     found, split = chain.discord_rows()
     by_card = defaultdict(list)
     for row in inputs.verdicts:
