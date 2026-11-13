@@ -294,6 +294,10 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
         snapshot.fetch = {sha(blob): blob for blob in found.values()}.get
         record = cc.check_card(cc.Context(snapshot, _bare_parser(), ""), rel)
         assert (cc.DUP_NOTE.format(name="Breakfast.png") in record["notes"]) is flagged, record["notes"]
+    lost = sha(files[stem + "3.png"])                           # picture 3 unread: picture 1's plate stays
+    snapshot.fetch = lambda blob, get=snapshot.fetch: None if blob == lost else get(blob)
+    plate = cc.check_card(cc.Context(snapshot, _bare_parser(), ""), rel)["plate"]
+    assert plate and plate["crops"] and record["plate"]["crops"] != plate["crops"]
 
 
 def test_sweeps_keep_flags(tmp_path):

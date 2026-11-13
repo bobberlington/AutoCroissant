@@ -725,8 +725,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if image is not None else {}   # {PNG: picture n}
     if image is not None and parts is not None:
         try:
-            pictures = {n: png_export.open_png(snapshot.fetch(snapshot.sha(path))) for path, n in drawn.items()}
-            plate = card_plates.plates(psd, image, parts, ctx.fonts, pictures)
+            plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn))
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
@@ -757,6 +756,17 @@ def check_card(ctx: Context, rel: str) -> dict:
             "bars": CUSTOM_NOTES[why] if style == "custom" else None,
             "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate,
             **({"room": room} if room is not None else {})}
+
+
+def _pictures(snapshot: Snapshot, rel: str, drawn: dict) -> dict:
+    """{n: picture n's PNG} of drawn ({PNG: n}); one that can't be read is left out (picture 1's plate stays)."""
+    pictures = {}
+    for path, n in drawn.items():
+        try:
+            pictures[n] = png_export.open_png(snapshot.fetch(snapshot.sha(path)))
+        except Exception as error:              # noqa: BLE001 - that picture's layers: no crops of their own
+            print(f"{rel}: no picture {n}: {type(error).__name__}: {error}", flush=True)
+    return pictures
 
 
 def ability_room(ctx: Context, rel: str, psd: PSDImage, parsed: dict, parts: Optional[dict]):
