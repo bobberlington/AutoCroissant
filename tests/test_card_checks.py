@@ -100,7 +100,8 @@ def test_colour_row():
 
 def test_mismatches():
     """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads
-    by a step; a website-only value differs on purpose; creatures by bar."""
+    by a step, or bar by bar read by the bake's drawing (one with no say silences none); a website-only value differs on
+    purpose; creatures by bar."""
     read = lambda best, could=None: {"best": best, "could": could if could is not None else [best]}
     record = {"style": "new", "reads": {"hp": [read(5)], "def": [read(3)], "atk": [read(None, None) | {"could": None}], "spd": [read(4, [4, 7])]}}
     data = {"stats": {"hp": 5, "defense": 1, "attack": 2, "speed": 7}}
@@ -111,7 +112,39 @@ def test_mismatches():
     assert cc.mismatches(many, {"creatures": [{"hp": 5}, {"hp": 4}]}) == ["Creature 2's HP bar shows 6 but the data says 4."]
     flat = {"style": "custom", "reads": {"hp": [{"best": 0, "could": [0], "flat": True}], "atk": [read(5)]}}
     assert cc.mismatches(flat, {"stats": {"hp": 1, "attack": 5}}) == []          # a flat custom row: no step read
+    drawn = {"style": "custom", "reads": {"hp": [cc.drawn_read({4: (-90, 100), 6: (-95, 100)}, 5)],
+                                          "def": [cc.drawn_read({2: (80, 100), 4: (-100, 100)}, 3)],
+                                          "atk": [cc.drawn_read({1: (0, 100)}, 2)]}}
+    assert [rows[0]["best"] for rows in drawn["reads"].values()] == [5, 2, None]
+    assert cc.mismatches(drawn, {"stats": {"hp": 5, "defense": 3, "attack": 9}}) == ["The DEF bar shows 2 but the data says 3."]
     assert cc.flags({"notes": ["N."], "bars": "B."}, None) == {"hand": "N.", "bars": "B.", "name": None}
+
+
+def test_custom_bars_read_by_the_bakes_drawing(clone):
+    """Puzzled Cat's PNG shows her DEF 4 against the bake's picture of 9 (card_plates.looks); a picture of 9 shows 9,
+    flagged against the data's 4, though the bake makes no picture off one that far from the card's own."""
+    from io import BytesIO
+    from PIL import Image
+    from psd_tools import PSDImage
+    import commands.card_plates as cp
+    import commands.psd_edit as psd_edit
+    rel = "Creatures/Other/3 Stars/Puzzled_Cat.psd"
+    raw = (clone / rel).read_bytes()
+    psd, png = PSDImage.open(BytesIO(raw)), Image.open(clone / rel.replace(".psd", ".png"))
+    png.load()
+    parser = psd_edit._bare_parser()
+    parsed = psd_edit.parse_card(parser, str(clone / rel), rel, psd)
+    psd_edit.use_record(psd, rel)
+    icc = psd_edit.export_icc(psd, png)
+
+    def read(picture):
+        seen = []
+        cp.bar_value(psd, raw, picture, parsed, parser, rel, "def", 9, icc, seen=seen)
+        return cc.drawn_read({9: seen[0]}, 4)
+    wrong = cp.bar_value(psd, raw, png, parsed, parser, rel, "def", 9, icc)
+    assert read(png)["best"] == 4 and cp.bar_value(psd, raw, wrong, parsed, parser, rel, "def", 9, icc) is None
+    record = {"style": "custom", "reads": {"def": [read(wrong)]}}
+    assert cc.mismatches(record, {"stats": {"defense": 4}}) == ["The DEF bar shows 9 but the data says 4."]
 
 
 def test_name_note():

@@ -88,6 +88,8 @@ LIT_GAP = 10.0                              # lit and empty cells this far apart
 SPLIT_MIN = 10.0                            # L a busy template row's lit cells all beat its dark ones by (split_row)
 CELL_TRIM = 0.2                             # a busy row's cell is read on its middle: this share off each side
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
+SHOWS = 0.5                                 # card_plates.looks' ratio past which the PNG shows that value's picture
+OWN = -0.5                                  # under which, on every value drawn, it shows the card's own
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
 # the notes
@@ -314,14 +316,45 @@ def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict
     return out
 
 
+def drawn_read(votes: dict, at: int) -> dict:
+    """
+    A custom bar off the picture by the bake's own drawing of it (card_plates.bar_changes' votes: {value: looks()}): the
+    value whose picture is nearest the PNG over the bar (the most nearer over the pixels it changes: a value between the
+    card's and the shown one is as near on its fewer pixels) when it is past SHOWS there, else at (the PSD's) when the
+    PNG shows the card's own against every value drawn, else no say.
+    """
+    drawn = {int(value): (near, apart) for value, (near, apart) in votes.items() if apart > 0}
+    best = max(drawn, key=lambda value: drawn[value][0], default=None)
+    if best is not None and drawn[best][0] >= SHOWS * drawn[best][1]:
+        return {"best": best, "could": [best], "drawn": True}
+    if drawn and all(near <= OWN * apart for near, apart in drawn.values()):
+        return {"best": at, "could": [at], "drawn": True}
+    return {"best": None, "could": None, "drawn": True}
+
+
+def drawn_reads(votes: dict, card: dict) -> dict:
+    """read_picture's shape of a custom card's bars by drawn_read, a bar a creature (one not drawn has no say: a shared
+    bar is creature 1's); {} when nothing was drawn."""
+    if not votes:
+        return {}
+    creatures = card.get("creatures") or [card]
+    out = {}
+    for stat in STAT_ORDER:
+        keys = [stat if n == 1 else f"{stat}@{n}" for n in range(1, len(creatures) + 1)]
+        out[stat] = [drawn_read(votes[key], one.get(stat)) if key in votes else drawn_read({}, None)
+                     for key, one in zip(keys, creatures)]
+    return out
+
+
 # ========================
 # The picture against the data
 # ========================
 def _pairs(rows: list, values: list) -> list:
-    """(read, value) per bar of a stat: a bar per creature, one bar for one value, two for one (the rows add up), else none."""
+    """(read, value) per bar of a stat: a bar per creature, one bar for one value, two rows for one (they add up), else
+    none."""
     if len(rows) == len(values):
         return list(zip(rows, values))
-    if len(rows) == 2 and len(values) == 1 and all(row["best"] is not None for row in rows):
+    if len(rows) == 2 and len(values) == 1 and all(row["best"] is not None and not row.get("drawn") for row in rows):
         total = rows[0]["best"] + rows[1]["best"]
         return [({"best": total, "could": [total]}, values[0])]
     return []
@@ -329,9 +362,9 @@ def _pairs(rows: list, values: list) -> list:
 
 def mismatches(record: dict, data: dict, site=()) -> list:
     """
-    What a card's picture says against its data, a line per bar: the card's own bars speak bar by bar, custom ones only
-    when every bar reads by a step (a picture that merely looks like cells must stay silent; a flat row's lightness
-    misses one small lit icon: Tainted Lost's HP 1 read 0).
+    What a card's picture says against its data, a line per bar: the card's own bars speak bar by bar, custom ones read
+    by the bake's drawing (drawn_reads) too, others only when every bar reads by a step (a picture that merely looks
+    like cells must stay silent; a flat row's lightness misses one small lit icon: Tainted Lost's HP 1 read 0).
 
     Args:
         record: check_card()'s
@@ -339,7 +372,8 @@ def mismatches(record: dict, data: dict, site=()) -> list:
         site: Its Card Edits fields: a website-only value differs from the picture on purpose, a pending one until it bakes
     """
     reads = record.get("reads") or {}
-    if record.get("style") == "custom" and any(row["best"] is None or row.get("flat") for rows in reads.values() for row in rows):
+    if record.get("style") == "custom" and any((row["best"] is None or row.get("flat")) and not row.get("drawn")
+                                               for rows in reads.values() for row in rows):
         return []
     if (data.get("stars") or 0) >= RAID_STARS:  # its bars run to 40 in rows of their own
         return []
@@ -528,7 +562,8 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
 def check_card(ctx: Context, rel: str) -> dict:
     """
     A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"}; mismatches() and
-    flags() word it. plate: the mock-up's (card_plates, published apart: save leaves it out of db/).
+    flags() word it. plate: the mock-up's (card_plates, published apart: save leaves it out of db/). A custom card's
+    reads are its plate's bar pictures against its PNG (drawn_reads) when the bake drew any.
 
     Args:
         ctx: context()
@@ -544,12 +579,12 @@ def check_card(ctx: Context, rel: str) -> dict:
     parsed = psd_edit.parse_card(ctx.parser, rel, rel, psd)
     creatures = parsed["card"].get("creatures")
     style, why = bar_style(psd, creatures)
-    plate = None
+    plate, votes = None, {}
     if image is not None:
         try:
             plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser),
                                        ctx.fonts)
-            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style)
+            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
@@ -562,6 +597,8 @@ def check_card(ctx: Context, rel: str) -> dict:
     with variant_view(psd, 1):                  # a tagged PSD: Name.png is picture 1
         reads = read_picture(psd, image, cells=style in ("new", "few")) \
             if style and image is not None and not counted else {}
+    if style == "custom" and votes:
+        reads = drawn_reads(votes, parsed["card"])
     notes += _stat_notes(ctx, rel, psd, parsed, style, image)
     dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
@@ -893,6 +930,8 @@ __all__ = [
     'by_person',
     'check_card',
     'context',
+    'drawn_read',
+    'drawn_reads',
     'flags',
     'link_notes',
     'load',

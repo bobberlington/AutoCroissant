@@ -336,7 +336,7 @@ def mock_misses(image: Image.Image, psd: PSDImage, card: dict, kinds: dict, sure
 
 
 def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, stat: str, value: int,
-              icc: bool, creature: int = 1, caps=...) -> Optional[Image.Image]:
+              icc: bool, creature: int = 1, caps=..., seen: Optional[list] = None) -> Optional[Image.Image]:
     """
     The card's PNG after a website edit of one stat, as the bake makes it (psd_edit._apply_jobs' steps for a stat job:
     classify, set_stat on a copy, gate_dirty, baseline, the merge), or None when the bake refuses it or the re-parse
@@ -345,6 +345,8 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
     creature: past 1, that creature's stat on a card of several (a `creatures` job, set_creatures); None when the job
     moves another creature too (a shared bar: creature 1's picture).
     caps: stat_caps(psd) when read already (bar_changes), else classify reads it.
+    seen: gets looks() of the PNG against this value's picture, summed over the job's edits, when the bake makes it or
+    refuses only for the PNG's sake (baseline's parity floor: the PNG far off the card's own picture there; no picture).
     """
     if creature == 1:
         job = psd_edit.classify(parsed, {stat: value}, psd, parser, caps=caps).jobs.get(stat)
@@ -363,16 +365,24 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
         edits = [edit for edit in made if edit.layers or edit.removed]
         if not edits:
             return None
-        kept, merged, edited = {}, png, psd_edit.edited_ids(edits)
+        kept, merged, edited, votes, far = {}, png, psd_edit.edited_ids(edits), np.zeros(2, np.int64), False
         first = psd_edit.gate_dirty(psd, new, edits, kept)
         for edit in edits:
-            base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
+            try:
+                base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
+            except psd_edit.Refused as refused:
+                if seen is None or refused.code != "parity":
+                    raise
+                cut, far = psd_edit.crop_pair(psd, first, edit.region, icc), True
+                base, measured = cut[0] if cut else psd_edit.render_region(psd, edit.region, icc), {"text": "preview"}
             cut = psd_edit.crop_pair(new, kept.get("after"), edit.region, icc, kept.get("box")) \
                 if measured["text"] == "preview" and kept.get("edited") == edited else None
             render = cut[0] if cut else psd_edit.render_region(new, edit.region, icc, measured["text"], edited)
             merged, replaced = psd_edit.merge_png(merged, base, render, edit.region)
-            if not replaced.any() and not psd_edit._within_bar(measured):
+            if not replaced.any() and (far or not psd_edit._within_bar(measured)):
                 return None
+            if seen is not None:
+                votes += looks(png.crop(edit.region), base, render, replaced)
     except psd_edit.Refused:
         return None
     if parser is not None:                      # gate_reparse's
@@ -381,7 +391,25 @@ def bar_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser,
             got = dict(enumerate(got.get("creatures") or [], 1)).get(creature, {})
         if got.get(stat) != value:
             return None
-    return merged
+    if seen is not None:
+        seen.append(tuple(int(v) for v in votes))
+    return None if far else merged
+
+
+def looks(png: Image.Image, base: Image.Image, render: Image.Image, changed: np.ndarray) -> np.ndarray:
+    """
+    Whether a PNG shows a value's picture or the card's own over the pixels the value changes (all region-sized):
+    [sum of how much nearer the PNG is to render than to base, sum of how far apart the two are]; their ratio runs
+    from -1 (the card's own) to 1 (the value's).
+    """
+    ys, xs = np.nonzero(changed)
+    if not len(xs):
+        return np.zeros(2, np.int64)
+    box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    png, base, render = (image.crop(box) for image in (png, base, render))
+    changed = changed[box[1]:box[3], box[0]:box[2]]
+    near = psd_edit._px_diff(png, base).astype(np.int64) - psd_edit._px_diff(png, render)
+    return np.array([near[changed].sum(), psd_edit._px_diff(base, render)[changed].sum(dtype=np.int64)])
 
 
 def star_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, value: int,
@@ -431,9 +459,11 @@ def _creature_stats(card: dict) -> dict:
             for stat in psd_edit.STAT_FIELDS if isinstance(one.get(stat), int) and one[stat] >= 0}
 
 
-def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str) -> dict:
+def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
+                votes: Optional[dict] = None) -> dict:
     """{stat: {value: _moved()}} over the view pixels a stat edit moves (bar_value at the site's card view, view());
-    every stat the card has, every value the bake takes; creatures 2..N's own as "<stat>@<n>" (_creature_stats)."""
+    every stat the card has, every value the bake takes; creatures 2..N's own as "<stat>@<n>" (_creature_stats).
+    votes: gets {key: {value: bar_value's seen}} too."""
     card = parsed["card"]
     stats = [stat for stat in psd_edit.STAT_FIELDS if isinstance(card.get(stat), int) and card[stat] >= 0]
     if not stats or png.size != psd.size or psd_edit.story_style_drift(psd, kerning=False):
@@ -447,8 +477,11 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
         for key, now_at in at.items():
             stat, _, n = key.partition("@")
             for value in range(BAR_TOP + 1):
+                seen = [] if votes is not None else None
                 merged = None if value == now_at else \
-                    bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc, int(n or 1), caps)
+                    bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc, int(n or 1), caps, seen)
+                if seen:
+                    votes.setdefault(key, {})[value] = seen[0]
                 moved = _moved(was, merged) if merged is not None else None
                 if moved:
                     out.setdefault(key, {})[value] = moved
@@ -555,12 +588,13 @@ def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
 
 
 def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
-              style: str) -> Optional[dict]:
-    """The plates file with its "bars" (bar_sheet) on a card pictured() picks; plate as it was otherwise."""
+              style: str, votes: Optional[dict] = None) -> Optional[dict]:
+    """The plates file with its "bars" (bar_sheet) on a card pictured() picks; plate as it was otherwise. votes:
+    bar_changes'."""
     card = parsed["card"]
     if not pictured(psd, png, card, style):
         return plate
-    sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel), {**card, **_creature_stats(card)},
+    sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel, votes), {**card, **_creature_stats(card)},
                       vw=view(png).width)
     if sheet is None:
         return plate
@@ -699,6 +733,7 @@ __all__ = [
     'crop',
     'layer_ids',
     'layout',
+    'looks',
     'main',
     'mock_misses',
     'pictured',
