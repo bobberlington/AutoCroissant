@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
@@ -13,8 +14,10 @@ from PIL import Image, ImageDraw
 
 import commands.discord_match as dm
 from conftest import REPO
+from helpers import commit, git, put
 
 G = "100000000000000001"                            # a made-up guild id
+OUT = Path(*dm.OUT)                                 # the matcher's outputs under the archive
 
 
 def art(seed: int, w: int = 600, h: int = 900) -> Image.Image:
@@ -140,16 +143,6 @@ def test_title_under_the_art():
     assert "The Old Grey DOG" in parts                                            # the fullest read of each line
     found = {c["card"]: c["s"].get("title", 0) for c in dm.score_image(index, feat)}
     assert found["the-last-melon-trader"] == 1.0 and found.get("melon", 0) < 0.3
-
-
-def test_people_map_skips_ports_and_takes_the_most():
-    def first(pid, channel, n):
-        return [({"poster": {"id": pid, "username": pid}, "channel": channel}, credited) for credited in n]
-    posts = first("u1", "port", ["B"] * 30) + first("u1", "cards", ["A"] * 11 + ["B"] * 9) + \
-        first("u2", "cards", ["B"] * 5)
-    found = dm.people_map(posts, ["A", "B"])
-    assert found["u1"]["person"] == "A" and found["u1"]["port_first_posts"] == 30 and "guess" in found["u1"]["basis"]
-    assert found["u2"]["person"] == "B"
 
 
 def test_parse_rulings():
@@ -409,14 +402,16 @@ def test_text_method_finds_a_crop():
 
 
 def write_build_archive(root: Path, posts: list, candidates: dict, versions: list, cards: dict,
-                        extra: Optional[dict] = None):
-    """An archive whose pairs.json is given: build alone, no images. extra: more fields per image (by post)."""
-    for sub in ("messages", "attachments", "match"):
+                        extra: Optional[dict] = None, places: Optional[dict] = None):
+    """An archive whose pairs.json is given: build alone, no images. extra: more fields per image (by post); places:
+    a post's channel (id, name), else card-ideas."""
+    for sub in ("messages", "attachments", str(OUT / "match")):
         (root / sub).mkdir(parents=True, exist_ok=True)
     lines, images = [], {}
     for n, (when, shape, author) in enumerate(posts):
         mid = snowflake(when)
-        lines.append({"guild_id": G, "channel_id": "100", "channel_name": "card-ideas", "thread": None, "id": mid,
+        channel, name = (places or {}).get(n, ("100", "card-ideas"))
+        lines.append({"guild_id": G, "channel_id": channel, "channel_name": name, "thread": None, "id": mid,
                       "timestamp": dm.iso(when), "author": {"id": author, "username": author,
                                                            "bot": author == "bot"},
                       "content": "", "attachments": [{"id": str(n), "filename": "image.png", "sha256": f"{n:064x}",
@@ -426,10 +421,13 @@ def write_build_archive(root: Path, posts: list, candidates: dict, versions: lis
                                 "sha256": f"{n:064x}", "filename": "image.png", "kind": "attachment", "shape": shape,
                                 "whole": None, "text": "", "title": [], "lines": [], "candidates": candidates[n],
                                 **(extra or {}).get(n, {})}
-    (root / "messages" / "100.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines))
-    (root / "channels.json").write_text(json.dumps([{"id": "100", "name": "card-ideas", "type": 0}]))
+    for channel in {r["channel_id"] for r in lines}:
+        (root / "messages" / f"{channel}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines
+                                                                    if r["channel_id"] == channel))
+    (root / "channels.json").write_text(json.dumps([{"id": i, "name": n, "type": 0} for i, n in
+                                                    {("100", "card-ideas"), *(places or {}).values()}]))
     (root / "summary.json").write_text(json.dumps({"guild_id": G, "status": "done"}))
-    (root / "match" / "pairs.json").write_text(json.dumps({"version": dm.PAIRS_VERSION, "cards": cards,
+    (root / OUT / "match" / "pairs.json").write_text(json.dumps({"version": dm.PAIRS_VERSION, "cards": cards,
                                                            "versions": versions, "images": images}))
 
 
@@ -452,18 +450,18 @@ def test_build_revisions_current_since_and_confirm(tmp_path):
                   4: [{"card": "shooting-star", "s": {"line": 0.227, "anchor": 0.625, "body": 1.0}, "why": {}}]}
     root = tmp_path / "archive"
     write_build_archive(root, posts, candidates, versions, cards)
-    result = dm.build(str(root), str(tmp_path / "none"), log=lambda *a: None)
+    result = dm.build(str(root), log=lambda *a: None)
     d = result["cards"]["breakfast"]["discord"]
     assert d["first"]["version"]["shows"] == "older" and d["first"]["version"]["commits"] == ["c1"]
     assert [(r["date"][:10], r["shows"], r["commits"]) for r in d["revisions"]] == [("2020-09-15", "current",
                                                                                      ["c3", "c2"])]
     assert d["current_since"].startswith("2020-09-15") and d["looks_untold"] == 1
     star = result["cards"]["shooting-star"]["discord"]
-    entries = json.loads((root / "ambiguous.json").read_text())["entries"]
+    entries = json.loads((root / OUT / "ambiguous.json").read_text())["entries"]
     assert [e["confirm"] for e in entries] == [["shooting-star"]] and star["to_confirm"] == [entries[0]["id"]]
     assert star["first"]["date"].startswith("2020-09-17") and "confirm" in entries[0]["reason"]
     assert dm.rulings_main(str(root), [f"{entries[0]['id']} = none"]) == 0
-    assert (json.loads((root / "matches.json").read_text())["cards"]["shooting-star"]["discord"] or {}).get(
+    assert (json.loads((root / OUT / "matches.json").read_text())["cards"]["shooting-star"]["discord"] or {}).get(
         "first") is None
 
 
@@ -484,23 +482,82 @@ def test_twins_bots_and_suspects(tmp_path):
     write_build_archive(root, posts, {0: short, 1: short, 2: bob, 3: sure, 4: untitled, 5: untitled}, [], cards,
                         {0: {"twins": [[keys[3], 1.3, 0.5]]}, 1: {"twins": [[keys[3], 6.0, 9.0]]},
                          4: {"twins": [[keys[3], 6.0, 1.0]]}, 5: {"twins": [[keys[3], 2.0, 9.0]]}})
-    result = dm.build(str(root), str(tmp_path / "none"), log=lambda *a: None)
+    result = dm.build(str(root), log=lambda *a: None)
     d = result["cards"]["fang"]["discord"]
     assert d["first"]["date"].startswith("2020-09-11") and d["posts"] == 4       # the same image: sure
     assert d["earlier_ambiguous"] == []                     # 1: alike, titled: sure; 4: alike, no title: not
-    entries = json.loads((root / "ambiguous.json").read_text())["entries"]
+    entries = json.loads((root / OUT / "ambiguous.json").read_text())["entries"]
     assert [e["post"]["date"][:10] for e in entries] == ["2020-09-12"]           # the bot's post isn't listed
 
     late = {"fang": {**cards["fang"], "fs": t - 90 * 86400}, "bob": cards["bob"]}
     root2 = tmp_path / "late"
     write_build_archive(root2, posts[:4], {0: short, 1: short, 2: bob, 3: sure}, [], late)
-    d = dm.build(str(root2), str(tmp_path / "none"), log=lambda *a: None)["cards"]["fang"]["discord"]
+    d = dm.build(str(root2), log=lambda *a: None)["cards"]["fang"]["discord"]
     assert d["suspect"] and d["earliest_open"]["date"].startswith("2020-09-13")
-    entries = json.loads((root2 / "ambiguous.json").read_text())["entries"]
+    entries = json.loads((root2 / OUT / "ambiguous.json").read_text())["entries"]
     assert entries[0]["suspect"] == ["fang"]
-    edits = json.loads((root2 / "proposal" / dm.EDITS_FILE).read_text())
+    edits = json.loads((root2 / OUT / "proposal" / dm.EDITS_FILE).read_text())
     assert edits["pending"]["Fang"]["created_if_ruled"]["date"] == "2020-09-13"
     assert not any("aliases" in f for f in [*edits["cards"].values(), *edits["pending"].values()])   # owner: none
+
+
+def test_chain_stops_at_git_and_morgue_posts_are_lost_cards(tmp_path):
+    t = 1600000000
+    cards = {"fang": {"id": "fang", "name": "Fang", "key": "Fang", "fs": t + 10 * 86400, "fs_from": "old git"}}
+    versions = [{"key": "now", "card": "fang", "commit": "c2", "ts": t + 10 * 86400, "current": True, "look": 0},
+                {"key": "old", "card": "fang", "commit": "c1", "ts": t + 10 * 86400, "current": False, "look": 1}]
+
+    def seen(keys, by="text"):
+        return [{"card": "fang", "s": {"hash": 1.0, "title": 1.0}, "why": {"pick": {"keys": keys, "by": by}}}]
+    posts = [(t, "2:3", "maker"), (t + 5 * 86400, "2:3", "maker"), (t + 20 * 86400, "2:3", "maker"),
+             (t - 86400, "2:3", "joker"), (t + 86400, "2:3", "joker")]
+    candidates = {0: seen(["old"]), 1: seen(["now"]), 2: seen([], by="draft"),     # 2: after git, a draft
+                  3: seen(["now"]), 4: []}                                         # morgue: a meme of Fang, a joke
+    root = tmp_path / "archive"
+    write_build_archive(root, posts, candidates, versions, cards, {4: {"title": ["Joke Card"]}},
+                        {3: ("835450716947873823", "meme-cards"), 4: ("914367916676366406", "joke-ideas")})
+    d = dm.build(str(root), log=lambda *a: None)["cards"]["fang"]["discord"]
+    assert d["first"]["date"].startswith("2020-09-13") and d["posts"] == 3          # the meme's earlier post: no
+    assert [r["shows"] for r in d["revisions"]] == ["current"] and d["after_git"] == 1
+    assert d["stop"] == {"date": dm.iso(t + 10 * 86400), "from": "old git"}
+    lost = json.loads((root / OUT / "lost.json").read_text())["candidates"]
+    assert [(f["kinds"], f["looks_like"], f["title"]) for f in lost] == [(["morgue"], ["fang"], ""),
+                                                                        (["morgue"], [], "Joke Card")]
+
+
+def test_references_take_the_old_repo_first(tmp_path):
+    repo, root = make_cards_repo(tmp_path), tmp_path / "archive"
+    old = tmp_path / "old"
+    old.mkdir()
+    git(old, "init", "-q", "-b", "master")
+    put(old, "Items/Alpha_Wolf.png", png(art(98)))
+    first = commit(old, "panda2525252525", dm.OLD_CUTOFF - 400 * 86400)
+    put(old, "Items/Alpha_Wolf.png", png(art(97)))
+    late = commit(old, "panda2525252525", dm.OLD_CUTOFF + 60)
+    blobs = git(old, "log", "--format=", "--raw", "--no-abbrev", "--", "Items/Alpha_Wolf.png").split()
+    late_blob, first_blob = blobs[3], blobs[9]
+    rows = [{"old_id": "Wolf", "lineage": "L1", "path": "Items/Alpha_Wolf.png", "blob": first_blob, "commit": first,
+             "ts": dm.OLD_CUTOFF - 400 * 86400},                                   # the old-git pass's rows
+            {"old_id": "Wolf", "lineage": "L1", "path": "Items/Alpha_Wolf.png", "blob": late_blob, "commit": late,
+             "date": dm.iso(dm.OLD_CUTOFF + 60)},
+            {"old_id": "Beta", "lineage": "L2", "path": "Items/Beta.png", "blob": first_blob, "commit": first,
+             "ts": dm.OLD_CUTOFF - 9}]
+    (root / "derived" / "oldgit").mkdir(parents=True)
+    (root / "derived" / "oldgit" / "versions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (root / "derived" / "oldgit" / "map.json").write_text(json.dumps(
+        {"Wolf": "Alpha Wolf", "Beta": {"key": "Beta Bear", "sure": False}}))
+    cards = dm.load_cards(str(repo))
+    assert cards["alpha-wolf"]["png"] == "Items/Alpha_Wolf.png" and cards["gamma-ray"]["aliases"] == ["Ray of Gamma"]
+    plan = dm.plan_versions(cards, str(repo), str(root), "all", str(old / ".git"), log=lambda *a: None)
+    olds = [v for v in plan if v["old"]]
+    assert [(v["card"], v["source"][2]) for v in olds] == [("alpha-wolf", first_blob)]   # cut off, unsure: out
+    assert olds[0]["source"][1] == dm.git_dir_of(str(old)) and not olds[0]["current"]
+    assert cards["alpha-wolf"]["fs_from"] == "old git" and cards["alpha-wolf"]["fs"] == dm.OLD_CUTOFF - 400 * 86400
+    assert cards["beta-bear"]["fs_from"] == "git" and cards["beta-bear"]["fs"] == FIRST
+    assert all(v["source"][1] == dm.git_dir_of(str(repo)) for v in plan if not v["old"])
+    (root / "derived" / "oldgit" / "versions.jsonl").unlink()                       # none: this repo's alone
+    assert not any(v["old"] for v in dm.plan_versions(dm.load_cards(str(repo)), str(repo), str(root), "all",
+                                                      str(old / ".git"), log=lambda *a: None))
 
 
 def test_root_inside_git_is_refused(tmp_path):
@@ -519,22 +576,39 @@ def test_never_talks_to_discord():
 # End to end
 # ========================
 CARD_SET = {"alpha-wolf": ("Alpha Wolf", 11), "beta-bear": ("Beta Bear", 12), "gamma-ray": ("Gamma Ray", 13)}
+FIRST = 1700000000                                    # the cards' first commit (2023-11-14)
+
+
+def png(img: Image.Image) -> bytes:
+    buf = BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def make_cards_repo(base: Path) -> Path:
+    """A card repo clone: main (Alpha Wolf's picture changed once), origin/main and origin/data (db/stats.json)."""
     repo = base / "cards"
-    data = repo / "site" / "dist" / "data"
-    data.mkdir(parents=True)
-    cards = []
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    stats = {}
     for cid, (name, seed) in CARD_SET.items():
-        png = f"Items/{name.replace(' ', '_')}.png"
-        (repo / png).parent.mkdir(parents=True, exist_ok=True)
-        art(seed).save(repo / png)
-        cards.append({"id": cid, "name": name, "key": name, "png": png, "author": "MichaelJSr",
-                      "fs": 1700000000 + seed})
-    (data / "cards.json").write_text(json.dumps({"cards": cards}))
-    (data / "versions.json").write_text(json.dumps({"available": False, "commits": [], "cards": {}}))
-    (repo / "site" / "Card Authors.txt").write_text("[people]\nMichaelJSr = MichaelJSr\n[cards]\nBeta Bear = Croissant\n")
+        rel = f"Items/{name.replace(' ', '_')}"
+        put(repo, rel + ".png", png(art(seed if cid != "alpha-wolf" else 99)))
+        put(repo, rel + ".psd", b"psd")
+        stats[name] = {"name": name, "path": rel + ".psd", "card_type": "item", "author": "MichaelJSr",
+                       "ability": None, "variant": 1}
+    put(repo, "site/Card Edits.json", json.dumps({"cards": {"Gamma Ray": {"aliases": ["Ray of Gamma"]}}}).encode())
+    commit(repo, "MichaelJSr", FIRST)
+    put(repo, "Items/Alpha_Wolf.png", png(art(11)))
+    commit(repo, "MichaelJSr", FIRST + 86400)
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", "--orphan", "data")
+    git(repo, "rm", "-rq", "--cached", ".")
+    put(repo, "db/stats.json", json.dumps({"schema": 1, "cards": stats}).encode())
+    git(repo, "add", "db/stats.json")
+    commit(repo, "bot", FIRST + 2 * 86400)
+    git(repo, "update-ref", "refs/remotes/origin/data", "HEAD")
+    git(repo, "checkout", "-q", "-f", "main")
     return repo
 
 
@@ -580,37 +654,42 @@ def make_archive(base: Path) -> Path:
 
 def test_score_build_and_rulings(tmp_path, capsys):
     repo, root = make_cards_repo(tmp_path), make_archive(tmp_path)
-    result = dm.score(str(root), str(repo), site="", versions="none", ocr=False, workers=1, log=lambda *a: None)
+    result = dm.score(str(root), str(repo), versions="all", ocr=False, workers=1, old_git="", log=lambda *a: None)
     cards = result["cards"]
     wolf = cards["alpha-wolf"]["discord"]
     assert wolf["first"]["date"].startswith("2020-09-13") and wolf["first"]["tier"] == "high"
     assert wolf["first"]["creation_wording"] and wolf["bot_posts"] == 1
     assert len(wolf["revisions"]) == 1 and wolf["fs_check"]["verdict"] == "discord_earlier"
+    assert cards["alpha-wolf"]["fs"].startswith("2023-11-14") and wolf["stop"]["from"] == "git"
     assert any("nerf" in note["excerpt"] for note in wolf["notes"])
     bear = cards["beta-bear"]["discord"]
     assert bear["first"]["date"].startswith("2020-11-12") and bear["earlier_ambiguous"] == ["A1"]
-    assert bear["poster_vs_author"]["poster"] == "croissant" and cards["beta-bear"]["credited_in_file"] == "Croissant"
+    assert "poster_vs_author" not in bear and not (root / OUT / "proposal" / "Card Authors - corrections.txt").exists()
     assert cards["gamma-ray"]["discord"] is None
-    entries = json.loads((root / "ambiguous.json").read_text())["entries"]
+    pairs = json.loads((root / OUT / "match" / "pairs.json").read_text())
+    assert sorted((v["card"], v["current"]) for v in pairs["versions"]) == [
+        ("alpha-wolf", False), ("alpha-wolf", True), ("beta-bear", True), ("gamma-ray", True)]
+    assert pairs["cards"]["gamma-ray"]["aliases"] == ["Ray of Gamma"]
+    entries = json.loads((root / OUT / "ambiguous.json").read_text())["entries"]
     assert [e["id"] for e in entries] == ["A1"] and entries[0]["affects_earliest"] == ["beta-bear"]
-    page = (root / "ambiguous.html").read_text()
-    assert 'id=A1' in page and "Beta Bear" in page and "attachments/" in page
-    assert "Coverage" in (root / "REPORT.md").read_text()
+    page = (root / OUT / "ambiguous.html").read_text()
+    assert "id=A1" in page and "Beta Bear" in page and "../../attachments/" in page
+    assert "Coverage" in (root / OUT / "REPORT.md").read_text()
 
     assert dm.rulings_main(str(root), ["A1 = Beta Bear"]) == 0
-    ruled = json.loads((root / "matches.json").read_text())["cards"]["beta-bear"]["discord"]
+    ruled = json.loads((root / OUT / "matches.json").read_text())["cards"]["beta-bear"]["discord"]
     assert ruled["first"]["date"].startswith("2020-06-05") and ruled["tier"] == "ruled"
     assert dm.rulings_main(str(root), ["A1 = none"]) == 0
-    again = json.loads((root / "matches.json").read_text())["cards"]["beta-bear"]["discord"]
+    again = json.loads((root / OUT / "matches.json").read_text())["cards"]["beta-bear"]["discord"]
     assert again["first"]["date"].startswith("2020-11-12")
     assert dm.rulings_main(str(root), ["A9 = Bob"]) == 1                      # no such entry
-    stored = (root / "match" / "rulings.json").read_text()
+    stored = (root / OUT / "match" / "rulings.json").read_text()
     assert dm.rulings_main(str(root), ["A1 = Beta Bear, A9 = Bob"]) == 1       # one bad: nothing stored
-    assert (root / "match" / "rulings.json").read_text() == stored
-    dm.build(str(root), str(repo), log=lambda *a: None)
-    assert [e["id"] for e in json.loads((root / "ambiguous.json").read_text())["entries"]] == ["A1"]   # stable
+    assert (root / OUT / "match" / "rulings.json").read_text() == stored
+    dm.build(str(root), log=lambda *a: None)
+    assert [e["id"] for e in json.loads((root / OUT / "ambiguous.json").read_text())["entries"]] == ["A1"]   # stable
 
-    script = root / "apply_rulings.py"
+    script = root / OUT / "apply_rulings.py"
     env = {**os.environ, "DISCORD_MATCH_REPO": str(REPO)}
     listed = subprocess.run([sys.executable, "-I", str(script), "--list"], capture_output=True, text=True, env=env)
     assert listed.returncode == 0 and "A1 = none" in listed.stdout

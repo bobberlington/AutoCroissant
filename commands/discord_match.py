@@ -3,30 +3,37 @@ Discord archive matcher: ties the posts the miner stored (commands/discord_archi
 metadata out of them. Run from the repo root after the miner, with a Python that has Pillow and numpy; OCR needs
 pyobjc's Vision (macOS: pip install pyobjc-framework-Vision pyobjc-framework-Quartz), else pass --no-ocr:
 
-    python -m commands.discord_match score    [--root <dir>] [--cards-repo <dir>] [--site <url>] [--refresh-site]
-                                              [--versions none|oldest|all] [--no-ocr] [--workers <n>] [--limit <n>]
+    python -m commands.discord_match refs     [--root <dir>] [--cards-repo <dir>] [--old-git <dir>] [--download]
+                                              [--versions none|oldest|all] [--no-ocr] [--workers <n>]
+    python -m commands.discord_match score    (refs' options) [--limit <n>]
     python -m commands.discord_match build    [--root <dir>]
-    python -m commands.discord_match selftest [--root <dir>] [--cards-repo <dir>] [--workers <n>] [--limit <n>]
+    python -m commands.discord_match selftest (refs' options) [--limit <n>]
 
-score    Cards: every card PNG in the checkout, plus older versions from the site's versions.json (fetched from GitHub
-         by commit), each reduced to perceptual hashes (dHash, pHash 64 and 256 bit) of the whole card and of its art,
-         its OCR'd title band and its whole OCR'd text; versions alike in text and hash are one look. Posts: every
-         stored image (attachments, embed images, PSD composites) gets the same (and, in screenshots, art hashes under
-         each title-like line). Each image's candidate cards, per-method scores (hash, title OCR, OCR'd lines, OCR'd
-         text vs the versions' and vs the ability, file name, chat text) and the version it shows (by text, else by
-         hash) go to match/pairs.json. A sheet of several cards is cut into its cells, each scored as a card; card-
-         shaped images alike (twins) are paired. Features are cached by content: a rerun after more mining is quick.
+refs     The references: today's cards (the card repo's data branch db/stats.json, main's tree and Card Edits.json),
+         each with every git version of its PNG (TTSCardMaker's history, renames followed) and the old pre-wipe
+         repo's versions (derived/oldgit/ under the root, written by the old-git pass; without it TTSCardMaker only),
+         each reduced to perceptual hashes (dHash, pHash 64 and 256 bit) of the whole card and of its art, its OCR'd
+         title band and its whole OCR'd text; versions alike in text and hash are one look. Bytes come from the
+         clones' object stores (GIT_NO_LAZY_FETCH: nothing fetched); a version in neither is skipped unless
+         --download streams it from GitHub by commit (into memory, never to disk). A card's first record (fs) is its
+         oldest old-repo version, else its oldest TTSCardMaker one.
+score    refs, then every stored post image (attachments, embed images, PSD composites) gets the same (and, in
+         screenshots, art hashes under each title-like line). Each image's candidate cards, per-method scores (hash,
+         title OCR, OCR'd lines, OCR'd text vs the versions' and vs the ability, file name, chat text) and the version
+         it shows (by text, else by hash) go to match/pairs.json. A sheet of several cards is cut into its cells,
+         each scored as a card; card-shaped images alike (twins) are paired. Features are cached by content.
 build    One confidence per (image, card), methods that disagree settled by kind of evidence, the owner's rulings
          (match/rulings.json, from apply_rulings.py) applied, a twin of a sure post made sure, then matches.json
-         (per card: first post, the look it shows, each later look's first post, its art's first post; suspect when
-         after fs), ambiguous.json and ambiguous.html (stable ids A1, A2...; first posts to confirm too; bot posts
-         left out), REPORT.md and proposal/ (created dates as a Card Edits.json field, author fixes as Card
-         Authors.txt lines; no aliases: owner 2026-10-22).
+         (per card: first post, the look it shows, each later look's first post up to its first git record, its
+         art's first post), lost.json (lost-card candidates: every card-like post of the morgue channels, meme and
+         joke cards, which never count for a live card, and card-like posts matching no card), ambiguous.json and
+         ambiguous.html (stable ids A1, A2...; first posts to confirm too; bot posts left out), REPORT.md and
+         proposal/ (created dates only: no authors, owner 2026-11-13; no aliases, owner 2026-10-22).
          Standard library only: apply_rulings.py reruns it with any Python 3.
-selftest The image methods on the cards themselves (degraded copies of every PNG), and the version pick on degraded
-         copies of every version of the cards with more than one look: accuracy into match/selftest.json.
-Everything stays under the archive root (never inside a git repo: the messages are other people's words); nothing
-here talks to Discord. Bot and webhook posts never count as creation evidence.
+selftest refs, then the image methods on the cards themselves (degraded copies of every PNG), and the version pick on
+         degraded copies of every version of the cards with more than one look: accuracy into match/selftest.json.
+Everything the matcher writes goes to the archive root's derived/matcher/ (never inside a git repo: the messages
+are other people's words); nothing here talks to Discord. Bot and webhook posts never count as creation evidence.
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
@@ -35,14 +42,13 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from fcntl import LOCK_EX, LOCK_NB, flock
 from glob import glob
-from hashlib import sha1, sha256
 from html import escape
 from io import BytesIO
 from json import dumps, load, loads
 from math import log
 from multiprocessing import get_context
 from os import cpu_count, environ, makedirs, replace
-from os.path import abspath, basename, dirname, exists, expanduser, getmtime, isdir, isfile, join, realpath, splitext
+from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, realpath, splitext
 from re import IGNORECASE, compile as re_compile, findall, finditer, fullmatch, split as re_split, sub
 from sys import stderr, stdin
 from time import time
@@ -50,17 +56,24 @@ from typing import Callable, Optional
 from unicodedata import normalize
 from urllib.parse import quote
 
-from global_config import CARD_REPO, LOCAL_DIR_LOC, RAW_BASE, SITE_URL
+from global_config import CARD_BRANCH, CARD_REPO, DATA_BRANCH, EDITS_PATH, LOCAL_DIR_LOC, RAW_BASE
 
 # ========================
 # Configuration
 # ========================
 DEFAULT_ROOT = "~/Documents/Tools/discord-archive"
-MATCH = "match"                                   # the matcher's folder in the root
+OUT = ("derived", "matcher")                      # everything the matcher writes, under the root
+UP = "../../"                                     # the root from OUT (the posts' images in ambiguous.html)
+MATCH = "match"                                   # the matcher's working folder in OUT
 CARD_FEATURES, POST_FEATURES, CELL_FEATURES = 5, 3, 1   # bump when card, post or sheet cell features change
-PAIRS_VERSION = 3
-SITE_FILES = ("cards.json", "versions.json")
-SITE_MAX_AGE = 12 * 3600                          # seconds before the site's data is fetched again
+PAIRS_VERSION = 4
+STATS_FILE = "db/stats.json"                      # the data branch's card data
+CARD_TOPS = ("Creatures", "Items", "Field", "N.M.E", "Auxiliary")   # tts_save.CARD_FOLDERS
+OLD_GIT = "~/Downloads/Old TTSCardMaker/.git"     # the pre-wipe repo: read only
+OLD_CUTOFF = 1699254922                           # TTSCardMaker's last 'init' (36d62e53): old commits after it unused
+OLDGIT = ("derived", "oldgit")                    # the old-git pass's outputs under the root
+CATALOGUE = ("derived", "catalogue", "channels.json")   # the channel pass's kinds (meme/joke: the morgue)
+MAP_SURE = 0.9                                    # an old card's map to today's card: at least this sure
 USER_AGENT = "AutoCroissant discord_match"
 IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "psd"}
 MAX_PIXELS = 120_000_000
@@ -129,8 +142,8 @@ DRAFT_BITS = 6.0                                  # characters in a row its look
 CANDIDATES = 8
 GIT_EARLIER_DAYS = 14                             # Discord first post this much after fs: an anomaly
 NOTES_PER_CARD = 12
-PORT = re_compile(r"(^|-)port$")                  # port channels: cards re-uploaded by whoever ported them
-MEME = re_compile(r"meme")                        # meme channels: a card's image under a joke name
+MORGUE = re_compile(r"meme|joke|cursed|graveyard")   # morgue channels: meme, joke and scrapped cards, never a live
+MORGUE_IDS = {"835450716947873823", "914367916676366406"}   # card's (owner 2026-11-13: meme-cards, joke-ideas)
 MENTION_ROUND = 600                               # seconds: a poster's message this close to an image is its caption
 
 CREATION = re_compile(r"\b(new (card|creature|item|field|minion|status|buff|debuff)s?|introducing|made (a|this|another|my)|"
@@ -303,20 +316,21 @@ def check_root(root: str) -> str:
 
 
 class Paths:
-    """Where things go under the archive root."""
+    """Where things go: under the archive root's derived/matcher (OUT)."""
     def __init__(self, root: str):
-        self.root, self.match = root, join(root, MATCH)
-        self.site, self.thumbs, self.cache = join(self.match, "site"), join(self.match, "thumbs"), join(self.match, "cache")
+        out = self.out = join(root, *OUT)
+        self.root, self.match = root, join(out, MATCH)
+        self.thumbs, self.cache = join(self.match, "thumbs"), join(self.match, "cache")
         self.card_cache, self.image_cache = join(self.cache, "cards.jsonl"), join(self.cache, "images.jsonl")
         self.pairs, self.rulings = join(self.match, "pairs.json"), join(self.match, "rulings.json")
         self.ids, self.selftest = join(self.match, "ambiguous_ids.json"), join(self.match, "selftest.json")
         self.lock = join(self.match, ".lock")
-        self.matches, self.ambiguous = join(root, "matches.json"), join(root, "ambiguous.json")
-        self.html, self.report, self.script = join(root, "ambiguous.html"), join(root, "REPORT.md"), join(root, "apply_rulings.py")
-        self.proposal = join(root, "proposal")
+        self.matches, self.ambiguous, self.lost = join(out, "matches.json"), join(out, "ambiguous.json"), join(out, "lost.json")
+        self.html, self.report, self.script = join(out, "ambiguous.html"), join(out, "REPORT.md"), join(out, "apply_rulings.py")
+        self.proposal = join(out, "proposal")
 
     def rel(self, path: str) -> str:
-        return path[len(self.root) + 1:] if path.startswith(self.root + "/") else path
+        return path[len(self.out) + 1:] if path.startswith(self.out + "/") else path
 
 
 def hold(path: str):
@@ -558,7 +572,7 @@ def save_thumb(img, path: str, width: int):
     thumb = img.copy()
     thumb.thumbnail((width, width * 3))
     makedirs(dirname(path), exist_ok=True)
-    thumb.save(path + ".tmp", "JPEG", quality=82)
+    thumb.save(path + ".tmp", "WEBP", quality=72)
     replace(path + ".tmp", path)
 
 
@@ -580,8 +594,43 @@ class Missing(Exception):
         self.retry = retry
 
 
-def open_source(source: str):
-    """A card version's image: a local path, or its bytes fetched from GitHub by commit."""
+def git_out(git_dir: str, *args: str, data: Optional[bytes] = None) -> Optional[bytes]:
+    """git's output in a git dir, None when it fails: never a lazy fetch, fsmonitor off (the old repo is read only)."""
+    from subprocess import run
+    done = run(["git", "--git-dir", git_dir, "-c", "core.fsmonitor=false", "--no-pager", *args], input=data,
+               capture_output=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    return done.stdout if done.returncode == 0 else None
+
+
+def git_dir_of(repo: str) -> Optional[str]:
+    """A clone's (or a bare repo's) git dir, absolute; None when it is no repo."""
+    from subprocess import run
+    path = realpath(expanduser(repo))
+    if not isdir(path):
+        return None
+    done = run(["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True,
+               text=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+
+
+def held_blobs(git_dir: Optional[str], blobs) -> set:
+    """The blobs a git store holds (nothing fetched)."""
+    wanted = list(dict.fromkeys(b for b in blobs if b))
+    if not git_dir or not wanted:
+        return set()
+    out = git_out(git_dir, "cat-file", "--batch-check=%(objectname) %(objecttype)",
+                  data="".join(f"{b}\n" for b in wanted).encode()) or b""
+    return {line.split()[0] for line in out.decode().splitlines() if line.endswith(" blob")}
+
+
+def open_source(source):
+    """A card version's image: a local path, a blob of a git store (("git", git dir, sha)), or its bytes fetched
+    from GitHub by commit (into memory)."""
+    if isinstance(source, (tuple, list)):
+        data = git_out(source[1], "cat-file", "blob", source[2])
+        if data is None:
+            raise Missing("blob not in that store", retry=True)
+        return BytesIO(data)
     if not source.startswith("https://"):
         return source
     from requests import get
@@ -598,7 +647,7 @@ def open_source(source: str):
 
 
 def card_task(args: tuple) -> dict:
-    """A worker: one card version's features (a local PNG, or one fetched from GitHub by commit)."""
+    """A worker: one card version's features (a blob from a git store, or one fetched from GitHub by commit)."""
     key, source, thumb, ocr = args
     try:
         img = load_image(open_source(source))
@@ -633,38 +682,95 @@ def run_tasks(task_name: str, jobs: list, workers: int, done: Callable, log: Cal
 # ========================
 # Cards
 # ========================
-def fetch_site(paths: Paths, site: str, cards_repo: str, refresh: bool, log: Callable) -> str:
-    """The site's cards.json and versions.json in match/site/ (fetched; else the checkout's site/dist/data)."""
-    makedirs(paths.site, exist_ok=True)
-    stale = refresh or any(not exists(join(paths.site, n)) or time() - getmtime(join(paths.site, n)) > SITE_MAX_AGE
-                           for n in SITE_FILES)
-    if stale and site:
-        try:
-            from requests import get
-            for name in SITE_FILES:
-                reply = get(f"{site.rstrip('/')}/data/{name}", timeout=60, headers={"User-Agent": USER_AGENT})
-                reply.raise_for_status()
-                reply.json()
-                write_text(join(paths.site, name), reply.text)
-            log(f"site data fetched from {site}")
-        except Exception as e:
-            log(f"site data not fetched ({type(e).__name__}); using what is there")
-    for name in SITE_FILES:
-        local = join(expanduser(cards_repo), "site", "dist", "data", name)
-        if not exists(join(paths.site, name)) and exists(local):
-            with open(local, encoding="utf-8") as f:
-                write_text(join(paths.site, name), f.read())
-    return paths.site
+def slugify(name: str) -> str:
+    """build_site.slugify: the website's card ids."""
+    return sub(r"-+", "-", sub(r"[^a-z0-9]+", "-", name.lower())).strip("-") or "card"
 
 
-CARD_FIELDS = ("id", "name", "key", "aliases", "png", "psd", "author", "authorListed", "fs", "series", "subseries",
-               "type", "ability", "dup", "dups", "stars")
+def edit_key(name: str) -> str:
+    """CardAuthors.key: Card Edits.json's card keys."""
+    return sub(r"\s+", " ", (name or "").replace("_", " ")).strip().lower()
 
 
-def load_cards(site_dir: str) -> dict:
-    data = read_json(join(site_dir, "cards.json"), {}) or {}
-    return {c["id"]: {k: c.get(k) for k in CARD_FIELDS if c.get(k) not in (None, [], "")}
-            for c in data.get("cards") or [] if isinstance(c, dict) and c.get("id")}
+def repo_tree(git_dir: str, ref: str) -> dict:
+    """{path: blob} at ref (trees only)."""
+    tree = {}
+    for line in (git_out(git_dir, "ls-tree", "-r", "-z", ref) or b"").decode("utf-8", "replace").split("\0"):
+        meta, _, path = line.partition("\t")
+        parts = meta.split()
+        if len(parts) == 3 and parts[1] == "blob":
+            tree[path] = parts[2]
+    return tree
+
+
+def card_png(path: str) -> bool:
+    return path.lower().endswith(".png") and path.split("/")[0] in CARD_TOPS and not any(
+        part in ("MDW", "Markers") for part in path.split("/"))
+
+
+def load_cards(cards_repo: str) -> dict:
+    """Today's cards by the website's ids (slugs of their keys, build_site's order): the card repo's data branch
+    stats.json, each card's PNG in main's tree (picture N of a PSD: NameN.png; a picture-only duplicate beside its
+    original's PSD), its website name, aliases and series from Card Edits.json; duplicates and pictures 2..N of a PSD
+    linked to the card they copy (dup)."""
+    git_dir = git_dir_of(cards_repo)
+    raw = git_out(git_dir, "show", f"origin/{DATA_BRANCH}:{STATS_FILE}") if git_dir else None
+    if raw is None:
+        raise SystemExit(f"no card data: {cards_repo} has no origin/{DATA_BRANCH}:{STATS_FILE} (git fetch origin "
+                         f"+{DATA_BRANCH}:refs/remotes/origin/{DATA_BRANCH})")
+    stats = (loads(raw) or {}).get("cards") or {}
+    tree = repo_tree(git_dir, f"origin/{CARD_BRANCH}")
+    edits = (loads(git_out(git_dir, "show", f"origin/{CARD_BRANCH}:{EDITS_PATH}") or b"{}") or {}).get("cards") or {}
+    edits = {edit_key(k): v for k, v in edits.items() if isinstance(v, dict)}
+    by_file = {}
+    for path in sorted(tree):
+        if card_png(path):
+            by_file.setdefault(basename(path).lower(), path)
+    used, out, ids = set(), {}, {}
+
+    def slug(name: str) -> str:
+        base = found = slugify(name)
+        n = 2
+        while found in used:
+            found, n = f"{base}-{n}", n + 1
+        used.add(found)
+        return found
+
+    def picture(name: str, card: dict) -> Optional[str]:
+        psd, variant = card.get("path") or "", card.get("variant")
+        if card.get("duplicate_of") and not card.get("variant_of"):          # a picture-only duplicate
+            original = (stats.get(card["duplicate_of"]) or {}).get("path") or ""
+            own = f"{dirname(original)}/{name.replace(' ', '_')}.png"
+            return own if own in tree else by_file.get(name.replace(" ", "_").lower() + ".png")
+        number = str(variant) if isinstance(variant, int) and not isinstance(variant, bool) and variant > 1 else ""
+        guess = psd[:len(psd) - 4] + number + ".png" if psd.lower().endswith(".psd") else None
+        return guess if guess in tree else by_file.get(name.replace(" ", "_").lower() + ".png")
+    order = sorted(stats, key=lambda n: (bool(stats[n].get("duplicate_of") and not stats[n].get("variant_of")),
+                                         n.lower()))
+    for name in order:
+        card = stats[name]
+        png = picture(name, card)
+        edit = edits.get(edit_key(name)) or {}
+        parsed = card.get("parsed_values") or {}
+        title = parsed.get("name") or card.get("display_name")
+        shown = edit.get("name") or title or name
+        aliases = [a for a in dict.fromkeys([title, *(edit.get("aliases") or [])]) if a and a not in (shown, name)]
+        cid = ids[name] = slug(name)
+        entry = {"id": cid, "name": shown, "key": name, "aliases": aliases, "png": png,
+                 "png_blob": tree.get(png) if png else None,
+                 "psd": card.get("path") if not (card.get("duplicate_of") and not card.get("variant_of")) else None,
+                 "author": card.get("author"), "series": edit.get("series") or card.get("series"),
+                 "subseries": edit.get("subseries"), "type": card.get("card_type"), "ability": card.get("ability"),
+                 "stars": card.get("stars")}
+        out[cid] = {k: v for k, v in entry.items() if v not in (None, [], "")}
+    for name in order:                                  # duplicates: the card they copy
+        card, edit = stats[name], edits.get(edit_key(name)) or {}
+        target = edit.get("dup_of") or card.get("duplicate_of") or card.get("variant_of")
+        original = ids.get(target) or next((ids[n] for n in ids if edit_key(n) == edit_key(target or "")), None)
+        if original and original != ids[name]:
+            out[ids[name]]["dup"] = original
+            out[original].setdefault("dups", []).append(ids[name])
+    return out
 
 
 def file_name(path: str) -> str:
@@ -679,32 +785,190 @@ def card_names(card: dict) -> list:
     return [(text, kind) for text, kind in found if text]
 
 
-def plan_versions(cards: dict, site_dir: str, cards_repo: str, mode: str) -> list:
-    """Card versions to featurize: {key, card, source, commit, ts, current, path}."""
-    repo, plan = expanduser(cards_repo), []
-    versions = read_json(join(site_dir, "versions.json"), {}) or {}
-    commits = versions.get("commits") or []
+def tc_versions(cards_repo: str, cards: dict) -> list:
+    """Every version of each card's PNG in the card repo's history (main): [{card, path, blob, commit, ts}]; a path an
+    exact rename (or a Renamed trailer) brought the file from is followed back, its versions before that rename."""
+    from commands.card_history import GitIndex
+    index = GitIndex.from_git(realpath(expanduser(cards_repo)), f"origin/{CARD_BRANCH}")
+    found = []
     for cid, card in sorted(cards.items()):
-        local = join(repo, card["png"]) if card.get("png") else None
-        rows = (versions.get("cards") or {}).get(cid) or []
-        if local and isfile(local):
-            with open(local, "rb") as f:
-                digest = sha256(f.read()).hexdigest()[:20]
-            newest = commits[rows[0][0]] if rows and rows[0][0] < len(commits) else None
-            plan.append({"key": "f" + digest, "card": cid, "source": local, "path": card["png"], "current": True,
-                         "commit": newest[0] if newest else None, "ts": newest[1] if newest else card.get("fs")})
-        old = rows[1:] if mode == "all" else rows[len(rows) - 1:] if mode == "oldest" and len(rows) > 1 else []
-        for row in old:
-            if not row or row[0] >= len(commits):
-                continue
-            sha, ts = commits[row[0]][0], commits[row[0]][1]
-            path = row[1] if len(row) > 1 else card.get("png")
-            if not path:
-                continue
-            plan.append({"key": "g" + sha1(f"{sha}:{path}".encode()).hexdigest()[:20], "card": cid, "path": path,
-                         "source": f"{RAW_BASE}{CARD_REPO}/{sha}/{quote(path)}", "current": False, "commit": sha,
-                         "ts": ts})
+        path, before, seen = card.get("png"), None, set()
+        while path and path not in seen:
+            seen.add(path)
+            for commit, blob in index.at_path.get(path, []):
+                if before is None or commit.order > before.order:
+                    found.append({"card": cid, "path": path, "blob": blob, "commit": commit.sha, "ts": commit.at})
+            old = index.renamed_from.get(path)
+            before = (index.renames.get(old) or (None, None))[1] if old else None
+            path = old
+    return found
+
+
+def read_jsonl(path: str) -> list:
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows
+
+
+def first_of(row: dict, *keys: str):
+    return next((row[k] for k in keys if row.get(k) not in (None, "", [])), None)
+
+
+def when(value) -> Optional[float]:
+    """Seconds from a number or an ISO date."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return epoch(value) if isinstance(value, str) else None
+
+
+def old_maps(data) -> dict:
+    """{old card (its old_id, lineage or path; as written and folded): (today's card key, sure)} from the old-git
+    pass's map.json: {old: key}, {old: {key, sure|confidence|status}} or a list of such records."""
+    found = {}
+    rows = data.get("maps") or data.get("map") or data if isinstance(data, dict) else data
+    items = rows.items() if isinstance(rows, dict) else ((None, r) for r in rows or [])
+    for old, value in items:
+        if isinstance(value, dict):
+            old = old or first_of(value, "old", "old_key", "old_name", "old_path", "path", "name")
+            key = first_of(value, "today", "key", "today_key", "card", "new", "new_key", "to")
+            sure = value.get("sure")
+            if sure is None:
+                conf = first_of(value, "confidence", "conf", "score")
+                status = str(first_of(value, "status", "verdict", "how") or "").lower()
+                sure = (conf >= MAP_SURE) if isinstance(conf, (int, float)) else not any(
+                    w in status for w in ("unsure", "review", "ambiguous", "lost", "none"))
+        else:
+            key, sure = value, True
+        if old and isinstance(key, str) and key:
+            found[old] = found[edit_key(file_name(old) if "/" in old else old)] = (key, bool(sure))
+    return found
+
+
+def old_versions(root: str, cards: dict, log: Callable = print) -> list:
+    """The old pre-wipe repo's PNG versions of today's cards, from the old-git pass (root/derived/oldgit:
+    versions.jsonl, a version a line, and map.json, old card -> today's card key); [] without them. Sure maps only,
+    commits up to OLD_CUTOFF (owner 2026-11-13)."""
+    base = join(root, *OLDGIT)
+    rows = read_jsonl(join(base, "versions.jsonl"))
+    if not rows:
+        return []
+    maps = old_maps(read_json(join(base, "map.json"), {}) or {})
+    by_key = {edit_key(c.get("key")): cid for cid, c in cards.items()}
+    found, skipped = [], Counter()
+    for row in rows:
+        path = first_of(row, "path", "file") or ""
+        blob = first_of(row, "blob", "blob_sha", "sha", "oid", "object")
+        ts = when(first_of(row, "ts", "at", "time", "date", "committed"))
+        if not path.lower().endswith(".png") or not isinstance(blob, str):
+            skipped["not a png"] += 1
+            continue
+        if ts is None or ts > OLD_CUTOFF:
+            skipped["after the cutoff"] += 1
+            continue
+        key, sure = first_of(row, "today", "today_key", "key"), True
+        if not key or edit_key(key) not in by_key:
+            old = first_of(row, "old_id", "card", "old_key", "name") or file_name(path)
+            key, sure = next((maps[k] for k in (path, row.get("lineage"), old, edit_key(old)) if k and k in maps),
+                             (None, False))
+        cid = by_key.get(edit_key(key or ""))
+        if cid is None or not sure:
+            skipped["unsure map" if cid else "no card today"] += 1
+            continue
+        found.append({"card": cid, "path": path, "blob": blob, "commit": first_of(row, "commit", "sha1", "rev"),
+                      "ts": ts, "old": True})
+    log(f"old repo: {len(found)} versions of {len({v['card'] for v in found})} cards"
+        + (" (left out: " + ", ".join(f"{k} {n}" for k, n in skipped.items()) + ")" if skipped else ""))
+    return found
+
+
+VERSION_KEYS = ("key", "feat", "card", "commit", "ts", "current", "path", "old", "source")
+
+
+def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", old_git: str = OLD_GIT,
+                  download: bool = False, log: Callable = print) -> list:
+    """The references: each card's versions (the old repo's and TTSCardMaker's, one per card and blob, dated by its
+    first record): {key, feat (the features' cache key: the blob), card, path, blob, commit, ts, current, old, source};
+    source None: in neither store and not downloaded. Sets each card's fs, its first record: its oldest old-repo
+    version, else its oldest TTSCardMaker one. mode: all; oldest (and the current); none (the current only)."""
+    tc = tc_versions(cards_repo, cards)
+    old = old_versions(root, cards, log)
+    for found, source in ((tc, "git"), (old, "old git")):     # the old repo's first, else TTSCardMaker's
+        first: dict = {}
+        for v in found:
+            first[v["card"]] = min(v["ts"], first.get(v["card"], v["ts"]))
+        for cid, ts in first.items():
+            cards[cid]["fs"], cards[cid]["fs_from"] = ts, source
+    per: dict = {}
+    for v in sorted(old + tc, key=lambda v: v["ts"]):     # each blob dated by its first record
+        per.setdefault((v["card"], v["blob"]), v)
+    by_card = defaultdict(list)
+    for v in per.values():
+        by_card[v["card"]].append({**v, "current": v["blob"] == cards[v["card"]].get("png_blob")})
+    tc_dir, old_dir = git_dir_of(cards_repo), git_dir_of(old_git) if old_git else None
+    blobs = {v["blob"] for vs in by_card.values() for v in vs}
+    here, there = held_blobs(tc_dir, blobs), held_blobs(old_dir, blobs)
+    plan, owner = [], {}
+    for cid in sorted(by_card):
+        vs = sorted(by_card[cid], key=lambda v: (not v["current"], -v["ts"]))
+        if mode != "all":
+            vs = [v for v in vs if v["current"]] + ([min(vs, key=lambda v: v["ts"])] if mode == "oldest" else [])
+        for v in {id(v): v for v in vs}.values():
+            feat = "b" + v["blob"][:20]
+            key = feat if owner.setdefault(feat, cid) == cid else f"{feat}-{cid}"
+            source = ("git", tc_dir, v["blob"]) if v["blob"] in here else ("git", old_dir, v["blob"]) \
+                if v["blob"] in there else f"{RAW_BASE}{CARD_REPO}/{v['commit']}/{quote(v['path'])}" \
+                if download and not v.get("old") and v.get("commit") else None
+            plan.append({**v, "key": key, "feat": feat, "old": bool(v.get("old")), "source": source})
+    missing = sum(1 for v in plan if v["source"] is None)
+    log(f"{len(cards)} cards, {len(plan)} versions ({sum(1 for v in plan if v['old'])} from the old repo); "
+        f"{missing} in no local store" + ("" if download or not missing else " (skipped: --download fetches them)"))
     return plan
+
+
+def featurize(paths: "Paths", plan: list, ocr: bool, workers: int, log: Callable) -> list:
+    """The versions' features (cached by blob), then the featured versions: VERSION_KEYS + whole, art, title, shape,
+    lines, rereads."""
+    cache = Cache(paths.card_cache)
+    jobs = {}
+    for v in plan:
+        if v["source"] is not None and v["feat"] not in jobs and not cache.fresh(v["feat"], ocr, CARD_FEATURES):
+            jobs[v["feat"]] = (v["feat"], v["source"], join(paths.thumbs, f"c-{v['feat']}.webp"), ocr)
+    log(f"{len(jobs)} card versions to featurize")
+    run_tasks("card_task", list(jobs.values()), workers, cache.add, log, "card versions")
+    found = []
+    for v in plan:
+        entry = cache.entries.get(v["feat"]) or {}
+        if entry.get("whole"):
+            found.append({**{k: v.get(k) for k in VERSION_KEYS},
+                          **{k: entry.get(k) for k in ("whole", "art", "title", "shape", "lines", "rereads")}})
+    return found
+
+
+def references(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True,
+               workers: int = 0, old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
+    """(cards, featured versions): today's cards and their versions, featurized (the refs command)."""
+    paths = Paths(check_root(root))
+    cards = load_cards(cards_repo)
+    if not cards:
+        raise SystemExit(f"no cards in {cards_repo}'s data branch")
+    plan = plan_versions(cards, cards_repo, paths.root, versions, old_git, download, log)
+    found = featurize(paths, plan, ocr, workers or default_workers(), log)
+    log(f"references: {len(found)} versions of {len({v['card'] for v in found})} cards featurized")
+    return cards, found
+
+
+def default_workers() -> int:
+    return max(1, min(4, (cpu_count() or 2) - 2))
 
 
 class Names:
@@ -1490,28 +1754,32 @@ def twins(out: dict) -> dict:
     return found
 
 
-def score(root: str, cards_repo: str = LOCAL_DIR_LOC, site: str = SITE_URL, versions: str = "all",
-          ocr: bool = True, workers: int = 0, refresh: bool = False, limit: Optional[int] = None,
-          log: Callable = print) -> dict:
+def refs(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True, workers: int = 0,
+         old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
+    """The refs command: today's cards and every version of them featurized (match/cache/cards.jsonl)."""
+    paths = Paths(check_root(root))
+    lock = hold(paths.lock)
+    try:
+        if ocr and not _vision():
+            log("no Vision (pyobjc): running without OCR")
+            ocr = False
+        return references(paths.root, cards_repo, versions, ocr, workers, old_git, download, log)
+    finally:
+        lock.close()
+
+
+def score(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True, workers: int = 0,
+          limit: Optional[int] = None, old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
     """Features for every card version and stored image, then each image's scored candidates (match/pairs.json)."""
     root = check_root(root)
     paths = Paths(root)
     lock = hold(paths.lock)
     try:
-        workers = workers or max(1, (cpu_count() or 2) - 2)
+        workers = workers or default_workers()
         if ocr and not _vision():
             log("no Vision (pyobjc): running without OCR")
             ocr = False
-        site_dir = fetch_site(paths, site, cards_repo, refresh, log)
-        cards = load_cards(site_dir)
-        if not cards:
-            raise SystemExit(f"no cards in {site_dir}/cards.json")
-        plan = plan_versions(cards, site_dir, cards_repo, versions)
-        card_cache = Cache(paths.card_cache)
-        jobs = [(v["key"], v["source"], join(paths.thumbs, f"c-{v['key']}.jpg"), ocr) for v in plan
-                if not card_cache.fresh(v["key"], ocr, CARD_FEATURES)]
-        log(f"{len(cards)} cards, {len(plan)} versions ({len(jobs)} to featurize)")
-        run_tasks("card_task", jobs, workers, card_cache.add, log, "card versions")
+        cards, versions_found = references(root, cards_repo, versions, ocr, workers, old_git, download, log)
         records, images = load_posts(root)
         if limit:
             images = images[:limit]
@@ -1520,16 +1788,9 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, site: str = SITE_URL, vers
         for image in images:
             if not image_cache.fresh(image["sha256"], ocr, POST_FEATURES) and image["sha256"] not in todo:
                 todo[image["sha256"]] = (image["sha256"], join(root, image["file"]),
-                                         join(paths.thumbs, f"p-{image['sha256'][:24]}.jpg"), ocr)
+                                         join(paths.thumbs, f"p-{image['sha256'][:24]}.webp"), ocr)
         log(f"{len(records)} messages, {len(images)} images ({len(todo)} to featurize)")
         run_tasks("post_task", list(todo.values()), workers, image_cache.add, log, "images")
-        versions_found = []
-        for v in plan:
-            entry = card_cache.entries.get(v["key"]) or {}
-            if entry.get("whole"):
-                versions_found.append({**{k: v[k] for k in ("key", "card", "commit", "ts", "current", "path")},
-                                       **{k: entry.get(k) for k in ("whole", "art", "title", "shape", "lines",
-                                                                    "rereads")}})
         index = CardIndex(cards, versions_found)
         looks = index.looks()
         ctx = Context(records)
@@ -1558,7 +1819,7 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, site: str = SITE_URL, vers
             if grid == (0, 0) or (grid and not cells):          # several cards, no grid: a screenshot's methods
                 feat = {**feat, "shape": None}
             entry = out[image["key"]] = {
-                **image, "thumb": f"{MATCH}/thumbs/p-{image['sha256'][:24]}.jpg", "error": feat.get("error"),
+                **image, "thumb": f"{MATCH}/thumbs/p-{image['sha256'][:24]}.webp", "error": feat.get("error"),
                 **{k: feat.get(k) for k in ("w", "h", "shape", "whole", "art")},
                 "ocr": bool(feat.get("ocr")), "title": title_texts(feat, index.names) if feat.get("shape") else [],
                 "title_block": next(iter(title_blocks(feat)), None),
@@ -1583,10 +1844,10 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, site: str = SITE_URL, vers
                 log(f"scored {n}/{len(images)}")
         for key, near in twins(out).items():
             out[key]["twins"] = near
-        thumbs = {v["key"]: f"{MATCH}/thumbs/c-{v['key']}.jpg" for v in versions_found}
+        thumbs = {v["key"]: f"{MATCH}/thumbs/c-{v['feat']}.webp" for v in versions_found}
         pairs = {"version": PAIRS_VERSION, "generated": now_iso(), "ocr": ocr, "versions_mode": versions,
                  "cards": cards, "versions": [{**{k: v[k] for k in ("key", "card", "commit", "ts", "current", "path",
-                                                                     "whole", "art", "shape")},
+                                                                     "old", "whole", "art", "shape")},
                                                "title": " ".join(t for t, c in v.get("title") or [] if c >= 0.3),
                                                "look": looks.get(v["key"], 0),
                                                "thumb": thumbs[v["key"]]} for v in versions_found],
@@ -1595,7 +1856,7 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, site: str = SITE_URL, vers
         log(f"pairs: {sum(1 for i in out.values() if i['candidates'])} of {len(out)} images have candidates")
     finally:
         lock.close()
-    return build(root, cards_repo, log=log)
+    return build(root, log=log)
 
 
 # ========================
@@ -1798,7 +2059,7 @@ def same_image(images: dict, verdicts: dict, cards: dict):
     dated by, its short title alone not enough)."""
     for key, image in images.items():
         v = verdicts.get(key)
-        if not v or v["status"] in ("confident", "ruled") or not image.get("twins"):
+        if not v or v["status"] in ("confident", "ruled", "morgue") or not image.get("twins"):
             continue
         titled = {c["card"] for c in v["scored"] if c["s"].get("title", 0) >= 0.9}
         sure: dict = {}
@@ -1963,6 +2224,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))      # the archive (this is its derived/matcher)
 REPOS = [os.environ.get("DISCORD_MATCH_REPO", ""), %(repo)r, "~/Desktop/AutoCroissant"]   # the writer's first
 NEEDS = ("def rulings_main(", "PAIRS_VERSION = %(version)d")                              # one that reads these files
 sys.path = [p for p in sys.path if os.path.abspath(p or ".") != HERE]     # nothing imported from the archive
@@ -1980,7 +2242,7 @@ else:
     sys.exit("can't find AutoCroissant's commands/discord_match.py (PAIRS_VERSION %(version)d): set DISCORD_MATCH_REPO")
 from commands.discord_match import rulings_main
 
-sys.exit(rulings_main(HERE, sys.argv[1:]))
+sys.exit(rulings_main(ROOT, sys.argv[1:]))
 '''
 
 
@@ -2014,80 +2276,20 @@ def poster_name(post: dict) -> str:
     return poster.get("global_name") or poster.get("username") or "?"
 
 
-def is_port(post: dict) -> bool:
-    """A port channel's post: cards re-uploaded to be ported, by whoever ported them."""
-    return bool(PORT.search(post.get("channel") or ""))
-
-
-def people_map(first_posts: list, people: list) -> dict:
-    """Discord poster -> credited person: by name likeness, else by the credits of the cards they posted first
-    outside the port channels (most of them; or the most, for a person no poster's name is like)."""
-    by_poster = defaultdict(list)
-    for post, credited in first_posts:
-        if (post.get("poster") or {}).get("id"):
-            by_poster[post["poster"]["id"]].append((post, credited))
-    found, claimed = {}, set()
-    for pid, items in by_poster.items():
-        poster = items[0][0]["poster"]
-        handles = [h for h in (poster.get("username"), poster.get("global_name")) if h]
-        like = max(((ratio(alnum(h), alnum(p)), p) for h in handles for p in people), default=(0, None))
-        counts = Counter(c for post, c in items if c and not is_port(post))
-        top = counts.most_common(1)[0] if counts else (None, 0)
-        total = sum(counts.values())
-        if like[0] >= 0.8:
-            person, basis = like[1], f"name like {like[1]}"
-            claimed.add(person)
-        elif top[0] and top[1] >= 3 and top[1] >= 0.6 * total:
-            person, basis = top[0], f"credited on {top[1]} of the {total} cards they posted first"
-        else:
-            person, basis = None, "unknown"
-        found[pid] = {"username": poster.get("username"), "global_name": poster.get("global_name"), "person": person,
-                      "basis": basis, "first_posts": len(items), "port_first_posts": sum(map(is_port, (
-                          post for post, _ in items))), "credits": dict(counts)}
-    for m in found.values():                    # the most credits, for a person no poster's name is like
-        counts = Counter(m["credits"])
-        top = counts.most_common(1)[0] if counts else (None, 0)
-        if m["person"] is None and top[0] and top[0] not in claimed and top[1] >= 10 and \
-                top[1] >= 0.5 * sum(counts.values()):
-            m["person"], m["basis"] = top[0], (f"credited on {top[1]} of the {sum(counts.values())} cards they "
-                                               "posted first (the most; no poster's name is like it): a guess")
-    return found
-
-
-def parse_authors(path: str) -> tuple:
-    """site/Card Authors.txt: ({git name: shown}, {card key: person})."""
-    people, credited, section = {}, {}, None
-    try:
-        lines = open(path, encoding="utf-8").read().splitlines()
-    except OSError:
-        return people, credited
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            section = line[1:-1].lower()
-            continue
-        if "=" in line:
-            left, right = (part.strip() for part in line.split("=", 1))
-            (people if section == "people" else credited)[left if section == "people" else alnum(left)] = right
-    return people, credited
-
-
-def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> dict:
+def build(root: str, log: Callable = print) -> dict:
     """matches.json, ambiguous.json/html and REPORT.md from match/pairs.json and the rulings."""
     root = check_root(root)
     paths = Paths(root)
     lock = hold(paths.lock)
     try:
-        return _build(root, paths, cards_repo, log)
+        return _build(root, paths, log)
     finally:
         lock.close()
 
 
-def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
+def _build(root: str, paths: Paths, log: Callable) -> dict:
     pairs = read_json(paths.pairs, {}) or {}
-    cards = pairs.get("cards") or load_cards(paths.site)
+    cards = pairs.get("cards") or {}
     images = pairs.get("images") or {}
     versions = {v["key"]: v for v in pairs.get("versions") or []}
     rulings = read_json(paths.rulings, {}) or {}
@@ -2097,7 +2299,7 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
     summary = read_json(join(root, "summary.json"), {}) or {}
     names = Names(cards)
     ctx = Context(records)
-    people, credited = parse_authors(join(expanduser(cards_repo), "site", "Card Authors.txt"))
+    morgue = morgue_ids(root, channels)
 
     # verdicts
     verdicts, posts, art = {}, defaultdict(list), defaultdict(list)
@@ -2114,6 +2316,10 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
         if key in verdicts:
             verdicts[key].update(status="ruled", cards=[c for c in ruling["cards"] if c in cards], maybe=[],
                                  reason=f"ruled {aid}: {ruling.get('text')}")
+    for key, v in verdicts.items():               # morgue posts: lost-card candidates, never a live card's
+        if in_morgue(records[images[key]["message"]], morgue):
+            v.update(was=v["status"], looks_like=(v["cards"] or v["maybe"])[:3], status="morgue", cards=[], maybe=[],
+                     reason="a morgue channel's post (meme, joke or scrapped cards): never a live card's")
     same_image(images, verdicts, cards)
     first_sure, first_key = {}, {}
     for key in keys:
@@ -2178,14 +2384,13 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
         elif v["status"] == "art" and not is_bot(records[images[key]["message"]]):
             for cid in v["art"]:
                 art[cid].append((records[images[key]["message"]], images[key]))
-    mention_first, named = mention_index(names, records)
-    out_cards, first_posts = {}, []
+    mention_first, named = mention_index(names, {k: r for k, r in records.items() if not in_morgue(r, morgue)})
+    out_cards = {}
     for cid in sorted(cards):
         card = cards[cid]
-        listed = credited.get(alnum(card.get("key"))) or credited.get(alnum(card.get("name")))
         entry = {"name": card.get("name"), "key": card.get("key"), "type": card.get("type"),
-                 "series": card.get("series"), "credited": card.get("author") or listed,
-                 "credited_in_file": listed, "fs": iso(card["fs"]) if card.get("fs") else None, "discord": None}
+                 "series": card.get("series"), "fs": iso(card["fs"]) if card.get("fs") else None,
+                 "fs_from": card.get("fs_from"), "discord": None}
         mine = [p for p in posts.get(cid, []) if not is_bot(p[0])]
         pending = [e["id"] for e in entries if cid in e["affects_earliest"] and e["ruling"] is None]
         if mine or pending or cid in mention_first or cid in art:
@@ -2203,7 +2408,6 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
                 aid = min(pending, key=lambda a: (by_entry[a]["post"]["date"] or "", int(a[1:])))
                 entry["discord"]["earliest_open"] = {"id": aid, "date": by_entry[aid]["post"]["date"]}
             if mine:
-                first_posts.append((entry["discord"]["first"], entry["credited"]))
                 if entry["discord"]["fs_check"].get("verdict") == "git_earlier":     # shown after the upload
                     entry["discord"]["suspect"] = "first sure post after fs: an earlier post is likely missed"
         out_cards[cid] = entry
@@ -2212,17 +2416,7 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
         e["suspect"] = sorted(set(e["affects_earliest"]) & suspects)
     entries.sort(key=lambda e: (e["ruling"] is not None, not (e["affects_earliest"] or e["confirm"]),
                                 not e["suspect"], int(e["id"][1:])))
-    mapping = people_map(first_posts, sorted(set(people.values()) | {c.get("author") for c in cards.values()
-                                                                       if c.get("author")}))
-    for cid, entry in out_cards.items():
-        first = (entry["discord"] or {}).get("first")
-        if first:
-            person = (mapping.get((first.get("poster") or {}).get("id")) or {}).get("person")
-            entry["discord"]["poster_vs_author"] = {
-                "poster": poster_name(first), "person": person, "credited": entry["credited"],
-                "verdict": "ported" if is_port(first) else "unmapped" if not person
-                else "same" if person == entry["credited"] else "different"}
-    unmatched = unmatched_cardlike(images, verdicts, records, channels)
+    lost = lost_candidates(images, verdicts, records, morgue)
     anomalies = find_anomalies(out_cards, snowflake_seconds(summary.get("guild_id")))
     counts = tally(out_cards, images, verdicts, entries, records)
     result = {"generated": now_iso(), "root": root, "mining": {k: summary.get(k) for k in
@@ -2230,9 +2424,15 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
                                                                  "totals")},
               "pairs_generated": pairs.get("generated"), "ocr": pairs.get("ocr"),
               "versions_mode": pairs.get("versions_mode"), "counts": counts, "thresholds": thresholds(),
-              "people_map": mapping, "anomalies": anomalies, "unmatched_cardlike": unmatched, "cards": out_cards}
+              "anomalies": anomalies, "lost": {"candidates": len(lost), "morgue": sum(
+                  1 for f in lost if "morgue" in f["kinds"]), "unmatched": sum(
+                  1 for f in lost if "unmatched" in f["kinds"]), "morgue_channels": sorted(morgue)},
+              "cards": out_cards}
     result["proposal"] = proposals(paths, result)
     write_json(paths.matches, result)
+    write_json(paths.lost, {"generated": result["generated"], "about": "lost-card candidates for the Morgue: morgue "
+                            "channels' card-like posts and card-shaped posts naming no card (never live cards)",
+                            "candidates": lost})
     write_json(paths.ambiguous, {"generated": result["generated"], "how": "reply with rulings like "
                                  "\"A12 = Isma, A13 = none\" (python3 -I apply_rulings.py ...)", "entries": entries})
     write_text(paths.html, render_html(entries, cards, result))
@@ -2244,14 +2444,15 @@ def _build(root: str, paths: Paths, cards_repo: str, log: Callable) -> dict:
 
 
 SURE_TIERS = ("ruled", "high", "confident")
-EDITS_FILE, AUTHORS_FILE = "Card Edits - created.json", "Card Authors - corrections.txt"
+EDITS_FILE = "Card Edits - created.json"
 
 
 def proposals(paths: Paths, result: dict) -> dict:
-    """What the matches would change on the site, for the owner to review (nothing is applied): created dates as a
-    Card Edits.json field, author corrections as Card Authors.txt lines. No aliases (owner 2026-10-22). Card names,
-    dates and the site's people only: no message text, links or Discord names."""
-    ready, pending, authors = {}, {}, []
+    """What the matches would change on the site, for the owner to review (nothing is applied): created dates (the
+    earliest confident appearance: a first sure post before the card's first git record). No authors (owner
+    2026-11-13: hand-crafted metadata is never changed), no aliases (owner 2026-10-22). Card names and dates only: no
+    message text, links or Discord names."""
+    ready, pending = {}, {}
     for cid, entry in sorted(result["cards"].items(), key=lambda kv: (kv[1].get("key") or kv[0]).lower()):
         d, key = entry.get("discord") or {}, entry.get("key") or entry.get("name") or cid
         first, fields = d.get("first"), {}
@@ -2263,10 +2464,6 @@ def proposals(paths: Paths, result: dict) -> dict:
             fields["created_if_ruled"] = {"id": d["earliest_open"]["id"], "date": d["earliest_open"]["date"][:10]}
         if fields:
             (pending if waits else ready)[key] = {**fields, **({"waits_on": waits} if waits else {})}
-        pva = d.get("poster_vs_author") or {}
-        if pva.get("verdict") == "different" and pva.get("person") and d.get("tier") in SURE_TIERS:
-            authors.append((pva["person"], entry.get("credited") or "?", key, first["date"][:10], first.get("channel"),
-                            first.get("creation_wording"), waits))
     makedirs(paths.proposal, exist_ok=True)
     write_json(join(paths.proposal, EDITS_FILE), {
         "about": "Superseded: the dates go to TTSCardMaker's site/Card Creation Dates.json (review_pages.py, then "
@@ -2276,25 +2473,10 @@ def proposals(paths: Paths, result: dict) -> dict:
                  "created_if_ruled (not a field): a card whose first sure post is after fs gets this date if that "
                  "entry is ruled to show it.",
         "generated": result["generated"], "cards": ready, "pending": pending})
-    lines = ["# Author corrections proposed from the Discord archive. Nothing is applied: review first.",
-             "# Each line is a [cards] line for TTSCardMaker's site/Card Authors.txt: it replaces the card's line.",
-             "# Evidence: the card's first Discord post was by this person (mapped from their Discord name; see",
-             "# REPORT.md). The first poster isn't always the maker (a remake, a post for someone else): check.",
-             f"# Generated {result['generated']}.", ""]
-    for (person, credited), group in sorted(Counter((a[0], a[1]) for a in authors).items(), key=lambda kv: -kv[1]):
-        lines.append(f"# --- first posted by {person}, credited to {credited} ({group}) ---")
-        for _, _, key, date, channel, wording, waits in (a for a in authors if (a[0], a[1]) == (person, credited)):
-            lines.append(f"{key} = {person}    # now {credited}; first post {date} #{channel}"
-                         + ("; new-card wording" if wording else "") + (f"; waits on {', '.join(waits)}" if waits
-                                                                         else ""))
-        lines.append("")
-    write_text(join(paths.proposal, AUTHORS_FILE), "\n".join(lines))
     return {"created_ready": sum(1 for f in ready.values() if "created" in f),
             "created_pending": sum(1 for f in pending.values() if "created" in f),
             "created_if_ruled": sum(1 for f in pending.values() if "created_if_ruled" in f),
-            "authors": len(authors), "authors_by": {f"{p} (credited {c})": n for (p, c), n in Counter(
-                (a[0], a[1]) for a in authors).most_common()},
-            "files": [paths.rel(join(paths.proposal, EDITS_FILE)), paths.rel(join(paths.proposal, AUTHORS_FILE))]}
+            "files": [paths.rel(join(paths.proposal, EDITS_FILE))]}
 
 
 def card_thumb(versions: dict, cid: str) -> Optional[str]:
@@ -2360,8 +2542,12 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
     check."""
     found = {"posts": len(mine), "bot_posts": len(every) - len(mine), "earlier_ambiguous": pending,
              "first_mention": mention}
-    seen, drafts, undecided = {}, [], 0        # look -> (record, image, note); drafts: [(look, image)]
+    seen, drafts, undecided, after = {}, [], 0, 0   # look -> (record, image, note); drafts: [(look, image)]
+    stop = card.get("fs")                      # the chain ends at its first git record (old repo, else this one)
     for n, (record, image, scored, status) in enumerate(mine):
+        if n and stop and (epoch(record.get("timestamp")) or 0) >= stop:
+            after += 1
+            continue
         look, pick = shown_look(scored, image, versions)
         if look == ("draft",):
             match = next((d for d, other in drafts if same_draft(image, other)), None)
@@ -2371,6 +2557,9 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
         note = version_note(look, pick, versions)
         if n == 0:
             first_note = note
+            if stop and (epoch(record.get("timestamp")) or 0) >= stop:
+                after += 1
+                continue
         if look is None:
             undecided += int(bool(image.get("shape")))
         elif look not in seen:
@@ -2393,7 +2582,8 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
                   **note} for record, image, note in order[1:]]                       # a revision
     current = seen.get(("git", 0))
     found["revisions"], found["current_since"] = revisions, current[0].get("timestamp") if current else None
-    found["looks_untold"] = undecided
+    found["looks_untold"], found["after_git"] = undecided, after
+    found["stop"] = {"date": iso(stop), "from": card.get("fs_from") or "git"} if stop else None
     found["names"] = chat_names(cid, card, mine, names, ctx)
     found["notes"] = card_notes(cid, mine, named, ctx)
     found["series_hints"] = series_hints(card, mine)
@@ -2440,8 +2630,6 @@ def chat_names(cid: str, card: dict, mine: list, names: Names, ctx: Context) -> 
         return max(((ratio(q, t), typed) for t, typed in said.items()), default=(0.0, "")) if len(q) >= 4 \
             else (0.0, "")
     for record, image, scored, status in mine:
-        if MEME.search(record.get("channel_name") or ""):     # a joke name, not the card's
-            continue
         found = [(backing(t), t) for t in image.get("title") or [] if new(t)]
         found = [(b, typed) for (b, typed), t in found if b >= 0.9 and new(typed)]
         if found:
@@ -2499,24 +2687,60 @@ def fs_check(fs, first: Optional[float]) -> dict:
     return {"verdict": verdict, "discord_first": iso(first), "fs": iso(fs), "days_discord_before_git": round(days, 1)}
 
 
-def unmatched_cardlike(images: dict, verdicts: dict, records: dict, channels: dict) -> list:
-    """Card-like images whose OCR'd title matches no card: retired or never uploaded cards."""
-    groups = defaultdict(list)
-    for key, image in images.items():
-        v = verdicts.get(key)
-        if not v or v["status"] != "none" or not image.get("shape") or not image.get("title"):
+def morgue_ids(root: str, channels: dict) -> set:
+    """The morgue channels: meme, joke and scrapped cards (MORGUE_IDS, names like MORGUE, the channel pass's meme
+    and joke kinds); their threads' posts carry the channel's id."""
+    found = set(MORGUE_IDS) | {cid for cid, c in channels.items() if MORGUE.search(c.get("name") or "")}
+    catalogue = read_json(join(root, *CATALOGUE), []) or []
+    rows = catalogue.get("channels") or catalogue if isinstance(catalogue, dict) else catalogue
+    for key, row in (rows.items() if isinstance(rows, dict) else ((None, r) for r in rows)):
+        if isinstance(row, dict) and MORGUE.search(str(row.get("kind") or "")):
+            found.add(str(row.get("id") or key))
+    return found
+
+
+def in_morgue(record: dict, morgue: set) -> bool:
+    return record.get("channel_id") in morgue or (record.get("thread") or {}).get("id") in morgue
+
+
+def lost_candidates(images: dict, verdicts: dict, records: dict, morgue: set) -> list:
+    """Lost-card candidates: every card-like post of the morgue channels (never a live card's; the live card it
+    looks like noted), and card-shaped posts elsewhere whose title names no card; grouped by title, else by image
+    (twins)."""
+    groups, title_of, twin_of = defaultdict(list), {}, {}
+    for key, image in sorted(images.items(), key=lambda kv: int(kv[1]["message"])):
+        v, record = verdicts.get(key), records.get(image["message"])
+        if not v or record is None or is_bot(record):
             continue
-        title = image.get("title_block") or image["title"][0]
-        if len(alnum(title)) >= 4:
-            groups[squash(title)].append((records[image["message"]], image, title))
+        title = image.get("title_block") or next(iter(image.get("title") or []), "")
+        named = len(alnum(title)) >= 4
+        if v["status"] == "morgue":
+            if not (image.get("shape") or v.get("was") not in (None, "none")):
+                continue
+            kind = "morgue"
+        elif v["status"] == "none" and image.get("shape") and named:
+            kind = "unmatched"
+        else:
+            continue
+        group = squash(title) if named else next((twin_of[t] for t, whole, _ in image.get("twins") or []
+                                                  if t in twin_of and whole <= TWIN_BITS), key)
+        twin_of[key] = group
+        title_of.setdefault(group, title if named else "")
+        groups[group].append((record, image, v, kind))
     found = []
-    for items in groups.values():
-        items.sort(key=lambda t: int(t[0]["id"]))
-        record, image, title = items[0]
-        found.append({"title": title, "count": len(items), "first": record.get("timestamp"),
-                      "jump_url": record.get("jump_url"), "poster": (record.get("author") or {}).get("username"),
-                      "image": image["file"], "thumb": image.get("thumb")})
-    return sorted(found, key=lambda f: (-f["count"], f["first"] or ""))
+    for group, items in groups.items():
+        record, image, _, _ = items[0]
+        looks = Counter(c for *_, v, _ in items for c in v.get("looks_like") or [])
+        found.append({"title": title_of[group], "kinds": sorted({k for *_, k in items}), "count": len(items),
+                      "first": record.get("timestamp"), "last": items[len(items) - 1][0].get("timestamp"),
+                      "channels": dict(Counter(r.get("channel_name") for r, *_ in items)),
+                      "image": image["file"], "thumb": image.get("thumb"), "shape": image.get("shape"),
+                      "images": [i["file"] for _, i, *_ in items[:8]],
+                      "looks_like": [c for c, _ in looks.most_common(3)]})
+    found.sort(key=lambda f: (f["first"] or ""))
+    for n, f in enumerate(found, 1):
+        f["id"] = f"L{n}"
+    return found
 
 
 def find_anomalies(cards: dict, server_born: Optional[float]) -> list:
@@ -2532,10 +2756,6 @@ def find_anomalies(cards: dict, server_born: Optional[float]) -> list:
         if check.get("verdict") == "git_earlier" and check["days_discord_before_git"] < -GIT_EARLIER_DAYS:
             found.append({"card": cid, "kind": "git_earlier", "detail": f"first Discord post {first['date'][:10]} is "
                           f"{-check['days_discord_before_git']:.0f} days after the git upload {check['fs'][:10]}"})
-        pva = discord.get("poster_vs_author") or {}
-        if pva.get("verdict") == "different":
-            found.append({"card": cid, "kind": "poster_not_author", "detail": f"first posted by {pva['poster']} "
-                          f"({pva['person']}), credited to {pva['credited']}"})
         mention = discord.get("first_mention")
         if mention and when and epoch(mention["date"]) and when - epoch(mention["date"]) > 90 * 86400:
             found.append({"card": cid, "kind": "named_before_shown", "detail": f"named in chat {mention['date'][:10]}, "
@@ -2673,8 +2893,8 @@ def render_html(entries: list, cards: dict, result: dict) -> str:
                      f"<a href='{escape(post.get('jump_url') or '')}'>jump</a> · best guess: "
                      f"{escape(', '.join(cards[c].get('name', c) for c in e['best_guess'] if c in cards) or '-')}"
                      + (" · <b>several cards: pick every card it shows</b>" if many else "") + "</div><div class=row>")
-        parts.append(f"<figure class='post{' shot' if many else ''}'><a href='{escape(e['image'])}'><img loading=lazy "
-                     f"src='{escape(e.get('thumb') or e['image'])}'></a><figcaption>posted image "
+        parts.append(f"<figure class='post{' shot' if many else ''}'><a href='{escape(UP + e['image'])}'><img "
+                     f"loading=lazy src='{escape(e.get('thumb') or UP + e['image'])}'></a><figcaption>posted image "
                      f"{escape(e.get('filename') or '')}</figcaption></figure>")
         for i, c in enumerate(e["candidates"], 1):
             methods = ", ".join(f"{m} {v:.2f}" for m, v in sorted(c["s"].items(), key=lambda kv: -kv[1]))
@@ -2842,7 +3062,7 @@ def _dated(result: dict) -> list:
 
 
 def _summary_lines(result: dict, entries: list) -> list:
-    """REPORT.md's findings: coverage, Discord vs fs, posters vs credits, names, revisions, metadata, proposal."""
+    """REPORT.md's findings: coverage, Discord vs fs, names, revisions, metadata, lost cards, proposal."""
     counts, cards, proposal = result["counts"], result["cards"], result.get("proposal") or {}
     dated = _dated(result)
     tiers = counts["tiers"]
@@ -2852,8 +3072,7 @@ def _summary_lines(result: dict, entries: list) -> list:
                      if c["discord"]["fs_check"].get("verdict") == "discord_earlier")
     fs_months = Counter((c.get("fs") or "")[:7] for c in cards.values() if c.get("fs"))
     bulk = fs_months.most_common(1)[0] if fs_months else ("", 0)
-    pvas = [c["discord"]["poster_vs_author"] for _, c in dated if c["discord"].get("poster_vs_author")]
-    verdicts = Counter(p["verdict"] for p in pvas)
+    lost = result.get("lost") or {}
     out = ["## Summary", "",
            f"- **{counts['cards_dated']} of {counts['cards']} cards** have a creation date from Discord (their "
            f"earliest post showing the card): {tiers.get('high', 0)} high, {tiers.get('confident', 0)} confident, "
@@ -2861,14 +3080,16 @@ def _summary_lines(result: dict, entries: list) -> list:
            f"first post to confirm waits on a ruling. {counts['cards'] - counts['cards_dated']} have no date: "
            + ", ".join(f"{tiers[k]} {TIER_TEXT[k].split(';')[0]}" for k in ("ambiguous", "art", "mention", "none")
                        if tiers.get(k)) + ".",
-           f"- The site's created sort uses fs, the first git upload: {bulk[1]} cards share {bulk[0]} (the repo's "
-           f"first bulk upload), so fs says little before then. Discord is earlier for "
+           f"- fs is each card's first git record (the old pre-wipe repo's, else TTSCardMaker's): {bulk[1]} cards "
+           f"share {bulk[0]}, so fs says little before then. Each card's Discord chain stops there "
+           f"({sum((c.get('discord') or {}).get('after_git') or 0 for c in cards.values())} sure posts after it left "
+           "out). Discord is earlier for "
            f"{checks.get('discord_earlier', 0)} cards (median {_pct([d for d, _, _ in earlier], 0.5) or 0:.0f} days), "
            f"about the same (within 2 days) for {checks.get('same_time', 0)}, later for "
            f"{checks.get('git_earlier', 0)}.",
-           f"- First posters vs credited authors: {verdicts.get('same', 0)} same person, "
-           f"{verdicts.get('different', 0)} different, {verdicts.get('ported', 0)} first seen in a port channel "
-           f"(re-uploads, not authorship), {verdicts.get('unmapped', 0)} with a poster not mapped to a person.",
+           f"- Lost-card candidates (`lost.json`, for the Morgue): {lost.get('candidates', 0)}, "
+           f"{lost.get('morgue', 0)} from the morgue channels (meme, joke and scrapped cards: never a live card's) "
+           f"and {lost.get('unmatched', 0)} card-shaped posts naming no card.",
            f"- Ambiguous posts: {counts['ambiguous_open']} open in `ambiguous.html`; "
            f"{counts['ambiguous_affecting_dates']} could change a first date and {counts['confirm_open']} are first "
            f"posts to confirm: those come first on the page, led by the {counts.get('suspect_entries', 0)} entries "
@@ -2876,8 +3097,8 @@ def _summary_lines(result: dict, entries: list) -> list:
            "aren't listed: they never date a card.",
            f"- Proposals (in `proposal/`, nothing applied): {proposal.get('created_ready', 0)} created dates ready "
            f"and {proposal.get('created_pending', 0)} after rulings ({proposal.get('created_if_ruled', 0)} more if a "
-           f"suspect card's earliest open post is ruled for it), {proposal.get('authors', 0)} author corrections; no "
-           "aliases (owner 2026-10-22).", ""]
+           f"suspect card's earliest open post is ruled for it); no authors (owner 2026-11-13) and no aliases (owner "
+           "2026-10-22).", ""]
 
     out += ["## Coverage", "", "| tier | meaning | cards |", "|---|---|---|"]
     out += [f"| {k} | {TIER_TEXT[k]} | {tiers[k]} |" for k in TIER_TEXT if tiers.get(k)]
@@ -2920,22 +3141,6 @@ def _summary_lines(result: dict, entries: list) -> list:
                           else "no earlier post found: check by hand"))
     out.append("")
 
-    mapping = result.get("people_map") or {}
-    out += ["## First posters vs credited authors", "",
-            "Discord posters mapped to the site's people (`[people]` of Card Authors.txt) by name, else by the "
-            "credits of the cards they posted first outside the port channels:", ""]
-    for m in sorted(mapping.values(), key=lambda m: -m["first_posts"]):
-        out.append(f"- {m.get('global_name') or m.get('username')} (@{m.get('username')}): **{m['person'] or '?'}** "
-                   f"({m['basis']}); first poster of {m['first_posts']} cards ({m.get('port_first_posts', 0)} in "
-                   "port channels)")
-    by = Counter((p["person"], p["credited"]) for p in pvas if p["verdict"] == "different")
-    if by:
-        out += ["", "Different person (first poster -> credited now): " + ", ".join(
-            f"{a} -> {b} {n}" for (a, b), n in by.most_common()) + ". Each is a line in "
-            f"`proposal/{AUTHORS_FILE}`; most come from batches one person posted (a remake or a post for "
-            "someone else is possible), so check before copying."]
-    out.append("")
-
     kinds = {"former_titles": "Former printed titles (read off its posted images, backed by the post's text or "
                               "file name)", "file_names": "File names that aren't a known name",
              "captions": "Short captions posted with it"}
@@ -2973,7 +3178,6 @@ def _summary_lines(result: dict, entries: list) -> list:
              if epoch(d["art_first"]["date"]) < epoch(d["first"]["date"])]
     notes = sum(len((c.get("discord") or {}).get("notes") or []) for c in cards.values())
     named = [a for a in result["anomalies"] if a["kind"] == "named_before_shown"]
-    unmatched = result.get("unmatched_cardlike") or []
     out += ["## Other metadata kept (matches.json)", "",
             f"- Art before the card: {len(art)} dated cards had their art posted first (median "
             f"{_pct(leads, 0.5) or 0:.0f} days earlier, `art_first`); {len(art_only)} cards only ever as art"
@@ -2983,11 +3187,7 @@ def _summary_lines(result: dict, entries: list) -> list:
             f"cards; {len(named)} named 90+ days before first shown (many names are the games' own, so a mention isn't "
             "creation evidence).",
             "- Per card also: every poster of it (`posters`), the channels and threads it was posted in "
-            "(`series_hints`), the first and last post, links to each.",
-            "- Card-shaped images whose title matches no card (retired, renamed past recognition, or never "
-            f"uploaded): {len(unmatched)}" + (": " + "; ".join(
-                f"“{u['title']}” x{u['count']} ({(u['first'] or '')[:10]})" for u in unmatched[:12])
-                if unmatched else "") + ".", ""]
+            "(`series_hints`), the first and last post, links to each.", ""]
 
     example = next(((c.get("key"), c) for _, c in dated if c["discord"].get("tier") in SURE_TIERS
                     and c["discord"]["fs_check"].get("verdict") == "discord_earlier"), (None, None))
@@ -3003,13 +3203,9 @@ def _summary_lines(result: dict, entries: list) -> list:
             "   Re-run both after rulings. Only dates leave this folder: no message text, links or Discord names. "
             f"The older proposal (a Card Edits.json field): {proposal.get('created_ready', 0)} ready, "
             f"{proposal.get('created_pending', 0)} waiting on rulings, in `proposal/{EDITS_FILE}`.",
-            "2. **Author corrections**: `[cards]` lines for `site/Card Authors.txt` (`Card Name = person`, replacing "
-            f"the card's current line), {proposal.get('authors', 0)} in `proposal/{AUTHORS_FILE}` with the evidence "
-            "in a comment. Confirm the Discord -> person map above first.",
-            "3. **History**: each look's first post (revisions, current_since) could date the card view's image "
-            "history, as dates only; the images are other people's posts and stay here.",
-            "4. **Retired cards**: the unmatched card-shaped titles are candidates for the archive of retired cards, "
-            "to check by hand.", "",
+            "2. **History**: each look's first post before the card's first git record (revisions) dates the "
+            "Discord-era Image versions.",
+            "3. **Lost cards**: `lost.json`'s candidates go to the owner for the Morgue (never live cards).", "",
             "## Rulings", "",
             "Open `ambiguous.html`, pick a card (or none) per entry, then reply with the line it builds "
             "(`A12 = Isma, A13 = none`) or run `python3 -I apply_rulings.py \"...\"`: rulings are kept in "
@@ -3118,23 +3314,23 @@ def version_outcome(index: CardIndex, looks: dict, cid: str, key: str, feat: dic
 
 
 def selftest(root: str, cards_repo: str = LOCAL_DIR_LOC, workers: int = 0, limit: Optional[int] = None,
-             log: Callable = print) -> dict:
+             old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
     """The image methods on degraded copies of every current card PNG, and the version pick on degraded copies of
-    every version of the cards with more than one look (needs a prior score run's card cache)."""
+    every version of the cards with more than one look (the references featurized first, as refs does)."""
     root = check_root(root)
     paths = Paths(root)
-    workers = workers or max(1, (cpu_count() or 2) - 2)
-    cards = load_cards(paths.site)
-    cache = Cache(paths.card_cache)
-    plan = plan_versions(cards, paths.site, cards_repo, "all")
-    versions = []
-    for v in plan:
-        entry = cache.entries.get(v["key"]) or {}
-        if entry.get("whole"):
-            versions.append({**v, **{k: entry.get(k) for k in ("whole", "art", "title", "shape", "lines",
-                                                                "rereads")}})
+    lock = hold(paths.lock)
+    try:
+        return _selftest(paths, cards_repo, workers or default_workers(), limit, old_git, download, log)
+    finally:
+        lock.close()
+
+
+def _selftest(paths: Paths, cards_repo: str, workers: int, limit: Optional[int], old_git: str, download: bool,
+              log: Callable) -> dict:
+    cards, versions = references(paths.root, cards_repo, "all", bool(_vision()), workers, old_git, download, log)
     if not versions:
-        raise SystemExit("no card features cached: run score first")
+        raise SystemExit("no card version featurized")
     index = CardIndex(cards, versions)
     looks = index.looks()
     current = [v for v in versions if v["current"]][:limit] if limit else [v for v in versions if v["current"]]
@@ -3190,7 +3386,10 @@ def selftest(root: str, cards_repo: str = LOCAL_DIR_LOC, workers: int = 0, limit
                 if len(unsure[name]) < 25:
                     unsure[name].append({"card": truth, "status": verdict["status"], "reason": verdict["reason"],
                                          "maybe": verdict["maybe"][:3]})
-    report = {"generated": now_iso(), "cards": len(current), "versions": len(versions), "variants": {}, "notes": []}
+    report = {"generated": now_iso(), "cards": len(current), "versions": len(versions), "variants": {}, "notes": [],
+              "references": {"cards": len(cards), "featured": len(index.versions),
+                             "old_repo": sum(1 for v in index.versions if v.get("old")),
+                             "cards_with_versions": len(index.by_card)}}
     for name, st in stats.items():
         n = len(st["true_bits"])
         if not n:
@@ -3270,29 +3469,33 @@ def selftest(root: str, cards_repo: str = LOCAL_DIR_LOC, workers: int = 0, limit
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.discord_match", description="Match mined Discord posts to cards.")
     sub_parsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("score", "build", "selftest"):
+    for name in ("refs", "score", "build", "selftest"):
         p = sub_parsers.add_parser(name)
         p.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", DEFAULT_ROOT))
+        if name == "build":
+            continue
         p.add_argument("--cards-repo", default=LOCAL_DIR_LOC)
-        if name in ("score", "selftest"):
-            p.add_argument("--workers", type=int, default=0)
+        p.add_argument("--workers", type=int, default=0)
+        p.add_argument("--old-git", default=OLD_GIT)
+        p.add_argument("--download", action="store_true")
+        if name != "refs":
             p.add_argument("--limit", type=int)
-        if name == "score":
-            p.add_argument("--site", default=SITE_URL)
-            p.add_argument("--refresh-site", action="store_true")
+        if name != "selftest":
             p.add_argument("--versions", choices=("none", "oldest", "all"), default="all")
             p.add_argument("--no-ocr", action="store_true")
     args = parser.parse_args(argv)
 
     def log(text):
         print(text, file=stderr, flush=True)
-    if args.command == "score":
-        score(args.root, args.cards_repo, args.site, args.versions, not args.no_ocr, args.workers, args.refresh_site,
-              args.limit, log)
+    if args.command == "refs":
+        refs(args.root, args.cards_repo, args.versions, not args.no_ocr, args.workers, args.old_git, args.download, log)
+    elif args.command == "score":
+        score(args.root, args.cards_repo, args.versions, not args.no_ocr, args.workers, args.limit, args.old_git,
+              args.download, log)
     elif args.command == "build":
-        build(args.root, args.cards_repo, log)
+        build(args.root, log)
     else:
-        selftest(args.root, args.cards_repo, args.workers, args.limit, log)
+        selftest(args.root, args.cards_repo, args.workers, args.limit, args.old_git, args.download, log)
     return 0
 
 
