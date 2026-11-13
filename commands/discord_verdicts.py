@@ -694,6 +694,8 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         if row.get("card") and family.get(row["card"]):
             row["family"] = family[row["card"]]
         row["review"] = REVIEW.get(row["verdict"]) if not row.get("joke_draft") else "a joke picture's draft look"
+        if row["paper"] and row["verdict"] not in SURE_CLASSES:
+            row["review"] = "a paper card's photo (owner Q6=A: shown undated once named)"
     old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
     groups = lost_groups(rows, images, by_sha, records, cards, versions_list, kinds, channels, old_lost, root,
                          cards_repo)

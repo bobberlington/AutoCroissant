@@ -37,7 +37,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    (macOS Vision), OCR'd text against the ability, file name, chat text and aliases; sheets cut into cells. Each card's chain
    stops at its first git record (the old repo's, else TTSCardMaker's). The morgue channels (meme, joke and scrapped cards)
    feed lost-card candidates (`lost.json`), never live cards, as do card-shaped posts naming no card. Outputs under the
-   archive's `derived/matcher/`.
+   archive's `derived/matcher/`. Then `commands/discord_verdicts.py` gives each picture (a sheet's cells each) one
+   verdict: version sure, version unsure, draft (a look not in git), lost or morgue (else unsure, art, none), its
+   earliest post dating it; lost pictures grouped into lost cards; contact sheets for the checks by eye. Outputs under
+   `derived/match/`.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
