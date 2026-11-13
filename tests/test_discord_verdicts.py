@@ -79,7 +79,7 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
              (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff)]     # 5: a paper card's photo
     root = tmp_path / "archive"
     archive(root, posts, cards, versions, {PORT[0]: "port", MEME[0]: "meme/joke"})
-    dv.build(str(root), log=lambda *a: None)
+    dv.build(str(root), log=lambda *a: None, cards_repo="")
     rows = rows_of(root)
     one, two, three, four, five = (rows[dv.picture_id(sha(n))] for n in range(1, 6))
     assert (one["verdict"], one["card"], one["first"]["channel"], len(one["posts"])) == ("version_sure", "fang",
@@ -115,7 +115,7 @@ def test_lost_cards_group_by_title_and_lookalikes_need_their_title(tmp_path):
     root = tmp_path / "archive"
     archive(root, posts, cards, [], {PORT[0]: "port"}, [{"id": "OL-ddd1c85bc7", "old_id": "Blanket"}],
             {"Old Dull Blade": {"status": "live", "confidence": "sure", "key": "Dull Knife"}})
-    dv.build(str(root), log=lambda *a: None)
+    dv.build(str(root), log=lambda *a: None, cards_repo="")
     groups = {g["title"]: g for g in json.loads((root / "derived/match/lost_groups.json").read_text())["groups"]}
     blanket, wind = groups["Blankett"], groups["Wind Dancer"]
     assert blanket["id"] == dv.group_id(sha(1)) and blanket["count"] == 2
@@ -143,11 +143,11 @@ def test_sheet_cells_are_pictures(tmp_path):
              {"box": [0.5, 0, 1, 1], "shape": "2:3", "w": 300, "h": 450, "title": [], "lines": [], "candidates": []}]
     root = tmp_path / "archive"
     archive(root, [(T, NEW, 7, [], {"cells": cells, "sheet": [1, 2], "shape": None}, None)], cards, [], {})
-    dv.build(str(root), log=lambda *a: None)                                 # cut by names alone: no look claimed
+    dv.build(str(root), log=lambda *a: None, cards_repo="")              # cut by names alone: no look claimed
     assert rows_of(root)[dv.picture_id(sha(7), 1)]["verdict"] == "version_unsure"
     (root / "derived/catalogue/pictures.jsonl").write_text(json.dumps(
         {"file": f"attachments/{sha(7)}.png", "sheet": "pair", "seam_grid": [1, 2]}) + "\n")
-    dv.build(str(root), log=lambda *a: None)
+    dv.build(str(root), log=lambda *a: None, cards_repo="")
     found = rows_of(root)
     assert [found[dv.picture_id(sha(7), n)]["verdict"] for n in (1, 2)] == ["draft", "none"]
     sheets = json.loads((root / "derived/match/sheets/sheets.json").read_text())["sheets"]

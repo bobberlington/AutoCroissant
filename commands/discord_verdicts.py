@@ -2,7 +2,7 @@
 One verdict per Discord picture, from the matcher's scores (commands/discord_match.py score): the card timelines' match
 step (docs/Future/CARD_TIMELINE.md, stage 2). Run after `discord_match score`, with a Python that has Pillow and numpy:
 
-    python -m commands.discord_verdicts build  [--root <dir>]
+    python -m commands.discord_verdicts build  [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_verdicts checks [--root <dir>] [--seed <n>] [--sure <n>] [--lost <n>]
     python -m commands.discord_verdicts selftest [--root <dir>] [--cards-repo <dir>]
 
@@ -46,6 +46,7 @@ OUT = ("derived", "match")
 CATALOGUE_PICTURES = ("derived", "catalogue", "pictures.jsonl")
 OLD_LOST = ("derived", "oldgit", "lost.json")
 OLD_MAP = ("derived", "oldgit", "map.json")
+MORGUE_DIR = "MDW/The Morgue/"                   # build_site MORGUE: retired cards
 PAPER_IDS = {"1331913819563360288"}            # 'Old stuff' thread: photos of paper cards (owner Q6=A: never dates)
 PLAYED_KINDS = {"port", "update"}               # the catalogue's kinds whose pictures were played (owner Q2=A)
 PLAYED_NAMES = {"card-classification", "minion classification"}
@@ -67,6 +68,13 @@ FAMILY_TITLE = 0.9                              # a look-alike family: the card'
 LOST_TITLE = 4                                  # a lost picture's title: at least this many letters
 LETTERS = 0.6                                   # a card picture's text: at least this share letters (not digits)
 FOREIGN = re_compile(r"(?i)\b(atk|def)\s*/\s*[\d?]|\blink-\d|takahashi|konami|\bpokemon\b")   # other games' cards
+GAME = set("creature creatures attack attacks attacking attacked attacker attackers turn turns equip equipped equips "
+           "summon summons summoned damage dmg item items minion minions field ability abilities health defense "
+           "defence speed atk def spd hp point points enemy enemies friendly target targeted targets stat stats "
+           "piercing inflict inflicts heal heals healing card cards slot intercept protective star stars cd opt oyt "
+           "eot aat tpt bogt endt lane debuff buff negate negated".split())
+GAME_WORDS = 2                                  # a lost card picture's text: at least this many of the game's words
+TEMPLATE_SIZES = {"ps1200", "gen400", "gen350"}  # ... or one of the card templates' export sizes
 OLD_NAME = 0.9                                  # a lost title this near an old repo name of a live card: renamed?
 GROUP_TITLE = 0.85                              # lost pictures one card: titles this alike
 FAMILIES = (("dull-knife", "rusty-knife", "red-knife"), ("moss-charger", "massive-moss-charger"))
@@ -292,6 +300,7 @@ class Run:
         self.images, self.records, self.cards, self.versions, self.morgue = images, records, cards, versions, morgue
         self.verdicts, self.raw, self.family = verdicts, raw, families(cards)
         self.checked, self.names = checked or {}, dm.Names(cards)     # sheets checked by eye; names for cells
+        self.classes: dict = {}                                       # sha256 -> the catalogue's size class
         self.members = defaultdict(list)            # card -> its versions {key, look, whole}
         for v in versions.values():
             self.members[v["card"]].append(v)
@@ -363,7 +372,7 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     elif status.get("ambiguous"):
         row.update(verdict="unsure", maybe=maybe[:6], reason=next(v["reason"] for v in every
                                                                   if v["status"] == "ambiguous"))
-    elif lost_like(image):
+    elif lost_like(image, run.classes.get(sha)):
         row.update(verdict="lost", reason="a card picture naming no live card", maybe=maybe[:3])
     elif status.get("art"):
         row.update(verdict="art", maybe=list(dict.fromkeys(c for v in every for c in v.get("art") or []))[:3],
@@ -373,14 +382,17 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     return row
 
 
-def lost_like(image: dict) -> bool:
+def lost_like(image: dict, size_class: Optional[str] = None) -> bool:
     """A card picture of ours: card-shaped, a title read as words, card text (or a stat label), mostly letters (no
-    table of numbers), no other game's card (FOREIGN)."""
+    table of numbers), no other game's card (FOREIGN), and the game's words (GAME_WORDS of them) or a card
+    template's export size (memes, comics and screenshots have neither)."""
     title = image.get("title_block") or next(iter(image.get("title") or []), "")
     text = " ".join(image.get("lines") or [])
     letters, digits = sum(c.isalpha() for c in text), sum(c.isdigit() for c in text)
+    ours = len(set(dm.words(text).split()) & GAME) >= GAME_WORDS or size_class in TEMPLATE_SIZES or \
+        (image.get("w"), image.get("h")) == (400, 400)
     return bool(image.get("shape")) and dm.wordy(title) and len(dm.alnum(title)) >= LOST_TITLE and \
-        dm.card_text(image) and letters >= LETTERS * (letters + digits) and not FOREIGN.search(text)
+        dm.card_text(image) and letters >= LETTERS * (letters + digits) and not FOREIGN.search(text) and ours
 
 
 def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
@@ -510,6 +522,15 @@ def old_names(root: str, cards: dict, names: "dm.Names") -> dict:
     return found
 
 
+def morgue_names(cards_repo: str) -> dict:
+    """{squashed name: name} of the cards already in the website's Morgue (the card repo's MORGUE folder)."""
+    git_dir = dm.git_dir_of(cards_repo) if cards_repo else None
+    out = dm.git_out(git_dir, "ls-tree", "-r", "--name-only", "-z", f"origin/{dm.CARD_BRANCH}", "--", MORGUE_DIR) \
+        if git_dir else None
+    names = [dm.file_name(p) for p in (out or b"").decode("utf-8", "replace").split("\0") if p.lower().endswith(".png")]
+    return {dm.squash(n): n for n in names if len(dm.squash(n)) >= 4}
+
+
 def changelog_dates(title: str, changelog: list) -> list:
     """Days an update changelog message names the title (its words in a row; dates only, never the text)."""
     phrase = dm.words(title)
@@ -519,7 +540,7 @@ def changelog_dates(title: str, changelog: list) -> list:
 
 
 def lost_groups(rows: list, images: dict, by_sha: dict, records: dict, cards: dict, versions: list, kinds: dict,
-                channels: dict, old_lost: list, root: str) -> list:
+                channels: dict, old_lost: list, root: str, cards_repo: str = "") -> list:
     """Lost and morgue pictures grouped into lost cards: one title (alike), else one look (twins)."""
     pics = sorted((r for r in rows if r["verdict"] in ("lost", "morgue")),
                   key=lambda r: (min(int(p["message"]) for p in r["posts"]), r.get("cell") or 0))
@@ -564,7 +585,7 @@ def lost_groups(rows: list, images: dict, by_sha: dict, records: dict, cards: di
     changelog = sorted((r for r in records.values() if not dm.is_bot(r) and
                         (kinds.get(r.get("channel_id")) in CHANGELOG_KINDS)), key=lambda r: int(r["id"]))
     old = {dm.squash(c.get("old_id") or ""): c.get("id") for c in old_lost}
-    renamed = old_names(root, cards, names)
+    renamed, morgue_cards = old_names(root, cards, names), morgue_names(cards_repo)
     found = []
     for root_id, members in groups.items():
         first = members[0]
@@ -588,12 +609,15 @@ def lost_groups(rows: list, images: dict, by_sha: dict, records: dict, cards: di
                    for c, (r, _) in names.fuzzy(title, 0.6, limit=3).items()] if title else []
         was = next((renamed[o] for m in members if m["title_read"] for o in renamed
                     if dm.ratio(dm.squash(m["title_read"]), o) >= OLD_NAME), None)
+        buried = next((morgue_cards[o] for m in members if m["title_read"] for o in morgue_cards
+                       if dm.ratio(dm.squash(m["title_read"]), o) >= OLD_NAME), None)
+        known = was or buried                   # a live card before a rename, or a Morgue card already
         kinds_of = sorted({"joke" if joke else "lost"} | ({"played"} if played or logged or old_id else {"idea"})
-                          | ({"renamed?"} if was else set()))
+                          | ({"renamed?"} if was else set()) | ({"in the Morgue"} if buried else set()))
         found.append({"id": group_id(sha), "title": title, "kinds": kinds_of,
-                      "morgue_candidate": bool(joke or played or logged or old_id) and not was,
-                      "ideas_never_ported": not (joke or played or logged or old_id or was),
-                      "old_name_of": was,
+                      "morgue_candidate": bool(joke or played or logged or old_id) and not known,
+                      "ideas_never_ported": not (joke or played or logged or old_id or known),
+                      "old_name_of": was, "morgue_card": buried,
                       "first": {"date": when["date"], "channel": when["channel"], "thread": when["thread"],
                                 "message": when["message"], "jump_url": when["jump_url"]},
                       "last": max(p["date"] for p in posts), "count": len(members),
@@ -611,17 +635,17 @@ def lost_groups(rows: list, images: dict, by_sha: dict, records: dict, cards: di
 # ========================
 # Build
 # ========================
-def build(root: str, log: Callable = print) -> dict:
+def build(root: str, log: Callable = print, cards_repo: str = dm.LOCAL_DIR_LOC) -> dict:
     root = dm.check_root(root)
     paths = Paths(root)
     lock = dm.hold(paths.matcher.lock)
     try:
-        return _build(paths, log)
+        return _build(paths, log, cards_repo)
     finally:
         lock.close()
 
 
-def _build(paths: Paths, log: Callable) -> dict:
+def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     root = paths.root
     pairs = dm.read_json(paths.matcher.pairs, {}) or {}
     if not pairs.get("images"):
@@ -643,6 +667,7 @@ def _build(paths: Paths, log: Callable) -> dict:
     jokes = joke_pictures(images, by_sha, records, morgue)
     classes = catalogue_classes(root)
     run = Run(images, records, cards, versions, morgue, verdicts, raw, dm.catalogue_sheets(root))
+    run.classes = classes
     rows = []
     for sha, keys in by_sha.items():
         image = images[keys[0]]
@@ -670,7 +695,8 @@ def _build(paths: Paths, log: Callable) -> dict:
             row["family"] = family[row["card"]]
         row["review"] = REVIEW.get(row["verdict"]) if not row.get("joke_draft") else "a joke picture's draft look"
     old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
-    groups = lost_groups(rows, images, by_sha, records, cards, versions_list, kinds, channels, old_lost, root)
+    groups = lost_groups(rows, images, by_sha, records, cards, versions_list, kinds, channels, old_lost, root,
+                         cards_repo)
     makedirs(paths.out, exist_ok=True)
     order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "joke", "meme_repost", "paper",
              "family", "version", "methods", "maybe", "looks_like", "lost_group", "reason", "repost_of", "twin_of",
@@ -701,6 +727,7 @@ def summary(rows: list, groups: list, images: dict) -> dict:
             "families": dict(Counter(r["family"] for r in rows if r.get("family") and r["verdict"] in SURE_CLASSES)),
             "lost_groups": len(groups), "morgue_candidates": sum(1 for g in groups if g["morgue_candidate"]),
             "renamed_hints": sum(1 for g in groups if g.get("old_name_of")),
+            "in_the_morgue": sum(1 for g in groups if g.get("morgue_card")),
             "ideas_never_ported": sum(1 for g in groups if g["ideas_never_ported"]),
             "lost_group_kinds": dict(Counter("+".join(g["kinds"]) for g in groups)),
             "thresholds": {**gates(), "matcher": dm.thresholds()}}
@@ -852,8 +879,10 @@ def sheet_contact(sheets: list, path: str, paths: Paths, cards: dict, side: int 
     out.save(path, "JPEG", quality=82)
 
 
-def checks(root: str, seed: int = 1113, sure: int = 50, lost: int = 25, log: Callable = print) -> dict:
-    """Contact sheets: sure matches at random, every look-alike family's sure matches, lost pictures at random."""
+def checks(root: str, seed: int = 1113, sure: int = 50, lost: int = 25, versions_n: int = 24,
+           log: Callable = print) -> dict:
+    """Contact sheets: sure matches at random, git looks claimed before git at random, every look-alike family's
+    sure matches, lost pictures at random, every sheet's cells."""
     root = dm.check_root(root)
     paths = Paths(root)
     pairs = dm.read_json(paths.matcher.pairs, {}) or {}
@@ -867,6 +896,11 @@ def checks(root: str, seed: int = 1113, sure: int = 50, lost: int = 25, log: Cal
     picked["sure"] = [r["id"] for r in sample]
     for n in range(0, len(sample), 12):
         contact(sample[n:n + 12], join(paths.checks, f"sure-{n // 12 + 1}.jpg"), root, versions, cards)
+    looks = [r for r in sure_rows if r["verdict"] == "version_sure" and r.get("after_git") is False]
+    sample = rng.sample(looks, min(versions_n, len(looks)))     # git looks claimed before git: what dates versions
+    picked["version_sure"] = [r["id"] for r in sample]
+    for n in range(0, len(sample), 12):
+        contact(sample[n:n + 12], join(paths.checks, f"looks-{n // 12 + 1}.jpg"), root, versions, cards)
     fam = defaultdict(list)
     for r in sure_rows:
         if r.get("family"):
@@ -983,7 +1017,7 @@ def main(argv: Optional[list] = None) -> int:
     for name in ("build", "checks", "selftest"):
         p = subs.add_parser(name)
         p.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
-        if name == "selftest":
+        if name != "checks":
             p.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC)
         if name == "checks":
             p.add_argument("--seed", type=int, default=1113)
@@ -994,11 +1028,11 @@ def main(argv: Optional[list] = None) -> int:
     def log(text):
         print(text, file=stderr, flush=True)
     if args.command == "build":
-        build(args.root, log)
+        build(args.root, log, args.cards_repo)
     elif args.command == "selftest":
         selftest(args.root, args.cards_repo, log)
     else:
-        checks(args.root, args.seed, args.sure, args.lost, log)
+        checks(args.root, args.seed, args.sure, args.lost, log=log)
     return 0
 
 
