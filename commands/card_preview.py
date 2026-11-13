@@ -123,7 +123,7 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     The card the bake would take for this edit: one of the bake's card PSDs by path (any case; Snapshot.psds: no
     EXCLUDE_FOLDERS PSD, and of two PSDs with one key the one the bake takes), else a name matched like the edits file's
     keys (CardAuthors.key of the file stem; the website's card key). A name without a PSD keeps rel "" (the bake refuses
-    it: duplicate or unsupported-card).
+    it: duplicate or unsupported-card), but a picture-only duplicate's name alone takes its PSD, as select() does.
 
     Raises:
         BadInput: a path ending in .psd that is none of the bake's cards
@@ -141,9 +141,10 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     if view is not None:                        # a picture of a PSD with variant tags: the PSD, baked as that picture
         rel, view = view
         key = CardAuthors.key(card_name(rel))
-    name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
+    rel, dup = (rel, "") if rel else card_bake.dup_entry(snapshot, key, psd_fields(fields))
+    name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
     return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
-                view=view)
+                view=view, dup=dup)
 
 
 def blobs_of(snapshot: Snapshot, card: Card) -> list:
@@ -152,7 +153,7 @@ def blobs_of(snapshot: Snapshot, card: Card) -> list:
     if not card.rel:
         return [ICON_MANIFEST_PATH]
     chart = psd_edit.STATUS_CHART if {"ability", "parts"} & set(card.fields) else ""
-    return [ICON_MANIFEST_PATH, card.rel, snapshot.png_for(card.rel)[0], chart]
+    return [ICON_MANIFEST_PATH, card.rel, snapshot.png_for(card.rel)[0], card.dup, chart]
 
 
 def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
@@ -403,7 +404,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         one = resolve(snapshot, card, fields)
         ready()                                 # the reads are in (the fonts: at the first font)
         snapshot.prefetch(blobs_of(snapshot, one))    # side by side
-        png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
+        png_rel = one.dup or (snapshot.png_for(one.rel)[0] if one.rel else "")     # a duplicate's: its own picture
         if one.view is not None:                # the picture's own PNG
             png_rel = next((p for p in snapshot.png_for(one.rel)[1] if picture_of(snapshot, CardAuthors.key(card_name(p)))
                             == (one.rel, one.view)), png_rel)
@@ -427,6 +428,8 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             return colors[0]
         psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE = PNG_LEVEL, _beside(made), True
         card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lean=True)    # what only a commit uses: skipped
+        if one.dup:                             # its picture (dup_view)
+            result["variant"] = one.view
         psd_edit.fonts_in()                     # a bake that read none
         result["runner"]["fonts"] = exists(fonts)
         state, transient, reason, outcomes = outcome(one)
@@ -439,7 +442,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             result["region"] = _plain(one.baked.region)
         wait([f for pair in made.values() for f in pair])     # a refusal after the merge: its PNG too
         folder = join(work, one.name.replace("/", "_"))
-        shown = png_rel if one.view is not None else one.png
+        shown = png_rel if one.view is not None or one.dup else one.png
         rendered = join(folder, "new", basename(shown)) if shown else ""
         official = join(folder, "old", basename(shown)) if shown else ""    # bake_card's fetch of the card's PNG
         if state == "baked" and (one.baked is not None or isfile(official)):    # a move alone: the card as it is
