@@ -268,6 +268,12 @@ def test_gate_bytes_pairs_fx_records(monkeypatch):
     files["new"][3] = _record("Blazing", flags=b"\x08")                        # the overlay did not hide
     with pytest.raises(pe.Refused, match="did not change"):
         pe.gate_bytes("old", "new", [edit])
+    placed = [(Tag.SMART_OBJECT_LAYER_DATA1.value, b"x")]
+    files.update(old=[_record("2", blocks=placed)], new=[_record("2", blocks=placed)])  # a bar digit shown, not on file
+    bar = [(0, {"flags": True, "name": None, "move": (0, 0), "mask": (0, 0), "blocks": {}})]
+    with pytest.raises(pe.Refused, match="the def bar's smart object '2': the edit showed or hid it, but the saved "
+                                         "file did not; "):
+        pe.gate_bytes("old", "new", [pe.Edit("def", 0, 5, [], [], None, bar=bar)])
 
 
 def test_gate_bytes_keeps_a_rebuilt_fx_records_style(monkeypatch):

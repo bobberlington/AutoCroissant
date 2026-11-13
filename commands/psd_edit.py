@@ -3331,6 +3331,7 @@ def stat_value(rows: list) -> int:
 def _targets(rows: list, value: int) -> list:
     """The digit the row shows for a value 0-10 (None: no digit; a row with its own "10" digit shows it: Bulborb
     Larva)."""
+    # Twin Emperors' "10" markers: a hand edit that hides a row's digit for 10, not showing "10", reads one creature
     return [value if value < STAT_MAX or str(STAT_MAX) in rows[0].digits else None]
 
 
@@ -4716,11 +4717,11 @@ def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int, valu
     them (Tainted Lazarus), else by place along the bar (False Knight's "0"s). A dark layer under a lit one follows the
     card (hidden where the lit cells hide theirs, as Lazarus, else left as it is); a hidden dark row is shown (False
     Knight's DEF at 10). A cell with no lit picture takes a copy of the lit one the card draws at that cell on another
-    stat's row, moved onto it (R6: Dirty Bed's DEF has no lit 1). Numbered layers 1-10 with no dark picture: those past
-    the value are hidden, nothing shown. A crossing cell takes its new side's look, from another row when this one shows
-    none (False Knight's DEF at 10: _side_example); a dark cell left under a lit one takes the card's look there, and a
-    full row hides the dark row again. The layer named after the value is renamed when the parser reads the names (False
-    Knight). Only where plan_bar refuses (set_bar).
+    stat's row, moved onto it (R6: an item's row drawn without one of its lit cells). Numbered layers 1-10 with no dark
+    picture: those past the value are hidden, nothing shown. A crossing cell takes its new side's look, from another row
+    when this one shows none (False Knight's DEF at 10: _side_example); a dark cell left under a lit one takes the
+    card's look there, and a full row hides the dark row again. The layer named after the value is renamed when the
+    parser reads the names (False Knight). Only where plan_bar refuses (set_bar).
 
     Returns:
         BarPlan; raises Refused("unsupported-card")
@@ -4851,9 +4852,9 @@ def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int, valu
 
 def _lit_copy(psd: PSDImage, stat: str, group, cells: dict, k: int, pitch: float, x0: float, mirrored: bool) -> tuple:
     """
-    A lit picture for cell k of a row that has none (R6, Dirty Bed's DEF 1): the visible lit layer of the same kind the
-    card draws at that place on another stat's row (its HP 1), moved onto the row; (source, group, index, dx, dy,
-    name). Refused when the card draws none there.
+    A lit picture for cell k of a row that has none (R6: an item's row drawn without one of its lit cells): the visible
+    lit layer of the same kind the card draws at that place on another stat's row, moved onto the row; (source, group,
+    index, dx, dy, name). Refused when the card draws none there.
     """
     mine = [layer for lit, _ in cells.values() for layer in lit]
     width = sorted(layer.bbox[2] - layer.bbox[0] for layer in mine)[len(mine) // 2]
@@ -9788,7 +9789,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     inserted.update({index: ("ability",) for edit in edits for index in edit.added})
     owner = {index: edit.field for edit in edits
              for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
-    bar = {index: spec for edit in edits for index, spec in edit.bar}                # a stat on the card maker's own bar
+    bar = {index: (edit.field, spec) for edit in edits for index, spec in edit.bar}  # a stat on a card maker's own bar
     removed = {index for edit in edits for index in edit.removed}         # a part edit's deleted layers
     renumbered = {index for edit in edits for index in edit.renumbered}   # their stories' later layers
     changed, flag_bytes, block_bytes, old_of = [], 0, 0, {}
@@ -9838,12 +9839,13 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         old_of[j] = i
         fields = sorted(key for key in a if a.get(key) != b.get(key))
         if j in bar:                            # a bar layer: exactly its declared eye, name, place, mask and style
-            why = _bar_record(a, b, bar.pop(j))
-            if why:
-                raise Refused("bytes", f"bar layer {j} {a['name']!r}: {why}")
+            stat, spec = bar.pop(j)
+            why = _bar_record(a, b, spec) or ("" if fields else "the edit changed it, but the saved file did not")
+            if why:                             # card_checks' note keeps the words before ';'
+                kind = "smart object" if {bytes(key) for key in PLACED} & {key for key, _ in a["blocks"]} else "layer"
+                raise Refused("bytes", f"the {stat} bar's {kind} {a['name']!r}: {why}; the bake saves nothing: set "
+                                       "this stat in Photoshop")
             flag_bytes += sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
-            if not fields:
-                raise Refused("bytes", f"bar layer {j} {a['name']!r} did not change")
             changed.append((j, a["name"], fields))
         elif j in moved:                        # a star or type icon moved: its rect, mask, transform and anchor
             source, dx, dy = moved[j]
@@ -9910,30 +9912,31 @@ def _bar_record(a: dict, b: dict, spec: dict) -> Optional[str]:
     effect blocks, nothing else; None when it is."""
     dx, dy = spec["move"]
     if b["rect"] != _moved_rect(a["rect"], dx, dy):
-        return f"rect {a['rect']} -> {b['rect']}"
+        return f"it landed at {b['rect']}, not where the edit moved it"
     user_mask = -2                              # ChannelID.USER_LAYER_MASK: a redrawn mask's raster
     channels = (lambda record: tuple(c for c in record["channels"] if c[0] != user_mask)) if spec.get("remask") \
         else (lambda record: record["channels"])
     if channels(a) != channels(b) or a["blend"] != b["blend"]:
-        return "channels or blending"
+        return "its pixels or blend mode changed"
     if b["name"] != (a["name"] if spec["name"] is None else spec["name"]):
-        return f"named {b['name']!r}"
+        return f"the saved file names it {b['name']!r}"
     if spec.get("remask"):                      # its raster and width new, its rows and settings the same
         box_a, box_b = a.get("mask_box") or (), b.get("mask_box") or ()
         if a.get("mask_norm") != b.get("mask_norm") or box_a[0:1] + box_a[2:3] != box_b[0:1] + box_b[2:3]:
-            return "mask"
+            return "its mask is not the one the edit drew"
     elif a.get("mask_norm") != b.get("mask_norm") or _moved_mask(a.get("mask_box"), *spec["mask"]) != b.get("mask_box"):
-        return "mask"
+        return "its mask is not where the edit put it"
     if sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y) != (1 if spec["flags"] else 0):
-        return "flags"
+        return ("the edit showed or hid it, but the saved file did not" if spec["flags"] else
+                "the saved file shows or hides it (or changed another layer flag), though the edit left it alone")
     before, after = dict(a["blocks"]), dict(b["blocks"])
     if any(after.get(key) != data for key, data in spec["blocks"].items()):
-        return "effect blocks not the declared ones"
+        return "its layer style is not the one the edit set"
     free = set(spec["blocks"]) | ({bytes(Tag.UNICODE_LAYER_NAME)} if spec["name"] is not None else set()) \
         | (MOVE_BLOCKS if dx or dy else set())
     changed = sorted(key.decode("latin-1") for key in set(before) | set(after)
                      if before.get(key) != after.get(key) and key not in free)
-    return f"blocks {', '.join(changed)}" if changed else None
+    return f"its {', '.join(changed)} data changed too" if changed else None
 
 
 def _text_index_only(a: dict, b: dict) -> Optional[str]:
