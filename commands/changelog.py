@@ -602,7 +602,8 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     One push's Discord message: titled title_of(), linked link_of(), one embed per section (SECTIONS order), the
     website's kind words, within Discord's limits (EMBEDS_MAX embeds, DESCRIPTION_MAX each, MESSAGE_MAX in all); what
     doesn't fit becomes "N more on the website". A baked card's new art is its bake line's "(PNG re-made)": no New art
-    line; its rename, the line's "(renamed from Old)": no Moved and renamed line (owner, 2026-11-11).
+    line; its rename, the line's "(renamed from Old)", and its move, a stars bake's "(moved to 4 Stars)": no Moved and
+    renamed line (owner, 2026-11-11).
 
     Returns:
         The webhook body, or None when there is nothing to post
@@ -610,13 +611,15 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
     if not group:
         return None
     baked = {e["card"] for e in group if e["kind"] == "baked"}
+    moved = {e["card"] for e in group if e["kind"] == "baked" and "(moved to " in (e.get("reason") or "")}
     was: dict = {}                                        # a baked card -> its old name
     for e in group:
         if e["kind"] == "renamed" and e.get("renamed_to") in baked:
             was.setdefault(e["renamed_to"], e["card"])
     group = [dict(e, renamed_from=was[e["card"]]) if e["kind"] == "baked" and e["card"] in was else e for e in group
              if not (e["kind"] == "art" and e["card"] in baked)
-             and not (e["kind"] == "renamed" and was.get(e.get("renamed_to")) == e["card"])]
+             and not (e["kind"] == "renamed" and was.get(e.get("renamed_to")) == e["card"])
+             and not (e["kind"] == "moved" and e["card"] in moved)]
     title, url = title_of(group), link_of(group, repository)
     embeds, total, hidden = [], len(title), 0
     for kinds, heading in SECTIONS:
