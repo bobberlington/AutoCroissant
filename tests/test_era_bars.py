@@ -62,6 +62,7 @@ def test_uniform_grid_and_two_creatures():
     got = eb.read_card(twin, lines, era="D2", title="TWIN PRINCES")
     assert got["two"] and {s: v["v"] for s, v in got["stats"].items()} == STATS
     assert {s: v["v"] for s, v in got["stats2"].items()} == {"hp": 2, "def": 4, "atk": 4, "spd": 6}
+    assert eb.group_of(eb.read_card(twin, lines, era="D2", title="PiX")) == "multi"     # three forms: never sure
 
 
 def test_raid_rows_of_twenty():

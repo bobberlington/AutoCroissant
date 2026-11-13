@@ -64,6 +64,7 @@ JPEG = (400, 70)                                    # the Discord-like copy of a
 CREATURE_ERAS = ("A", "B", "C", "D1", "D2", "D3", "R")
 TEMPLATE_FROM = "2022-06"                            # the 400x800 template's first post (era D1)
 ICONS = re_compile(r"satou|tainted\s*(keeper|lost)|hive\s*knight|minecraft\s*panda|tyler\s*zao")   # icon bars at times
+MULTI = re_compile(r"\bpix\b|computer\s*virus")      # three forms' colours in each row: one stat set can't say
 
 
 def log(text: str):
@@ -402,6 +403,12 @@ def confidence(st: dict) -> float:
     return round(0.5 * min(1.0, max(0.0, st.get("margin", 0.0) / MARGIN_FULL)) + 0.5 * agree, 3)
 
 
+def flags(title: str) -> dict:
+    """What a card's name (its OCR'd title, an old-repo card's own) says about its bars: icon rows, three forms."""
+    title = (title or "").lower()
+    return {**({"icons": True} if ICONS.search(title) else {}), **({"multi": True} if MULTI.search(title) else {})}
+
+
 def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional[str] = None, title: str = "") -> dict:
     """
     A card picture's era (era_of with rec's look, unless given) and the stats it prints by that era's readers:
@@ -424,7 +431,7 @@ def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional
     else:
         how = "given"
     twin = bool(TWINS.search((title or "").lower()))
-    out.update(era=era, era_how=how, labels=len(found), **({"icons": True} if ICONS.search((title or "").lower()) else {}))
+    out.update(era=era, era_how=how, labels=len(found), **flags(title))
     if era == "R":
         runs = {}
         runs["raid"], infos["raid"] = read_raid(arr, found)
@@ -696,8 +703,9 @@ def read_all(root: str, old_git: str, workers: int, only: Optional[str] = None):
 # calibrate
 # ========================
 def group_of(row: dict) -> Optional[str]:
-    """The calibration group of a read: two creatures, icon rows, else its era."""
-    return "two" if row.get("two") else "icons" if row.get("icons") else row.get("era")
+    """The calibration group of a read: three forms (no truth: never sure), two creatures, icon rows, else its era."""
+    return ("multi" if row.get("multi") else "two" if row.get("two") else "icons" if row.get("icons")
+            else row.get("era"))
 
 
 def row_key(row: dict) -> str:
@@ -805,7 +813,9 @@ def classes(rows: list, root: str) -> dict:
 def calibrate(root: str):
     base = join(root, *OUT)
     rows = [loads(line) for line in open(join(base, "reads.jsonl"))]
-    for r in rows:                                           # confidence by today's formula
+    for r in rows:                                           # confidence and an old-repo card's flags by today's rules
+        if r["src"] == "oldgit":
+            r.update(flags(r["card"]))
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
                 st["conf"] = confidence(st)
