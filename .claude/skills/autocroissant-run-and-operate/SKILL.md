@@ -912,6 +912,8 @@ row checked there by `pip freeze`), `--repo` in the guards' local check, the bak
 
 2026-11-12 (fork release): the fork tag today is `cards-20261112c` = 75264966.
 
+2026-11-12 (fork release): the fork tag today is `cards-20261112d` = 7a9d1beb.
+
 2026-11-11 (nocython): the deploy paragraph (requirements-bot.txt, leftover build files removed, always restarts, 47
 commands; OJWikibot builds while it has a setup.py), the no-toolchain rule (fork releases: no jetson
 action), /fonts from the manifest's fonts report, the handoff and /update without a build, the jetson-venv re-verify row.
