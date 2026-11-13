@@ -257,6 +257,12 @@ class Snapshot:
                     return number.group(1) + ".psd"
         return ""
 
+    def drawn_of(self, key: str, cards: Optional[dict] = None) -> str:
+        """The PSD a picture-only duplicate keyed like this card is a picture of (Gust of Trees -> Gust_of_Wind.psd, its
+        Card Edits.json dup_of), or ""."""
+        return next((psd for psd, pngs in self.dup_pictures(cards).items() for png in pngs
+                     if CardAuthors.key(card_name(png)) == key), "")
+
     def dup_pictures(self, cards: Optional[dict] = None) -> dict:
         """card_edits.dup_pictures of the tree: {PSD path: [picture-only duplicates]}; Card Edits.json read once (cards:
         its "cards", read already)."""
@@ -670,19 +676,20 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
     return cards
 
 
-def dup_entry(snapshot: Snapshot, key: str, wanted: dict, renames: bool = False, cards: Optional[dict] = None) -> tuple:
-    """(its PSD, its PNG) for a picture-only duplicate's entry with a name alone, no `_rename` (dup_view bakes it; select
-    and card_preview.resolve), else ("", "")."""
-    if set(wanted) != {"name"} or renames:
+def dup_entry(snapshot: Snapshot, key: str, wanted: dict, renames: bool = False, cards: Optional[dict] = None,
+              alone: bool = True) -> tuple:
+    """(its PSD, its PNG) for a picture-only duplicate's entry with a name alone, no `_rename` (dup_view bakes it; select),
+    else ("", ""); alone False: with any fields (card_preview.resolve: the website sends its PSD entry's too)."""
+    if (alone and set(wanted) != {"name"}) or not wanted or renames:
         return "", ""
     return next(((psd, png) for psd, pngs in snapshot.dup_pictures(cards).items() for png in pngs
                  if CardAuthors.key(card_name(png)) == key), ("", ""))
 
 
 def derived_picture(edits: CardEdits, snapshot: Snapshot, key: str, wanted: dict) -> bool:
-    """A numbered PNG's entry (A Snack2) holding only the derived name or ability of its PSD's part edits (PARTS_EDITOR.md
-    §3 Variants): the PSD's bake drops them with the parts; never baked on their own."""
-    original = snapshot.duplicate_of(key)
+    """A numbered PNG's or drawn duplicate's entry (A Snack2, Stubborn Queen) holding only the derived name or ability of
+    its PSD's part edits (PARTS_EDITOR.md §3 Variants): the PSD's bake drops them with the parts; never baked on their own."""
+    original = snapshot.duplicate_of(key) or snapshot.drawn_of(key, edits.cards)
     return bool(original) and set(wanted) <= {"name", "ability"} \
         and bool((edits.cards.get(CardAuthors.key(card_name(original))) or {}).get("parts"))
 
@@ -1127,7 +1134,6 @@ def verdict_of(verdicts: Optional[dict], key: str) -> Optional[dict]:
 
 MOVED = r"name: moved ([+-]\d+) px to stay on the card"
 OWN_TITLE = "name: picture {n} prints its own title: the name bakes alone next run"     # never final (bake_pictures)
-DUP_NAME = "a duplicate's name, printed on its picture too"     # kept in its entry (bake_card)
 ANCHOR = "title_moved"                          # a baked verdict's: the px its bake moved the title on
 
 
@@ -1384,6 +1390,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if original:
                 card.pngs = snapshot.pngs_key("", card.key)
                 raise Refused("duplicate", f"a numbered PNG exported from `{original}`")
+            original = snapshot.drawn_of(card.key)
+            if original:                        # its other fields go to its PSD's entry (the website's, as A Snack2's)
+                raise Refused("unsupported-card", f"a picture of `{original}`: its name alone bakes from here")
             raise Refused("unsupported-card", "no PSD in the card repo")
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png or duplicates:
@@ -1547,9 +1556,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 card.verdict[ANCHOR] = int(moved[len(moved) - 1])
         _relocate(card, folder)
         card.dropped = [f for f in list(card.jobs) + card.redundant if f not in ("parts", "colors")]   # a baked or printed name goes too
-        if card.dup and "name" in card.dropped and card.fields["name"] != card.name:
-            card.dropped.remove("name")         # but a duplicate's: only its entry names it (card_data, build_site)
-            card.site["name"] = DUP_NAME
         done = ("baked", "redundant") if "colors" in card.jobs and card.baked is not None else ("redundant",)
         card.colors_done = [one for one, how in card.colors if how in done]
         card.colors_kept = [one for one in card.fields.get("colors") or [] if one not in card.colors_done]

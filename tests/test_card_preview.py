@@ -179,9 +179,9 @@ def test_a_refused_edit_writes_its_reason_and_no_image(cards, tmp_path):
 
 
 def test_a_duplicates_name_takes_its_psd(cards, tmp_path):
-    """A picture-only duplicate's name edit (Breakfast.png, dup_of Mini Doomer) goes to its PSD as the bake's select()
-    sends it (dup_view: here no 'Breakfast #N' tag, so refused for that), its own PNG the preview's; with another field,
-    no PSD."""
+    """A picture-only duplicate's edit (Breakfast.png, dup_of Mini Doomer) goes to its PSD as its picture, as the bake's
+    select() sends its name (dup_view: here no 'Breakfast #N' tag, so refused for that), its own PNG the preview's; with
+    another field too (the website sends its PSD entry's: owner 11-13, a full picture 2)."""
     dup = "Auxiliary/Minions/Breakfast.png"
     (cards.repo / dup).write_bytes(cards.files[DOOMER_PNG])
     (cards.repo / cb.EDITS_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -191,7 +191,7 @@ def test_a_duplicates_name_takes_its_psd(cards, tmp_path):
     assert code == 0 and (result["state"], result["path"], result["png"], result["card"]) == ("refused", DOOMER, dup, "Breakfast")
     assert result["reason"].startswith("unsupported-card: no picture of Mini_Doomer.psd tagged 'Breakfast #N' prints Breakfast.png")
     code, result, _ = _preview(cards, tmp_path, {"name": "Second Breakfast", "hp": 3}, card="Breakfast", name="two")
-    assert (result["state"], result["path"], result["reason"]) == ("refused", "", "unsupported-card: no PSD in the card repo")
+    assert (result["state"], result["path"], result["png"]) == ("refused", DOOMER, dup) and "'Breakfast #N'" in result["reason"]
 
 
 BAD_INPUT_IS_AN_ERROR_TO_FIX_NOT_TO_RETRY_CASES = [

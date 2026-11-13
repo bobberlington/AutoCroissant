@@ -912,12 +912,12 @@ def test_a_waiting_name_bakes_alone_once_the_rest_is_refused(github, clone, tmp_
 
 def test_a_duplicates_name_bakes_into_its_picture_alone(github, clone, tmp_path):
     """Owner 11-13: a duplicate's entry (Breakfast, its picture tagged 'Breakfast #2') bakes its name into Name #2 and
-    Breakfast.png alone, under its own key; beside its PSD's entry's bake it waits a run (one card per file). The name
-    stays in its entry, website only: only it names the duplicate (card_data, build_site)."""
+    Breakfast.png alone, under its own key; beside its PSD's entry's bake it waits a run (one card per file). Baked, the
+    name leaves its entry: the data names the picture by its printed title (card_data: a full picture 2)."""
     from psd_tools import PSDImage
     rel, stem, dup = _drawn_snack(github, clone, tmp_path, {"name": "A Snacks"},
                                   {"name": "Second Breakfast", "_by": "web", "_at": AT})
-    for changed, site, waits in (([stem + ".png"], None, ["Breakfast"]), ([dup], ["name"], [])):
+    for changed, left, waits in (([stem + ".png"], {"name": "Second Breakfast"}, ["Breakfast"]), ([dup], {}, [])):
         before = github.files_at(github.head)
         text, commits = cb.run()
         assert len(commits) == 1, text
@@ -925,11 +925,30 @@ def test_a_duplicates_name_bakes_into_its_picture_alone(github, clone, tmp_path)
         assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
         cards = _edits_at(github)["cards"]
         assert "A Snack" not in cards and {k: v for k, v in cards["Breakfast"].items() if not k.startswith("_")} \
-            == {"name": "Second Breakfast", "dup_of": "A Snack"} and cards["Breakfast"].get("_site") == site, text
+            == {**left, "dup_of": "A Snack"} and "_site" not in cards["Breakfast"], text
         assert cb.pending() == waits
     new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(after[rel])).descendants()}
     assert new[1023].text.startswith("Second") and new[1023].name == "Name #2"
     assert _verdict("Breakfast")["state"] == "baked"
+
+
+def test_a_drawn_duplicates_derived_name_goes_with_its_psds_part(github, clone, tmp_path):
+    """Owner 11-13 (a full picture 2): its title box edit lives in its PSD's entry, its derived name in its own (as A
+    Snack2's); the PSD's bake writes Breakfast.png alone and takes both out; the derived name never bakes on its own."""
+    part = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8")) \
+        ["cards"]["A Snack"]["parts"]["1023"]
+    rel, _, dup = _drawn_snack(github, clone, tmp_path, {"parts": {"1023": part}},
+                               {"name": "Second Breakfast", "_by": "web", "_at": AT})
+    before = github.files_at(github.head)
+    assert [c.key for c in cb.select(cb.CardEdits.parse(before[cb.EDITS_PATH].decode()),
+                                     cb.local_snapshot(cb.CARD_REPO, str(github.clone)))] == ["a snack"]
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    after = github.files_at(github.head)
+    assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, dup]), text
+    assert {k: {f: v for f, v in e.items() if not f.startswith("_")} for k, e in _edits_at(github)["cards"].items()} \
+        == {"Breakfast": {"dup_of": "A Snack"}}, text
+    assert cb.pending() == [] and _verdict("Breakfast") is None
 
 
 def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):

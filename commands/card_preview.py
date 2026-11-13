@@ -123,7 +123,8 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     The card the bake would take for this edit: one of the bake's card PSDs by path (any case; Snapshot.psds: no
     EXCLUDE_FOLDERS PSD, and of two PSDs with one key the one the bake takes), else a name matched like the edits file's
     keys (CardAuthors.key of the file stem; the website's card key). A name without a PSD keeps rel "" (the bake refuses
-    it: duplicate or unsupported-card), but a picture-only duplicate's name alone takes its PSD, as select() does.
+    it: duplicate or unsupported-card), but a picture-only duplicate's edit takes its PSD as its picture (dup_view), as
+    select() does for its name (the website sends its PSD entry's fields with it, as for A Snack2).
 
     Raises:
         BadInput: a path ending in .psd that is none of the bake's cards
@@ -141,7 +142,7 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     if view is not None:                        # a picture of a PSD with variant tags: the PSD, baked as that picture
         rel, view = view
         key = CardAuthors.key(card_name(rel))
-    rel, dup = (rel, "") if rel else card_bake.dup_entry(snapshot, key, psd_fields(fields))
+    rel, dup = (rel, "") if rel else card_bake.dup_entry(snapshot, key, psd_fields(fields), alone=False)
     name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
     return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                 view=view, dup=dup)
