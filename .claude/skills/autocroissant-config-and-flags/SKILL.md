@@ -595,7 +595,7 @@ Re-pin:
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers).
 4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c` and `cards-20261112d`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c`, `cards-20261112d` and `cards-20261113`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
@@ -802,6 +802,7 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-11-12 (fork release): the fork's version list runs to `cards-20261112b`.
 2026-11-12 (fork release): the fork's version list runs to `cards-20261112c`; re-pin step 3 without `test_card_bake.py -k "fork or 314"` (it selected nothing); step 2 on TTSCardMaker's `--uploaded-prior-to`.
 2026-11-12 (fork release): the fork's version list runs to `cards-20261112d`.
+2026-11-13 (fork release): the fork's version list runs to `cards-20261113`.
 
 2026-11-11 (docs check): `ADD_ABILITY_LIVE` True; `PARSER_VERSION` 7 and its card_data.py citations; setup.py table without `EXCLUDE_FILES` (10 compiled modules).
 
