@@ -396,3 +396,23 @@ def test_link_notes_word_the_links_against_the_tree():
     assert cc.link_notes("X/C.psd", "c0", links, sha, alike, record) == []
     tree["MDW/Linked/gone.png"] = "g1"
     assert len(cc.link_notes("X/C.psd", "c1", links, sha, alike, record)) == 2
+
+
+def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
+    """The stat notes as TTSCardMaker's mockup.js handStats reads them (those stats aren't drawn); old bars name none."""
+    mockup = SITE_SRC / "site" / "assets" / "mockup.js"
+    if not mockup.is_file():
+        pytest.skip(f"no {mockup}")
+    monkeypatch.setattr(cc.psd_edit, "stat_caps", lambda psd: None)
+    monkeypatch.setattr(cc, "stat_rows", lambda psd: dict.fromkeys(cc.STAT_ORDER, [([], [], None)]))
+    monkeypatch.setattr(cc, "_real_bake", lambda ctx, rel, fields, png: ("refused", "unsupported-card: 'Health': x", None))
+    notes = [*cc._stat_notes(None, "C.psd", None, {"card": dict.fromkeys(cc.STAT_ORDER, 3)}, "few", None),
+             cc.NO_CHANGE_NOTE.format("Stat", "raises"), cc.NO_CHANGE_NOTE.format("HP and DEF", "edits"),
+             cc.OLD_NOTE + " " + cc.SWAP_NOTE.format("ATK and SPD"), cc.BRIGHT_NOTE, cc.OLD_NOTE]
+    script = tmp_path / "probe.mjs"
+    script.write_text(f"const m = await import({json.dumps(mockup.as_uri())});\nconsole.log(JSON.stringify("
+                      f"{json.dumps(notes)}.map(hand => m.handStats({{ checks: {{ hand }} }}))));\n", encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True)
+    every = ["hp", "def", "atk", "spd"]
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [every, every, ["hp", "def"], ["atk", "spd"], every, []]

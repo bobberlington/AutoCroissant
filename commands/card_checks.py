@@ -92,6 +92,7 @@ PIXEL_MOVED = 24                            # a pixel counts as changed past thi
 MAX_STARS = 7                               # the census's: a star added up to here
 # the notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
+# these and _note's "Stat edits need Photoshop": TC site/assets/mockup.js HAND_STATS reads them (keep in step)
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
