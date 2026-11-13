@@ -52,7 +52,7 @@ AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
             "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned",
-            "morgue")                                    # populate_files builds aside, swaps in
+            "morgue", "thumb_tag")                       # populate_files builds aside, swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 UNFINISHED = "MDW/Unfinished/"                           # cards not finished: not in play
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
@@ -141,6 +141,7 @@ class CardRepository:
         self.banlist: dict = {}                          # the website's Constructed ban list (cards.json)
         self.banned: dict[str, str] = {}                 # website card id -> ban reason (duplicate pictures too)
         self.morgue: dict[str, Optional[float]] = {}     # retired cards (cards.json morgue): png path -> retired stamp
+        self.thumb_tag = ""                              # cards.json thumbs["360"]: the website's card pictures (grids)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
@@ -754,6 +755,7 @@ class CardRepository:
             reply.raise_for_status()
             body = reply.json()
             cards, morgue, banlist = body.get("cards", []), body.get("morgue") or [], body.get("banlist") or {}
+            tag = str((body.get("thumbs") or {}).get("360") or "")
             banned = {e["id"]: e.get("reason") or "" for g in banlist.get("groups") or [] for e in g.get("entries") or []
                       if e.get("id")}
             for c in cards:                                      # a duplicate picture: its card's ban (app.js derive)
@@ -768,6 +770,7 @@ class CardRepository:
             if c.get("png"):
                 ids.setdefault(basename(c["png"]).lower(), (c["id"], c.get("color") or ""))
         self.site_ids, self.morgue = ids, {c["png"]: c.get("retired") for c in morgue if c.get("png")}
+        self.thumb_tag = tag
         self.banlist, self.banned = banlist, banned
 
     def site_url(self, filename: str) -> Optional[str]:
@@ -1345,17 +1348,17 @@ def post_grids(interaction: Interaction, names: list, first: str, last: str, lin
     message per PER_GRID cards instead of one per card. first heads the first message, last ends the last (with links).
     labels: what each card is listed as (its printed title), else its name.
     """
-    from commands.card_grid import PER_GRID, grids, prune
+    from commands.card_grid import PER_GRID, THUMB_W, grids, prune
 
-    cards, lines = [], []
+    cards, lines, tag = [], [], card_repo.thumb_tag
     for number, (name, label) in enumerate(zip(names, labels or names), 1):
         key = card_repo._normalize_card_name(name)
         path = card_repo.git_files.get(key) or card_repo.git_files.get(key.replace("_", " "))
         page = card_repo.site_url(key)
         blob = card_repo.blobs.get(path, "") if path else ""
-        if blob and not pinned_ref(card_repo.repository, path, blob):
-            blob = ""                                    # a branch link can lag (CDN): fetched, not cached
-        cards.append((f"{number}. {label}", card_repo.get_card_url(name) if path else None, blob))
+        thumb = f"{SITE_URL}/thumbs/{blob[:16]}-{THUMB_W}-{tag}.avif" if blob and tag else ""
+        pinned = bool(blob and pinned_ref(card_repo.repository, path, blob))   # a branch link can lag (CDN): not cached
+        cards.append((f"{number}. {label}", card_repo.get_card_url(name) if path else None, blob, thumb, pinned))
         shown = escape_markdown(label).replace("[", "(").replace("]", ")")
         lines.append(f"**{number}.** [{shown}](<{page}>)" if page else f"**{number}.** {shown}")
     for at, image in enumerate(grids(cards)):

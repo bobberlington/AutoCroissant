@@ -1,7 +1,7 @@
 """
 Card grids: many cards' pictures as a few composite images, each card numbered and named under it (Discord previews
-only a few image links per message). Card pictures come from their raw image links, downloaded once per PNG blob and
-kept small in CACHE_DIR. Runs in worker threads; no Discord here.
+only a few image links per message). Card pictures come from the website's 360 px thumbs (named by PNG blob), else their
+raw image links, downloaded once per PNG blob and kept small in CACHE_DIR. Runs in worker threads; no Discord here.
 """
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -9,7 +9,7 @@ from os import getpid, listdir, makedirs, remove, replace
 from os.path import isfile, join
 from typing import Optional
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 from requests import get
 
 # ========================
@@ -23,6 +23,8 @@ BACKGROUND, TEXT = (43, 45, 49), (242, 243, 245)        # Discord's dark theme
 QUALITY = 88                                             # grid JPEG (4:4:4, so card text stays sharp)
 CACHE_DIR = "card_images"                                # gitignored: <blob>.jpg, each card at CARD_W
 POOL = 4                                                 # parallel downloads
+THUMB_W = 360                                            # the website's thumbs/<blob16>-360-<tag>.avif
+AVIF = features.check("avif")                            # Pillow reads them: else raw PNGs only
 
 
 FONT = ImageFont.load_default(FONT_SIZE)                # FreeType's scalable default
@@ -31,8 +33,11 @@ FONT = ImageFont.load_default(FONT_SIZE)                # FreeType's scalable de
 # ========================
 # Card pictures
 # ========================
-def picture(url: Optional[str], blob: str = "") -> Optional[Image.Image]:
-    """A card's picture at CARD_W: from the cache by its PNG blob, else downloaded (and cached). None if unavailable."""
+def picture(url: Optional[str], blob: str = "", thumb: str = "", pinned: bool = True) -> Optional[Image.Image]:
+    """
+    A card's picture at CARD_W: from the cache by its PNG blob, else the website's thumb, else the PNG at url (cached).
+    None if unavailable. pinned: url is commit-pinned; a branch link can lag (CDN), so its picture is not cached.
+    """
     path = join(CACHE_DIR, f"{blob}.jpg") if blob else ""
     if path and isfile(path):
         try:
@@ -40,17 +45,13 @@ def picture(url: Optional[str], blob: str = "") -> Optional[Image.Image]:
                 return cached.convert("RGB")
         except OSError:
             pass                                         # a bad file: fetched again
-    if not url:
+    small = _fetch(thumb, 10) if thumb and AVIF else None   # named by blob: always cached
+    keep = small is not None or pinned
+    if small is None and url:
+        small = _fetch(url, 30)
+    if small is None:
         return None
-    try:
-        reply = get(url, timeout=30)
-        reply.raise_for_status()
-        with Image.open(BytesIO(reply.content)) as full:
-            small = _shrink(full)
-    except Exception as e:
-        print(f"Card grid: no picture from {url}: {type(e).__name__}: {e}")
-        return None
-    if path:
+    if path and keep:
         try:
             makedirs(CACHE_DIR, exist_ok=True)
             tmp = f"{path}.{getpid()}.tmp"
@@ -59,6 +60,18 @@ def picture(url: Optional[str], blob: str = "") -> Optional[Image.Image]:
         except OSError as e:
             print(f"Card grid: not cached ({e})")
     return small
+
+
+def _fetch(url: str, timeout: float) -> Optional[Image.Image]:
+    """The picture at url, shrunk; None on any failure (logged)."""
+    try:
+        reply = get(url, timeout=timeout)
+        reply.raise_for_status()
+        with Image.open(BytesIO(reply.content)) as full:
+            return _shrink(full)
+    except Exception as e:
+        print(f"Card grid: no picture from {url}: {type(e).__name__}: {e}")
+        return None
 
 
 def _shrink(image: Image.Image) -> Image.Image:
@@ -136,15 +149,15 @@ def grids(cards: list):
     Grid images, PER_GRID cards each, yielded as each is ready (pictures downloaded POOL at a time, in order).
 
     Args:
-        cards: (label, image url or None, PNG blob or "")
+        cards: (label, image url or None, PNG blob or "", website thumb url or "", url commit-pinned)
 
     Yields:
         JPEG bytes per grid
     """
     with ThreadPoolExecutor(POOL) as pool:
-        pictures = pool.map(lambda card: picture(card[1], card[2]), cards)
+        pictures = pool.map(lambda card: picture(*card[1:]), cards)
         chunk = []
-        for (label, _, _), pic in zip(cards, pictures):
+        for (label, *_), pic in zip(cards, pictures):
             chunk.append((label, pic))
             if len(chunk) == PER_GRID:
                 yield render(chunk)
