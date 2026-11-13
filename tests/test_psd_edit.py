@@ -2137,6 +2137,28 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(text)
 
 
+def test_a_line_below_its_box_grows_the_box(clone, parser, chart, tmp_path, monkeypatch):
+    """r22: a status added to Keelhaul Key's Ability lays its last line below the box; the PNG shows it, Photoshop hides
+    it when it lays the text out again. The box grows down to hold it (hold_lines), through every gate, pixels kept."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    rel = "Field/1 Stars/Keelhaul Key.psd"
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) \
+        + " Attacks inflict 1 Blazing."
+    (tmp_path / "grown").mkdir()
+    (tmp_path / "plain").mkdir()
+    baked = _bake(clone, parser, rel, {"ability": text}, tmp_path / "grown", chart)[1]
+    monkeypatch.setattr(pe, "hold_lines", lambda layer, fonts: 0)
+    plain = _bake(clone, parser, rel, {"ability": text}, tmp_path / "plain", chart)[1]
+    was, now = (TextModel.from_layer(pe.ability_layer(PSDImage.open(b.psd_path))) for b in (plain, baked))
+    fonts = pe.layout_fonts(str(clone / pe.FONTS_DIR))
+    last = lambda model: max(line.y for line in layout(model, fonts).lines if line.text.strip())
+    assert last(was) > was.box[3] and last(now) < now.box[3]
+    assert now.box[:3] == was.box[:3] and now.transform == was.transform
+    assert Path(baked.png_path).read_bytes() == Path(plain.png_path).read_bytes()
+    flagged(baked.fx_notes, r"^overflow: ability: its box \d+ px taller")
+
+
 def test_tab_stops_bake(clone, parser, chart, tmp_path):
     """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows
     Michael's Blessing's tabs as spaces: they stay tabs, and an edited tabbed line keeps its '->' column (it collapsed,
