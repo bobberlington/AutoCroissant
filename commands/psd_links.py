@@ -51,6 +51,7 @@ from threading import Thread
 from time import time
 from typing import Callable, Optional
 from uuid import NAMESPACE_URL, uuid5
+from weakref import ref as weakref
 
 import numpy as np
 from PIL import Image
@@ -556,47 +557,66 @@ def _kernel(mode: int, scale: float, reduce: bool) -> tuple:
 
 
 def _taps(start: int, count: int, edge0: float, edge1: float, size: int, mode: int, reduce: bool) -> tuple:
-    """Output pixels start .. start + count - 1 of a quad side [edge0, edge1] over size source pixels: (source index
-    and weight arrays, (count, taps): edges clamped, rows summing to 1; each pixel's coverage by the side)."""
+    """Output pixels start .. start + count - 1 of a quad side [edge0, edge1] over size source pixels: (their weights,
+    a sparse (count, size) float32 matrix: edges clamped, rows summing to 1; each pixel's coverage by the side)."""
+    from scipy.sparse import csr_matrix
     scale = (edge1 - edge0) / size
     x = start + np.arange(count, dtype=np.float64)
     cover = np.clip(np.minimum(x + 1, edge1) - np.maximum(x, edge0), 0.0, 1.0)
     u = (x + 0.5 - edge0) / scale                # source position, pixel corners at whole numbers
     if mode == PS_NEAREST or (abs(scale - 1) < 1e-6 and abs(edge0 - round(edge0)) < 1e-6):
         index = np.clip(np.floor(u).astype(int), 0, size - 1)[:, None]
-        return index, np.ones(index.shape), cover
-    kernel, support = _kernel(mode, scale, reduce)
-    shrink = min(scale, 1.0)
-    reach = int(np.ceil(support / shrink)) + 1
-    index = np.floor(u - 0.5).astype(int)[:, None] + np.arange(-reach, reach + 2)[None, :]
-    weight = kernel((index + 0.5 - u[:, None]) * shrink)
-    total = weight.sum(1, keepdims=True)
-    return np.clip(index, 0, size - 1), weight / np.where(np.abs(total) > 1e-12, total, 1.0), cover
+        weight = np.ones(index.shape)
+    else:
+        kernel, support = _kernel(mode, scale, reduce)
+        shrink = min(scale, 1.0)
+        reach = int(np.ceil(support / shrink)) + 1
+        index = np.floor(u - 0.5).astype(int)[:, None] + np.arange(-reach, reach + 2)[None, :]
+        weight = kernel((index + 0.5 - u[:, None]) * shrink)
+        total = weight.sum(1, keepdims=True)
+        index, weight = np.clip(index, 0, size - 1), weight / np.where(np.abs(total) > 1e-12, total, 1.0)
+    rows = np.repeat(np.arange(count), index.shape[1])
+    return csr_matrix((weight.ravel().astype(np.float32), (rows, index.ravel())), shape=(count, size)), cover
 
 
-def _ps_resample(src: np.ndarray, corners: list, mode: int) -> tuple:
-    """Straight RGBA on an upright quad as Photoshop 2023 draws a placed layer (effectsgaps 11-13, its probes): colour
-    and alpha apart, a clear pixel taking the nearest inked one's colour, across, clipped, then down; Automatic sharper
-    when the quad is smaller than the picture, else smoother. Returns (premultiplied RGBA, the quad's edge coverage in
-    alpha; canvas box)."""
+_FILLED: dict = {}      # id(picture) -> (its weakref, _filled's pixels)
+
+
+def _filled(rgba: np.ndarray) -> np.ndarray:
+    """A picture's float pixels, a clear one taking the nearest inked one's colour (Photoshop ignores clear pixels'
+    RGB). Made once per picture array (never changed in place): image_mode's modes and every layer drawing it share
+    it."""
+    key = id(rgba)
+    hit = _FILLED.get(key)
+    if hit is not None and hit[0]() is rgba:
+        return hit[1]
+    src = rgba.astype(np.float32) / 255.0
     clear = src[..., 3] <= 0
     if clear.any() and not clear.all():
         from scipy.ndimage import distance_transform_edt
         rows, cols = distance_transform_edt(clear, return_distances=False, return_indices=True)
-        src = np.dstack([src[rows, cols, :3], src[..., 3:]])
+        src[..., :3] = src[rows, cols, :3]
+    _FILLED[key] = (weakref(rgba, lambda _, key=key: _FILLED.pop(key, None)), src)
+    return src
+
+
+def _ps_resample(rgba: np.ndarray, corners: list, mode: int) -> tuple:
+    """A picture (uint8 RGBA) on an upright quad as Photoshop 2023 draws a placed layer (effectsgaps 11-13, its probes):
+    colour and alpha apart, a clear pixel taking the nearest inked one's colour, across, clipped, then down; Automatic
+    sharper when the quad is smaller than the picture, else smoother. Returns (premultiplied RGBA, the quad's edge
+    coverage in alpha; canvas box)."""
+    src = _filled(rgba)
     height, width = src.shape[:2]
     left, top, right, bottom = corners[0], corners[1], corners[2], corners[5]
     reduce = (right - left) * (bottom - top) < width * height
     x0, y0, x1, y1 = int(np.floor(left)), int(np.floor(top)), int(np.ceil(right)), int(np.ceil(bottom))
-    xi, xw, xc = _taps(x0, x1 - x0, left, right, width, mode, reduce)
-    yi, yw, yc = _taps(y0, y1 - y0, top, bottom, height, mode, reduce)
-    across = np.zeros((height, x1 - x0, 4), np.float32)
-    for k in range(xi.shape[1]):
-        across += src[:, xi[:, k]] * xw[:, k, None].astype(np.float32)
+    wx, xc = _taps(x0, x1 - x0, left, right, width, mode, reduce)
+    wy, yc = _taps(y0, y1 - y0, top, bottom, height, mode, reduce)
+    across = np.empty((height, x1 - x0, 4), np.float32)
+    for k in range(4):
+        across[..., k] = src[..., k] @ wx.T
     np.clip(across, 0.0, 1.0, out=across)
-    out = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
-    for k in range(yi.shape[1]):
-        out += across[yi[:, k]] * yw[:, k, None, None].astype(np.float32)
+    out = np.asarray(wy @ across.reshape(height, -1), np.float32).reshape(y1 - y0, x1 - x0, 4)
     np.clip(out, 0.0, 1.0, out=out)
     out[..., :3] *= out[..., 3:]
     out *= (yc[:, None] * xc[None, :]).astype(np.float32)[..., None]
@@ -614,19 +634,19 @@ def draw(rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     if mode >= PS_NEAREST and not upright(corners):
         mode = Image.NEAREST if mode == PS_NEAREST else Image.BICUBIC
-    src = rgba.astype(np.float32) / 255.0
-    pre = np.dstack([src[..., :3] * src[..., 3:], src[..., 3]])
-    height, width = pre.shape[:2]
+    height, width = rgba.shape[:2]
     xs, ys = corners[0::2], corners[1::2]
     x0, y0, x1, y1 = int(np.floor(min(xs))), int(np.floor(min(ys))), int(np.ceil(max(xs))), int(np.ceil(max(ys)))
     if x1 <= x0 or y1 <= y0:
         return None, (0, 0, 0, 0)
-    size = (x1 - x0, y1 - y0)
-    sx, sy = (corners[2] - corners[0]) / width, (corners[5] - corners[1]) / height
-    margin = 8 + (int(np.ceil(max(1 / abs(sx), 1 / abs(sy)))) if upright(corners) else 0)
     if mode >= PS_NEAREST:
-        out, (x0, y0, _, _) = _ps_resample(src, corners, mode)
+        out, (x0, y0, _, _) = _ps_resample(rgba, corners, mode)
     else:
+        src = rgba.astype(np.float32) / 255.0
+        pre = np.dstack([src[..., :3] * src[..., 3:], src[..., 3]])
+        size = (x1 - x0, y1 - y0)
+        sx, sy = (corners[2] - corners[0]) / width, (corners[5] - corners[1]) / height
+        margin = 8 + (int(np.ceil(max(1 / abs(sx), 1 / abs(sy)))) if upright(corners) else 0)
         padded = np.zeros((height + 2 * margin, width + 2 * margin, 4), np.float32)
         padded[margin:margin + height, margin:margin + width] = pre
         if upright(corners):
@@ -643,12 +663,14 @@ def draw(rgba: np.ndarray, corners: list, mode: int) -> tuple:
             out = np.dstack([np.asarray(Image.fromarray(np.ascontiguousarray(padded[..., k]), "F").transform(
                 size, Image.Transform.PERSPECTIVE, coeffs, mode)) for k in range(4)])
     alpha = np.clip(out[..., 3], 0.0, 1.0)
-    rgb = np.where(alpha[..., None] > 0, np.clip(out[..., :3], 0.0, None) / np.maximum(alpha, 1e-6)[..., None], 0.0)
-    ys_, xs_ = np.nonzero(np.round(alpha * 255) > 0)
-    if not len(xs_):
+    shown = np.round(alpha * 255) > 0
+    rows, cols = np.flatnonzero(shown.any(1)), np.flatnonzero(shown.any(0))
+    if not len(cols):
         return None, (0, 0, 0, 0)
-    c0, c1, r0, r1 = int(xs_.min()), int(xs_.max()) + 1, int(ys_.min()), int(ys_.max()) + 1
-    straight = np.dstack([np.clip(rgb, 0.0, 1.0), alpha])[r0:r1, c0:c1].astype(np.float32)
+    c0, c1, r0, r1 = int(cols[0]), int(cols[-1]) + 1, int(rows[0]), int(rows[-1]) + 1
+    out, alpha = out[r0:r1, c0:c1], alpha[r0:r1, c0:c1]
+    rgb = np.where(alpha[..., None] > 0, np.clip(out[..., :3], 0.0, None) / np.maximum(alpha, 1e-6)[..., None], 0.0)
+    straight = np.dstack([np.clip(rgb, 0.0, 1.0), alpha]).astype(np.float32)
     return straight, (x0 + c0, y0 + r0, x0 + c1, y0 + r1)
 
 
@@ -1204,7 +1226,7 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
             out.left.append((uid, f"{path} changed since the catalogue"))   # no new size over an old raster (5.1)
             continue
         if cls in (INK, REDRAW):
-            old, new = decode(data, kind), decode(target, file_type(target, path))
+            (old, old_icc), (new, new_icc) = _decoded(data, kind), _decoded(target, file_type(target, path))
             if cls == INK and old is not None and new is not None and ink_key(old) != ink_key(new):
                 out.left.append((uid, f"{path} changed since the catalogue"))
                 continue
@@ -1221,10 +1243,11 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
             pixels = None
             if quads is not None:
                 pixels = (new.shape[1], new.shape[0])
-                drawn = picture(psd, target, file_type(target, path)) if cls == REDRAW else None
+                drawn = in_document(psd, new, new_icc) if cls == REDRAW else None
+                was = in_document(psd, old, old_icc) if cls == REDRAW and old is not None else None    # card colours
                 for layer, corners in zip(layers, quads):
                     if cls == REDRAW:
-                        redraw(layer, drawn, corners, image_mode(layer, old, relink=True))
+                        redraw(layer, drawn, corners, image_mode(layer, was, relink=True))
                         out.redrawn.append(layer.name)
                 quads = {tuple(corners_of(layer)): corners for layer, corners in zip(layers, quads)}
         else:
@@ -1548,12 +1571,12 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         old_blob = ours or next((b for b, size in known.items() if size == link.size and b != blob), None)
         old = read_blob(old_blob) if old_blob else None
         kind = file_type(new, link.path)
-        new_rgba = decode(new, kind)
+        new_rgba, new_icc = _decoded(new, kind)
         layers = _layers_of(psd, link.uuid)
         if new_rgba is None:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why="it is no picture"))
             continue
-        old_rgba = decode(old, file_type(old, link.path)) if old is not None else None
+        old_rgba, old_icc = _decoded(old, file_type(old, link.path)) if old is not None else (None, None)
         size = (new_rgba.shape[1], new_rgba.shape[0])
         same = old_rgba is not None and old_rgba.shape == new_rgba.shape and np.array_equal(old_rgba, new_rgba)
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
@@ -1561,7 +1584,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
             continue
-        drawn = picture(psd, new, kind) if not same and not trim else None
+        drawn = in_document(psd, new_rgba, new_icc) if not same and not trim else None
+        was = None if drawn is None or old_rgba is None else in_document(psd, old_rgba, old_icc)    # card colours
         quads = {}
         for layer in layers:
             corners, (w0, h0) = corners_of(layer), _size_of(layer)
@@ -1573,7 +1597,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
                 dx, dy = (size[0] - w0) / 2, (size[1] - h0) / 2
                 quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
                 quads[tuple(corners)] = quad = snapped(quad) if upright(quad) and (dx or dy) else quad  # same size: kept
-                redraw(layer, drawn, quad, image_mode(layer, old_rgba, relink=bool(dx or dy)))
+                redraw(layer, drawn, quad, image_mode(layer, was, relink=bool(dx or dy)))
                 pixels = True
         relink(psd, link.uuid, rel, link.path, len(new), blob, quads, size)
         set_ppi(layers, ppi(new, link.path))    # Photoshop's Update keeps the quad only at the file's ppi

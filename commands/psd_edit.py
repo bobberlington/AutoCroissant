@@ -54,8 +54,8 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
 from commands.psd_parser import AUX_ITEM_TYPES, FRAME_SHARE, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands import psd_links
-from commands.psd_links import (PS_AUTO, PS_BICUBIC, PS_BILINEAR, PS_NEAREST, corners_of, decode, draw, file_type,
-                                 link_pixels, undrawable, warped)
+from commands.psd_links import (PS_AUTO, PS_BICUBIC, PS_BILINEAR, PS_NEAREST, corners_of, draw, file_type, link_pixels,
+                                 picture, undrawable, warped)
 from commands.psd_parts import ACTIVE_TEMPLATE, TEMPLATE_DIR, TEMPLATES, lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
@@ -122,7 +122,8 @@ HARD_COLOURS = 256          # its colours at most
 HARD_SMALL = 128            # px: its pixels show at this size; a larger one must be blocky
 HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
 HARD_CLEAR = 4              # stored_mode: times closer one mode must redraw the stored pixels
-IMAGE_CLEAR = 2             # image_mode: times fewer pixels one mode must leave off the stored ones
+IMAGE_CLEAR = 2             # image_mode: times fewer pixels nearest must leave off the stored ones than any other mode
+NEAREST_CLEAR = 1.1        # ...in a same-size redraw (near ties, PoD05 Lead Bloon 1.004: smooth)
 GLYPH_TOL = 0.0001          # a restyled text layer's glyphs within this of where they were draw nothing new (canvas px)
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
@@ -3489,40 +3490,47 @@ def stored_mode(layer) -> Optional[int]:
 def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) -> int:
     """
     The resampling a placed picture (any image smart object; a bar's is stored_mode) is drawn again with: one of
-    Photoshop 2023's (psd_links PS_ modes; its relink and Update draw with the Image Interpolation preference). The mode
-    its stored pixels show, when one redraws `drawn` (the picture they were drawn from: by default the embedded one) on
-    the layer's quad with IMAGE_CLEAR times fewer canvas pixels off by over 8 levels than every other (a relink, a file
-    of another size, takes only nearest so: the maker's Photoshop draws nearest); else Photoshop's default, Bicubic
-    Automatic (143 of 288 relinked layers stored it, 60 nearest; effectsgaps 11-13).
+    Photoshop 2023's (psd_links PS_ modes; its relink and Update draw with the Image Interpolation preference), scored
+    by the canvas pixels over 8 levels off its stored ones when it redraws `drawn` (the picture they were drawn from, in
+    the card's colours as psd_links.picture gives it; by default the embedded one) on the layer's quad. Nearest when
+    NEAREST_CLEAR times better than every other (the maker's Photoshop draws nearest); else, the same size, the best
+    smooth one (a tie: Photoshop's default), so the stored look stays. A relink (a file of another size): nearest when
+    IMAGE_CLEAR times better, else Photoshop's default, Bicubic Automatic (143 of 288 relinked layers stored it, 60
+    nearest; effectsgaps 11-13).
     """
     stored = layer.numpy()
     if drawn is None and layer.smart_object.kind == "data":
         data = layer.smart_object.data
-        drawn = decode(data, file_type(data, layer.smart_object.filename))
+        drawn = picture(layer._psd, data, file_type(data, layer.smart_object.filename))
     corners = corners_of(layer)
     errors = {}
     if drawn is not None and stored is not None and stored.shape[2] >= 4 and len(corners) == 8:
-        width, height = layer._psd.width, layer._psd.height
+        xs, ys = corners[0::2], corners[1::2]       # on the canvas, around the stored pixels and every drawing
+        ax0, ay0, ax1, ay1 = union_box([tuple(layer.bbox), (int(np.floor(min(xs))), int(np.floor(min(ys))),
+                                                            int(np.ceil(max(xs))), int(np.ceil(max(ys))))])
+        ax0, ay0 = max(ax0, 0), max(ay0, 0)
+        ax1, ay1 = max(min(ax1, layer._psd.width), ax0), max(min(ay1, layer._psd.height), ay0)
 
-        def on_canvas(rgba: np.ndarray, box: tuple) -> np.ndarray:
-            out = np.zeros((height, width, 4), np.float32)
-            x0, y0, x1, y1 = max(box[0], 0), max(box[1], 0), min(box[2], width), min(box[3], height)
+        def plane(rgba: np.ndarray, box: tuple) -> np.ndarray:
+            out = np.zeros((ay1 - ay0, ax1 - ax0, 4), np.float32)
+            x0, y0, x1, y1 = max(box[0], ax0), max(box[1], ay0), min(box[2], ax1), min(box[3], ay1)
             if x1 > x0 and y1 > y0:
                 part = rgba[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]
-                out[y0:y1, x0:x1] = np.dstack([part[..., :3] * part[..., 3:4], part[..., 3:4]])
+                out[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] = np.dstack([part[..., :3] * part[..., 3:4], part[..., 3:4]])
             return out
-        own = on_canvas(stored, tuple(layer.bbox))
+        own = plane(stored, tuple(layer.bbox))
         for mode in (PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_AUTO):
             rgba, where = draw(drawn, corners, mode)
             if rgba is None:
                 errors = {}
                 break
-            errors[mode] = int((np.abs(on_canvas(rgba, where) - own).max(-1) > 8 / 255).sum())
+            errors[mode] = int((np.abs(plane(rgba, where) - own).max(-1) > 8 / 255).sum())
     if errors:
-        best = min(errors, key=errors.get)
-        if all(errors[best] * IMAGE_CLEAR < error for mode, error in errors.items() if mode != best) \
-                and (not relink or best == PS_NEAREST):
-            return best
+        times = IMAGE_CLEAR if relink else NEAREST_CLEAR
+        if all(errors[PS_NEAREST] * times < error for mode, error in errors.items() if mode != PS_NEAREST):
+            return PS_NEAREST
+        if not relink:
+            return min((PS_AUTO, PS_BICUBIC, PS_BILINEAR), key=errors.get)
     return PS_AUTO
 
 

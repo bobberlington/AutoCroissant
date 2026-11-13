@@ -317,6 +317,33 @@ def test_photoshop_resampling():
         assert off(mode) <= (0 if mode == pl.PS_NEAREST else 6) < off(Image.BICUBIC), case["what"]
 
 
+def test_a_display_card_keeps_its_nearest_picture(clone):
+    """Card sync's same-size redraw of an untagged file on a card in a 'Display' profile (Mini Doomer's) whose stored
+    pixels are nearest: image_mode weighs the old file in the card's colours, so it stays nearest (in the file's own,
+    no mode was clear and it went smooth, effectsgaps 11-13)."""
+    from psd_tools.constants import Resource
+    from psd_tools.psd.image_resources import ImageResource
+    rel, path = "Creatures/X/3 Stars/A.psd", "MDW/Linked/art.png"
+    psd = PSDImage.new("RGB", (600, 500))
+    icc = PSDImage.open(clone / MINI_DOOMER).image_resources.get_data(Resource.ICC_PROFILE)
+    psd.image_resources[Resource.ICC_PROFILE] = ImageResource(key=Resource.ICC_PROFILE, data=icc)
+    PixelLayer.fromarray(np.full((500, 600, 4), (240, 240, 230, 255), np.uint8), psd, name="bg")
+    art, corners = Image.new("RGBA", (100, 80)), [40.4, 60.3, 240.4, 60.3, 240.4, 220.3, 40.4, 220.3]
+    ImageDraw.Draw(art).ellipse((5, 5, 95, 75), fill=(0, 255, 0, 255))     # 41 levels off in the card's colours
+    ImageDraw.Draw(art).rectangle((30, 20, 70, 60), fill=(255, 0, 40, 255))
+    out, box = pl.draw(pl.in_document(psd, np.asarray(art), None), corners, pl.PS_NEAREST)
+    layer = PixelLayer.fromarray((out * 255 + 0.5).astype(np.uint8), psd, name="art", top=box[1], left=box[0])
+    pl.link_pixels(layer, rel, path, (old := _png(art)), corners)
+    edit = art.copy()
+    ImageDraw.Draw(edit).rectangle((10, 30, 40, 50), fill=(250, 250, 0, 255))
+    blobs = {pl.git_blob(data): data for data in (old, _png(edit))}
+    changed, pixels, notes = pl.redraw_psd(psd, rel, {path: pl.git_blob(_png(edit))}, blobs.get,
+                                           {path: {pl.git_blob(old): len(old)}})
+    want, box = pl.draw(pl.in_document(psd, np.asarray(edit), None), corners, pl.PS_NEAREST)
+    assert changed and pixels and not notes
+    assert tuple(psd[1].bbox) == box and np.abs(psd[1].numpy() - want).max() <= 1 / 255
+
+
 def test_a_linked_document_keeps_its_colours(clone):
     """A document in the card's own profile is placed as it is (through sRGB, 46 linked ones came back up to 56 levels
     off, effectsgaps 11-13); an untagged one is converted once, sRGB into the card's."""
