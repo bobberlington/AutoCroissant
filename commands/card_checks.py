@@ -530,6 +530,9 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
         for stat, bars in comp_bars(psd).items():
             if len(bars) == 1 and (bars[0][1] is None or not bars[0][0].is_visible()):
                 return [_note(f"{stat}: its bar shows no layer comp")]
+            printed = psd_edit.bar_text(psd, bars[0][2]) if len(bars) == 1 else None
+            if printed is not None:             # set_comp's refusal (Baba)
+                return [_note(f"{stat}: its bar prints {printed!r} as text, which no stat edit changes")]
         if not _art_over_darks(psd):
             return []
     exposures = [layer for layer in _digits(stat_rows(psd)) if layer.kind == "exposure"]

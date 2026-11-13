@@ -3746,6 +3746,10 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
         raise Refused("unsupported-card", f"{stat}: the parser reads {read.get(stat)}, the bar shows {old}")
     if value < 0:
         raise ValueError(f"{stat} {value}: not a stat")
+    printed = bar_text(psd, box)
+    if printed is not None:
+        raise Refused("unsupported-card", f"{stat} {value}: its bar prints {printed!r} as text, which no stat edit "
+                                          "changes: edit it in Photoshop")
     placed = placed_data(layer)
     ids = {int(name): cid for cid, name in comp_names(placed).items()}
     if value not in ids:
@@ -3759,6 +3763,19 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
     layer._invalidate_bbox()
     return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+
+
+def bar_text(psd: PSDImage, box: tuple) -> Optional[str]:
+    """The text of a visible type layer inside a layer-comp bar's box (Baba's bars spell 'IS 6'), else None."""
+    for layer in psd.descendants():
+        if layer.kind == "type" and layer.is_visible():
+            x0, y0, x1, y1 = layer.bbox
+            if box[0] <= (x0 + x1) / 2 <= box[2] and box[1] <= (y0 + y1) / 2 <= box[3]:
+                try:
+                    return (layer.text or "").strip() or layer.name
+                except Exception:               # noqa: BLE001 - text psd-tools can't read: its name
+                    return layer.name
+    return None
 
 
 def _comp_placed(layer, placed, stat: str, value: int) -> str:
