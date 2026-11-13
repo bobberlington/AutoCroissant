@@ -51,7 +51,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import Snapshot, local_snapshot, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
 from commands.card_edits import NAMES_OK, CardAuthors, CardEdits
-from commands.card_models import RAID_STARS, card_name, file_stem, small_case
+from commands.card_models import RAID_STARS, card_name, file_stem, picture_only, small_case
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
@@ -787,16 +787,16 @@ def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     """
     The name flag's note: the website's name against the printed title (exact), the title's file form against the file
     name (file_stem, small words' case aside, MARKS on neither side: owner 2026-11-11); None when they agree, when they
-    are the names a person marked intended (site's names_ok), for a second picture or without the card's data. The data
-    keeps no title equal to the file's name (none read either): the file's name stands for it, so a file name holding
-    . : [ ] ... still differs.
+    are the names a person marked intended (site's names_ok), for a second picture (a marked card with its own PSD is
+    checked: picture_only) or without the card's data. The data keeps no title equal to the file's name (none read
+    either): the file's name stands for it, so a file name holding . : [ ] ... still differs.
 
     Args:
         card: The card in stats.json (parsed_values: the PSD's title under a website one)
         site: Its Card Edits entry (a name there is the website's)
         rel: Its PSD's repo path
     """
-    if not card or card.get("duplicate_of") or card.get("variant_of"):
+    if not card or picture_only(card) or card.get("variant_of"):
         return None
     parsed, stem = card.get("parsed_values") or {}, splitext(basename(rel))[0]
     title = parsed["name"] if "name" in parsed else card.get("display_name")
@@ -901,7 +901,7 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
     PSD than the card's, changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves
     them out)."""
     cards = {card.get("blob_sha"): card for card in stats.values() if card.get("blob_sha")}
-    by_path = {card.get("path"): card for card in stats.values() if not card.get("duplicate_of") and not card.get("variant_of")}
+    by_path = {card.get("path"): card for card in stats.values() if not picture_only(card) and not card.get("variant_of")}
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
     checks["cards"] = {sha: record for sha, record in checks["cards"].items() if sha in blobs}
     def sha(path: str) -> str:

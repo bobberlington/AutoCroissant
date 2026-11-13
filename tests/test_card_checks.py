@@ -170,7 +170,10 @@ def test_name_note():
     assert cc.name_note(stock, {}, "N/NME_Stocks.psd") == 'The card prints "NME Stock\u2122" but its file is NME_Stocks.psd.'
     blockade = {"path": "C/Blockade.psd", "display_name": "The Wall By Ech"}
     assert cc.name_note(blockade, {}, "C/Blockade.psd") == 'The card prints "The Wall By Ech" but its file is Blockade.psd.'
-    assert cc.name_note({**blockade, "variant_of": "A"}, {}, rel) is None and cc.name_note({**blockade, "duplicate_of": "A"}, {}, rel) is None
+    assert cc.name_note({**blockade, "variant_of": "A"}, {}, rel) is None
+    assert cc.name_note({**blockade, "name": "Wall2", "duplicate_of": "A"}, {}, rel) is None            # picture only
+    assert cc.name_note({**blockade, "name": "Blockade", "duplicate_of": "A"}, {}, "C/Blockade.psd") == \
+        'The card prints "The Wall By Ech" but its file is Blockade.psd.'                            # marked, own PSD
     shield = "Items/Man_Serpent_Shield.psd"
     edited = {"path": shield, "display_name": "Man-Serpent's Shield", "parsed_values": {"name": None}}
     assert cc.name_note(edited, {"name": "Man-Serpent's Shield"}, shield) == \
@@ -187,6 +190,9 @@ def test_name_note():
     cc.refresh(checks, snapshot, stats, CardEdits.parse("{}"))
     assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="The Wall By Ech", file="Blockade.psd")
     assert checks["cards"]["a" * 40]["card"] == "Blockade"                            # its file's, after a rename too
+    cc.refresh(checks, snapshot, {**stats, "Blockade": {**stats["Blockade"], "name": "Blockade", "duplicate_of": "A"}},
+               CardEdits.parse("{}"))
+    assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="The Wall By Ech", file="Blockade.psd")
     cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps({"cards": {"Blockade": {"name": "Wall", "_site": ["name"]}}})))
     assert checks["cards"]["a" * 40]["name"].endswith('but the website shows "Wall" and its file is Blockade.psd.')
     marked = {"cards": {"Blockade": {"names_ok": ["The Wall By Ech", "The Wall By Ech", "Blockade"]}}}
