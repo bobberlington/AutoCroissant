@@ -343,6 +343,25 @@ def test_bar_style_by_art_fill(monkeypatch):
         assert cc.bar_style(None, None) == style
 
 
+OMORI_LOST = "8aa924d3fbbc43ea5308a14026de11e5533c3afb"     # omori 11-10: its rows deleted, the arm pictures left
+
+
+def test_drawn_bars_no_row_reads(monkeypatch):
+    """Drawn stat bars no row reads (omori's 11-10 arms) keep the bars flag; no stat read is a hand note until the data
+    has all four again. A stat not drawn: no bars."""
+    from io import BytesIO
+    from psd_tools import PSDImage
+    from conftest import CLONE, card_blob
+    psd = PSDImage.open(BytesIO(card_blob(CLONE, OMORI_LOST)))
+    assert cc.bar_style(psd, None) == ("custom", "pictures")
+    monkeypatch.setattr(cc, "drawn_bar", lambda psd, stat: stat != "spd")
+    assert cc.bar_style(psd, None) == ("", "")
+    record = {"notes": [], "bars": cc.CUSTOM_NOTES["pictures"], "reads": {}}
+    lost = {"stats": dict.fromkeys(cc.DATA_STATS.values(), -1), "problems": [f"{cc.NO_STATS}: no HP, DEF, ATK or SPD"]}
+    assert cc.flags(record, lost) == {"hand": cc.NO_STATS_NOTE, "bars": cc.CUSTOM_NOTES["pictures"], "name": None}
+    assert cc.flags(record, {**lost, "problems": []})["hand"] is None
+
+
 def test_art_over_darks(monkeypatch):
     """Only Lines may lie over the new bars' Darks group: else a stat edit bakes for real (Sans, The Thin Man)."""
     layer = lambda name, shown=True: SimpleNamespace(name=name, is_visible=lambda: shown)

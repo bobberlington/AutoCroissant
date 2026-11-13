@@ -1,8 +1,9 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, old-style bars, a stat edit that cannot bake or would bake bar cells unlike
-the card's (look_notes), a linked picture the repo lacks, one that looks the same as another file, or one Card sync
+hand: the picture says other than the data, no stat read off its bars, old-style bars, a stat edit that cannot bake or
+would bake bar cells unlike the card's (look_notes), a linked picture the repo lacks, one that looks the same as another
+file, or one Card sync
 could not draw again (db/links.json, worded at each
 save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
 (exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM
@@ -57,8 +58,9 @@ from commands.card_models import RAID_STARS, card_name, file_stem, picture_only,
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
-from commands.psd_parser import picture_numbers, variant_view
-from commands.psd_regions import STATS, bar_box, comp_bars, comp_creature, linked_items, placed_data, stat_rows, union_box
+from commands.psd_parser import NO_STATS, picture_numbers, variant_view
+from commands.psd_regions import (STATS, bar_box, comp_bars, comp_creature, drawn_bar, linked_items, placed_data,
+                                  stat_rows, union_box)
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
 # ========================
@@ -96,6 +98,8 @@ OWN = -0.5                                  # under which, on every value drawn,
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
 # the notes
+NO_STATS_NOTE = ("No stat is read off its bars, so the website, TTS and the bot show none: set them on the website as "
+                 "Website only, or put its bars on the template in Photoshop.")     # the parser's NO_STATS
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 # these and _note's "Stat edits need Photoshop": TC site/assets/mockup.js HAND_STATS reads them (keep in step)
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
@@ -434,7 +438,8 @@ def _template_rows(psd: PSDImage, rows: dict) -> bool:
 def bar_style(psd: PSDImage, creatures: Optional[list]) -> tuple:
     """
     (style, why): "" for a card without bars, "few" for an item's digit rows, "new" for layer-comp bars, "old" for the old
-    template's digit rows, "custom" for anything else or new bars over separate icons; why: CUSTOM_NOTES' key.
+    template's digit rows, "custom" for anything else, new bars over separate icons or four drawn bars no row reads
+    (drawn_bar: Hive Knight's and omori's 11-10 pictures); why: CUSTOM_NOTES' key.
     """
     comps = comp_bars(psd)
     if any(comps.values()):
@@ -442,7 +447,7 @@ def bar_style(psd: PSDImage, creatures: Optional[list]) -> tuple:
         return ("custom", "icons") if any(fill is not None and fill < psd_edit.ART_FILL for fill in fills) else ("new", "")
     rows = stat_rows(psd)
     if not any(rows.values()):
-        return "", ""
+        return ("custom", "pictures") if all(drawn_bar(psd, stat) for stat in STAT_ORDER) else ("", "")
     if not all(rows.values()):                  # an item's HP and DEF: read, nothing to convert
         return "few", ""
     if creatures:
@@ -875,8 +880,10 @@ def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
 
 
 def flags(record: dict, data: Optional[dict], site=(), linked=(), name: Optional[str] = None) -> dict:
-    """{"hand", "bars", "name": note or None} of a record against the card's data (linked: link_notes; name: name_note)."""
-    hand = (mismatches(record, data, site) if data else []) + list(record.get("notes") or []) + list(linked)
+    """{"hand", "bars", "name": note or None} of a record against the card's data (linked: link_notes; name: name_note);
+    no stat read (the parser's NO_STATS, gone once all four have website values) is a hand note."""
+    lost = [NO_STATS_NOTE] if any(p.startswith(NO_STATS) for p in (data or {}).get("problems") or ()) else []
+    hand = (mismatches(record, data, site) if data else []) + lost + list(record.get("notes") or []) + list(linked)
     return {"hand": " ".join(hand) or None, "bars": record.get("bars"), "name": name}
 
 

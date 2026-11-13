@@ -21,7 +21,7 @@ from json import dumps
 from math import hypot
 from os import PathLike, environ
 from os.path import isdir
-from re import IGNORECASE, fullmatch, search, sub
+from re import IGNORECASE, fullmatch, sub
 from threading import local
 from typing import Optional
 
@@ -36,7 +36,7 @@ from commands.psd_edit import (
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
-from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, comp_row, overlay_words, stat_rows
+from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, comp_row, drawn_bar, overlay_words, stat_rows
 
 # ========================
 # Configuration
@@ -322,19 +322,6 @@ def _icons(psd: PSDImage, texts: list, vocab) -> str:
     return "mixed" if images and tokens else "images" if images else "tokens" if tokens else "none"
 
 
-def _drawn_bar(psd: PSDImage, key: str) -> bool:
-    """A visible drawn layer named like the stat, or inside a group so named, under a *bar*/*stat* group."""
-    pattern = rf"\b({STATS[key]})\b"
-    for layer in psd.descendants():
-        if layer.is_group() or layer.kind == "type" or not layer.is_visible() or not layer.has_pixels():
-            continue
-        chain = [layer, *_ancestors(layer)]
-        if (any(search(pattern, owner.name, IGNORECASE) for owner in chain)
-                and any(search(r"bar|stat", owner.name, IGNORECASE) for owner in chain[1:])):
-            return True
-    return False
-
-
 def _stats(psd: PSDImage) -> dict:
     """
     Per stat: "template" (one digit row of exposure layers, or a layer-comp bar), "creatures" (a layer-comp bar per
@@ -348,7 +335,7 @@ def _stats(psd: PSDImage) -> dict:
             out[key] = "template" if len(comps[key]) == 1 else "creatures"
             continue
         if not found:
-            out[key] = "pixel" if _drawn_bar(psd, key) else "none"
+            out[key] = "pixel" if drawn_bar(psd, key) else "none"
             continue
         kinds = {child.kind for group, _, _ in found for child in group if not child.is_group() and child.name.strip().isdigit()}
         drawn = {kind for kind in kinds if kind in DRAWN}

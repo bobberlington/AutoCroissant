@@ -165,6 +165,19 @@ def stat_rows(psd: PSDImage) -> dict:
     return out
 
 
+def drawn_bar(psd: PSDImage, key: str) -> bool:
+    """A visible drawn layer named like the stat, or inside a group so named, under a *bar*/*stat* group."""
+    pattern = rf"\b({STATS[key]})\b"
+    for layer in psd.descendants():
+        if layer.is_group() or layer.kind == "type" or not layer.is_visible() or not layer.has_pixels():
+            continue
+        chain = [layer, *_ancestors(layer)]
+        if (any(search(pattern, owner.name, IGNORECASE) for owner in chain)
+                and any(search(r"bar|stat", owner.name, IGNORECASE) for owner in chain[1:])):
+            return True
+    return False
+
+
 def placed_data(layer):
     """A smart object's SoLd descriptor (its placement and layer comps), else None."""
     if layer.kind != "smartobject" or not layer._record.tagged_blocks:
@@ -492,6 +505,7 @@ __all__ = [
     'comp_stat',
     'comp_value',
     'digit_span',
+    'drawn_bar',
     'drawn_box',
     'fx_pad',
     'linked_items',
