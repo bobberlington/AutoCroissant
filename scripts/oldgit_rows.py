@@ -841,8 +841,10 @@ def rows_main():
         else:
             review.append({"id": "oldrows-" + stable_id("morgue", old_ids[0]), "kind": "morgue", "old_id": old_ids[0],
                            "card": key, "rows": rows})
+    init = {sha for path, (sha, _) in oi.ls_tree(oi.OG, oi.TC_INIT).items() if oi.ext_of(path) == "png"}
     for row in live_rows:                                      # the review items a row has
         row["review"] = [i["id"] for i in review if i.get("row") == row["id"]]
+        row["in_tc_init"] = row["blob"] in init                # TTSCardMaker's first version is this picture
     os.makedirs(OUT, exist_ok=True)
     for name, items in (("rows.jsonl", live_rows), ("archived.jsonl", archived_rows), ("review.jsonl", review)):
         with open(join(OUT, name + ".tmp"), "w", encoding="utf-8") as f:
@@ -865,6 +867,7 @@ def summarize(data: Data, rows: list, archived: list, review: list) -> dict:
     return {
         "rows": len(rows), "cards": len({r["card"] for r in rows}), "archived rows": len(archived),
         "minor": sum(r["minor"] for r in rows), "shown": sum(not r["minor"] for r in rows),
+        "in tc init": sum(r.get("in_tc_init", False) for r in rows),
         "all sure": sum(not unsure(r) for r in rows), "two creatures": sorted({r["card"] for r in rows if r.get("two_creatures")}),
         "psd": dict(Counter((r["psd"] or {}).get("how", "none") for r in rows)),
         "fields": {k: dict(v) for k, v in fields.items()},
