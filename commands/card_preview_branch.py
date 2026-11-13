@@ -13,8 +13,8 @@ until the push (a refused push: the usual tries from the head then).
 
 Standard library and git only (never PIL, psd-tools, requests or card_bake): card-preview.yml's publish job runs it with
 the runner's own python3 and no pip install, so a preview that never ran (a failed install, a timeout) is still published,
-as a try-again error. It uses the checkout's git and credentials (actions/checkout's); blobless is enough (--no-thin
-pushes). SPARSE_FILES is its import closure (the publish job's checkout).
+as a try-again error. It uses the checkout's git and credentials (actions/checkout's); blobless is enough (pushes
+without delta search). SPARSE_FILES is its import closure (the publish job's checkout).
 """
 from argparse import ArgumentParser
 from datetime import datetime, timedelta, timezone
@@ -111,9 +111,14 @@ def _git(where: str, *args: str, stdin: Optional[bytes] = None, lazy: bool = Fal
         return run_process(["git", "-C", where, *args], input=stdin, capture_output=True, check=True, timeout=GIT_TIMEOUT,
                            env=env).stdout.decode("utf-8")
     except CalledProcessError as error:
-        raise Unpublished(f"git {args[0]} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+        raise Unpublished(f"git {_verb(args)} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
     except (TimeoutExpired, OSError) as error:
-        raise Unpublished(f"git {args[0]} failed: {error}") from error
+        raise Unpublished(f"git {_verb(args)} failed: {error}") from error
+
+
+def _verb(args: tuple) -> str:
+    """The git command past any -c option."""
+    return args[2] if args[0] == "-c" else args[0]
 
 
 def _fetch(where: str, ref: str = LOCAL_REF) -> str:
@@ -193,7 +198,9 @@ def _tree(where: str, rows: list) -> str:
 def _push(where: str, commit: str, lease: Optional[str]) -> None:
     """The commit to the branch: a fast forward, or with lease (the head it was built from) a forced update; raises
     Unpublished when refused (the branch moved) or failed."""
-    args = ["push", "-q", "--no-thin"] + ([f"--force-with-lease=refs/heads/{BRANCH}:{lease}"] if lease else [])
+    lease_arg = [f"--force-with-lease=refs/heads/{BRANCH}:{lease}"] if lease else []
+    # no delta search: it would want a replaced file's old blob (HTTPS pushes thin whatever --no-thin says)
+    args = ["-c", "pack.window=0", "push", "-q", "--no-thin", *lease_arg]
     _git(where, *args, "origin", f"{commit}:refs/heads/{BRANCH}")
 
 

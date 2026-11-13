@@ -1283,8 +1283,8 @@ Exit 0 for a verdict (baked, redundant, refused), 2 for an input error, 1 for an
 missing or foreign result.json is published as `error`, `transient`: the preview never finished) makes one commit per
 run on the branch head, from the publish job's blobless depth-1 checkout and its credentials:
 `git fetch --depth 1 --filter=blob:none` of the head into `refs/card-preview/previews` (index.json by a lazy fetch),
-blobs and trees by `hash-object`/`mktree`, `commit-tree`, `push --no-thin` (card-sync.yml's lesson: a thin pack would
-want blobs a blobless clone lacks); a refused push (the head moved) is retried from the new head, 5 tries. The publish
+blobs and trees by `hash-object`/`mktree`, `commit-tree`, `-c pack.window=0 push --no-thin` (card-sync.yml's lesson: a
+thin pack would want blobs a blobless clone lacks; HTTPS pushes thin anyway, so no delta search, 2026-11-13); a refused push (the head moved) is retried from the new head, 5 tries. The publish
 job does those reads during its wait (`--warm`, 2026-11-07: into `refs/card-preview/warm`, index.json included), so
 publish's first try reaches the push with no network; refused, it goes on to the 5 tries with no sleep, and without a
 warm read (it failed, or ran past its 10 s) those 5 tries are all there is. When the

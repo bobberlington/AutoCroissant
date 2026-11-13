@@ -383,7 +383,7 @@ def _index(bare) -> dict:
     return json.loads(_branch(bare)[br.INDEX])["previews"]
 
 
-def test_publish_one_commit_per_preview(remote, tmp_path):
+def test_publish_one_commit_per_preview(remote, tmp_path, monkeypatch):
     a, b = "aaaaaaaa-0001", "bbbbbbbb-0002"
     first = br.publish(str(_out(tmp_path, a)), a, str(remote.work))
     assert first["parent"] is None and not first["rewritten"]
@@ -404,6 +404,15 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     br.publish(str(rerun), a, str(remote.work))
     files = _branch(remote.bare)
     assert json.loads(files[f"previews/{a}/{br.RESULT}"])["state"] == "error" and f"previews/{a}/{br.SMALL}" not in files
+    fresh, again = tmp_path / "fresh", tmp_path / "again"      # a re-run from a checkout without the old blobs
+    _git(tmp_path, "clone", "-q", "--depth", "1", "--filter=blob:none", f"file://{remote.bare}", str(fresh))
+    shutil.copytree(_out(tmp_path, "dddddddd-0004"), again)
+    (again / br.RESULT).write_text(json.dumps({**json.loads((again / br.RESULT).read_text()), "request": a}))
+    monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
+    run = br.run_process                            # HTTPS pushes thin whatever --no-thin says
+    monkeypatch.setattr(br, "run_process", lambda cmd, **kw: run([{"--no-thin": "--thin"}.get(x, x) for x in cmd], **kw))
+    br.publish(str(again), a, str(fresh))
+    assert _branch(remote.bare)[f"previews/{a}/{br.SMALL}"] == b"webp of dddddddd-0004"
 
 
 def test_publish_rewrites_old_and_many_previews(remote, tmp_path, monkeypatch):
