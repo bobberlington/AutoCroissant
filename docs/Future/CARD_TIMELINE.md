@@ -44,6 +44,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    timing tags and numbers are that version's; made before the look's first git version, its text exactly that
    version's at any length, whatever picked the look (no text read: unsure); more than 3 days before, its bars read
    (`derived/readers/bars`) the same too (the hash can't see a bar or a typo).
+   A card named only (its title, file name or chat; nothing of its look or text) is sure only when the picture's text
+   fits it (version fit 0.25) and no card the matcher saw in that text fits better (a reused name: 2019's joke Potato,
+   Blooper Tentacle's and Flame Bomb's first versions under Tentacle's and Firebomb's names); one dated before the card's
+   first picture evidence sets Created only through review. A joke picture that is a live card's (named so by its posts
+   outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
    Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions

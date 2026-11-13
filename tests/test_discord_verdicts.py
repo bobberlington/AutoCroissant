@@ -11,6 +11,7 @@ T = 1600000000
 PORT, NEW, MEME = ("735328279619436666", "port"), ("875055733161488444", "new-cards"), ("835450716947873823",
                                                                                      "meme-cards")
 H = {"p": "0" * 16, "d": "0" * 16, "q": "0" * 64}   # one look's hashes
+FAR = {"p": "f" * 16, "d": "f" * 16, "q": "f" * 64}  # another's
 IDEAS, PAPER = ("664256411907391509", "ideas-discussion"), ("1088034453319843840", "record-book")
 
 
@@ -81,7 +82,7 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
              (T + 3 * 86400, PORT, 3, seen("fang", ["now"], by="hash"),          # 3: a port picture, a meme too;
               {"twins": [[f"{snowflake(T)}:1", 1.0, 1.0]]}, None),              # another look: no repost
              (T + 4 * 86400, MEME, 3, seen("fang", ["now"], by="hash"), {}, None),
-             (T - 86400, MEME, 4, seen("fang", [], by="draft"), {}, None),  # 4: a meme of Fang, no git look
+             (T - 86400, MEME, 4, seen("fang", [], by="draft"), {"whole": FAR}, None),  # 4: a meme of Fang, no git look
              (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff),     # 5: a paper card's photo
              (T + 7 * 86400, MEME, 6, [], {"lines": ["when the"]}, None)]        # 6: a meme, not a card
     root = tmp_path / "archive"
@@ -223,3 +224,56 @@ def test_changelog_days_name_a_card_and_lost_ids_are_unique():
     assert dv.changelog_dates("KIRBY", log, ("retro kirby",)) == ["2020-08-02"]
     assert dv.changelog_dates("Actions", log, (), frozenset({"actions"})) == []
     assert dv.group_id(sha(3)) != dv.group_id(sha(3), 1) != dv.group_id(sha(3), 2)
+
+
+def test_named_only_needs_its_text_and_live_cards_are_never_morgue(tmp_path):
+    far = FAR
+    cards = {c: {"id": c, "name": n, "key": n} for c, n in (("potato", "Potato"), ("tentacle", "Tentacle"),
+                                                             ("blooper-tentacle", "Blooper Tentacle"))}
+    cards["fang"] = {"id": "fang", "name": "Fang", "key": "Fang", "fs": T + 400 * 86400}
+    texts = {"pot": ["Potato", "Heal a creature by 2 and gain one apple"],
+             "ten": ["Tentacle", "Protects the summoner and deals 3 damage to every lane"],
+             "blo": ["Blooper Tentacle", "If more than one of this card is protecting a creature overkill carries"],
+             "fng": ["Fang", "Bite for 2 damage on every attack"]}
+    versions = [{"key": k, "card": c, "commit": k, "ts": T + 400 * 86400, "current": True, "look": 0,
+                 "whole": H if k == "fng" else far} for k, c in (("pot", "potato"), ("ten", "tentacle"),
+                                                                 ("blo", "blooper-tentacle"), ("fng", "fang"))]
+
+    def named(card, key, fit, **others):
+        return [{"card": card, "s": {"title": 1.0, "file": 1.0}, "why": {"title": "a long printed title",
+                                                                         "pick": {"keys": [key], "by": "text",
+                                                                                  "fit": fit}}},
+                *({"card": c, "s": s, "why": {}} for c, s in others.items())]
+
+    def reads(key, lines=None):
+        lines = lines or texts[key]
+        return {"text": dm.read_text([[t, 1.0] for t in lines]), "lines": list(lines), "whole": far}
+    fang = seen("fang", ["fng"], by="hash")
+    posts = [(T + 1, IDEAS, 1, named("potato", "pot", 0.11), reads("pot", ["Potato", "If used by michael all stats are "
+                                                                      "quadrupled"]), None),     # a joke Potato
+             (T + 2, IDEAS, 2, named("tentacle", "ten", 0.3, **{"blooper-tentacle": {"ocr": 0.8, "title": 0.5,
+                                                                    "file": 0.5}}),
+              reads("blo"), None),                                      # Blooper Tentacle's text, Tentacle's name
+             (T + 3, NEW, 3, named("fang", "fng", 0.9), reads("fng"), None),     # named only: Created through review
+             (T + 10 * 86400, NEW, 4, fang, reads("fng"), None),
+             (T + 5, MEME, 5, fang, {**reads("fng"), "whole": H}, None),    # a live card's picture in a meme channel
+             (T + 6, MEME, 6, fang, {**reads("fng", ["Fang", "vvvvvvv"]), "whole": H}, None),   # a joke on its look
+             (T + 7, IDEAS, 7, [{"card": "fang", "s": {"line": 1.0, "file": 1.0}, "why": {}}],   # a screenshot named
+              {**reads("fng"), "shape": None, "text": ""}, None),                         # so outside the memes
+             (T + 86400, MEME, 7, [], {}, None),
+             (T + 86400 + 1, MEME, 1, [], {}, None)]                    # a joke named as a live card: no Morgue
+    root = tmp_path / "archive"
+    archive(root, posts, cards, versions, {MEME[0]: "meme/joke"}, texts=texts)
+    dv.build(str(root), log=lambda *a: None, cards_repo="")
+    rows = rows_of(root)
+    potato, tentacle, three, four, five, six, seven = (rows[dv.picture_id(sha(n))] for n in range(1, 8))
+    assert potato["verdict"] == "unsure" and potato["reason"].startswith("named only, its text isn't")
+    assert potato["meme_live"] == "potato"
+    assert tentacle["verdict"] == "unsure" and "blooper-tentacle's better" in tentacle["reason"]
+    assert three["card"] == "fang" and three["name_only"] and "created_review" in three
+    assert not four.get("name_only") and "created_review" not in four
+    assert five["verdict"] == "unsure" and five["meme_live"] == "fang" and five["review"] == dv.MEME_LIVE
+    assert six["verdict"] == "morgue"
+    assert seven["verdict"] == "unsure" and seven["meme_live"] == "fang"
+    groups = json.loads((root / "derived/match/lost_groups.json").read_text())["groups"]
+    assert [g["pictures"] for g in groups] == [[six["id"]]]

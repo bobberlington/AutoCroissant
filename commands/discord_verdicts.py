@@ -15,12 +15,16 @@ build   A picture is one stored file (its sha256: every post of it, reposts in o
           morgue          a joke: posted in a meme channel (or the same picture as one) and no live card's
         and outside those: unsure (which card isn't sure: review), art (a card's art only), none (no card).
         Card sure is the matcher's confident verdict at REVIEW or more (a screenshot also needs the card's art or look
-        behind it, a look-alike family the card's own title). A git look needs the picture's timing tags and numbers
-        to be that version's, its text exact (any length, hash picks too) if made before the look's first git
-        version, and its bars read the same if made more than GRACE_DAYS before (look_check). An embed's picture never
-        dates (fetched when archived). Joke pictures (owner Q1=C: meme-cards, joke-ideas, cursed, idea-graveyard;
-        ai-images and patty-vault are never read) never date a live card; one that is a live card stays its card; a
-        meme that is no card is none. Paper-card photos ('Old stuff', owner Q6=A) are matched but never date anything.
+        behind it, a look-alike family the card's own title; a card named only, by its title, file name or chat, needs
+        its text to fit the card and no card the matcher saw in it to fit better: name_check). A git look needs the
+        picture's timing tags and numbers to be that version's, its text exact (any length, hash picks too) if made
+        before the look's first git version, and its bars read the same if made more than GRACE_DAYS before
+        (look_check). An embed's picture never dates (fetched when archived). A card named only, dated before the
+        card's first picture evidence, sets Created only through review (created_review). Joke pictures (owner Q1=C:
+        meme-cards, joke-ideas, cursed, idea-graveyard; ai-images and patty-vault are never read) never date a live
+        card; one that is a live card stays its card, or goes to review when not sure (named so by its posts outside
+        meme channels, or a git version's look and text: MEME_LIVE), never the Morgue; a meme that is no card is
+        none. Paper-card photos ('Old stuff', owner Q6=A) are matched but never date anything.
         Rules pages and app screenshots are never lost cards.
         Lost pictures are grouped into lost cards by title, else by look (ids from the earliest picture's hash and
         cell), each with its first date, channels, whether it was played (port, update or classification channels, an
@@ -109,6 +113,10 @@ GROUP_TITLE = 0.85                              # lost pictures one card: titles
 FAMILIES = (("dull-knife", "rusty-knife", "red-knife", "shiny-knife"), ("moss-charger", "massive-moss-charger"))
 FAMILY_PREFIXES = ("pod",)                      # PoD Bloons: every card id starting so is one family
 FAMILY_TAINTED = "tainted-"                     # the Tainted cards (one frame) and any plain X
+NAME_METHODS = frozenset(dm.EVIDENCE["name"])   # a card named only: its title, a line, the file name, chat
+NAME_FIT = 0.25                                 # ... sure only with this version fit (all 7 named-only rows of another
+                                                # card read under it: Potato, Tentacle, Firebomb)
+MEME_LIVE = "a live card's picture in a meme channel (or named as one)"     # review, never a Morgue candidate
 LOST_ABOUT = ("Lost cards: lost and joke pictures grouped by title, else by look; id from the earliest picture's "
               "sha256 (and cell). morgue_candidate: a joke card, or played (port, update or classification channels, "
               "an update changelog naming it as a card, the old repo's file; owner Q2=A) with a card's stats or "
@@ -330,6 +338,70 @@ def text_runs(text: str, reads: list) -> Optional[tuple]:
     return dm.novel_run(text, union), dm.novel_run(reads[0], dm.grams(text) | (dm.grams(reads[0]) - steady))
 
 
+def picture_text(image: dict) -> str:
+    """A picture's OCR text, squashed (a screenshot's: its lines)."""
+    return image.get("text") or dm.squash(" ".join(line if isinstance(line, str) else line[0]
+                                                   for line in image.get("lines") or []))
+
+
+def text_fit(seen: set, members: list) -> Optional[float]:
+    """The share of a picture's 4-grams in the nearest of a card's versions (all its reads), None when either has
+    none."""
+    fits = [len(seen & m["grams"]) / len(seen) for m in members if m.get("grams")]
+    return round(max(fits), 3) if seen and fits else None
+
+
+def name_only(cid: str, v: dict, twin: Optional[dict] = None) -> bool:
+    """A card the matcher is sure of by its name alone: its methods (and, made sure by a twin, the twin's) only
+    NAME_METHODS, nothing of its look or text."""
+    methods = set()
+    for verdict in (v, twin):
+        methods |= set((scored_of(verdict, cid) or {}).get("s") or {}) if verdict else set()
+    return v.get("status") != "ruled" and methods <= NAME_METHODS
+
+
+def name_check(cid: str, v: dict, text: str, members: dict, cards: dict, twin: Optional[dict] = None) -> \
+        Optional[str]:
+    """Why a card named only isn't sure (None: it is, or it isn't named only): its text not read or under NAME_FIT
+    of the card's (the matcher's version fit; without one, its nearest version's), or a card the matcher saw in its
+    text (ocr, body) fitting it better, both by text_fit (Blooper Tentacle's text under Tentacle's name). members:
+    {card: its versions with grams}."""
+    if not name_only(cid, v, twin):
+        return None
+    seen = dm.grams(text or "")
+    own = text_fit(seen, members.get(cid) or [])
+    fit = next((f for f in ((((scored_of(x, cid) or {}).get("why") or {}).get("pick") or {}).get("fit")
+                            for x in (v, twin) if x) if f is not None), own)
+    rivals = {c["card"] for verdict in (v, twin) if verdict for c in verdict.get("scored") or []
+              if not dm.related(cards, c["card"], cid) and (c["s"].get("ocr") or c["s"].get("body"))}
+    best, rival = max(((text_fit(seen, members.get(r) or []) or 0.0, r) for r in rivals), default=(0.0, ""))
+    better = f"its text reads {rival}'s better ({best:.2f} vs {own or 0.0:.2f})" if best > (own or 0.0) else ""
+    if fit is None:
+        return "named only, no text to check it by"
+    if fit < NAME_FIT:
+        return f"named only, its text isn't the card's (fit {fit:.3f})" + (f"; {better}" if better else "")
+    return f"named only, {better}" if better else None
+
+
+def live_look(image: dict, versions, text: str) -> Optional[str]:
+    """The live card a joke picture is a git version of: its whole card within dm.LOOK_BITS of that version and
+    the version's steady text all in it (text_runs' missing under SURE_MISSING, or no text read): a repost, not a
+    joke made on the card's look (Toy Bonnie 'vvvvvvv')."""
+    if not image.get("whole"):
+        return None
+    near = sorted((d, v["key"], v) for v in versions if v.get("whole")
+                  for d in [dm.hash_distance(image["whole"], v["whole"])] if d <= dm.LOOK_BITS)
+    for _, _, v in near:
+        runs = text_runs(text, v.get("reads") or [])
+        if runs is None or runs[1] < SURE_MISSING:
+            return v["card"]
+    return None
+
+
+def version_grams(v: dict) -> set:
+    return set().union(*(dm.grams(t) for t in v.get("reads") or []))
+
+
 def tag_words(versions) -> frozenset:
     """The timing tags printed on 2+ cards (their versions' every read): real tags, not OCR noise."""
     cards = defaultdict(set)
@@ -514,6 +586,31 @@ class Run:
         return {**image, **when_posted(posts, self.cards.get(cid)), "marks": read_marks(image.get("lines")),
                 "bars": None if cell else self.bars.get(sha), "tags": self.tags}
 
+    def twin(self, v: dict) -> Optional[dict]:
+        """The post a verdict was made sure by (dm.same_image), if any."""
+        return self.verdicts.get((v.get("twin") or {}).get("key"))
+
+    def name_why(self, cid: str, v: dict, text: str) -> Optional[str]:
+        return name_check(cid, v, text, self.members, self.cards, self.twin(v))
+
+    @staticmethod
+    def named_live(kept: list, found: dict, meme_only: bool) -> list:
+        """The cards a joke picture's posts outside meme channels name at SURE (sure of the card or not: a name
+        check failing still keeps it out of the Morgue)."""
+        return [] if meme_only else [c for c in kept if found[c][0] >= SURE]
+
+    def joke_verdict(self, image: dict, text: str, reason: str, named=(), looks=()) -> dict:
+        """A joke picture's verdict when it is no sure card: morgue, or review (MEME_LIVE) when it is a live
+        card's picture: named so by its posts outside meme channels, or a git version's look and text (live_look)."""
+        live = next(iter(named), None)
+        if not live:
+            live = live_look(image, self.versions.values(), text)
+            reason = f"its whole card and text are {live}'s git version" if live else reason
+        if live:
+            return {"verdict": "unsure", "meme_live": live, "reason": reason,
+                    "maybe": list(dict.fromkeys([live, *looks]))[:6]}
+        return {"verdict": "morgue", "reason": reason, "looks_like": list(looks)[:3]}
+
 
 def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     """One picture's verdict from its posts' verdicts."""
@@ -530,7 +627,7 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     if not found and joke:                     # posted only in meme channels: its own verdict, if a git look
         found, meme_only = sure_cards([raw[k] for k, p in zip(keys, posts) if p["morgue"]], cards), True
     kept = unrelated(found, cards)
-    shape = image.get("shape")
+    shape, text = image.get("shape"), picture_text(image)
     if kept and not shape:                     # a screenshot: each card it shows, none's look told
         sure = [c for c in kept if gate(c, *found[c], None, family, run.close) is None and not meme_only]
         if sure:
@@ -541,14 +638,18 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
             if joke:
                 row["meme_repost"] = True
             return row
-        row.update(verdict="morgue" if joke else "unsure", maybe=kept[:6],
-                   reason=gate(kept[0], *found[kept[0]], None, family, run.close) or "posted only in meme channels",
-                   **({"looks_like": kept[:3]} if joke else {}))
+        why = gate(kept[0], *found[kept[0]], None, family, run.close) or "posted only in meme channels"
+        row.update(maybe=kept[:6], reason=why)
+        if joke:
+            row.update(run.joke_verdict(image, text, why, run.named_live(kept, found, meme_only), kept))
+        else:
+            row["verdict"] = "unsure"
         return row
     if len(kept) == 1:
         cid = kept[0]
         conf, v = found[cid]
-        why = gate(cid, conf, v, shape, family, run.close)
+        named = run.name_why(cid, v, text)
+        why = gate(cid, conf, v, shape, family, run.close) or named
         kind, note = version_of(v, cid, run.seen(sha, image, posts, cid), versions, members.get(cid, []))
         if meme_only and kind != "git":
             why = why or "posted only in meme channels, in no git look"
@@ -556,6 +657,8 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
             verdict = "version_sure" if kind == "git" else "draft" if kind == "draft" else "version_unsure"
             row.update(verdict=verdict, card=cid, cards=kept, conf=round(conf, 4),
                        methods=(scored_of(v, cid) or {}).get("s"), version=note, reason=v.get("reason") or "")
+            if name_only(cid, v, run.twin(v)):
+                row["name_only"] = True
             if joke:
                 row["meme_repost"] = True
                 if kind == "draft":                     # a joke picture that is also a live card's draft: review
@@ -563,13 +666,19 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
             if v.get("twin"):
                 row["twin_of"] = v["twin"]["key"]
             return row
-        row.update(verdict="morgue" if joke else "unsure", maybe=kept, conf=round(conf, 4), reason=why,
-                   **({"looks_like": kept[:3]} if joke else {}))
+        row.update(maybe=kept, conf=round(conf, 4), reason=why)
+        if joke:
+            row.update(run.joke_verdict(image, text, why, run.named_live(kept, found, meme_only), kept))
+        else:
+            row["verdict"] = "unsure"
         return row
     if len(kept) > 1:                          # one card's image, several sure cards: a clash
-        row.update(verdict="morgue" if joke else "unsure", maybe=kept,
-                   reason="posts say different cards: " + ", ".join(kept),
-                   **({"looks_like": kept[:3]} if joke else {}))
+        why = "posts say different cards: " + ", ".join(kept)
+        row.update(maybe=kept, reason=why)
+        if joke:
+            row.update(run.joke_verdict(image, text, why, run.named_live(kept, found, meme_only), kept))
+        else:
+            row["verdict"] = "unsure"
         return row
     every = live or [raw[k] for k in keys]
     status = Counter(v["status"] for v in every)
@@ -577,7 +686,7 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     if joke:
         looks = list(dict.fromkeys(c for k in keys for c in (raw[k].get("cards") or raw[k].get("maybe") or [])))
         if joke_card(image) or any(raw[k].get("cards") for k in keys):
-            row.update(verdict="morgue", looks_like=looks[:3], reason="a joke picture: no live card's")
+            row.update(run.joke_verdict(image, text, "a joke picture: no live card's", (), looks))
         else:                                   # a meme, not a joke card: never a Morgue candidate
             row.update(verdict="none", reason="a meme channel's picture, not a card")
     elif status.get("ambiguous"):
@@ -667,7 +776,11 @@ def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
         mixed = len(unrelated(named, cards)) > 1           # the grid cut through cards: other cells' titles in it
         doubt = "other cards' titles inside the cell (the grid may be wrong)" if mixed else None if \
             run.checked.get(sha) else "a sheet found by names only (its cells may be cut wrong)"
-        why = (gate(cid, conf, v, cell.get("shape"), family, run.close) or (doubt if mixed else None)) if cid else None
+        text = picture_text(part)
+        named = run.name_why(cid, v, text) if cid else None
+        why = (gate(cid, conf, v, cell.get("shape"), family, run.close) or named or (doubt if mixed else None)) \
+            if cid else None
+        live = [cid] if cid and conf >= SURE and any(not p["morgue"] for p in posts) else []
         if cid and why is None:
             kind, note = version_of(v, cid, run.seen(sha, part, posts, cid, cell=True), versions,
                                     members.get(cid, []))
@@ -676,10 +789,14 @@ def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
             row.update(verdict="version_sure" if kind == "git" else "draft" if kind == "draft" else "version_unsure",
                        card=cid, cards=[cid], conf=round(conf, 4), methods=(scored_of(v, cid) or {}).get("s"),
                        version=note, reason=v.get("reason") or "")
+            if name_only(cid, v):
+                row["name_only"] = True
             if joke and kind != "git":
-                row.update(verdict="morgue", looks_like=[cid], reason="a joke sheet's cell in no git look")
+                for k in ("card", "cards", "conf", "methods", "version", "name_only"):
+                    row.pop(k, None)
+                row.update(run.joke_verdict(part, text, "a joke sheet's cell in no git look", live, [cid]))
         elif joke and (joke_card(part) or v["cards"]):
-            row.update(verdict="morgue", looks_like=(v["cards"] or v["maybe"])[:3], reason="a joke sheet's cell")
+            row.update(run.joke_verdict(part, text, "a joke sheet's cell", live, v["cards"] or v["maybe"]))
         elif joke:
             row.update(verdict="none", reason="a meme channel's picture, not a card")
         elif cid or v["status"] == "ambiguous" or (doubt and lost_like(part)):
@@ -954,6 +1071,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         feat = v["key"].split("-")[0]
         v.update(marks=version_marks(texts.get(feat) or {}), bars=blobs.get(feat[1:]),
                  reads=version_reads(texts.get(feat) or {}))
+        v["grams"] = version_grams(v)
     close = lookalikes(cards, versions_list)
     family = families(cards, close)
     verdicts, raw = post_verdicts(images, records, cards, dm.read_json(paths.matcher.rulings, {}) or {},
@@ -994,14 +1112,18 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         if row.get("card") and family.get(row["card"]):
             row["family"] = family[row["card"]]
         row["review"] = REVIEW.get(row["verdict"]) if not row.get("joke_draft") else "a joke picture's draft look"
+        if row.get("meme_live"):
+            row["review"] = MEME_LIVE
         if row["paper"] and row["verdict"] not in SURE_CLASSES:
             row["review"] = "a paper card's photo (owner Q6=A: shown undated once named)"
+    created_reviews(rows, cards)
     old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
     groups = lost_groups(rows, images, by_sha, records, cards, versions_list, kinds, channels, old_lost, root,
                          cards_repo)
     makedirs(paths.out, exist_ok=True)
-    order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "joke", "meme_repost", "paper",
-             "family", "version", "methods", "maybe", "looks_like", "lost_group", "reason", "repost_of", "twin_of",
+    order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "name_only", "created_review",
+             "joke", "meme_repost", "meme_live", "paper", "family", "version", "methods", "maybe", "looks_like",
+             "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
              "title_read", "card_evidence", "joke_draft", "posts"]
     rows.sort(key=lambda r: (min(int(p["message"]) for p in r["posts"]), r.get("cell") or 0))
@@ -1015,6 +1137,21 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     return tally
 
 
+def created_reviews(rows: list, cards: dict):
+    """A card named only (name_only) dated before the card's first picture evidence (a card-sure picture with more
+    than its name, or its first git record) sets Created only through review: created_review says so."""
+    start = {cid: c["fs"] for cid, c in cards.items() if c.get("fs")}
+    for row in rows:
+        if row["verdict"] in SURE_CLASSES and row["first"] and not row.get("name_only"):
+            when = dm.epoch(row["first"]["date"]) or 0
+            start[row["card"]] = min(start.get(row["card"], when), when)
+    for row in rows:
+        if row.get("name_only") and row["verdict"] in SURE_CLASSES and row["first"] and \
+                (dm.epoch(row["first"]["date"]) or 0) < start.get(row["card"], float("inf")):
+            evidence = dm.iso(start[row["card"]])[:10] if row["card"] in start else "none"
+            row["created_review"] = f"named only, before its first picture evidence ({evidence})"
+
+
 def summary(rows: list, groups: list, images: dict) -> dict:
     pictures = [r for r in rows if r.get("cell") is None]
     return {"generated": dm.now_iso(), "post_images": len(images), "pictures": len(pictures),
@@ -1025,6 +1162,9 @@ def summary(rows: list, groups: list, images: dict) -> dict:
             "sure_after_git": sum(1 for r in rows if r["verdict"] in SURE_CLASSES and r.get("after_git")),
             "jokes": sum(1 for r in rows if r["joke"]), "meme_reposts": sum(1 for r in rows if r.get("meme_repost")),
             "joke_drafts": sum(1 for r in rows if r.get("joke_draft")),
+            "meme_live": sum(1 for r in rows if r.get("meme_live")),
+            "name_only": sum(1 for r in rows if r.get("name_only")),
+            "created_review": sum(1 for r in rows if r.get("created_review")),
             "paper": dict(Counter(r["verdict"] for r in rows if r["paper"])),
             "families": dict(Counter(r["family"] for r in rows if r.get("family") and r["verdict"] in SURE_CLASSES)),
             "lost_groups": len(groups), "morgue_candidates": sum(1 for g in groups if g["morgue_candidate"]),
@@ -1039,7 +1179,8 @@ def gates() -> dict:
     return {"sure": SURE, "shot_look": SHOT_LOOK, "family_title": FAMILY_TITLE, "clash_bits": CLASH_BITS,
             "sure_bits": SURE_BITS, "sure_fit": SURE_FIT, "sure_novel": SURE_NOVEL, "sure_missing": SURE_MISSING,
             "far": [FAR_RUN, FAR_BITS, FAR_FIT], "group_title": GROUP_TITLE, "grace_days": GRACE_DAYS,
-            "exact_run": EXACT_RUN, "lookalike_bits": LOOKALIKE_BITS, "common_word": COMMON_WORD}
+            "exact_run": EXACT_RUN, "lookalike_bits": LOOKALIKE_BITS, "common_word": COMMON_WORD,
+            "name_fit": NAME_FIT}
 
 
 def sheets_out(paths: Paths, rows: list, images: dict, by_sha: dict, root: str):
@@ -1245,6 +1386,8 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
     _, copies, _ = bar_reads(root, "jpeg400")   # a version's Discord-like copy read: a post's bars
     versions = {v["key"]: {**v, "look": looks[v["key"]], "marks": version_marks(v), "reads": version_reads(v),
                            "bars": blobs.get(v["key"].split("-")[0][1:])} for v in index.versions}
+    for v in versions.values():
+        v["grams"] = version_grams(v)
     members = defaultdict(list)
     for v in versions.values():
         members[v["card"]].append(v)
@@ -1262,7 +1405,8 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
         if v["status"] != "confident" or len(v["cards"]) != 1:
             return None, v, v["status"]
         cid = v["cards"][0]
-        why = gate(cid, (scored_of(v, cid) or {}).get("conf", 0.0), v, feat.get("shape"), family, close)
+        why = gate(cid, (scored_of(v, cid) or {}).get("conf", 0.0), v, feat.get("shape"), family, close) or \
+            name_check(cid, v, dm.read_text(feat.get("lines")), members, cards)
         return (cid, v, "sure") if why is None else (None, v, "gated")
 
     def held_out(pick: dict, image: dict, others: list) -> tuple:
