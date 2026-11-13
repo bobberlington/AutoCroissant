@@ -301,6 +301,7 @@ def offline(monkeypatch, tmp_path):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file:ssh")                # git: no https (ssh tests fake their ssh)
     monkeypatch.chdir(tmp_path)
     for name in ("commands.repo_history", "commands.git_commit"):        # /query as_of's images, land's has_blobs
         if name in sys.modules:

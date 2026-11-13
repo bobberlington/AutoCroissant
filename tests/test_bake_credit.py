@@ -83,6 +83,7 @@ def test_ssh_commit_carries_the_trailer(monkeypatch, tmp_path):
     tree = gc.git(str(clone), "mktree", stdin=f"100644 blob {blob}\tx\n".encode()).decode().strip()
     head = gc.git(str(clone), "commit-tree", tree, "-m", "base", env=gc.git_env()).decode().strip()
     monkeypatch.setattr(gc, "HISTORY_CLONE", str(clone))
+    monkeypatch.setattr(gc, "refresh", lambda: True)                    # no history clone from GitHub
     pushed = []
 
     def fake_run(cmd, **kwargs):
