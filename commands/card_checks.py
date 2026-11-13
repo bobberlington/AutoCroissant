@@ -9,8 +9,8 @@ save). bars: special bars that do not read like the template. name: the website'
 (exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM
 (R) (C) aside); none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures
 left out; worded at each save (owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here
-blocks or tells anyone. room (no flag): on a card with no ability, where an added one goes, or false when the bake finds
-no room for one (the website then offers none, owner 2026-11-13).
+blocks or tells anyone. room (no flag): on a card with no ability, where an added one goes (look: in what font, size and
+colour), or false when the bake finds no room for one (the website then offers none, owner 2026-11-13).
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -50,6 +50,7 @@ import commands.ability_place as ability_place
 import commands.card_bake as card_bake
 import commands.card_plates as card_plates
 import commands.png_export as png_export
+import commands.psd_details as psd_details
 import commands.psd_edit as psd_edit
 from commands.card_bake import Snapshot, local_snapshot, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
@@ -702,9 +703,9 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
 def check_card(ctx: Context, rel: str) -> dict:
     """
     A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"} and, on a card with
-    no ability, "room" (ability_room); mismatches() and flags() word it. plate: the mock-up's (card_plates, published
-    apart: save leaves it out of db/). A custom card's reads are its plate's bar pictures against its PNG (drawn_reads)
-    when the bake drew any, as are bars printing their value (printed: Baba's). bars: CUSTOM_NOTES.
+    no ability, "room" and "look" (ability_room); mismatches() and flags() word it. plate: the mock-up's (card_plates,
+    published apart: save leaves it out of db/). A custom card's reads are its plate's bar pictures against its PNG
+    (drawn_reads) when the bake drew any, as are bars printing their value (printed: Baba's). bars: CUSTOM_NOTES.
 
     Args:
         ctx: context()
@@ -759,8 +760,7 @@ def check_card(ctx: Context, rel: str) -> dict:
             notes.append(DUP_NOTE.format(name=basename(path)))
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads, "notes": notes,
             "bars": CUSTOM_NOTES[why] if style == "custom" else None,
-            "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate,
-            **({"room": room} if room is not None else {})}
+            "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate, **room}
 
 
 def _pictures(snapshot: Snapshot, rel: str, drawn: dict) -> dict:
@@ -774,22 +774,29 @@ def _pictures(snapshot: Snapshot, rel: str, drawn: dict) -> dict:
     return pictures
 
 
-def ability_room(ctx: Context, rel: str, psd: PSDImage, parsed: dict, parts: Optional[dict]):
-    """On a card with no ability: the box an added one goes in (ability_place.room, the bake's room rule; the mock-up
-    draws it there), else False: no room, the website offers none (owner 2026-11-13). None: an ability, no template, or
-    not told (one console line)."""
+def ability_room(ctx: Context, rel: str, psd: PSDImage, parsed: dict, parts: Optional[dict]) -> dict:
+    """On a card with no ability: {"room": the box an added one goes in (ability_place.room, the bake's room rule; the
+    mock-up draws it there), "look": how the bake sets it (the plan's font, px and leading, the template Ability's
+    colour, stroke, just: psd_details)}, else {"room": False}: no room, the website offers none (owner 2026-11-13).
+    {}: an ability, no template, or not told (one console line)."""
     if parts is None or parts.get("ability"):
-        return None
+        return {}
     path = psd_edit.template_for(parsed["card"].get("type"), rel)
     if not path or path not in ctx.snapshot.tree:
-        return None
+        return {}
     try:
         with variant_view(psd, 1):
-            box = ability_place.room(psd, rel, ctx.template(path), path, ctx.fonts, ctx.parser)
+            got = ability_place.room(psd, rel, ctx.template(path), path, ctx.fonts, ctx.parser)
+        source = ability_place.template_ability(ctx.template(path))
+        tpl = psd_details._text([source])[0] if got is not None and source is not None else {}
     except Exception as error:                  # noqa: BLE001 - no fact, never a failed check
         print(f"{rel}: no ability room: {type(error).__name__}: {error}", flush=True)
-        return None
-    return list(box) if box is not None else False
+        return {}
+    if got is None:
+        return {"room": False}
+    look = {"font": got.font, "px": round(got.size, 2), "lead": round(got.leading, 2),
+            **{k: tpl[k] for k in ("color", "stroke", "just", "hx", "track") if tpl.get(k) is not None}}
+    return {"room": list(got.room), "look": look}
 
 
 def unredrawable(psd: PSDImage, rel: str, tree) -> dict:

@@ -82,6 +82,11 @@ class Plan:
     notes: list = field(default_factory=list)
     panel: Optional[tuple] = None
 
+    @property
+    def room(self) -> tuple:
+        """The area its ink goes in: the paragraph box from the first ink row down (room())."""
+        return self.box[0], self.ink[1], self.box[2], self.box[3]
+
 
 # ========================
 # The card's layout
@@ -469,10 +474,9 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
     Returns:
         Plan; raises psd_edit.Refused when no free area is left (NO_ROOM) or no font can be laid out legibly
     """
-    from commands.psd_edit import Refused, _is_text_layer, font_map
+    from commands.psd_edit import Refused, font_map
     from psd_tools.composite.text.model import TextModel
-    source = next((layer for layer in template.descendants() if _is_text_layer(layer) and layer.is_visible()
-                   and base_name(layer).strip().lower() == "ability"), None)
+    source = template_ability(template)
     if source is None:
         raise Refused("unsupported-card", "ability: the template has no visible Ability layer")
     cards = index(index_path)
@@ -603,15 +607,21 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
                 pan if mode == "panel" else None)
 
 
+def template_ability(template: PSDImage):
+    """The template's visible Ability layer (an added one is a copy of it: psd_edit.insert_ability), else None."""
+    from commands.psd_edit import _is_text_layer
+    return next((layer for layer in template.descendants() if _is_text_layer(layer) and layer.is_visible()
+                 and base_name(layer).strip().lower() == "ability"), None)
+
+
 def room(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, fonts_dir: str, parser=None,
-         index_path: Optional[str] = None) -> Optional[tuple]:
-    """plan()'s room rule as one fact per card (card_checks keeps it for the website): the area an added ability's ink
-    goes in (two short lines planned: the paragraph box from their first ink row down), or None when plan() refuses
-    NO_ROOM. Other refusals raise."""
+         index_path: Optional[str] = None) -> Optional[Plan]:
+    """plan()'s room rule as one fact per card (card_checks keeps it for the website): plan() for two short lines (its
+    .room: where an added ability's ink goes; its font, size and leading), or None when plan() refuses NO_ROOM. Other
+    refusals raise."""
     from commands.psd_edit import Refused
     try:
-        got = plan(psd, rel, template, template_rel, TWO_LINES, fonts_dir, parser, index_path)
-        return got.box[0], got.ink[1], got.box[2], got.box[3]
+        return plan(psd, rel, template, template_rel, TWO_LINES, fonts_dir, parser, index_path)
     except Refused as refused:
         if refused.why == NO_ROOM:
             return None

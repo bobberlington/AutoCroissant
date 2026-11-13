@@ -2810,23 +2810,33 @@ def test_plus_ability_skips_art_and_other_text(clone, parser):
 def test_plus_ability_needs_room_under_the_stats(clone, parser):
     """Owner 2026-11-13: "+ability" on a card with stats and no room for two lines under them is refused (NO_ROOM),
     never laid over the art above them (Whelp) nor squeezed at the card's bottom edge (Paint Warrior); Mini Bee fits.
-    room(), the fact card_checks keeps for the website: None, else a box under the stats."""
+    room(), the fact card_checks keeps for the website: None, else a box under the stats, with its look (the plan's
+    font, px and leading, the template Ability's colour and stroke) for the mock-up."""
+    import commands.card_checks as cc
     for rel, room in (("Auxiliary/Minions/Whelp.psd", False), ("Auxiliary/Minions/Paint_Warrior.psd", False),
                       ("Auxiliary/Minions/Mini_Bee.psd", True)):
         psd = PSDImage.open(str(clone / rel))
         for layer in [l for l in psd.descendants() if pe._is_text_layer(l) and l.name == "Ability"]:   # empty at the pin
             pe.remove_layer(psd, layer)
-        t = pe.template_for(pe.parse_card(parser, str(clone / rel), rel, psd)["card"]["type"], rel)
+        parsed = pe.parse_card(parser, str(clone / rel), rel, psd)
+        t = pe.template_for(parsed["card"]["type"], rel)
         plan = lambda: ability_place.plan(psd, rel, PSDImage.open(str(clone / t)), t, "Deal 3 damage to an enemy "
                                           "creature and inflict 2T Burn.", str(clone / pe.FONTS_DIR), parser)
-        box = ability_place.room(psd, rel, PSDImage.open(str(clone / t)), t, str(clone / pe.FONTS_DIR), parser)
+        got = ability_place.room(psd, rel, PSDImage.open(str(clone / t)), t, str(clone / pe.FONTS_DIR), parser)
+        box = got and got.room
+        ctx = SimpleNamespace(snapshot=SimpleNamespace(tree={t: ""}), template=lambda p: PSDImage.open(str(clone / p)),
+                              fonts=str(clone / pe.FONTS_DIR), parser=parser)
+        fact = cc.ability_room(ctx, rel, psd, parsed, {})
         if room:
             stats = ability_place.elements(psd, parser.all_types)["stats"]
             assert plan().ink[1] > max(b[3] for b in stats) and box[1] >= max(b[3] for b in stats), rel
+            look = fact["look"]
+            assert fact["room"] == list(box) and (look["font"], look["px"], look["lead"]) == \
+                (got.font, round(got.size, 2), round(got.leading, 2)) and look["color"] and len(look["stroke"]) == 4
         else:
             with pytest.raises(pe.Refused, match=ability_place.NO_ROOM):
                 plan()
-            assert box is None, rel
+            assert box is None and fact == {"room": False}, rel
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '
