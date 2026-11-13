@@ -441,6 +441,12 @@ class Chain:
                     self.add_review("paper photo", row["id"], picture=row["id"], maybe=row.get("maybe"),
                                     why="a paper card's photo (Q6=A: shown undated once you name its card)")
                 continue
+            joint = self.joint_of(cid, row)
+            if joint and first:                    # a split half's picture titled as the old card: both halves'
+                for half in joint["split_of"]["into"]:
+                    split[half].append({**row, "as": joint["split_of"]["name"]})
+                self.tally["discord: a split half's picture titled as the old card (both halves)"] += 1
+                continue
             if row.get("paper"):                   # Q6=A: first, undated, never Created
                 if row["verdict"] in ENTRY_CLASSES:
                     found[cid].append(row)
@@ -475,6 +481,14 @@ class Chain:
                 found[cid].append(row)
         return found, split
 
+    def joint_of(self, cid: str, row: dict) -> Optional[dict]:
+        """The split a card is a half of, when the picture's title reads the old card's name (sure)."""
+        title = ((self.inputs.text.get(row["file"]) or {}).get("title") or {}) if not row.get("cell") else {}
+        if not (title.get("sure") and title.get("value")):
+            return None
+        return next((g for g in self.splits.values() if cid in g["split_of"]["into"] and
+                     dm.squash(title["value"]) == dm.squash(g["split_of"]["name"])), None)
+
     def later_look(self, cid: str, row: dict) -> bool:
         """A git look whose first git version is after the card's first git record: posted before git, but the
         git part of the chain has it (else it would show twice, around the card's older first version)."""
@@ -507,7 +521,7 @@ class Chain:
         kind = self.inputs.cards[cid].get("type")
         fields = picture_fields(self.inputs, row, kind)
         git = None
-        if row["verdict"] == "version_sure":
+        if row["verdict"] == "version_sure" and not row.get("as"):     # a split's look is the old card's
             exact, git = self.git_look_fields(cid, row)
             if exact:                          # the exact version's fields; one it left to review stays so
                 own = fields
@@ -527,7 +541,8 @@ class Chain:
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))
         for pic in pictures:
             row = pic["row"]
-            key = ("git", row["version"].get("look")) if row["verdict"] == "version_sure" else None
+            key = ("git", row["version"].get("look")) if row["verdict"] == "version_sure" and not row.get("as") \
+                else None
             home = next((g for g in groups if key and g["key"] == key and not row.get("paper") and not g["paper"]), None)
             if home is None and not key and not row.get("paper"):
                 home = next((g for g in groups if g["key"] is None and not g["paper"] and g.get("as") == row.get("as")
