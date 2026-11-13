@@ -236,6 +236,8 @@ BAR_MOVED = 2                               # view levels: a bar pixel moved les
 BAR_BYTES = 192_000                         # a lossless bar sheet past this goes lossy (BAR_AVIF)
 BAR_AVIF = 55                               # AVIF quality (screen tuning): under the site's 720 px image's noise (q50)
 BAR_SIDE = 16383                            # WebP's largest side: the sheet's cuts stack in columns of this height
+CLASH_LEVELS = 24                           # two stats' pictures this far apart on a shared pixel disagree there
+CLASH_PX = 10                               # on this many view px: pasted together they'd show the other's old bar (Ze'mer)
 
 
 def view(image: Image.Image) -> Image.Image:
@@ -514,7 +516,7 @@ def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_S
     cut index}}}, "cuts": [[x, y, w, h, sheet x, sheet y]] (view px), "img": a data URL}: per value the pixels moved past
     `moved` levels (alpha 255, the rest 0), identical cuts once, stacked in columns at most `side` tall; lossless WebP,
     or past BAR_BYTES AVIF 4:4:4 at BAR_AVIF, tuned for screen content (aom's palette and block copy: the values' repeats);
-    None for none.
+    None for none. "clash" (when any): [[i, j]] cuts of two stats the mock-up never pastes together (_clashes).
     """
     bars, cuts, pieces, seen = {}, [], [], {}
     for stat, values in changes.items():
@@ -535,6 +537,7 @@ def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_S
             bars.setdefault(stat, {"at": at[stat], "to": {}})["to"][str(value)] = seen[key]
     if not bars:
         return None
+    clash = _clashes(bars, cuts, [piece for piece, _ in pieces])
     spots, x, y, wide, high = [], 0, 0, 0, 0
     for piece, _ in pieces:
         if y and y + piece.shape[0] > side:     # the next column
@@ -559,7 +562,32 @@ def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_S
             buf = BytesIO()
             lossy.save(buf, "AVIF", quality=BAR_AVIF, **opts)
         kind = "avif"
-    return {"vw": vw, "bars": bars, "cuts": cuts, "img": f"data:image/{kind};base64," + b64encode(buf.getvalue()).decode()}
+    return {"vw": vw, "bars": bars, "cuts": cuts, "img": f"data:image/{kind};base64," + b64encode(buf.getvalue()).decode(),
+            **({"clash": clash} if clash else {})}
+
+
+def _clashes(bars: dict, cuts: list, pieces: list) -> list:
+    """[[i, j]]: cuts of different stats disagreeing past CLASH_LEVELS on CLASH_PX shared view px: each carries the
+    other stat's old bar there (Ze'mer's flowers in the gaps between its bars), so either paste order is off."""
+    owners: dict = {}
+    for stat, entry in bars.items():
+        for index in entry["to"].values():
+            owners.setdefault(index, set()).add(stat)
+    out = []
+    for i in range(len(cuts)):
+        for j in range(i + 1, len(cuts)):
+            if not owners.get(i) or not owners.get(j) or owners[i] & owners[j]:     # one stat's values: never together
+                continue
+            (x1, y1, w1, h1), (x2, y2, w2, h2) = cuts[i][:4], cuts[j][:4]
+            x0, y0, x3, y3 = max(x1, x2), max(y1, y2), min(x1 + w1, x2 + w2), min(y1 + h1, y2 + h2)
+            if x0 >= x3 or y0 >= y3:
+                continue
+            a = pieces[i][y0 - y1:y3 - y1, x0 - x1:x3 - x1].astype(np.int16)
+            b = pieces[j][y0 - y2:y3 - y2, x0 - x2:x3 - x2].astype(np.int16)
+            off = (a[..., 3] > 0) & (b[..., 3] > 0) & (np.abs(a[..., :3] - b[..., :3]).max(-1) > CLASH_LEVELS)
+            if int(off.sum()) >= CLASH_PX:
+                out.append([i, j])
+    return out
 
 
 def _own(layer) -> bool:
@@ -573,8 +601,9 @@ def _own(layer) -> bool:
 def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
     """
     Whether with_bars pictures the card: custom or item bars (card_checks.bar_style "custom", "few"), layer-comp bars of
-    its own (psd_edit.comp_custom: the Isaac bars), a stat past 10 (the cells draw 0-10), else a stat mock_misses finds;
-    never a tagged PSD's (one picture only: the cells') or a card without stats.
+    its own (psd_edit.comp_custom: the Isaac bars), a stat past 10 (the cells draw 0-10), a layer-comp bar at 0 (its lit
+    look is hidden under the darks: the cells can only borrow another row's), else a stat mock_misses finds; never a
+    tagged PSD's (one picture only: the cells') or a card without stats.
     """
     if not any(isinstance(card.get(stat), int) for stat in psd_edit.STAT_FIELDS) or png.size != psd.size \
             or len(variants_of(psd)) > 1:
@@ -582,7 +611,10 @@ def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
     over = any(isinstance(card.get(stat), int) and card[stat] > 10 for stat in psd_edit.STAT_FIELDS)   # the cells: 0-10
     if style in ("custom", "few") or over:
         return True
-    if any(_own(layer) for bars in comp_bars(psd).values() for layer, _, _ in bars):
+    comps = comp_bars(psd)
+    if any(_own(layer) for bars in comps.values() for layer, _, _ in bars):
+        return True
+    if any(card.get(stat) == 0 and comps.get(stat) for stat in psd_edit.STAT_FIELDS):
         return True
     return bool(mock_misses(view(png), psd, card, _stats(psd)))
 

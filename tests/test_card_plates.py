@@ -9,6 +9,7 @@ import json
 import subprocess
 
 import numpy as np
+import pytest
 from PIL import Image
 from psd_tools import PSDImage
 
@@ -133,6 +134,43 @@ def test_creature_pictures_are_the_bakes(clone, tmp_path):
     assert cp.bar_value(psd, raw, png, parsed, parser, PIX, "hp", 5, icc, creature=2) is None
     at = {**parsed["card"], **cp._creature_stats(parsed["card"])}
     assert cp.bar_sheet({"def@2": {9: _moved(png, ours)}}, at)["bars"]["def@2"]["at"] == 8 and at["def@3"] == 2
+
+
+def test_clashing_pictures_are_never_pasted_together(tmp_path):
+    """Two stats' pictures disagreeing on shared pixels (Ze'mer's flowers in the gaps between its bars) are a "clash":
+    mockup.js pastes the first and leaves the other not drawn; pictures apart, or agreeing there, paste together."""
+    from conftest import SITE_SRC
+    flat = lambda v: np.full((10, 20, 4), (v, v, v, 255), np.uint8)
+    was = np.zeros((10, 20, 4), np.uint8)
+    changes = {"hp": {5: (0, 0, flat(200), was)}, "def": {5: (0, 5, flat(40), was), 6: (0, 20, flat(40), was)},
+               "atk": {5: (0, 0, flat(205), was)}}
+    sheet = cp.bar_sheet(changes, {"hp": 3, "def": 3, "atk": 3})
+    hp, def5, def6, atk = (sheet["bars"][k]["to"][v] for k, v in (("hp", "5"), ("def", "5"), ("def", "6"), ("atk", "5")))
+    assert sheet["clash"] == [sorted([hp, def5]), sorted([def5, atk])]
+    mockup = SITE_SRC / "site" / "assets" / "mockup.js"
+    if not mockup.is_file():
+        pytest.skip(f"no {mockup}")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const m = await import({json.dumps(mockup.as_uri())});\nconst b = {json.dumps(sheet)};\n"
+                     f"console.log(JSON.stringify([[{hp}, {def5}, {atk}], [{hp}, {def6}, {atk}], [{def5}, {hp}]].map(ix => "
+                     "[...m.clashing(b, ix.map(i => b.cuts[i]))])));\n", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [[1], [], [1]]
+
+
+def test_a_comp_bar_at_zero_is_pictured(monkeypatch):
+    """A layer-comp stat at 0 is pictured: its lit look is under the darks (the 4 own-look rows, 11-12), the cells could
+    only borrow another row's."""
+    psd = type("P", (), {"size": (10, 20)})()
+    monkeypatch.setattr(cp, "variants_of", lambda psd: [None])
+    monkeypatch.setattr(cp, "comp_bars", lambda psd: {"hp": [], "def": [("bar", 0, (0, 0, 1, 1))], "atk": [], "spd": []})
+    monkeypatch.setattr(cp, "_own", lambda layer: False)
+    monkeypatch.setattr(cp, "mock_misses", lambda *args: [])
+    monkeypatch.setattr(cp, "view", lambda png: png)
+    monkeypatch.setattr(cp, "_stats", lambda psd: {})
+    png = type("I", (), {"size": (10, 20)})()
+    assert cp.pictured(psd, png, {"hp": 0, "def": 0}, "new") and not cp.pictured(psd, png, {"hp": 0, "def": 2}, "new")
 
 
 def test_bar_changes_read_caps_once(clone, monkeypatch):
