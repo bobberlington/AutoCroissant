@@ -396,6 +396,7 @@ def test_alt_template_bars(clone, parser, tmp_path):
 
 
 TWO_CREATURES = "03aa189be7367cf39388ba3a1a7bad2c812261d6"    # MDW/Templates/2_Creature_Template.psd's blob: all at "5"
+TWIN_MARKERS = "20af844f4c0ce39824c7a0963bb701cbe91b491a"     # Twin_Emperors.psd since 11-11: opacity-0 "10" markers
 
 
 def test_creature_bars(clone, parser, tmp_path):
@@ -455,6 +456,18 @@ def test_creature_rows(clone, parser, tmp_path):
     psd = PSDImage.open(path)
     assert pe.parse_card(parser, path, rel, psd)["card"]["creatures"][1]["def"] == 10
     assert [group.name for group, _, _ in pe.bar_rows(psd, "def", 2)[0]] == ["2"] and _creature_bars(psd)["shared"] == ["hp"]
+    path = tmp_path / "te.psd"                  # its rows' opacity-0 "10" markers stay on: two rows of creature 2
+    path.write_bytes(card_blob(clone, TWIN_MARKERS))     # emptied by hand later still read two creatures
+    psd = PSDImage.open(str(path))
+    parsed = pe.parse_card(parser, str(path), rel, psd)
+    was = parsed["card"]["creatures"]
+    pe.set_creatures(psd, parsed, [{**was[0], "atk": 2}, {**was[1], "def": 3}])
+    for group in (group for stat in ("atk", "spd") for group, _, _ in stat_rows(psd)[stat] if group.name == "2"):
+        for layer in group:
+            layer.visible = layer.visible and layer.name.strip() == "10"
+    psd.save(saved, update_preview=False)
+    assert pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"]["creatures"] == \
+        [{**was[0], "atk": 2}, {**was[1], "def": 3, "atk": 10, "spd": 10}]
 
 
 def test_hard_edged(tmp_path):

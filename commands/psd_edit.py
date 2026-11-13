@@ -3333,8 +3333,18 @@ def stat_value(rows: list) -> int:
 def _targets(rows: list, value: int) -> list:
     """The digit the row shows for a value 0-10 (None: no digit; a row with its own "10" digit shows it: Bulborb
     Larva)."""
-    # Twin Emperors' "10" markers: a hand edit that hides a row's digit for 10, not showing "10", reads one creature
     return [value if value < STAT_MAX or str(STAT_MAX) in rows[0].digits else None]
+
+
+def _marker(row: TemplateRow) -> Optional[object]:
+    """The row's visible "10" that draws nothing (Twin Emperors' opacity-0 exposures), kept on by every toggle."""
+    layer = row.digits.get(str(STAT_MAX))
+    return layer if layer is not None and layer.visible and layer.opacity == 0 else None
+
+
+def _row_shows(row: TemplateRow, target: Optional[int]) -> list:
+    """The digits a row shows once toggled to target (_toggle_row): target and a kept marker."""
+    return sorted({*([target] if target is not None else []), *([STAT_MAX] if _marker(row) else [])})
 
 
 def _move_blocks(moves: list) -> None:
@@ -3368,7 +3378,8 @@ def _move_blocks(moves: list) -> None:
 
 def _toggle_row(row: TemplateRow, target: Optional[int]) -> tuple:
     """
-    Show one digit of a row (None: none), hide the others, the row's effect following the visible digit (idea 12).
+    Show one digit of a row (None: none), hide the others but a marker (_marker), the row's effect following the
+    visible digit (idea 12).
 
     Args:
         row: The row
@@ -3379,7 +3390,7 @@ def _toggle_row(row: TemplateRow, target: Optional[int]) -> tuple:
         pixels the effects of the layers involved can reach beyond their masks)
     """
     show = row.digits[str(target)] if target is not None else None
-    hide = [layer for layer in row.digits.values() if layer.visible and layer is not show]
+    hide = [layer for layer in row.digits.values() if layer.visible and layer is not show and layer is not _marker(row)]
     source = hide if row.visible else [layer for layer in row.digits.values() if not layer.visible]
     styled = [layer for layer in source if _enabled_effects(layer)]
     reach = max(fx_pad(layer) for layer in (row.group, *styled, *hide, *([show] if show is not None else [])))
@@ -10281,7 +10292,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             except Refused:                     # the card maker's own bar: the parse reads it back below
                 continue
             for row, target in zip(rows, _targets(rows, jobs[stat])):
-                if row.visible != ([target] if target is not None else []):
+                if row.visible != _row_shows(row, target):
                     raise Refused("reparse", f"{stat}: row {row.group.name!r} shows {row.visible}")
     for whole in edits:
         for edit, layer, _ in _set_layers(psd, whole) if whole.field == "ability" else []:
