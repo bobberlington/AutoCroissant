@@ -64,6 +64,7 @@ from PIL import Image
 from psd_tools import PSDImage, __version__ as PSD_TOOLS_VERSION
 from requests import RequestException
 
+import commands.ability_place as ability_place
 import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
@@ -904,6 +905,7 @@ def rename_paths(text: str, paths: dict) -> Optional[str]:
 
 
 RENAME_SIDES = (EDITS_PATH, AUTHORS_PATH, CREATED_PATH, RATINGS_PATH, RULES_PATH)     # follow_renames' files
+BY_PATH = (RULES_PATH, ability_place.INDEX_FILE)  # keyed by path: they follow a rename that keeps the card's name too
 
 
 def follow_renames(texts: dict, relocated: dict) -> dict:
@@ -911,7 +913,9 @@ def follow_renames(texts: dict, relocated: dict) -> dict:
     The files keyed by card files renamed outside the bake (the guards', a batch's: old path -> new path), as the
     bake's rename leaves them: Card Edits.json's entries (rename_entries: each PSD's card the own one), Card Authors.txt,
     Card Creation Dates.json, Card Ratings.json, TTS/decks.json. texts: {path: text} of those (RENAME_SIDES) at the
-    commit's parent. The TTS save and the data follow the commit's Renamed trailers (rename_trailers).
+    commit's parent, and this repo's ability_index.json (ability_place.INDEX_FILE) when a batch passes it. The files keyed
+    by path (BY_PATH) follow a rename that keeps the card's name too. The TTS save and the data follow the commit's
+    Renamed trailers (rename_trailers).
 
     Returns:
         {path: new text} of those that changed
@@ -921,10 +925,11 @@ def follow_renames(texts: dict, relocated: dict) -> dict:
     sides = {EDITS_PATH: lambda text: rename_entries(text, own, pairs), AUTHORS_PATH: lambda text: rename_authors(text, pairs),
              CREATED_PATH: lambda text: _rename_keys(text, pairs, _earlier),
              RATINGS_PATH: lambda text: _rename_keys(text, pairs, lambda a, b: CardRatings.order(list(a) + list(b))),
-             RULES_PATH: lambda text: rename_paths(text, relocated)}
+             RULES_PATH: lambda text: rename_paths(text, relocated),
+             ability_place.INDEX_FILE: lambda text: ability_place.rename_index(text, relocated)}
     out = {}
     for path, text in texts.items():
-        new = sides[path](text) if pairs and path in sides else None
+        new = sides[path](text) if path in sides and (pairs or path in BY_PATH) else None
         if new is not None and new != text:
             out[path] = new
     return out
@@ -950,11 +955,11 @@ def _rename_share(card: Card, share: Share) -> Share:
         return rename_edits(out if out is not None else text, card) or out
     pairs = _renamed_names(card)
     share.rewrite = rewrite
+    share.side = {RULES_PATH: lambda text: rename_paths(text, card.relocated)}     # a rename keeping the name too
     if pairs:
-        share.side = {AUTHORS_PATH: lambda text: rename_authors(text, pairs),
-                      CREATED_PATH: lambda text: _rename_keys(text, pairs, _earlier),
-                      RATINGS_PATH: lambda text: _rename_keys(text, pairs, lambda a, b: CardRatings.order(list(a) + list(b))),
-                      RULES_PATH: lambda text: rename_paths(text, card.relocated)}
+        share.side.update({AUTHORS_PATH: lambda text: rename_authors(text, pairs),
+                           CREATED_PATH: lambda text: _rename_keys(text, pairs, _earlier),
+                           RATINGS_PATH: lambda text: _rename_keys(text, pairs, lambda a, b: CardRatings.order(list(a) + list(b)))})
     return share
 
 

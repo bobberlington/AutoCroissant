@@ -1062,3 +1062,22 @@ def test_a_batch_rename_takes_a_tagged_picture_along():
     assert list(json.loads(sides[cb.CREATED_PATH])["cards"]) == ["All-Purpose Medical Kit"]
     assert json.loads(sides[cb.RATINGS_PATH])["cards"] == {"All-Purpose Medical Kit2": rating}
     assert json.loads(sides[cb.RULES_PATH])["decks"]["d"]["card_list"] == [f"{new}.png", f"{new}2.png"]
+
+
+def test_a_path_only_rename_moves_the_files_keyed_by_path():
+    """A rename keeping the card's name (cardfix2's 13 underscores, 11-13) still moves what is keyed by path: TTS/decks.json
+    and this repo's ability_index.json (follow_renames), the decks in a bake's own rename too (_rename_share); nothing
+    keyed by the name changes."""
+    from commands import ability_place
+    old, new = "Field/1 Stars/Keelhaul Key", "Field/1 Stars/Keelhaul_Key"
+    relocated = {f"{old}.psd": f"{new}.psd", f"{old}.png": f"{new}.png"}
+    decks = json.dumps({"decks": {"d": {"card_list": [f"{old}.png", "Field/1 Stars/Zap.png"]}}})
+    texts = {cb.RULES_PATH: decks, cb.AUTHORS_PATH: "[cards]\nKeelhaul Key = Croissant\n",
+             ability_place.INDEX_FILE: ability_place._index_text({f"{old}.psd": {"stats": None}, "Field/1 Stars/Zap.psd": {}})}
+    sides = cb.follow_renames(texts, relocated)
+    assert set(sides) == {cb.RULES_PATH, ability_place.INDEX_FILE}
+    assert json.loads(sides[cb.RULES_PATH])["decks"]["d"]["card_list"] == [f"{new}.png", "Field/1 Stars/Zap.png"]
+    assert json.loads(sides[ability_place.INDEX_FILE])["cards"] == {f"{new}.psd": {"stats": None}, "Field/1 Stars/Zap.psd": {}}
+    card = SimpleNamespace(rename=True, relocated=relocated, renames={f"{old}.psd": "Keelhaul_Key.psd"}, dropped=[])
+    side = cb._rename_share(card, cb.Share(card, {}, {}, lambda text: None)).side
+    assert set(side) == {cb.RULES_PATH} and json.loads(side[cb.RULES_PATH](decks)) == json.loads(sides[cb.RULES_PATH])
