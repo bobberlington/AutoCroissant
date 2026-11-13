@@ -784,6 +784,23 @@ def test_counted_pictures_follow_the_value():
             pe.set_stat(_counted_card(), {"card": {"hp": 3}}, "hp", value)
 
 
+def test_id_less_layers_match_by_place():
+    """Layers with no id (Computer Virus's rows): matched by place while both sides list the same ids, so a stat edit's
+    box is its square (PSD_DIRTY_VERIFY renders whole); a square removed: the whole canvas."""
+    buf = BytesIO()
+    _counted_card().save(buf)
+    old, raw = PSDImage.open(BytesIO(buf.getvalue())), buf.getvalue()
+    row = lambda psd: next(g for g, _, _ in stat_rows(psd)["hp"] if g.name == "1")
+    assert [layer.layer_id for layer in row(old)] == [-1] * 3
+    new = pe.edit_copy(old, raw)
+    edit = pe.set_stat(new, {"card": {"hp": 3}}, "hp", 2)
+    assert pe.dirty_box(old, new) == edit.region == (120, 40, 150, 70) and environ["PSD_DIRTY_VERIFY"] == "1"
+    pe.gate_dirty(old, new, [edit])
+    new = pe.edit_copy(old, raw)
+    row(new).remove(row(new)[0])
+    assert pe.dirty_box(old, new) == (0, 0, old.width, old.height)
+
+
 def test_own_displays_cap_the_edit():
     """A card's own display (owner 2026-11-08): each creature's counted row caps its stat at its room, and classify
     refuses past it (never website only); other own bars cap at 10."""

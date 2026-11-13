@@ -9077,9 +9077,12 @@ def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
     oc, nc = list(old), list(new)
     if [do.key(layer) for layer in oc] == [dn.key(layer) for layer in nc]:
         return None
-    oi, ni = {l.layer_id: i for i, l in enumerate(oc)}, {l.layer_id: i for i, l in enumerate(nc)}
-    if len(oi) != len(oc) or len(ni) != len(nc):
-        return FULL                     # repeated ids: no matching
+    ids = keys = [l.layer_id for l in oc], [l.layer_id for l in nc]
+    if len(set(ids[0])) != len(oc) or len(set(ids[1])) != len(nc):
+        if ids[0] != ids[1]:
+            return FULL                 # repeated ids, lists unlike: no matching
+        keys = (range(len(oc)),) * 2    # same ids in order: matched by place
+    oi, ni = ({k: i for i, k in enumerate(ks)} for ks in keys)
     if [i for i in oi if i in ni] != [i for i in ni if i in oi]:
         return FULL                     # reordered
     box, touched = None, ([], [])
@@ -9097,19 +9100,21 @@ def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
             if inner == FULL:
                 return FULL
             box = _join(box, inner)
-        elif lid in dn.lines and o is not None and n is not None and _same_look(o, n):     # its lines alone
-            margin, (x0, y0, x1, y1) = _effect_margin(n)[0], dn.lines[lid]
+        elif (o is not None and n is not None and n.layer_id in dn.lines and n.layer_id != -1
+              and ids[1].count(n.layer_id) == 1 and _same_look(o, n)):     # its lines alone (an id of its own)
+            margin, (x0, y0, x1, y1) = _effect_margin(n)[0], dn.lines[n.layer_id]
             box = _join(box, (max(x0 - margin, 0), max(y0 - margin, 0), min(x1 + margin, n._psd.width),
                               min(y1 + margin, n._psd.height)))
         else:
             box = _join(_join(box, o is not None and _change_reach(do, o, oc, oi[lid]) or None),
                         n is not None and _change_reach(dn, n, nc, ni[lid]) or None)
-    for seq, indices, doc, other, at, odoc in ((oc, touched[0], do, nc, ni, dn), (nc, touched[1], dn, oc, oi, do)):
+    for seq, sk, indices, doc, other, at, odoc in ((oc, keys[0], touched[0], do, nc, ni, dn),
+                                                   (nc, keys[1], touched[1], dn, oc, oi, do)):
         for i in indices:               # the clip layers above a changed one, both sides' (their base may differ)
             for k in range(i + 1, len(seq)):
                 if not seq[k].clipping:
                     break
-                j = at.get(seq[k].layer_id)
+                j = at.get(sk[k])
                 box = _join(_join(box, _change_reach(doc, seq[k], seq, k)),
                             None if j is None else _change_reach(odoc, other[j], other, j))
     return box
@@ -9178,11 +9183,12 @@ def _links_grown(old: PSDImage, new: PSDImage) -> bool:
 def dirty_box(old: PSDImage, new: PSDImage, lines: Optional[dict] = None) -> Optional[tuple]:
     """
     Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
-    per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
-    clipped layer's met with its clip base's (_change_reach: a clipped adjustment on a star or type icon stays in its
-    icon's box), a group's effect reach. The whole canvas on a reorder, a document-level change (but links added:
-    _links_grown), an external link, or when the walk fails (raised under PSD_DIRTY_VERIFY). lines: {layer id:
-    Edit.lines} (_lines): such a type layer, its look the same (_same_look), counts as its lines and its effects' reach.
+    per group (by place when ids repeat but both sides list the same ids), an unchanged subtree skipped, a changed
+    one's fork change box (_change_bbox) plus its clip layers', a clipped layer's met with its clip base's
+    (_change_reach: a clipped adjustment on a star or type icon stays in its icon's box), a group's effect reach. The
+    whole canvas on a reorder, other repeated ids, a document-level change (but links added: _links_grown), an external
+    link, or when the walk fails (raised under PSD_DIRTY_VERIFY). lines: {layer id: Edit.lines} (_lines): such a type
+    layer (an id of its own), its look the same (_same_look), counts as its lines and its effects' reach.
 
     Returns:
         The bbox on the canvas, None when nothing differs
