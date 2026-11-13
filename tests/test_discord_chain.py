@@ -112,7 +112,8 @@ def test_which_pictures_enter_and_reposts_merge():
 def test_created_against_the_file_and_splits():
     lost = [{"id": "LC-x", "split_of": {"name": "Twin Pike", "into": ["pike", "lorn"]}}]
     verdicts = [dict(picture(1, T + 50 * DAY, "lost", card=None), lost_group="LC-x"),
-                picture(2, T + 60 * DAY, card="pike")]
+                picture(2, T + 60 * DAY, card="pike"),
+                dict(picture(3, T + 150 * DAY, "lost", FAR, card=None), lost_group="LC-x")]   # after pike's git
     review = [{"id": "oldrows-1", "kind": "unsure map", "old_id": "Twin Pike",
                "split": {"halves": {"Pike": "top", "Lorn": "bottom"},
                          "rows": {"Lorn": [dict(old_row("Twin Pike", T + 80 * DAY, "c" * 40, 3),
@@ -125,7 +126,8 @@ def test_created_against_the_file_and_splits():
     chain = dc.Chain(inputs(verdicts, bars=bars, created=files, lost=lost, old_review=review))
     found, split = chain.discord_rows()
     pike, lorn = (chain.card(c, found.get(c, []), split.get(c, [])) for c in ("pike", "lorn"))
-    assert [e.get("as") for e in lorn["entries"]] == ["Twin Pike", "Twin Pike"]
+    assert [e.get("as") for e in lorn["entries"]] == ["Twin Pike", "Twin Pike", "Twin Pike"]
+    assert [e.get("as") for e in pike["entries"]] == ["Twin Pike", None]
     proposed = lambda t: chain.review[t["entries"][0]["fields"]["stats"]["review"]]["proposed"]    # each half's own
     assert proposed(lorn) == {"hp": 4, "def": 2, "atk": 4, "spd": 5}
     assert proposed(pike) == {"hp": 6, "def": 4, "atk": 6, "spd": 5}

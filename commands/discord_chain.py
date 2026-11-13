@@ -432,9 +432,7 @@ class Chain:
         for row in inputs.verdicts:
             cid, first = row.get("card"), row.get("first")
             if row["verdict"] == "lost" and row.get("lost_group") in self.splits and first:
-                group = self.splits[row["lost_group"]]
-                for half in group["split_of"]["into"]:
-                    split[half].append({**row, "as": group["split_of"]["name"]})
+                self.to_halves(self.splits[row["lost_group"]], row, split)
                 continue
             if row["verdict"] not in SURE_CLASSES or cid not in cards:
                 if row.get("paper"):
@@ -443,8 +441,7 @@ class Chain:
                 continue
             joint = self.joint_of(cid, row)
             if joint and first:                    # a split half's picture titled as the old card: both halves'
-                for half in joint["split_of"]["into"]:
-                    split[half].append({**row, "as": joint["split_of"]["name"]})
+                self.to_halves(joint, row, split)
                 self.tally["discord: a split half's picture titled as the old card (both halves)"] += 1
                 continue
             if row.get("paper"):                   # Q6=A: first, undated, never Created
@@ -480,6 +477,14 @@ class Chain:
             else:
                 found[cid].append(row)
         return found, split
+
+    def to_halves(self, group: dict, row: dict, split: dict) -> None:
+        """A split card's picture into each half's chain, before that half's first git record."""
+        when = dm.epoch(row["first"]["date"])
+        for half in group["split_of"]["into"]:
+            fs = (self.inputs.cards.get(half) or {}).get("fs")
+            if half in self.inputs.cards and (not fs or when < fs):
+                split[half].append({**row, "as": group["split_of"]["name"]})
 
     def joint_of(self, cid: str, row: dict) -> Optional[dict]:
         """The split a card is a half of, when the picture's title reads the old card's name (sure)."""
