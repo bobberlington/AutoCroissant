@@ -7,6 +7,7 @@ docs/Campaigns/DATA_BUILD_ACTION.md section 7.4.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from os import environ
 from os.path import splitext
 from subprocess import run
@@ -207,15 +208,22 @@ def mailmap_args(repo: str, head: str = "HEAD") -> list:
     only its worktree's (a sparse checkout has none) and a blobless one may lack the blob (fetched here, the one lazy
     fetch).
     """
+    if len(head) == 40 and not head.strip("0123456789abcdef"):     # a commit's .mailmap never changes
+        return list(_mailmap_at(repo, head))
+    return list(_mailmap_at.__wrapped__(repo, head))
+
+
+@lru_cache(maxsize=64)
+def _mailmap_at(repo: str, head: str) -> tuple:
     env = {**environ, "GIT_NO_LAZY_FETCH": "1"}
     found = run(["git", "-C", repo, "rev-parse", "--verify", "-q", f"{head}:{MAILMAP_PATH}"], capture_output=True, text=True,
                 env=env)
     blob = found.stdout.strip()
     if found.returncode != 0 or not blob:
-        return []
+        return ()
     if run(["git", "-C", repo, "cat-file", "-e", blob], capture_output=True, env=env).returncode != 0:
         run(["git", "-C", repo, "cat-file", "blob", blob], capture_output=True, check=True)
-    return ["-c", f"mailmap.blob={blob}"]
+    return ("-c", f"mailmap.blob={blob}")
 
 
 # ========================
