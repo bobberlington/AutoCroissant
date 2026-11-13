@@ -1,5 +1,6 @@
 """discord_chain on made-up cards: the buff/nerf rule and ability changes, which pictures enter a timeline, reposts
-merged, facts checked by pictures, splits, paper cards and Created against the file."""
+merged (nearest look, same words, no fill a picture didn't read), facts checked by pictures, first-repo rows, splits,
+paper cards and Created against the file."""
 from collections import defaultdict
 from types import SimpleNamespace
 
@@ -41,7 +42,8 @@ def picture(n, when, verdict="draft", whole=H, card="bolt", **extra):
             "version": {"look": extra.pop("look", None)} if verdict != "draft" else {"shows": "draft"}, **extra}
 
 
-def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, lost=(), old_review=()):
+def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, lost=(), old_review=(), images=None,
+           first_repo=(), paper_eye=None):
     cards = {"bolt": {"key": "Bolt", "name": "Bolt", "type": "creature", "fs": T + 100 * DAY, "fs_from": "old git"},
              "pike": {"key": "Pike", "name": "Pike", "type": "creature", "fs": T + 100 * DAY, "fs_from": "old git"},
              "lorn": {"key": "Lorn", "name": "Lorn", "type": "minion", "fs": T + 300 * DAY, "fs_from": "git"}}
@@ -52,10 +54,11 @@ def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, 
     rows = defaultdict(list)
     for row in old_rows:
         rows[row["card"]].append(row)
-    return SimpleNamespace(cards=cards, by_key={c["key"]: k for k, c in cards.items()}, versions=versions, images={},
-                           verdicts=verdicts, lost=list(lost), text=text or {}, text_truth={}, bars=bars or {},
-                           old_rows=rows, old_review=list(old_review), facts=list(facts), switches={},
-                           created_file=created or {}, first_data={})
+    return SimpleNamespace(cards=cards, by_key={c["key"]: k for k, c in cards.items()}, versions=versions,
+                           images=images or {}, verdicts=verdicts, lost=list(lost), text=text or {}, text_truth={},
+                           bars=bars or {}, old_rows=rows, old_review=list(old_review), facts=list(facts),
+                           switches={"first_repo_rows": True}, first_repo=list(first_repo),
+                           paper_eye=paper_eye or {}, created_file=created or {}, first_data={})
 
 
 def old_row(card, when, blob, hp):
@@ -78,7 +81,9 @@ def test_which_pictures_enter_and_reposts_merge():
                 picture(6, T + 5 * DAY, "version_unsure"),                         # look not told: review
                 picture(7, T - DAY, created_review="named only, before its first picture evidence (x)"),
                 picture(8, T + 200 * DAY),                                         # after git
-                picture(9, None, paper=True),                                      # a paper card: first, undated
+                picture(9, None, paper=True),                                      # a paper card: 'Before 2020'
+                picture(11, None, "none", card=None, paper=True),                  # named by eye: Bolt's too
+                picture(12, None, "none", card=None, paper=True),                  # not named: review
                 picture(10, T + 6 * DAY, joke=True)]                               # a joke draft: review
     texts = {}
     for n in (1, 2, 3):
@@ -90,23 +95,61 @@ def test_which_pictures_enter_and_reposts_merge():
               "field": "hp", "to": 9, "channel": "update-01"},
              {"id": "f3", "card": "Bolt", "source": "changelog", "confidence": "sure", "date": iso(T + 300 * DAY),
               "kind": "ability changed", "channel": "finished-updates"}]
-    chain = dc.Chain(inputs(verdicts, texts, bars, facts, old))
+    pushes = [{"id": "q1", "card": "Bolt", "date": iso(T + 3.5 * DAY), "author": "Chestnut", "subject": "Update Bolt",
+               "message": "9", "commit": "abc"},
+              {"id": "q2", "card": "Bolt", "date": iso(T + 101 * DAY), "author": "Chestnut", "subject": "x"}]
+    eye = {"P-000000000011": {"card": "bolt", "how": "title"}, "P-000000000012": {"card": None, "title": "Bolt X"}}
+    chain = dc.Chain(inputs(verdicts, texts, bars, facts, old, first_repo=pushes, paper_eye=eye))
     found, split = chain.discord_rows()
     t = chain.card("bolt", found["bolt"], split.get("bolt", []))
     kinds = [(e["kind"], e["id"]) for e in t["entries"]]
     assert kinds == [("paper", "D-P-000000000009"), ("discord", "D-P-000000000001"), ("text", "F-f1"),
-                     ("discord", "D-P-000000000003"), ("discord", "D-P-000000000004"),
+                     ("discord", "D-P-000000000003"), ("discord", "D-P-000000000004"), ("first repo", "Q-q1"),
                      ("old repo", "O-aaaaaaaaaaaa:Creatures/Bolt.png")]
-    paper, first, fact, second, look = (e for e in t["entries"][:5])
-    assert paper["date"] is None and paper["label"] == dc.PAPER_LABEL
+    paper, first, fact, second, look, push = (e for e in t["entries"][:6])
+    assert (paper["date"], paper["label"], [p["id"] for p in paper["pictures"]]) == (
+        None, dc.PAPER_DAY, ["P-000000000009", "P-000000000011"])                         # one paper card
+    assert paper["fields"] == {"name": dc.sure("Bolt", "matcher")} and first["changes"]["ability_change"] == "first"
+    assert push == {"id": "Q-q1", "kind": "first repo", "date": iso(T + 3.5 * DAY), "day": dc.day(T + 3.5 * DAY),
+                    "badge": "first repo", "author": "Chestnut", "subject": "Update Bolt", "source": "first repo push"}
     assert [p["id"] for p in first["pictures"]] == ["P-000000000001", "P-000000000002"]     # a repost merged
     assert second["changes"]["bal"] == "buff" and fact["confirmed_by"] == second["id"]
     assert look["look"]["git"]["source"] == "old repo" and look["fields"]["stats"]["method"] == "git look: picture"
     kinds = {i["kind"] for i in chain.review.values()}
-    assert {"look not told", "named only", "joke picture", "fact vs picture"} <= kinds     # f2: HP 9 read as 7
-    created = chain.created("bolt", t, [r for r in verdicts if r.get("card") == "bolt"])
-    assert created["status"] == "new" and created["ours"]["picture"] == "P-000000000001"   # not the paper, not 7
-    assert created["named_only_earlier"]["picture"] == "P-000000000007"
+    assert {"look not told", "named only", "joke picture", "fact vs picture", "paper photo"} <= kinds   # f2: HP 9
+    rows = [r for r in verdicts if r.get("card") == "bolt"]
+    created = chain.created("bolt", t, rows)                                                 # owner Q6: the paper
+    assert (created["status"], created["date"], created["sort"], created["ours"]["source"]) == (
+        "new", dc.PAPER_DAY, dc.PAPER_SORT, "paper card") and created["dated"]["picture"] == "P-000000000001"
+    dated = chain.created("bolt", {**t, "entries": t["entries"][1:]}, rows)
+    assert dated["ours"]["picture"] == "P-000000000001"                                      # not 7, named only
+    assert dated["named_only_earlier"]["picture"] == "P-000000000007"
+
+
+def test_reposts_join_their_nearest_look_with_the_same_words():
+    def whole(p, d=0):
+        return {"p": format((1 << p) - 1, "016x"), "d": format((1 << d) - 1, "016x"), "q": "0" * 64}
+    old = ["Bolt", "Deal two damage to a creature.", "Heal one ally."]
+    new = ["Bolt", "Deal two damage to a friendly creature.", "Heal one ally."]
+    bars = lambda hp: {k: {"v": v, "sure": True, "conf": 1.0} for k, v in (("hp", hp), ("def", 2), ("atk", 3),
+                                                                             ("spd", 4))}
+    verdicts = [dict(picture(1, T, whole=whole(0)), cell=1, box=[0, 0, 0.5, 1]),    # a sheet's cell: nothing read
+                picture(2, T + 10 * DAY, whole=whole(1)),                          # its repost: HP 6 read
+                picture(3, T + 20 * DAY, whole=whole(3)),                          # HP 7: another look
+                picture(4, T + 30 * DAY, whole=whole(3, 1)),                       # near both, nearest to 3
+                picture(5, T + 40 * DAY, whole=whole(3))]                          # 'friendly' added: its own
+    images = {f"{n:064d}": {"lines": lines} for n, lines in ((2, old), (3, old), (4, old), (5, new))}
+    images[f"{1:064d}"] = {"cells": [{"lines": old}]}
+    chain = dc.Chain(inputs(verdicts, bars={"attachments/2.png": {"stats": bars(6)},
+                                            "attachments/3.png": {"stats": bars(7)}}, images=images))
+    found, _ = chain.discord_rows()
+    entries = [e for e in chain.card("bolt", found["bolt"], [])["entries"] if e["kind"] == "discord"]
+    assert [[p["id"] for p in e["pictures"]] for e in entries] == [
+        ["P-000000000001", "P-000000000002"], ["P-000000000003", "P-000000000004"], ["P-000000000005"]]
+    cell = entries[0]["fields"]["stats"]                  # never filled from the repost: proposed only
+    assert cell["confidence"] == "review" and chain.review[cell["review"]]["proposed"]["hp"] == 6
+    assert entries[1]["fields"]["stats"]["value"]["hp"] == 7
+    assert chain.tally["discord: a near look kept apart (its words differ)"] == 1
 
 
 def test_created_against_the_file_and_splits():
@@ -114,10 +157,10 @@ def test_created_against_the_file_and_splits():
     verdicts = [dict(picture(1, T + 50 * DAY, "lost", card=None), lost_group="LC-x"),
                 picture(2, T + 60 * DAY, card="pike"),
                 dict(picture(3, T + 150 * DAY, "lost", FAR, card=None), lost_group="LC-x")]   # after pike's git
+    half = dict(old_row("Twin Pike", T + 80 * DAY, "c" * 40, 3), card="Lorn", split_from="Twin Pike")
+    half["fields"]["stats"].update(confidence="review", why="bottom half of Twin Pike's rows")
     review = [{"id": "oldrows-1", "kind": "unsure map", "old_id": "Twin Pike",
-               "split": {"halves": {"Pike": "top", "Lorn": "bottom"},
-                         "rows": {"Lorn": [dict(old_row("Twin Pike", T + 80 * DAY, "c" * 40, 3),
-                                                card="Lorn", split_from="Twin Pike")]}}}]
+               "split": {"halves": {"Pike": "top", "Lorn": "bottom"}, "rows": {"Lorn": [half]}}}]
     bars = {"attachments/1.png": {"truth": {"stats": {"hp": 6, "def": 4, "atk": 6, "spd": 5},
                                             "stats2": {"hp": 4, "def": 2, "atk": 4, "spd": 5}, "from": "eye"}}}
     files = {"Pike": {"date": dc.day(T + 60 * DAY), "from": "discord"},
@@ -136,3 +179,5 @@ def test_created_against_the_file_and_splits():
     assert made["pike"]["status"] == "earlier" and made["pike"]["ours"]["as"] == "Twin Pike"
     assert made["lorn"]["status"] == "later" and made["lorn"]["date"] == files["Lorn"]["date"]   # never later
     assert made["bolt"]["status"] == "hand" and made["bolt"]["date"] == "2001-01-01"
+    row = next(e for e in lorn["entries"] if e["kind"] == "old repo")                      # its own review item
+    assert chain.review[row["fields"]["stats"]["review"]]["proposed"] == {"hp": 3, "def": 2, "atk": 3, "spd": 4}

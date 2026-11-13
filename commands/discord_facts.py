@@ -2,7 +2,7 @@
 Changelog facts for the card timelines (docs/Future/CARD_TIMELINE.md; owner answers Q4/Q5, 2026-11-13). Reads the
 archive the miner stored (commands/discord_archive.py) and writes structured facts only, never a message's text:
 
-    python -m commands.discord_facts build  [--root <dir>] [--cards-repo <dir>] [--first-repo-rows]
+    python -m commands.discord_facts build  [--root <dir>] [--cards-repo <dir>] [--no-first-repo-rows]
     python -m commands.discord_facts sample [--root <dir>] [--cards-repo <dir>] [--n 40] [--seed 1] [--sure]
 
 build   Under the archive root's derived/facts/:
@@ -23,8 +23,8 @@ build   Under the archive root's derived/facts/:
                         rows), else from what bars can hold (whole, at most 10; raid bosses 20), else from the line
                         ('bars', a 4-number stat list): 'unit_how' read, range, said or list.
         firstrepo.jsonl text-only rows (date, mapped author, commit subject, badge "first repo") for push notices
-                        naming exactly one card and nothing else (no list in the subject); shown only with the switch
-                        on (switches.json, off unless --first-repo-rows: owner Q5 B, A prepared for the review page).
+                        naming exactly one card and nothing else (no list in the subject); shown while the switch is
+                        on (switches.json: on, owner Q5 = A; --no-first-repo-rows turns it off).
         review.jsonl    changelog lines the owner decides (ambiguous card, unsure fact, with why): ids only.
 sample  Prints n random lines that gave facts, with their facts, for an eye check (terminal only).
 A card is named by today's names (stats.json keys, titles, display and website names, file names) or by an old name
@@ -880,7 +880,7 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True)
                 yield source, channel, m.get("channel_name") or titles.get(channel, (channel,))[0], m, n, line, got
 
 
-def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = False, log=print) -> dict:
+def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True, log=print) -> dict:
     out = join(root, *OUT)
     facts, review, counts = [], [], Counter()
     kinds = {c: kind for c, (_, kind) in chat_channels(root).items()}
@@ -936,9 +936,9 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = Fals
     pushes, rows = push_facts(root, names, counts)
     facts += pushes
     switches = {SWITCH: bool(first_repo_rows),
-                "why": "owner Q5 = B for the preview (push notices are evidence only); A (text-only rows) prepared "
-                       "here for the review page: turn on only on the owner's choice",
-                "decided_without_owner": ["Q4 = B", "Q5 = B (A prepared)"]}
+                "why": "owner Q5 = A (2026-11-13): text-only rows for notices naming exactly one card, shown in "
+                       "the preview; the other notices are evidence only",
+                "owner_answers": ["Q4 = B", "Q5 = A"]}
     for row in rows:
         row["shown"] = bool(first_repo_rows)
     write_text(join(out, "facts.jsonl"), "".join(dumps(f, ensure_ascii=False) + "\n" for f in facts))
@@ -1173,7 +1173,8 @@ def main(argv=None):
     parser.add_argument("command", choices=("build", "sample"))
     parser.add_argument("--root", default=DEFAULT_ROOT)
     parser.add_argument("--cards-repo", default=LOCAL_DIR_LOC)
-    parser.add_argument("--first-repo-rows", action="store_true", help="show the first repo's text-only rows")
+    parser.add_argument("--no-first-repo-rows", dest="first_repo_rows", action="store_false",
+                        help="hide the first repo's text-only rows (owner Q5 = A shows them)")
     parser.add_argument("--n", type=int, default=40)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--sure", action="store_true", help="sample: only lines with a sure changelog fact")

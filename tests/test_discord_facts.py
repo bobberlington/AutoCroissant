@@ -131,8 +131,8 @@ def test_build_writes_facts_without_text(tmp_path, monkeypatch):
     for name in ("facts.jsonl", "review.jsonl"):
         assert "zany" not in (out / name).read_text() and "Quirky" not in (out / name).read_text()
     row = json.loads((out / "firstrepo.jsonl").read_text())       # one row: the listing notice is evidence only
-    assert (row["card"], row["badge"], row["shown"]) == ("Sun Cookie", "first repo", False)
-    assert json.loads((out / "switches.json").read_text())[F.SWITCH] is False
+    assert (row["card"], row["badge"], row["shown"]) == ("Sun Cookie", "first repo", True)     # owner Q5 = A
+    assert json.loads((out / "switches.json").read_text())[F.SWITCH] is True
 
 
 def test_hp_def_units():

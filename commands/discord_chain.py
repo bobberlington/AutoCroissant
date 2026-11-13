@@ -9,40 +9,48 @@ repo (read only):
 build   Under derived/chain/:
         timelines/<card id>.json  every live card: its entries oldest first, then the stop (its first git record:
                         the old repo's, else the card repo's) and its Created date. Entries:
-                          paper     a paper card's photo the matcher is sure of (owner Q6=A: first, no day, never
-                                    Created)
-                          discord   one look posted before the card's first git record: a git look (version_sure) or
-                                    a look not in git (draft); its reposts merged (the earliest post dates it); a
-                                    split card's (owner Q3=A) "as <old name>" on both halves
-                          text      a sure changelog fact before the stop (owner Q4=B: a field change as data, or
-                                    "ability changed" with no text); item kinds never (hand-crafted metadata)
-                          old repo  the old pre-wipe repo's PNG versions (derived/oldrows), with their fold
+                          paper       a paper card's photo named as the card (the matcher, or by eye in
+                                      derived/readers/paper/eye.json): owner Q6, dated "Before 2020" (no day), first
+                          discord     one look posted before the card's first git record: a git look (version_sure) or
+                                      a look not in git (draft); its reposts merged (the earliest post dates it); a
+                                      split card's (owner Q3) "as <old name>" on both halves
+                          text        a sure changelog fact before the stop (owner Q4: a field change as data, or
+                                      "ability changed" with no text); item kinds never (hand-crafted metadata)
+                          first repo  a first-repo push notice naming the card alone (owner Q5, switch
+                                      first_repo_rows on): date, mapped author, commit subject; no picture or link
+                          old repo    the old pre-wipe repo's PNG versions (derived/oldrows), with their fold
                         Each version's fields keep their method and confidence; only sure values are kept, the rest
-                        name their review item. Each is diffed with the version before (sure fields on both sides):
-                        stats with the website's buff/nerf rule (analytics.change: the total up or down, a total
-                        over OFF_SCALE not judged), stars, name, types, the ability (text_key; formatting alone is
-                        no change, owner 11-09). Discord looks fold as minor only when every field is sure on both
-                        sides and unchanged (as the old rows; their types are never sure, so they never fold).
-        created.json    Created = the earliest confident appearance (a card-sure Discord picture, the old repo, the
-                        card repo) with its source, against site/Card Creation Dates.json: same, earlier (proposed),
-                        later (review only: never moved later), new (no date yet), hand (never touched).
+                        name their review item (types with nothing read: 'unread'). Each is diffed with the version
+                        before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
+                        the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
+                        (text_key; formatting alone is no change, owner 11-09). Discord looks fold as minor only when
+                        every field is sure on both sides and unchanged (as the old rows; their types are never sure,
+                        so they never fold).
+        created.json    Created = the earliest confident appearance (a named paper photo: "Before 2020", owner Q6; a
+                        card-sure Discord picture, the old repo, the card repo) with its source, against site/Card
+                        Creation Dates.json: same, earlier (proposed), later (review only: never moved later), new (no
+                        date yet), hand (never touched). sort orders "Before 2020" first.
         review.jsonl    what the chain keeps out (stable ids): looks not told, named-only pictures before the card's
                         first picture evidence (one section to confirm in bulk), joke drafts, unsure fields, facts a
-                        picture contradicts, Created changes, splits, paper photos, the decisions taken without the
-                        owner (Q1-Q6).
+                        picture contradicts, Created changes, splits, unnamed paper photos, and the owner's answers
+                        (Q1-Q6, read only).
         stats.txt       counts.
 checks  Contact sheets of n random cards' whole timelines (each version's picture beside its fields) for the by-eye
         check, under derived/chain/checks/.
-No message text, posters, authors of Discord posts or links anywhere: dates, channels, picture ids and read fields only.
+No message text, posters, authors of Discord posts or links anywhere: dates, channels, picture ids and read fields only
+(a first-repo row's commit subject and mapped author, as the owner ruled for Q5).
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
+from functools import lru_cache
 from hashlib import sha1
 from json import dumps, loads
 from os import makedirs, remove
 from os.path import exists, join
 from random import Random
+from re import findall
 from typing import Callable, Optional
 
 from commands import discord_match as dm
@@ -59,6 +67,8 @@ TEXT_READS, TEXT_TRUTH = ("derived", "readers", "text", "reads.jsonl"), ("derive
 BAR_READS = ("derived", "readers", "bars", "reads.jsonl")
 OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrows", "review.jsonl")
 FACTS, FACT_SWITCHES = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "switches.json")
+FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
+PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
 SURE_CLASSES = ("version_sure", "version_unsure", "draft")    # the card is sure (discord_verdicts)
@@ -69,26 +79,31 @@ NO_BARS = {"field", "buff", "debuff"}                         # card kinds that 
 OFF_SCALE = 40                                                # analytics.OFF_SCALE: a total over this is not judged
 MERGE_BITS = dm.LOOK_BITS                                     # drafts one look: whole-card hash this near ...
 BLIND_BITS = 1.5                                              # ... this near when either has too little text read
+SAME_WORDS, ABILITY_WORDS = 0.92, 4                           # ... ability words this alike (Jaccard), this many read
+NEAR_WORD, LABEL_WORD = 0.75, 0.6                             # an OCR'd word's near twin; a stat label misread
+STAT_LABELS = ("health", "defense", "defence", "attack", "speed", "armor")
+WORDS = "/usr/share/dict/words"                               # real words: OCR noise aside
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
 ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "attack", "infliction", "counter",
               "negation", "deploy"}                           # an item's kind (its subtype): never a fact here
-PAPER_LABEL = "paper card, before Discord"
+PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"           # owner Q6: paper photos' date, sorting before every day
 ERA_RANK = {"A": 1, "B": 1, "C": 1, "A-item": 1, "B-item": 1, "C-item": 1, "D1": 2, "D2": 3, "D3": 3,
             "D-item": 3}                                      # template eras in time (A, B, C overlapped 2020-22)
 REPOST_DAYS = 60                                              # D1 after D2 this long after D2's first: a repost
-DECISIONS = (                                                 # STAGE1's questions, answered without the owner
+OWNER_ANSWERS = (                                             # STAGE1's questions, the owner's answers (11-13 08:15)
     ("Q1", "C", "Meme/joke channels: meme-cards, joke-ideas, cursed and idea-graveyard; patty-vault and ai-images left "
                 "out entirely."),
     ("Q2", "A", "Morgue candidates: only cards really played (port or update-port picture, update changelog line, "
                 "card-classification, old repo file) plus the joke cards; drafts seen only in idea channels are "
                 "'ideas never ported'."),
     ("Q3", "A", "Split cards: both halves' timelines start with the joint card's versions 'as <old name>', each with "
-                "its own half's stats (to confirm here)."),
+                "its own half's stats."),
     ("Q4", "B", "Changelog lines: only field changes stated as data (e.g. 'ATK 5 -> 4') and a dated 'ability changed' "
                 "mark without text; never the line's text."),
-    ("Q5", "B", "First repo push notices: evidence only (no rows); text-only rows (A) prepared behind the switch "
-                "first_repo_rows (derived/facts/firstrepo.jsonl)."),
-    ("Q6", "A", "Paper cards: shown first, labelled 'paper card, before Discord', no day; never set Created."))
+    ("Q5", "A", "First repo push notices naming exactly one card: text-only rows (date, mapped author, commit message, "
+                "badge 'first repo', no picture, no link), shown in the preview; the others are evidence only."),
+    ("Q6", "A", "Paper card photos: dated 'Before 2020' (no day), shown first; they set Created = 'Before 2020' "
+                "(source: paper card), sorting before every dated card."))
 
 
 # ========================
@@ -234,6 +249,8 @@ class Inputs:
         self.old_review = dm.read_jsonl(p.at(OLD_REVIEW))
         self.facts = dm.read_jsonl(p.at(FACTS))
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
+        self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
+        self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
         git_dir = dm.git_dir_of(cards_repo)
         if not git_dir:
             raise SystemExit(f"no card repo at {cards_repo}")
@@ -336,14 +353,19 @@ def picture_stats(read: Optional[dict], kind: Optional[str]) -> dict:
 
 
 def old_fields(row: dict, review_of: dict) -> dict:
-    """An old repo row's fields: sure values kept, the rest withheld with their review item ids."""
+    """An old repo row's fields: sure values kept, the rest withheld with their review item ids (a row oldrows has
+    none for, a split's: its value proposed for the chain's own item)."""
     out = {}
     for key, field in (row.get("fields") or {}).items():
         if field.get("confidence") == "sure":
             out[key] = sure(field.get("value"), field.get("method") or "psd", None, check=field.get("check"))
-        else:
-            out[key] = {"method": field.get("method") or "psd", "confidence": "review", "why": field.get("why"),
-                        "review": review_of.get((row["id"], key))}
+            continue
+        out[key] = {"method": field.get("method") or "psd", "confidence": "review", "why": field.get("why")}
+        rid = review_of.get((row["id"], key))
+        if rid:
+            out[key]["review"] = rid
+        elif field.get("value") is not None:
+            out[key]["proposed"] = field["value"]
     return out
 
 
@@ -361,16 +383,31 @@ def differs(key: str, a, b) -> bool:
     return a != b
 
 
-def merge_fields(fields: dict, other: dict, how: str) -> dict:
-    """fields filled from another picture of the same look: a sure value where this one has none; two sure values
-    that differ make the field unsure."""
+def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict:
+    """fields filled from another picture of the same look: a sure value its own unsure read agrees with; one it
+    didn't read (a sheet's cell, unread bars, no era, nothing read) is only proposed, one its read contradicts stays
+    unsure; two sure values that differ make the field unsure. fill False: disagreements only (a git look's exact
+    fields)."""
     out = dict(fields)
     for key, field in other.items():
         mine = out.get(key)
-        if is_sure(field) and not is_sure(mine):
+        if not is_sure(field):
+            continue
+        if is_sure(mine):
+            if differs(key, field["value"], mine["value"]):
+                out[key] = unsure(mine["method"], f"pictures of this look disagree ({how})", mine["value"])
+            continue
+        if not fill or mine is None:
+            continue
+        own = mine.get("proposed")
+        if own is None or mine.get("method") == "none":
+            if own is None:
+                out[key] = unsure(mine.get("method") or "none", f"{mine.get('why') or 'not read'}; a repost reads "
+                                  f"it ({how})", field["value"])
+        elif differs(key, own, field["value"]):
+            out[key] = unsure(mine["method"], f"pictures of this look disagree ({how})", own)
+        else:
             out[key] = {**field, "method": f"{field['method']} ({how})"}
-        elif is_sure(field) and is_sure(mine) and differs(key, field["value"], mine["value"]):
-            out[key] = unsure(mine["method"], f"pictures of this look disagree ({how})", mine["value"])
     return out
 
 
@@ -389,17 +426,60 @@ def conflict(a: dict, b: dict) -> bool:
     return False
 
 
-def same_look(a: dict, b: dict) -> bool:
-    """Two drafts of a card show one look: whole cards within MERGE_BITS with the same timing tags and numbers read
-    (within BLIND_BITS when either has too little text to tell), and no sure read differs."""
+def near_look(a: dict, b: dict) -> bool:
+    """Two drafts' whole cards within MERGE_BITS with the same timing tags and numbers read (within BLIND_BITS when
+    either has too little text to tell)."""
     if not a["row"].get("whole") or not b["row"].get("whole"):
         return False
     bits = dm.hash_distance(a["row"]["whole"], b["row"]["whole"])
     if a["marks"] is None or b["marks"] is None:
-        near = bits <= BLIND_BITS
-    else:
-        near = bits <= MERGE_BITS and a["marks"] == b["marks"]
-    return near and not conflict(a["fields"], b["fields"])
+        return bits <= BLIND_BITS
+    return bits <= MERGE_BITS and a["marks"] == b["marks"]
+
+
+def same_look(a: dict, b: dict) -> bool:
+    """Two drafts of a card show one look: near_look, the same words (same_words) and no sure read differs."""
+    return near_look(a, b) and same_words(a, b) and not conflict(a["fields"], b["fields"])
+
+
+@lru_cache(maxsize=1)
+def real_words() -> frozenset:
+    try:
+        with open(WORDS, encoding="utf-8", errors="ignore") as f:
+            return frozenset(w.strip().lower() for w in f if w.strip())
+    except OSError:
+        return frozenset()
+
+
+def ocr_words(lines) -> set:
+    """A picture's OCR'd words (3+ letters; lines read with confidence 0.3 or more, as dm.read_text)."""
+    text = " ".join(line if isinstance(line, str) else line[0] for line in lines or []
+                    if isinstance(line, str) or line[1] >= 0.3)
+    return {w for w in findall(r"[a-z]+", text.lower()) if len(w) >= 3}
+
+
+def solid(words: set) -> set:
+    """Words OCR noise can't make: 4+ letters, a dictionary word, not a stat label (misread)."""
+    vocabulary = real_words()
+    return {w for w in words if len(w) >= 4 and w in vocabulary and
+            not any(SequenceMatcher(None, w, label).ratio() >= LABEL_WORD for label in STAT_LABELS)}
+
+
+def lone_words(mine: set, theirs: set) -> list:
+    """My solid words with no near twin in their words (a misread aside): a word changed, added or dropped."""
+    return sorted(w for w in solid(mine) - theirs
+                  if not any(SequenceMatcher(None, w, x).ratio() >= NEAR_WORD for x in theirs))
+
+
+def same_words(a: dict, b: dict) -> bool:
+    """Two pictures print the same text, as far as read: their abilities' words (sure or not) alike (Jaccard
+    SAME_WORDS, ABILITY_WORDS each), and no real word on one with no near twin on the other (a reworded ability, a
+    class line renamed: what the hash and the marks can't see)."""
+    x, y = a.get("ability_words") or set(), b.get("ability_words") or set()
+    if len(x) >= ABILITY_WORDS and len(y) >= ABILITY_WORDS and len(x & y) / len(x | y) < SAME_WORDS:
+        return False
+    return not (lone_words(a.get("words") or set(), b.get("words") or set()) or
+                lone_words(b.get("words") or set(), a.get("words") or set()))
 
 
 # ========================
@@ -431,25 +511,18 @@ class Chain:
         found, split = defaultdict(list), defaultdict(list)
         for row in inputs.verdicts:
             cid, first = row.get("card"), row.get("first")
+            if row.get("paper"):
+                self.paper_row(row, found)
+                continue
             if row["verdict"] == "lost" and row.get("lost_group") in self.splits and first:
                 self.to_halves(self.splits[row["lost_group"]], row, split)
                 continue
             if row["verdict"] not in SURE_CLASSES or cid not in cards:
-                if row.get("paper"):
-                    self.add_review("paper photo", row["id"], picture=row["id"], maybe=row.get("maybe"),
-                                    why="a paper card's photo (Q6=A: shown undated once you name its card)")
                 continue
             joint = self.joint_of(cid, row)
             if joint and first:                    # a split half's picture titled as the old card: both halves'
                 self.to_halves(joint, row, split)
                 self.tally["discord: a split half's picture titled as the old card (both halves)"] += 1
-                continue
-            if row.get("paper"):                   # Q6=A: first, undated, never Created
-                if row["verdict"] in ENTRY_CLASSES:
-                    found[cid].append(row)
-                else:
-                    self.add_review("paper photo", row["id"], card=cid, picture=row["id"],
-                                    why="a paper card's photo whose look isn't told")
                 continue
             if not first:
                 self.tally["discord: card sure, no dating post"] += 1
@@ -477,6 +550,25 @@ class Chain:
             else:
                 found[cid].append(row)
         return found, split
+
+    def paper_row(self, row: dict, found: dict) -> None:
+        """A paper card's photo (owner Q6): named as a live card by eye (derived/readers/paper/eye.json decides the
+        photos it lists) or by the matcher (card sure): that card's first entry, "Before 2020"; else to review."""
+        cards = self.inputs.cards
+        if row["id"] in self.inputs.paper_eye:
+            eye = self.inputs.paper_eye[row["id"]] or {}
+            cid, how, note = eye.get("card"), "eye", eye.get("how")
+        else:
+            eye, how, note = {}, "matcher", None
+            cid = row.get("card") if row["verdict"] in SURE_CLASSES else None
+        if cid in cards:
+            found[cid].append({**row, "card": cid, "paper_how": how, "paper_note": note})
+            self.tally[f"paper: named as a live card ({how})"] += 1
+            return
+        self.add_review("paper photo", row["id"], picture=row["id"], maybe=row.get("maybe"), title=eye.get("title"),
+                        note=eye.get("how"), why="a paper card's photo: name its card to show it first, 'Before "
+                                                 "2020', and set its Created (owner Q6)")
+        self.tally["paper: not named as a live card (review)"] += 1
 
     def to_halves(self, group: dict, row: dict, split: dict) -> None:
         """A split card's picture into each half's chain, before that half's first git record."""
@@ -523,8 +615,12 @@ class Chain:
         return {}, git
 
     def picture(self, cid: str, row: dict) -> dict:
-        kind = self.inputs.cards[cid].get("type")
-        fields = picture_fields(self.inputs, row, kind)
+        card = self.inputs.cards[cid]
+        if row.get("paper"):                   # owner Q6: its name only (as named), nothing read
+            how = "eye (its hand-written title)" if row.get("paper_how") == "eye" else "matcher"
+            return {"row": row, "fields": {"name": sure(card.get("name") or card["key"], how)}, "git": None,
+                    "when": None, "marks": None, "words": set(), "ability_words": set()}
+        fields = picture_fields(self.inputs, row, card.get("type"))
         git = None
         if row["verdict"] == "version_sure" and not row.get("as"):     # a split's look is the old card's
             exact, git = self.git_look_fields(cid, row)
@@ -536,34 +632,46 @@ class Chain:
                         fields[key] = unsure(fields[key].get("method") or "psd", "its git version's field is to "
                                              f"review ({fields[key].get('why')}); the picture reads it", mine["value"])
                 fields = merge_fields(fields, {k: v for k, v in own.items() if is_sure(fields.get(k))}, "the picture")
+        lines = picture_lines(self.inputs, row)
+        ability = (self.inputs.text.get(row["file"]) or {}).get("ability") or {} if not row.get("cell") else {}
         return {"row": row, "fields": fields, "git": git, "when": dm.epoch((row.get("first") or {}).get("date")),
-                "marks": read_marks(picture_lines(self.inputs, row))}
+                "marks": read_marks(lines), "words": ocr_words(lines),
+                "ability_words": set(findall(r"[a-z]+", str(ability.get("value") or "").lower()))}
 
     def looks(self, cid: str, rows: list) -> list:
-        """Pictures grouped into looks: one git look each; drafts by same_look; oldest first."""
+        """Pictures grouped into looks, oldest first: one git look each, a card's paper photos one; drafts by
+        same_look, each into its nearest group (the hash to its first picture) whose every picture prints the same
+        words."""
         groups = []
         pictures = sorted((self.picture(cid, r) for r in rows),
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))
         for pic in pictures:
             row = pic["row"]
-            key = ("git", row["version"].get("look")) if row["verdict"] == "version_sure" and not row.get("as") \
-                else None
-            home = next((g for g in groups if key and g["key"] == key and not row.get("paper") and not g["paper"]), None)
-            if home is None and not key and not row.get("paper"):
-                home = next((g for g in groups if g["key"] is None and not g["paper"] and g.get("as") == row.get("as")
-                             and same_look(g["pictures"][0], pic)
-                             and not conflict(g["fields"], pic["fields"])), None)
+            key = ("paper",) if row.get("paper") else ("git", row["version"].get("look")) \
+                if row["verdict"] == "version_sure" and not row.get("as") else None
+            if key:
+                home = next((g for g in groups if g["key"] == key), None)
+            else:
+                near = [g for g in groups if g["key"] is None and g.get("as") == row.get("as")
+                        and near_look(g["pictures"][0], pic) and not conflict(g["pictures"][0]["fields"], pic["fields"])
+                        and not conflict(g["fields"], pic["fields"])]
+                fits = [g for g in near if all(same_words(q, pic) for q in g["pictures"])]
+                if near and not fits:
+                    self.tally["discord: a near look kept apart (its words differ)"] += 1
+                home = min(fits, key=lambda g: dm.hash_distance(g["pictures"][0]["row"]["whole"], row["whole"]),
+                           default=None)
             if home is None:
                 groups.append({"key": key, "pictures": [pic], "fields": dict(pic["fields"]), "git": pic["git"],
                                "paper": bool(row.get("paper")), "as": row.get("as")})
             else:
                 home["pictures"].append(pic)
-                home["fields"] = merge_fields(home["fields"], pic["fields"], "repost " + row["id"])
+                home["fields"] = merge_fields(home["fields"], pic["fields"], "repost " + row["id"],
+                                              fill=not (home["git"] or {}).get("row"))
         return groups
 
     def split_stats(self, cid: str, group: dict) -> None:
-        """A split card's picture (owner Q3=A): this half's own stats, to confirm (the halves as the old rows
-        matched them)."""
+        """A split card's picture (owner Q3): this half's own stats, to confirm (the halves as the old rows matched
+        them)."""
         halves = {}
         for item in self.inputs.old_review:
             if (item.get("split") or {}).get("halves") and item.get("old_id") == group["as"]:
@@ -574,7 +682,7 @@ class Chain:
         half = halves.get(name)
         value = creatures[0 if half == "top" else 1] if creatures and half in ("top", "bottom") else None
         group["fields"]["stats"] = unsure(stats.get("method") or "picture",
-                                          f"{half or 'which'} half of {group['as']}'s rows (owner Q3=A, provisional)",
+                                          f"{half or 'which'} half of {group['as']}'s rows (owner Q3)",
                                           value)
 
     def discord_entries(self, cid: str, rows: list, split: list) -> list:
@@ -584,8 +692,12 @@ class Chain:
             if group["as"]:
                 self.split_stats(cid, group)
             entry = {"id": "D-" + first["id"], "kind": "paper" if group["paper"] else "discord"}
-            if group["paper"]:
-                entry.update(date=None, day=None, label=PAPER_LABEL)
+            if group["paper"]:                 # owner Q6: no day
+                entry.update(date=None, day=None, label=PAPER_DAY, sort=PAPER_SORT, source="paper card",
+                             named=first.get("paper_how"))
+                notes = sorted({p["row"]["paper_note"] for p in group["pictures"] if p["row"].get("paper_note")})
+                if notes:
+                    entry["note"] = "; ".join(notes)
             else:
                 entry.update(date=dm.iso(group["pictures"][0]["when"]), day=day(group["pictures"][0]["when"]),
                              channel=first["first"]["channel"])
@@ -603,7 +715,8 @@ class Chain:
             entry["fields"] = {k: v for k, v in group["fields"].items() if v}
             if card.get("type") in NO_BARS:
                 entry["fields"].pop("stats", None)
-            era = next((self.era(p["row"]) for p in group["pictures"] if self.era(p["row"])), None)
+            era = None if group["paper"] else next((self.era(p["row"]) for p in group["pictures"]
+                                                     if self.era(p["row"])), None)
             if era:
                 entry["era"] = era
             out.append(entry)
@@ -656,8 +769,27 @@ class Chain:
             out.append(entry)
         return out
 
+    def first_repo_entries(self, cid: str) -> list:
+        """The first repo's push notices naming this card alone (owner Q5, switch first_repo_rows): text-only rows
+        before the stop: date, mapped author, commit subject; no message, picture or link."""
+        if not self.inputs.switches.get("first_repo_rows"):
+            return []
+        card, out = self.inputs.cards[cid], []
+        stop = card.get("fs") or float("inf")
+        for row in self.inputs.first_repo:
+            if row.get("card") != card["key"]:
+                continue
+            when = dm.epoch(row.get("date"))
+            if when is None or when >= stop:
+                self.tally["first repo rows: after the card's first git record"] += 1
+                continue
+            out.append({"id": "Q-" + row["id"], "kind": "first repo", "date": dm.iso(when), "day": day(when),
+                        "badge": "first repo", "author": row.get("author"), "subject": row.get("subject"),
+                        "source": "first repo push"})
+        return out
+
     def text_entries(self, cid: str) -> list:
-        """Sure changelog facts before the stop (owner Q4=B: data only, no text); chat and push lines are evidence."""
+        """Sure changelog facts before the stop (owner Q4: data only, no text); chat and push lines are evidence."""
         card, out = self.inputs.cards[cid], []
         stop = card.get("fs") or float("inf")
         for fact in self.inputs.facts:
@@ -716,10 +848,14 @@ class Chain:
         return kept
 
     def diff(self, entries: list) -> None:
-        """Each version against the one before (text entries aside); Discord looks fold when settled."""
+        """Each version against the one before (text rows aside; a paper photo, its name only read, is no before);
+        Discord looks fold when settled."""
         before = None
         for e in entries:
-            if e["kind"] == "text":
+            if e["kind"] in ("text", "first repo"):
+                continue
+            if e["kind"] == "paper":
+                e["changes"], e["minor"] = {}, False
                 continue
             if before is None:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
@@ -727,32 +863,37 @@ class Chain:
                 e["changes"] = compare(before["fields"], e["fields"])
                 if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change"):
                     e["changes"]["ability_change"] = e["old_ability_change"]
-            if e["kind"] in ("discord", "paper"):
-                e["minor"] = bool(before) and before["kind"] in ("discord", "paper") and settled(before["fields"],
-                                                                                                e["fields"])
+            if e["kind"] == "discord":
+                e["minor"] = bool(before) and before["kind"] == "discord" and settled(before["fields"], e["fields"])
             before = e
         for e in entries:
             e.pop("old_ability_change", None)
 
     def field_reviews(self, cid: str, entries: list) -> None:
+        """Every field to review gets its item (an old row's from oldrows, else the chain's own); types with nothing
+        read are 'unread' (nothing to confirm)."""
         for e in entries:
-            if e["kind"] not in ("discord", "paper"):
+            if e["kind"] not in ("discord", "paper", "old repo"):
                 continue
             for key, field in e["fields"].items():
-                if field.get("confidence") == "review":
-                    if field.get("proposed") is None and key == "types":
-                        continue
-                    field["review"] = self.add_review(
-                        "field", f"{cid}|{e['id']}|{key}", card=cid, entry=e["id"], field=key, date=e.get("date"),
-                        proposed=field.pop("proposed", None), method=field.get("method"), conf=field.get("conf"),
-                        why=field.get("why"))
-                    self.tally[f"discord field to review: {key}"] += 1
+                if field.get("confidence") != "review" or field.get("review"):
+                    continue
+                proposed = field.pop("proposed", None)
+                if proposed is None and key == "types":
+                    field["confidence"] = "unread"
+                    continue
+                field["review"] = self.add_review(
+                    "field", f"{cid}|{e['id']}|{key}", card=cid, entry=e["id"], field=key, date=e.get("date"),
+                    proposed=proposed, method=field.get("method"), conf=field.get("conf"), why=field.get("why"))
+                self.tally[f"{e['kind']} field to review: {key}"] += 1
 
     def card(self, cid: str, rows: list, split: list) -> dict:
         card = self.inputs.cards[cid]
-        entries = self.discord_entries(cid, rows, split) + self.text_entries(cid) + self.old_entries(cid)
+        entries = self.discord_entries(cid, rows, split) + self.text_entries(cid) + self.first_repo_entries(cid) + \
+            self.old_entries(cid)
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
-                                    {"paper": 0, "discord": 1, "text": 2, "old repo": 3}[e["kind"]], e["id"]))
+                                    {"paper": 0, "discord": 1, "text": 2, "first repo": 3, "old repo": 4}[e["kind"]],
+                                    e["id"]))
         entries = self.check_facts(cid, entries)
         self.diff(entries)
         self.field_reviews(cid, entries)
@@ -768,7 +909,7 @@ class Chain:
         data = self.inputs.first_data.get(card["key"])
         if stop and stop["source"] == "git" and data:      # the card repo's first version, for the last diff
             fields = data_fields(data)
-            last = next((e for e in reversed(entries) if e["kind"] != "text"), None)
+            last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")), None)
             out["git_first"] = {"from": "card data (its first recorded version)",
                                 "date": dm.iso(data.get("timestamp")) if data.get("timestamp") else None,
                                 "fields": fields, "changes": compare(last["fields"], fields) if last else {}}
@@ -776,7 +917,8 @@ class Chain:
 
     # Created
     def created(self, cid: str, timeline: dict, rows_all: list) -> dict:
-        """Created = the earliest confident appearance with its source; against the file."""
+        """Created = the earliest confident appearance with its source (a named paper photo first: "Before 2020",
+        owner Q6); against the file. sort orders "Before 2020" before every day."""
         card, inputs = self.inputs.cards[cid], self.inputs
         found = []
         for e in timeline["entries"]:
@@ -793,45 +935,63 @@ class Chain:
         if card.get("fs"):
             found.append((card["fs"], "old repo" if card.get("fs_from") == "old git" else "git", {}))
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
-        ours = {"date": dm.iso(when), "day": day(when), "source": source,
-                **{k: v for k, v in detail.items() if v is not None}}
+        dated = {"date": dm.iso(when), "day": day(when), "source": source,
+                 **{k: v for k, v in detail.items() if v is not None}}
+        paper = next((e for e in timeline["entries"] if e["kind"] == "paper"), None)
+        ours = {"date": None, "day": PAPER_DAY, "source": "paper card", "picture": paper["pictures"][0]["id"],
+                "named": paper.get("named")} if paper else dated
+        key = PAPER_SORT if paper else ours["day"]
         file = inputs.created_file.get(card["key"])
         out = {"ours": ours, "file": file}
+        if paper:
+            out["dated"] = dated                   # the earliest dated appearance, for reference
         if file and file.get("from") == "hand":
             out.update(status="hand", date=file["date"], proposed=False)
         elif not file or not file.get("date"):
             out.update(status="new", date=ours["day"], proposed=True)
         elif ours["day"] == file["date"]:
             out.update(status="same", date=file["date"], proposed=False)
-        elif ours["day"] < file["date"]:
+        elif key < file["date"]:
             out.update(status="earlier", date=ours["day"], proposed=True)
         else:
             out.update(status="later", date=file["date"], proposed=False)
+        out["sort"] = PAPER_SORT if out["date"] == PAPER_DAY else out["date"]
         if out["status"] in ("earlier", "later", "new"):
-            hint = self.maybe.get(cid)
+            hint = None if paper else self.maybe.get(cid)
             hint = {"picture": hint["id"], "date": hint["first"]["date"], "channel": hint["first"]["channel"]} \
                 if hint and dm.epoch(hint["first"]["date"]) < when else None
-            out["review"] = self.add_review(
-                f"created {out['status']}", cid, card=cid, ours=ours, file=file, earlier_unsure=hint,
-                why={"earlier": "an earlier confident appearance: proposed (the preview uses it)",
-                     "later": "our earliest is later than the file's date: the file's kept (never moved later)",
-                     "new": "no date in the file yet: proposed"}[out["status"]])
+            why = {"earlier": "an earlier confident appearance: proposed (the preview uses it)",
+                   "later": "our earliest is later than the file's date: the file's kept (never moved later)",
+                   "new": "no date in the file yet: proposed"}[out["status"]]
+            if paper and out["status"] != "later":
+                why = f"a paper card's photo: Created '{PAPER_DAY}' (owner Q6), proposed (the preview uses it)"
+            out["review"] = self.add_review(f"created {out['status']}", cid, card=cid, ours=ours, file=file,
+                                            earlier_unsure=hint, why=why)
         named = [r for r in rows_all if r.get("created_review") and r.get("first")]
         if named:
             row = min(named, key=lambda r: dm.epoch(r["first"]["date"]))
-            if day(dm.epoch(row["first"]["date"])) < ours["day"]:
+            if day(dm.epoch(row["first"]["date"])) < key:
                 out["named_only_earlier"] = {"day": day(dm.epoch(row["first"]["date"])), "picture": row["id"],
                                              "review": review_id("named only", row["id"])}
         facts = [f for f in inputs.facts if f.get("card") == card["key"] and f.get("source") == "changelog"
                  and f.get("confidence") == "sure" and dm.epoch(f.get("date"))]
         if facts:
             fact = min(facts, key=lambda f: dm.epoch(f["date"]))
-            if day(dm.epoch(fact["date"])) < ours["day"]:
+            if day(dm.epoch(fact["date"])) < key:
                 out["changelog_earlier"] = {"day": day(dm.epoch(fact["date"])), "fact": fact["id"],
                                             "review": self.add_review("changelog earlier", cid, card=cid,
                                                                       fact=fact["id"], date=fact["date"],
                                                                       why="a sure changelog line names it before "
                                                                           "its Created date")}
+        pushes = [r for r in inputs.first_repo if r.get("card") == card["key"] and dm.epoch(r.get("date"))]
+        if pushes:
+            push = min(pushes, key=lambda r: dm.epoch(r["date"]))
+            if day(dm.epoch(push["date"])) < key:
+                out["first_repo_earlier"] = {"day": day(dm.epoch(push["date"])), "row": "Q-" + push["id"],
+                                             "review": self.add_review("first repo earlier", cid, card=cid,
+                                                                       row="Q-" + push["id"], date=push["date"],
+                                                                       why="a first-repo push notice names it "
+                                                                           "before its Created date")}
         return out
 
 
@@ -862,20 +1022,20 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
         chain.add_review("split", group["id"], name=group["split_of"]["name"], halves=halves, group=group["id"],
                          entries={h: sum(1 for e in timelines[h]["entries"] if e.get("as")) for h in halves
                                   if h in timelines},
-                         why="an old card that became two (owner Q3=A, provisional): both halves start with its "
-                             "versions, each with its own half's stats")
-    for q, answer, text in DECISIONS:
-        chain.add_review("decided without you", q, question=q, answer=answer, text=text,
-                         why="decided without you: change it here")
-    first_repo = dm.read_jsonl(join(root, "derived", "facts", "firstrepo.jsonl"))
-    chain.add_review("first repo rows", "Q5", rows=len(first_repo), cards=len({r.get("card") for r in first_repo}),
-                     shown=bool(inputs.switches.get("first_repo_rows")), file="derived/facts/firstrepo.jsonl",
-                     why="Q5=A prepared: text-only rows of the first repo's push notices, off until you choose A")
+                         why="an old card that became two (owner Q3): both halves start with its versions, each "
+                             "with its own half's stats")
+    shown = bool(inputs.switches.get("first_repo_rows"))
+    for q, answer, text in OWNER_ANSWERS:
+        extra = {"rows": len(inputs.first_repo), "cards": len({r.get("card") for r in inputs.first_repo}),
+                 "shown": shown} if q == "Q5" else {}
+        chain.add_review("owner's answer", q, question=q, answer=answer, ruling=text, read_only=True, **extra,
+                         why="the owner's answer (2026-11-13)")
     dm.write_json(paths.created, {
-        "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a card-sure Discord picture, the "
-                 "old repo, the card repo) with its source; status against site/Card Creation Dates.json: same, "
-                 "earlier (proposed), later (review only, the file's date kept), new (proposed), hand (untouched). "
-                 "date = what the preview uses. Named-only pictures and changelog lines before it are review only.",
+        "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a named paper photo: 'Before "
+                 "2020', owner Q6; a card-sure Discord picture, the old repo, the card repo) with its source; status "
+                 "against site/Card Creation Dates.json: same, earlier (proposed), later (review only, the file's date "
+                 "kept), new (proposed), hand (untouched). date = what the preview uses, sort orders 'Before 2020' "
+                 "first. Named-only pictures, changelog lines and first-repo rows before it are review only.",
         "generated": dm.now_iso(), "cards": created})
     items = sorted(chain.review.values(), key=lambda i: (i["kind"], i["id"]))
     dm.write_text(paths.review, "".join(dumps(i, ensure_ascii=False) + "\n" for i in items))
@@ -908,6 +1068,13 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
     olds = [e for t in timelines.values() for e in t["entries"] if e["kind"] == "old repo"]
     lines.append(f"old repo versions {len(olds)} (minor {sum(1 for e in olds if e['minor'])}, split 'as' "
                  f"{sum(1 for e in olds if e.get('as'))})")
+    papers = [(t["name"], e) for t in timelines.values() for e in t["entries"] if e["kind"] == "paper"]
+    lines.append(f"paper entries {len(papers)} ('{PAPER_DAY}'): " + ", ".join(
+        f"{name} ({len(e['pictures'])} photo{'s' if len(e['pictures']) > 1 else ''}, {e.get('named')})"
+        for name, e in papers))
+    repo = [e for t in timelines.values() for e in t["entries"] if e["kind"] == "first repo"]
+    with_repo = sum(1 for t in timelines.values() if any(e["kind"] == "first repo" for e in t["entries"]))
+    lines.append(f"first repo rows {len(repo)} (cards {with_repo})")
     texts = [e for t in timelines.values() for e in t["entries"] if e["kind"] == "text"]
     lines.append(f"text entries {len(texts)}: " + ", ".join(
         f"{k} {n}" for k, n in Counter(e["change"].get("field") or "ability" for e in texts).most_common()) +
@@ -915,14 +1082,22 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
     bal = Counter(e["changes"].get("bal") for t in timelines.values() for e in t["entries"] if e.get("changes"))
     lines.append("buff/nerf (any version vs the one before): " + ", ".join(f"{k} {n}" for k, n in bal.items() if k))
     ab = Counter(e["changes"].get("ability_change") for t in timelines.values() for e in t["entries"]
-                 if e.get("changes") and e["kind"] in ("discord", "paper"))
+                 if e.get("changes") and e["kind"] == "discord")
+    unread = sum(1 for t in timelines.values() for e in t["entries"] for f in (e.get("fields") or {}).values()
+                 if f.get("confidence") == "unread")
     lines.append("discord ability changes: " + ", ".join(f"{k} {n}" for k, n in ab.most_common()))
+    lines.append(f"fields unread (types, nothing read to confirm): {unread}")
     status = Counter(c["status"] for c in created.values())
     sources = Counter(c["ours"]["source"] for c in created.values())
     lines += ["", "CREATED: " + ", ".join(f"{k} {n}" for k, n in status.most_common()),
               "  ours from: " + ", ".join(f"{k} {n}" for k, n in sources.most_common()),
               f"  named-only picture earlier (review): {sum(1 for c in created.values() if c.get('named_only_earlier'))}",
-              f"  changelog line earlier (review): {sum(1 for c in created.values() if c.get('changelog_earlier'))}"]
+              f"  changelog line earlier (review): {sum(1 for c in created.values() if c.get('changelog_earlier'))}",
+              f"  first repo row earlier (review): {sum(1 for c in created.values() if c.get('first_repo_earlier'))}"]
+    for key, c in sorted(created.items()):
+        if c["ours"]["source"] == "paper card":
+            lines.append(f"  paper Created: {key}: {c['status']} {c['date']} (file "
+                         f"{(c.get('file') or {}).get('date')} {(c.get('file') or {}).get('from')})")
     lines += ["", "REVIEW ITEMS: " + ", ".join(f"{k} {n}" for k, n in Counter(i["kind"] for i in items).most_common())]
     lines += ["", "TALLY"] + [f"  {k}: {n}" for k, n in sorted(tally.items())]
     return "\n".join(lines) + "\n"
@@ -988,8 +1163,8 @@ def entry_image(e: dict, root: str):
 def card_sheet(t: dict, root: str, path: str, side: int = 420):
     from PIL import Image, ImageDraw
     from commands.discord_verdicts import _font
-    versions = [e for e in t["entries"] if e["kind"] != "text"]
-    texts = [e for e in t["entries"] if e["kind"] == "text"]
+    versions = [e for e in t["entries"] if e["kind"] not in ("text", "first repo")]
+    texts = [e for e in t["entries"] if e["kind"] in ("text", "first repo")]
     cols, tile_w, tile_h = 2, side * 2, side * 2 + 20
     rows = (len(versions) + cols - 1) // cols
     head = 60 + 18 * len(texts)
@@ -1000,9 +1175,10 @@ def card_sheet(t: dict, root: str, path: str, side: int = 420):
                       f"[{t['created']['status']}; ours {t['created']['ours']['day']} {t['created']['ours']['source']}]",
               fill="black", font=font)
     for i, e in enumerate(texts):
-        draw.text((8, 32 + 18 * i), f"TEXT {e['day']} {e['channel']}: {dumps(e['change'])}"
-                                    + (f" confirmed by {e['confirmed_by']}" if e.get('confirmed_by') else ""),
-                  fill="navy", font=small)
+        line = f"FIRST REPO {e['day']} {e['author']}: {e['subject']}" if e["kind"] == "first repo" else \
+            f"TEXT {e['day']} {e['channel']}: {dumps(e['change'])}" + \
+            (f" confirmed by {e['confirmed_by']}" if e.get('confirmed_by') else "")
+        draw.text((8, 32 + 18 * i), line[:160], fill="navy", font=small)
     for i, e in enumerate(versions):
         x, y = (i % cols) * tile_w, head + (i // cols) * tile_h
         img = entry_image(e, root)
@@ -1010,7 +1186,8 @@ def card_sheet(t: dict, root: str, path: str, side: int = 420):
             img = img.convert("RGB")
             img.thumbnail((side, side * 2))
             sheet.paste(img, (x + 4, y + 4))
-        lines = [f"#{i + 1} {e['kind']} {e.get('day')} {e.get('channel') or e.get('subject') or ''}"[:60],
+        when = e.get("day") or e.get("label")
+        lines = [f"#{i + 1} {e['kind']} {when} {e.get('channel') or e.get('subject') or ''}"[:60],
                  e["id"][:58], f"as: {e['as']}" if e.get("as") else "",
                  "look: " + (("git " + (e["look"]["git"] or {}).get("source", "?")) if e.get("look", {}).get("git")
                              else "draft" if e.get("look", {}).get("draft") else "-") if e["kind"] != "old repo" else
