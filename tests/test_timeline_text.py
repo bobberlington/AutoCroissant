@@ -28,9 +28,25 @@ def test_the_ability_under_the_bars_without_the_class_line(tt):
     lines = [line("Health", 0.02, 0.50, 0.18, 0.02), line("Summon a Grodus X for every 3 HP", 0.0, 0.641, 0.9, 0.02),
              line("this creature loses.", 0.0, 0.67, 0.5, 0.02), line("Attack.", 0.0, 0.70, 0.2, 0.02),
              line("X Naut/Panda", 0.35, 0.975, 0.3, 0.02)]
-    rows, cls = tt.ability_block(lines, "B", labels, 0.135, "card")
+    rows, cls, odd = tt.ability_block(lines, "B", labels, 0.135, "card")
     assert tt.ability_text(rows) == "Summon a Grodus X for every 3 HP this creature loses. Attack."
-    assert " ".join(l[0] for l in cls) == "X Naut/Panda"
+    assert " ".join(l[0] for l in cls) == "X Naut/Panda" and odd == 0
+    # a lone class line is the class (no ability); an ability's last line is never the class; a line in another
+    # script (a lost word) counts as odd and halves the confidence
+    assert tt.ability_block(lines[:1] + lines[-1:], "B", labels, 0.135, "card")[:2] == ([], [lines[-1]])
+    for last in ("(OD) Revive as Morpho Knight,", "slot of your choice"):
+        rows, cls, odd = tt.ability_block(lines[:2] + [line(last, 0.35, 0.975, 0.3, 0.02)], "B", labels, 0.135, "card")
+        assert cls is None and tt.ability_text(rows).endswith(last)
+    caps = line("ROYALTY/MAGE/HIGHER BEING,", 0.3, 0.975, 0.4, 0.02)
+    assert tt.ability_block(lines[:2] + [caps], "B", labels, 0.135, "card")[1] == [caps]
+    rows, cls, odd = tt.ability_block(lines[:4] + [line("\u0435\u043f\u0435\u0442\u0438.", 0.4, 0.73, 0.2, 0.02)],
+                                      "B", labels, 0.135, "card")
+    assert odd == 1 and tt.ability_conf("Attack.", True, 1.0, True, odd) == 0.5
+    art = line("\u0441\u043e\u043b\u0442", 0.8, 0.96, 0.1, 0.02)          # art text far under the ability
+    assert tt.ability_block(lines[:4] + [art], "B", labels, 0.135, "card")[2] == 0
+    low = [line("Deal 2 damage to a", 0.0, 0.90, 0.9, 0.02), line("random creature.", 0.0, 0.925, 0.9, 0.02),
+           line("\u0421\u0422\u0415\u0410\u0422\u041e\u0419", 0.4, 0.955, 0.2, 0.02)]   # a class line in capitals
+    assert tt.ability_block(low, "B", labels, 0.135, "card")[2] == 0
     assert tt.ability_words("[fire]: +1 ATK.") == ["<fire>", "1", "atk"]
     assert tt.is_right("ability", "Deal 2 damage, then (OPT) heal", "deal 2 damage then (opt) heal.")
     tt._TAGS = {"OYT", "1CD"}

@@ -15,6 +15,7 @@ makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (mac
     python timeline_text.py stars [-j N]   the stars read again (stars.jsonl; calibrate takes them over raw.jsonl's)
     python timeline_text.py types [-j N]   the title and the types read again, every bank type's places kept
                                            (types.jsonl; calibrate takes them over raw.jsonl's)
+    python timeline_text.py abilities [-j N]   the abilities in raw.jsonl read again from the stored OCR (in place)
 
 Inputs (shared with the bars readers): every card-shaped picture of the catalogue (pictures.jsonl, size classes
 CARD_CLASSES) and every PNG version of the old repo (oldgit/versions.jsonl, read only, up to the cut); today's card
@@ -696,8 +697,26 @@ def visual_lines(lines):
     return [sorted(r, key=lambda l: l[2]) for r in rows]
 
 
+def latin(text):
+    return len("".join(WORD.findall(text.lower()))) >= 2
+
+
+def class_like(row):
+    """A creature's class line: low, centred, short, no digit or final period; never a line with a timing tag,
+    2+ lower-case words, or a final ','/';' (unless all capitals: 'ROYALTY/MAGE/HIGHER BEING,')."""
+    text = " ".join(l[0] for l in row)
+    x0, x1 = min(l[2] for l in row), max(l[2] + l[4] for l in row)
+    cy = row[0][3] + row[0][5] / 2
+    if cy < CLASS_Y or abs((x0 + x1) / 2 - 0.5) >= 0.13 or len(text.split()) > 5 or re.search(r"[0-9]|\.\s*$", text):
+        return False
+    lower = sum(1 for w in text.split() if re.fullmatch(r"[^A-Za-z]*[a-z][a-z'’\-]*[^A-Za-z]*", w))
+    return not (re.search(r"\([^)]*\)", text) or lower >= 2
+                or (re.search(r"[,;]\s*$", text) and re.search(r"[a-z]", text)))
+
+
 def ability_block(lines, era, labels, band, kind):
-    """The ability's printed lines (visual lines) and the class line dropped: (rows, class_row)."""
+    """The ability's printed lines (visual lines) with the class line dropped, and the lines in the block OCR gave
+    in another script (a word lost): (rows, class_row, odd). A lone class line is the class (no ability)."""
     lines = [l for l in lines or [] if len(l[0].strip()) > 0]
     top = band + 0.01
     if len(labels) >= 2:
@@ -709,10 +728,12 @@ def ability_block(lines, era, labels, band, kind):
             top = max(top, last[3] + 0.6 * pitch)
     elif era in ("D1", "D2"):
         top = max(top, 0.7)
-    lines = [l for l in lines if l[3] + l[5] / 2 >= top and len("".join(WORD.findall(l[0].lower()))) >= 2]
+    below = [l for l in lines if l[3] + l[5] / 2 >= top]
+    lines = [l for l in below if latin(l[0])]
+    others = [l for l in below if not latin(l[0]) and sum(c.isalpha() for c in l[0]) >= 2]
     rows = visual_lines(lines)
     if not rows:
-        return [], None
+        return [], None, 0
     if kind == "card":                 # a creature or minion: everything under the bars
         block = rows
     else:                              # items, fields, statuses: the bottom block of evenly spaced lines
@@ -726,14 +747,17 @@ def ability_block(lines, era, labels, band, kind):
                 break
             block.insert(0, row)
     cls = None
-    last = block[-1]
-    text = " ".join(l[0] for l in last)
-    x0, x1 = min(l[2] for l in last), max(l[2] + l[4] for l in last)
-    cy = (last[0][3] + last[0][5] / 2)
-    if kind == "card" and len(block) > 1 and cy >= CLASS_Y and abs((x0 + x1) / 2 - 0.5) < 0.13 \
-            and len(text.split()) <= 5 and not re.search(r"[0-9]|\.\s*$", text):
-        cls, block = last, block[:-1]
-    return block, cls
+    if kind == "card" and class_like(block[-1]):
+        cls, block = block[-1], block[:-1]
+    if not block:
+        return [], cls, 0
+    # other-script lines among the ability's lines or right under them (a class line in capitals excepted)
+    hgt = max(l[5] for r in block for l in r)
+    end = max(l[3] + l[5] for l in block[-1])
+    y0 = top if kind == "card" else min(l[3] for l in block[0]) - 1.3 * hgt
+    odd = sum(1 for l in others if y0 <= l[3] + l[5] / 2 <= end + 1.3 * hgt
+              and not (kind == "card" and cls is None and l[3] >= end and l[0].isupper() and class_like([l])))
+    return block, cls, odd
 
 
 def ability_text(rows):
@@ -1193,26 +1217,63 @@ def read_one(item, rec):
     kind = "card" if (len(labels) >= 2 or era in ("A", "B", "C", "D1", "D2", "R", "bars-other")) else "other"
     out = {"id": item["id"], "src": item["src"], "era": era, "era_how": how, "w": W0, "h": H0, "kind": kind,
            "title": title}
-    for which in ("fix", "raw"):
-        rows, cls = ability_block(rec.get(which), era, labels, band, kind)
-        out["ability_" + which] = {"text": ability_text(rows), "rows": len(rows),
-                                   "class": " ".join(l[0] for l in cls) if cls else None,
-                                   "minconf": min((l[1] for r in rows for l in r), default=0.0)}
-        if which == "fix":
-            fix_rows = rows
-    out["ability_fix"].update(ability_scores(out["ability_fix"]["text"], out["ability_raw"]["text"], title))
-    out["ability_raw"].update(ability_scores(out["ability_raw"]["text"], out["ability_fix"]["text"], title))
-    icons = inline_icons(work, fix_rows, WORK_W) if fix_rows else []
-    if icons:
-        out["ability_icons"] = {"text": place_icons(fix_rows, icons), "icons": [[r, round(x, 3), n, s] for r, x, n, s
-                                                                               in icons]}
-        out["ability_icons"].update(ability_scores(out["ability_icons"]["text"], None, title))
+    ability_icons(out, work, ability_reads(out, rec, labels, band, title), title)
     out["stars"] = read_stars(work, STAR_BAND[shp], tb)
     out["star_blobs"] = read_star_blobs(work, tb)
     tk = types_known_of(work, shp, title)
     if tk:
         out["types_known"] = tk
     return out
+
+
+def ability_reads(out, rec, labels, band, title):
+    """out's ability_fix / ability_raw (both OCR passes: text, rows, class, minconf, odd, scores); the fix rows."""
+    fix_rows = []
+    for which in ("fix", "raw"):
+        rows, cls, odd = ability_block(rec.get(which), out["era"], labels, band, out["kind"])
+        out["ability_" + which] = {"text": ability_text(rows), "rows": len(rows),
+                                   "class": " ".join(l[0] for l in cls) if cls else None,
+                                   "minconf": min((l[1] for r in rows for l in r), default=0.0), "odd": odd}
+        if which == "fix":
+            fix_rows = rows
+    out["ability_fix"].update(ability_scores(out["ability_fix"]["text"], out["ability_raw"]["text"], title))
+    out["ability_raw"].update(ability_scores(out["ability_raw"]["text"], out["ability_fix"]["text"], title))
+    return fix_rows
+
+
+def ability_icons(out, work, fix_rows, title):
+    """out's ability_icons: the fix text with the type icons in its lines placed (none found: no entry)."""
+    out.pop("ability_icons", None)
+    icons = inline_icons(work, fix_rows, WORK_W) if fix_rows else []
+    if icons:
+        out["ability_icons"] = {"text": place_icons(fix_rows, icons), "odd": out["ability_fix"]["odd"],
+                                "icons": [[r, round(x, 3), n, s] for r, x, n, s in icons]}
+        out["ability_icons"].update(ability_scores(out["ability_icons"]["text"], None, title))
+
+
+def ability_task(args):
+    """The ability read again from the stored OCR (raw.jsonl's other fields kept); the picture is loaded only when
+    the fix text changed, for its icons."""
+    import cv2
+    import numpy as np
+    item, rec, rd = args
+    try:
+        out = dict(rd)
+        shp = rec.get("shape") or shape(rd["w"], rd["h"])
+        title = read_title(rec.get("band"))
+        before = (rd.get("ability_fix") or {}).get("text")
+        fix_rows = ability_reads(out, rec, stat_labels(rec.get("fix")), BAND[shp], title)
+        if out["ability_fix"]["text"] != before:
+            img = load(item)
+            a = np.asarray(img.convert("RGB"))
+            W0, H0 = img.size
+            work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
+            ability_icons(out, work, fix_rows, title)
+        elif out.get("ability_icons"):
+            out["ability_icons"]["odd"] = out["ability_fix"]["odd"]
+        return out
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
 
 def types_known_of(work, shp, title):
@@ -1274,6 +1335,27 @@ def run_reads(which, workers, path=None, ids=None, task=None):
             n += 1
             if n % 200 == 0:
                 print(f"read: {n}/{len(todo)} {time.time() - start:.0f}s", flush=True)
+
+
+def rerun_abilities(workers):
+    """raw.jsonl's abilities read again (ability_task), written in place."""
+    path = join(OUT, "raw.jsonl")
+    ocr = {r["id"]: r for r in jsonl(join(OUT, "ocr.jsonl"))}
+    items = {i["id"]: i for i in all_inputs()}
+    names_index()
+    known_abilities()
+    rows = list(jsonl(path))
+    todo = [(items[r["id"]], ocr[r["id"]], r) for r in rows if not r.get("error")]
+    keep = [r for r in rows if r.get("error")]
+    start, out, failed = time.time(), [], 0
+    with ProcessPoolExecutor(workers) as ex:
+        for (item, rec, rd), res in zip(todo, ex.map(ability_task, todo, chunksize=16)):
+            failed += bool(res.get("error"))
+            out.append(rd if res.get("error") else res)      # a failed re-read keeps the row as it was
+            if len(out) % 1000 == 0:
+                print(f"abilities: {len(out)}/{len(todo)} {time.time() - start:.0f}s", flush=True)
+    write_jsonl(path, keep + out)
+    print(f"abilities: {len(out)} read, {failed} kept as they were (errors)")
 
 
 # ========================
@@ -1363,6 +1445,7 @@ TRUTH_OF = {"discord": "eye", "old": "psd", "today": "today"}
 TITLE_FLOOR = 0.9286          # names no list has: with its own name left out, 2.3% of truth titles still reach this
 EYE_ABILITY_BAR = 0.81        # eye eras' plain OCR: both passes agree, Vision sure, every word a game word
 KNOWN_STARS_BAR = 0.55        # A/C star counts: a known count, with some margin of their own
+NO_STAR_BAR = ("R",)          # raid bosses: the known/truth count is the folder's 6, not the print (Oryx 7, Giegue 9)
 NOT_CARD_LOOKS = ("S",)       # squares by look alone (screenshots too): never sure
 ALARM_Q = 0.995               # an other type icon at its 99.5th percentile on pictures without it: an extra icon
 _ALARMS = None
@@ -1372,19 +1455,20 @@ def titles_of(t):
     return {norm(x) for x in (t if isinstance(t, list) else [t]) if x}
 
 
-def ability_conf(text, agree, minconf, known):
+def ability_conf(text, agree, minconf, known, odd=0):
     """An ability read's confidence: a known text of the card read exactly is 1; else at most 0.81, from the two
     OCR passes agreeing, Vision's line confidence, the share of game words (one-letter words other than 'a' are
-    not) and no odd characters (accents, OCR's brackets)."""
+    not) and no odd characters (accents, OCR's brackets). Each line of the block OCR gave in another script
+    (odd: a word lost) halves it, a known text's too."""
     if not text:
         return 0.0
     if known:
-        return 1.0
+        return round(0.5 ** odd, 4)
     ws = [w for w in ability_words(text) if not w.isdigit() and not w.startswith("<")]
     voc = vocab()
     share = sum(w in voc and (len(w) > 1 or w == "a") for w in ws) / len(ws) if ws else 0.0
     base = 0.5 + 0.3 * bool(agree) + 0.1 * (minconf >= 0.99)
-    return round(0.9 * base * share ** 4 * 0.5 ** odd_marks(text), 4)
+    return round(0.9 * base * share ** 4 * 0.5 ** (odd_marks(text) + odd), 4)
 
 
 def ability_variant(rd, variant):
@@ -1409,7 +1493,7 @@ def field_read(rd, field, how, exclude=()):
             ability_words((rd.get("ability_raw") or {}).get("text"))
         known = ability_known((rd.get("title") or {}).get("name"), text, exclude)
         minconf = min((rd.get("ability_fix") or {}).get("minconf") or 0.0, 1.0)
-        return text, method + ("+known" if known else ""), ability_conf(text, agree, minconf, known)
+        return text, method + ("+known" if known else ""), ability_conf(text, agree, minconf, known, ab.get("odd", 0))
     if field == "stars":
         rule = how.get("rule") or STAR_RULES[0]
         n, conf = (count_blobs(rd.get("star_blobs"), rule) if rule.get("kind") else
@@ -1542,9 +1626,9 @@ def confirmed(rd):
 
 def floored(era, src, field, n, bar):
     """The bar after the floors: every title bar >= TITLE_FLOOR; small eye eras' abilities >= EYE_ABILITY_BAR;
-    eras whose star counts need a known count > 0.5; no Discord types (a pre-git icon outside every Types/ tree,
-    or stacked under another, goes unseen: 4 of 48 sure reads wrong by eye)."""
-    if bar is None or (field == "types" and src == "discord"):
+    eras whose star counts need a known count > 0.5; no raid-boss stars; no Discord types (a pre-git icon outside
+    every Types/ tree, or stacked under another, goes unseen: 4 of 48 sure reads wrong by eye)."""
+    if bar is None or (field == "types" and src == "discord") or (field == "stars" and era in NO_STAR_BAR):
         return None
     if field == "title":
         return max(bar, TITLE_FLOOR)
@@ -1630,8 +1714,8 @@ def calibrate():
                 hits = n_above = 0
                 for a, b in ((0, 1), (1, 0)):
                     ba, _, _ = pick_bar(score(field, how, half[a]), target)
+                    ba = floored(era, src, field, len(labelled), ba)
                     if ba is not None:
-                        ba = floored(era, src, field, len(labelled), ba)
                         sb = score(field, how, half[b])
                         hits += sum(r[1] for r in sb if r[0] >= ba)
                         n_above += sum(1 for r in sb if r[0] >= ba)
@@ -1756,7 +1840,7 @@ def calibrate():
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "types", "truth", "calibrate"))
+    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "types", "abilities", "truth", "calibrate"))
     ap.add_argument("-j", "--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
     a = ap.parse_args(argv)
@@ -1773,6 +1857,8 @@ def main(argv):
         run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
     elif a.step == "types":
         run_reads(which, a.workers, join(OUT, "types.jsonl"), task=types_task)
+    elif a.step == "abilities":
+        rerun_abilities(a.workers)
     elif a.step == "truth":
         build_truth()
     elif a.step == "calibrate":
