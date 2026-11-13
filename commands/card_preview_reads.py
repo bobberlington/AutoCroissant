@@ -35,6 +35,7 @@ from global_config import API_BASE, DATA_BRANCH, EDITS_PATH, ICON_MANIFEST_PATH
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # card_bake's: not cards
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"     # psd_edit's
 RECORDS = ("render_record.json", "spot_record.json")                        # psd_edit's RENDER_RECORD, SPOT_RECORD
+PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # a picture's page files these under its PSD's entry (edit.js routeOps)
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}
 
@@ -79,7 +80,7 @@ def paths_of(tree: dict, card: str, fields: dict, cards: Optional[dict] = None) 
     else:
         key = CardAuthors.key(card)
         rel = psds.get(key, "")
-        lower = {p.lower() for p in tree} if not rel and fields.get("parts") else ()
+        lower = {p.lower() for p in tree} if not rel and any(fields.get(f) is not None for f in PICTURE_FIELDS) else ()
         for path in tree if lower else ():      # a picture of a PSD (A_Snack2.png): that PSD
             number = fullmatch(r"(.+?)(\d+)", path[:len(path) - 4]) if path.lower().endswith(".png") else None
             if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() in lower:

@@ -44,6 +44,7 @@ from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fi
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, SMALL, blank, clean, stamp
+from commands.card_preview_reads import PICTURE_FIELDS
 from commands.github_api import token_from_env
 from global_config import CARD_REPO, ICON_MANIFEST_PATH
 
@@ -124,8 +125,10 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     The card the bake would take for this edit: one of the bake's card PSDs by path (any case; Snapshot.psds: no
     EXCLUDE_FOLDERS PSD, and of two PSDs with one key the one the bake takes), else a name matched like the edits file's
     keys (CardAuthors.key of the file stem; the website's card key). A name without a PSD keeps rel "" (the bake refuses
-    it: duplicate or unsupported-card), but a picture-only duplicate's edit takes its PSD as its picture (dup_view), as
-    select() does for its name (the website sends its PSD entry's fields with it, as for A Snack2).
+    it: duplicate or unsupported-card), but a numbered picture's edit with a PICTURE_FIELDS field (A Snack2's stars: its
+    page files them under its PSD's entry) takes the PSD as that picture (its derived name or ability alone: refused),
+    and a picture-only duplicate's edit takes its PSD as its picture (dup_view), as select() does for its name (the
+    website sends its PSD entry's fields with it, as for A Snack2).
 
     Raises:
         BadInput: a path ending in .psd that is none of the bake's cards
@@ -139,7 +142,7 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     else:
         key = CardAuthors.key(card)
         rel = snapshot.psds.get(key, "")
-    view = picture_of(snapshot, key) if not rel and fields.get("parts") else None
+    view = picture_of(snapshot, key) if not rel and any(f in PICTURE_FIELDS for f in psd_fields(fields)) else None
     if view is not None:                        # a picture of a PSD with variant tags: the PSD, baked as that picture
         rel, view = view
         key = CardAuthors.key(card_name(rel))

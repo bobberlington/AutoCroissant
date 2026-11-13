@@ -276,7 +276,7 @@ def test_the_rest_blob_path(cards, tmp_path, monkeypatch):
 
 def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     """card_preview_reads (card-preview.yml's Reads step: the standard library alone) takes what the preview reads first
-    (a key, a PSD path in another case, a numbered picture's parts, a picture-only duplicate's any fields, an MDW PSD, an
+    (a key, a PSD path in another case, a numbered picture's parts or stars, a picture-only duplicate's any fields, an MDW PSD, an
     unknown card) and Card Edits.json (a duplicate's first: it names the PSD), and writes the blobs into a blobless clone,
     where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
     assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
@@ -298,7 +298,7 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability or parts edit
     tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
     for card, fields in (("Mini Doomer", {"hp": 8}), (DOOMER.upper(), {"ability": "x"}), ("Mini Doomer", {"ability": None, "hp": 8}),
-                         ("A Snack2", {"parts": {"1": {}}}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
+                         ("A Snack2", {"parts": {"1": {}}}), ("A Snack2", {"stars": 3}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
                          ("Breakfast", {"name": "x"}), ("Breakfast", {"ability": "x", "hp": 3})):
         try:
             want = [p for p in cp.blobs_of(snapshot, cp.resolve(snapshot, card, fields)) if p in tree]
@@ -306,6 +306,8 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
             want = []
         assert early.paths_of(tree, card, fields, edits) == want, card
     assert early.paths_of(tree, "Breakfast", {"name": "x"}, edits) == [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, dup]
+    views = [cp.resolve(snapshot, "A Snack2", f).view for f in ({"stars": 3}, {"name": "x", "ability": "y"}, {"colors": []})]
+    assert views == [2, None, None]             # its derived text, its own colours: refused as before
     blobless = tmp_path / "blobless"
     _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(blobless))
 
