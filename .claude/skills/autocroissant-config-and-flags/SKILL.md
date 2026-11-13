@@ -274,8 +274,10 @@ global_config's `CARD_REPO` (query_card's `DEFAULT_REPOSITORY` alias went 2026-1
 | `CARD_W` | `300` | px per card; with `GAP` 8 a grid is 1240 px wide (about 1240 x 2500-3100, 1.2-1.6 MB JPEG) |
 | `LABEL_H`, `FONT_SIZE` | `34`, `20` | the "n. name" line under each card (cut with an ellipsis) |
 | `QUALITY` | `88` | grid JPEG quality, 4:4:4 so card text stays sharp |
-| `CACHE_DIR` | `"card_images"` | gitignored: `<PNG blob>.jpg` per card at `CARD_W`; a picture is downloaded once per blob (cached only from a commit-pinned link; a branch link can lag on the CDN), stale blobs pruned after each grid answer |
+| `CACHE_DIR` | `"card_images"` | gitignored: `<PNG blob>.jpg` per card at `CARD_W`; a picture is downloaded once per blob (the website's thumb always cached; a raw PNG only from a commit-pinned link, a branch link can lag on the CDN), stale blobs pruned after each grid answer |
 | `POOL` | `4` | parallel picture downloads |
+| `THUMB_W` | `360` | since 2026-11-13 a card's picture is first the website's `thumbs/<blob[:16]>-360-<tag>.avif` (tag: cards.json `thumbs["360"]`, kept as `card_repo.thumb_tag`; ~25 KB vs the PNG's ~1.9 MB); any failure (404 before the site deploys a new PNG, decode error) falls back to the raw PNG |
+| `AVIF` | `features.check("avif")` | Pillow can read AVIF (the 13.0.0 wheels bundle libavif); False: raw PNGs only |
 
 ### commands/utils.py (lines 18-19)
 
@@ -814,3 +816,5 @@ reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone
 2026-11-12 (asks-1112, owner G4): `/set_ratio` and `/set_repo` deleted (no runtime setters on main; 15 lacks_admin call sites), query_card's `DEFAULT_REPOSITORY` folded into `CARD_REPO`, analytics' `ON_LOAD_ERROR` deleted, card_sync's `READERS` 7 names (/frankenstein and /view_old_metadata deleted).
 
 2026-11-12 (asks-1112, owner G5/G6): `RATINGS_PATH`: the TTS-session import `tts_ratings` deleted (the file is data only; a card rename moves its entries); `ability_art` gone from card_edits.
+
+2026-11-13 (grid thumbs): card_grid's `THUMB_W` and `AVIF`; grid pictures from the website's thumbs first.
