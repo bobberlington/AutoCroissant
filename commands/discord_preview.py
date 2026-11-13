@@ -4,7 +4,7 @@ reads, under the archive's derived/preview/history/ (never a repo; the layout of
 repo root with the fork Python (Pillow with WebP; check also needs numpy, cv2 and scripts/timeline_text.py's Vision
 CLI):
 
-    python -m commands.discord_preview build [--root <dir>] [--old-git <dir>] [--workers <n>] [--force]
+    python -m commands.discord_preview build [--root <dir>] [--old-git <dir>] [--cards-repo <dir>] [--workers <n>] [--force]
     python -m commands.discord_preview check [--root <dir>] [--workers <n>] [--redo]
 
 build   From the chain (derived/chain/timelines, created.json) and the Morgue candidates (derived/morgue/
@@ -17,25 +17,33 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
           <card id>/<picture>.webp one per version, at most WEBP_W wide (never a full-size copy)
           _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card
         Only sure fields go in (value, method, confidence); review items, notes, posters, message ids and links never.
-        Old-repo versions come from the old .git (read only, cat-file). Webps already there are kept (--force: made
-        again); webps no entry names any more are deleted.
+        A title snapped to an old PSD layer's casing takes today's name when the picture's own OCR spells it so
+        (printed_name). Stop at git: a card's entries end at its first record in the card repo (--cards-repo, read
+        only: its PNG's moves followed as the website follows them, lineage); its git_first is dated when its card-data
+        version was committed, approx when the card had versions before it. A confirmed changelog fact names the version
+        that confirms it (confirmed_by). Old-repo versions come from the old .git (read only, cat-file). Webps already
+        there are kept (--force: made again); webps and timelines no entry names any more are deleted.
 check   Every published version's fields read again from its webp (title OCR and its nearest name, the stars, the
         bars, the ability's words, the types' icons) against its timeline.json -> derived/preview/check.jsonl and
         check.txt. A field the readers can't read again is counted apart from a disagreement.
 """
 from argparse import ArgumentParser
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from io import BytesIO
 from json import loads
 from os import environ, listdir, makedirs, remove, replace, rmdir, walk
-from os.path import exists, expanduser, getsize, isdir, join
+from os.path import basename, exists, expanduser, getsize, isdir, join, splitext
 from re import sub
 from subprocess import PIPE, Popen
 from typing import Optional
 
+from commands import discord_chain as dc
 from commands import discord_match as dm
+from commands.card_history import LOG_FORMAT, NO_BLOB
+from commands.card_models import rename_trailer
+from global_config import CARD_BRANCH, LOCAL_DIR_LOC
 
 # ========================
 # Configuration
@@ -45,8 +53,11 @@ CHAIN = ("derived", "chain", "timelines")
 CREATED = ("derived", "chain", "created.json")
 MORGUE = ("derived", "morgue", "candidates.json")
 MORGUE_DIR = ("derived", "morgue")
-EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why}}
+EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why},
+#                                             "covered": {"<card>|<entry id>": why}: a photo whose card lies under another}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
+TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
+BEFORE_GIT = ("discord", "text", "first repo")               # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
 PICTURE_KINDS = ("discord", "old repo", "paper")
 TEXT_KINDS = ("text", "first repo")
@@ -124,24 +135,50 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
     if kind == "text":
         out["change"] = {k: v for k, v in (e.get("change") or {}).items() if k in FACT_KEYS + ("ability",)}
         if e.get("confirmed_by"):
-            out["confirmed"] = True
+            out.update(confirmed=True, confirmed_by=e["confirmed_by"])   # the version whose picture agrees with it
     return out
+
+
+def printed_name(value, files: list, reads: dict, today: str):
+    """A title read snapped to a known name (ocr+name) whose nearest name was an old PSD layer's casing ('MEtal
+    General') takes today's name when it is today's name but for case and one of the version's pictures' own title
+    OCR spells it that way (letters only: the picture prints 'Metal General'); otherwise it stays as read (a picture
+    printing 'DooPliss' or 'FAWFUL' keeps it)."""
+    letters = lambda text: "".join(ch for ch in text or "" if ch.isalnum())
+    if not isinstance(value, str) or not today or value == today or value.casefold() != today.casefold():
+        return value
+    want = letters(today)
+    for f in files:
+        got = letters(reads.get(f))
+        at = got.casefold().find(want.casefold())
+        if at >= 0 and got[at:at + len(want)] == want:
+            return today
+    return value
 
 
 CHANGE_OF = {"stats": ("stats", "bal", "buffs", "nerfs"), "stars": ("stars",), "types": ("types",), "name": ("name",)}
 
 
-def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None) -> tuple:
+def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, reads: Optional[dict] = None,
+                 covered=()) -> tuple:
     """(the published timeline, [(webp name, picture job)]). eye: the eye's drops for this card {entry id: {field}}:
     the field is left out, and so are the changes it made (its own against the version before, the next version's
-    against it)."""
+    against it). reads: the title OCR by file (printed_name). covered: entry ids whose photo shows the card under
+    another one (the eye's "covered": the website says so under the picture)."""
     entries, jobs = [], []
     for e in t["entries"]:
         image = None
         if e["kind"] in PICTURE_KINDS:
             image = picture_name(e)
             jobs.append((image, e))
-        entries.append(entry_out(e, image, (eye or {}).get(e["id"], ())))
+        out = entry_out(e, image, (eye or {}).get(e["id"], ()))
+        name = (out.get("fields") or {}).get("name")
+        if e["kind"] == "discord" and name and str(name["method"]).startswith("ocr+name"):
+            name["value"] = printed_name(name["value"], [p["file"] for p in e.get("pictures") or () if not p.get("box")],
+                                         reads or {}, t.get("name"))
+        if e["id"] in covered:
+            out["covered"] = True
+        entries.append(out)
     pictures = [e for e in entries if e["kind"] in PICTURE_KINDS]
     for i, e in enumerate(pictures):
         for field in (eye or {}).get(e["id"], ()):
@@ -157,6 +194,8 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None) -
     first = t.get("git_first") or {}
     if first.get("date") and first.get("changes"):
         out["git_first"] = {"date": first["date"], "changes": changes_of(first)}   # its first recorded version's change
+        if first.get("approx"):
+            out["git_first"]["approx"] = True     # the card had versions before that one: its change is in one of them
         for field in (eye or {}).get(pictures[-1]["id"] if pictures else None, ()):
             for key in CHANGE_OF.get(field, ()):
                 out["git_first"]["changes"].pop(key, None)
@@ -214,6 +253,112 @@ def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
     if entry.get("kind"):
         out["kind_of"] = entry["kind"]             # joke | played
     return out, jobs
+
+
+# ========================
+# The card repo's first records
+# ========================
+def repo_log(cards_repo: str) -> list:
+    """[(sha, time, {new path: old path} the bake told, [(raw meta, path)])] newest first: one `git log --raw` of the
+    card repo's main over its PNGs and PSDs (trees only, never a blob)."""
+    git_dir = dm.git_dir_of(cards_repo) if cards_repo else None
+    raw = dm.git_out(git_dir, "log", f"origin/{CARD_BRANCH}", f"--format={LOG_FORMAT}", "--raw", "--no-abbrev",
+                     "--no-renames", "-z", "--", "*.png", "*.psd") if git_dir else None
+    if raw is None:
+        return []
+    commits, meta = [], None
+    for token in raw.decode("utf-8", "replace").split("\0"):
+        token = token.lstrip("\n")
+        if meta is not None:
+            commits[-1][3].append((meta, token))
+            meta = None
+        elif token.startswith(":"):
+            meta = token
+        elif token.startswith("C\t"):
+            _, sha, at, _, trailers = (token.split("\t", 4) + ["", ""])[:5]
+            told = {new: old for old, new in filter(None, map(rename_trailer, trailers.split("\x1f")))}
+            commits.append((sha, float(at), told, []))
+    return commits
+
+
+def lineage(commits: list, paths: dict, kind: str = ".png") -> dict:
+    """{card id: [(time, sha, path then, blob)] newest first}: every record of each card's file (paths: {card id: its
+    path today}, kind: its suffix) in the card repo, followed back as the website's Image versions follow a PNG
+    (build_site image_versions): an exact rename; a move that changed the file too, when that commit deleted exactly one
+    file of the same name and added only this one; a rename the bake told. The matcher's stop follows exact and told
+    renames only, so a card moved and redrawn at once started there (Elemental World, 4 Stars -> 3 Stars in 2025)."""
+    name_of = lambda p: dm.alnum(splitext(basename(p or ""))[0])
+    tracked = defaultdict(list)                  # path at the commit being read -> card ids
+    for cid, path in paths.items():
+        if path:
+            tracked[path].append(cid)
+    found = defaultdict(list)
+    for sha, at, told, entries in commits:       # newest first
+        adds, dels, mods = [], defaultdict(list), []
+        for meta, path in entries:
+            src, dst, status = (meta[1:].split() + [""] * 5)[2:5]
+            if not path.lower().endswith(kind):
+                continue
+            if status.startswith("A"):
+                adds.append((path, dst))
+            elif status.startswith("D"):
+                dels[src].append(path)
+            elif dst != NO_BLOB:
+                mods.append((path, dst))
+        for path, blob in mods:
+            for cid in tracked.get(path, ()):
+                found[cid].append((at, sha, path, blob))
+        gone, changed = defaultdict(list), defaultdict(list)
+        for p in (p for ps in dels.values() for p in ps):
+            gone[name_of(p)].append(p)
+        for path, blob in sorted(adds, key=lambda a: a[0] not in tracked):     # tracked ones claim exact renames first
+            for cid in tracked.get(path, ()):
+                found[cid].append((at, sha, path, blob))
+            if dels.get(blob):
+                old = dels[blob].pop(0)
+                if path in tracked:
+                    tracked[old] = tracked.pop(path)
+            else:
+                changed[name_of(path)].append(path)
+        for name, added in changed.items():
+            for path in added:
+                if path not in tracked:
+                    continue
+                ids, old = tracked.pop(path), told.get(path)
+                if old and old in gone.get(name_of(old), ()):
+                    tracked[old] = ids
+                elif len(added) == 1 and len(gone.get(name, ())) == 1:
+                    tracked[gone[name][0]] = ids
+    return dict(found)
+
+
+def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict]) -> Optional[dict]:
+    """A chain timeline cut at its card's first record in the card repo (pngs: its PNG's lineage), when that is earlier
+    than the chain's stop: its Discord, changelog and first-repo entries from then on are left out, its stop moves back
+    and its git_first is diffed again against the last version left. git_first is dated when its card-data version
+    (data: discord_chain.first_versions) was first committed in the card's PSD lineage (psds), approx when the card had
+    PSD versions before that one (its change is in one of them) or that version isn't there. Returns what changed:
+    {stop, was, dropped, approx} or None."""
+    stop, out = t.get("stop") or {}, None
+    when, first = (dm.epoch(stop.get("date")) if stop else None), (pngs[-1] if pngs else None)
+    if first and (when is None or first[0] < when - 1):
+        dropped = [e["id"] for e in t["entries"]
+                   if e["kind"] in BEFORE_GIT and (dm.epoch(e.get("date")) or 0) >= first[0]]
+        t["entries"] = [e for e in t["entries"] if e["id"] not in dropped]
+        t["stop"] = {"date": dm.iso(first[0]), "day": dm.iso(first[0])[:10], "source": "git", "commit": first[1],
+                     "path": first[2]}
+        out = {"stop": t["stop"]["day"], "was": stop.get("day"), "dropped": dropped}
+        if t.get("git_first") and dropped:
+            last = next((e for e in reversed(t["entries"]) if e["kind"] in ("discord", "old repo")), None)
+            t["git_first"]["changes"] = dc.compare(last["fields"], t["git_first"].get("fields") or {}) if last else {}
+    gf = t.get("git_first")
+    if gf and (t.get("stop") or {}).get("source") == "git" and data:
+        at = min((r[0] for r in psds if r[3] == data.get("blob_sha")), default=None)
+        if at:
+            gf["date"] = dm.iso(at)
+        gf["approx"] = not at or at > psds[-1][0] + 1
+        out = {**(out or {}), "approx": gf["approx"]}
+    return out
 
 
 # ========================
@@ -290,16 +435,38 @@ def picture_size(path: str) -> tuple:
 # ========================
 # build
 # ========================
-def build(root: str, old_git: str, workers: int = 3, force: bool = False):
+def title_reads(root: str) -> dict:
+    """{archive file: the title band's own OCR text} from the text readers (whole pictures only)."""
+    out = {}
+    for r in dm.read_jsonl(join(root, *TEXT_READS)):
+        ocr = (r.get("title") or {}).get("ocr")
+        if r.get("src") == "discord" and isinstance(ocr, str) and ocr:
+            out[r["file"]] = ocr
+    return out
+
+
+def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_repo: Optional[str] = LOCAL_DIR_LOC):
     root = dm.check_root(root)
     old_git = expanduser(old_git)
     out_dir = join(root, *OUT)
     makedirs(out_dir, exist_ok=True)
     created = dm.read_json(join(root, *CREATED), {}) or {}
+    rulings = dm.read_json(join(root, *EYE), {}) or {}
     eye = {}                                     # {card: {entry id: {field}}}
-    for key in ((dm.read_json(join(root, *EYE), {}) or {}).get("drop") or {}):
+    for key in rulings.get("drop") or {}:
         card, entry, field = key.split("|")
         eye.setdefault(card, {}).setdefault(entry, set()).add(field)
+    covered = {tuple(key.split("|")) for key in rulings.get("covered") or {}}
+    reads = title_reads(root)
+    # stop at git: each card's first record in the card repo, its moves followed as the website follows them
+    commits = repo_log(expanduser(cards_repo)) if cards_repo else []
+    repo_cards = (dm.read_json(dm.Paths(root).pairs, {}) or {}).get("cards") or {} if commits else {}
+    pngs = lineage(commits, {cid: c.get("png") for cid, c in repo_cards.items()})
+    psds = lineage(commits, {cid: c.get("psd") for cid, c in repo_cards.items()}, ".psd")
+    data = dc.first_versions(dm.git_dir_of(expanduser(cards_repo))) if commits else {}
+    if not commits:
+        log("build: no card repo history: the chain's stops as they are")
+    cut = []
     by_key = (created.get("cards") or {})
     index = {"version": 1, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "about": ABOUT,
              "cards": {}, "morgue": [], "mdw": [], "created": created_proposals(created)}
@@ -312,10 +479,16 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False):
         t = dm.read_json(join(chain_dir, name))
         if not t or not t.get("entries"):
             continue
+        if commits:
+            moved = stop_at_git(t, pngs.get(t["card"]) or [], psds.get(t["card"]) or [], data.get(t["key"]))
+            if moved:
+                cut.append((t["card"], moved))
+            if not t["entries"]:
+                continue
         c = by_key.get(t["key"]) or {}
         mine = {"date": c.get("date"), "sort": c.get("sort"), "source": (c.get("ours") or {}).get("source"),
                 "status": c.get("status")} if c else None
-        out, pics = timeline_out(t, mine, eye.get(t["card"]))
+        out, pics = timeline_out(t, mine, eye.get(t["card"]), reads, {e for card, e in covered if card == t["card"]})
         folder = t["card"]
         want[folder] = set()
         for image, e in pics:
@@ -372,6 +545,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False):
                 if f.endswith(".webp") and f not in want.get(sub_dir, ()):
                     remove(join(out_dir, sub_dir, f))
                     gone += 1
+            if sub_dir not in want and exists(join(out_dir, sub_dir, "timeline.json")):
+                remove(join(out_dir, sub_dir, "timeline.json"))   # no history any more
             if sub_dir not in want and not listdir(join(out_dir, sub_dir)):
                 rmdir(join(out_dir, sub_dir))
     # each published picture's size (the website sizes its <img> by it)
@@ -399,6 +574,11 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False):
         f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); {total / 1e6:.1f} MB")
     for path, err in failed[:20]:
         log(f"build: failed {path[len(out_dir) + 1:]}: {err}")
+    if commits:
+        moved = [(c, m) for c, m in cut if m.get("stop")]
+        left = ", ".join(f"{c} {len(m['dropped'])}" for c, m in moved if m["dropped"]) or "none"
+        log(f"build: stop at git: {len(moved)} stops moved back to the card's first record (entries after it left "
+            f"out: {left}); git_first approximate on {sum(1 for _, m in cut if m.get('approx'))} cards")
     return index
 
 
@@ -407,12 +587,13 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("command", choices=("build", "check"))
     parser.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
     parser.add_argument("--old-git", default=dm.OLD_GIT)
+    parser.add_argument("--cards-repo", default=LOCAL_DIR_LOC, help="build: the card repo clone (its history, read only)")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--redo", action="store_true", help="check: read again only what last read otherwise")
     args = parser.parse_args(argv)
     if args.command == "build":
-        build(args.root, args.old_git, args.workers, args.force)
+        build(args.root, args.old_git, args.workers, args.force, args.cards_repo)
     else:
         from commands.discord_preview_check import check
         check(args.root, args.workers, args.redo)

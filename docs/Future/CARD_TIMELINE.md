@@ -103,14 +103,21 @@ the card's Image versions on the website before the git versions. Cards that nev
    Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" for a paper
    card), `<card id>/timeline.json` (entries oldest first: paper, discord, first repo, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
-   wide (the website's card view), `_morgue/<slug>/` the same. The `history` branch itself (one commit per run, a script
-   run by hand, no Action) waits for the owner's OK.
+   wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
+   first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
+   card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
+   committed, approximate when the card had versions before that one. A confirmed changelog fact names its version
+   (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
+   so. The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
    lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo";
    Discord: date and channel; a paper card "Before 2020"; first repo: text only), each compared with the current card
-   as today (its own sure ability as "Text then"), never with a link or Revert; their changes and the changelog facts
-   (data only, owner Q4) join Recorded changes, the trend and the balance charts; the Morgue lists the joke and lost
-   cards from Discord (picture only, never in cards[]); the proposed Created dates apply (never later, never over hand).
+   as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
+   version there; their changes and the changelog facts (data only, owner Q4; a fact its confirming version also
+   records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
+   joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
+   first posts as Pacific days); the proposed Created dates apply (never later, never over hand; "Before 2020" counts in
+   a "Before 2020" year of its own).
 
 ## Verification
 

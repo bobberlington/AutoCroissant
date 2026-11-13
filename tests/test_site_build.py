@@ -471,8 +471,9 @@ def test_theme_colours_pass_the_contrast_test():
 
 
 def _timelines(root):
-    """A HISTORY_DIR: Alpha's paper card, Discord look, first-repo notice, changelog fact and old-repo version; one
-    Morgue joke card; Alpha's Created proposed as a paper card's."""
+    """A HISTORY_DIR: Alpha's paper card (under another card), Discord look, first-repo notice, changelog facts (one its
+    old-repo version confirms), old-repo version, git_first and a Discord post after its first version here; one Morgue
+    joke card; Alpha's Created proposed as a paper card's."""
     from PIL import Image
 
     def pic(folder, name):
@@ -482,16 +483,22 @@ def _timelines(root):
     stats = lambda hp, atk: {"value": {"hp": hp, "def": 2, "atk": atk, "spd": 1}, "method": "picture", "confidence": "sure"}
     alpha = {"card": "alpha", "key": "Alpha", "name": "Alpha", "kind": "creature", "entries": [
         {"id": "D-P-1", "kind": "paper", "date": None, "day": None, "label": "Before 2020", "image": pic("alpha", "P-1.webp"),
-         "w": 40, "h": 80, "fields": {"name": {"value": "Alpha", "method": "eye", "confidence": "sure"}}, "changes": {}},
+         "w": 40, "h": 80, "fields": {"name": {"value": "Alpha", "method": "eye", "confidence": "sure"}}, "changes": {}, "covered": True},
         {"id": "D-P-2", "kind": "discord", "date": "2021-03-04T05:06:07+00:00", "channel": "new-cards", "image": pic("alpha", "P-2.webp"),
          "w": 40, "h": 80, "fields": {"stats": stats(3, 5), "ability": {"method": "ocr", "confidence": "review"}}, "changes": {}},
         {"id": "Q-1", "kind": "first repo", "date": "2022-09-01T00:00:00+00:00", "author": "Maker", "subject": "alpha"},
         {"id": "F-1", "kind": "text", "date": "2022-10-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4}},
+        {"id": "F-2", "kind": "text", "date": "2023-04-20T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4},
+         "confirmed": True, "confirmed_by": "O-1"},
         {"id": "O-1", "kind": "old repo", "date": "2023-05-01T00:00:00+00:00", "author": "Maker", "subject": "Alpha art",
          "image": pic("alpha", "O-1.webp"), "w": 40, "h": 80, "fields": {"stats": stats(3, 4)},
-         "changes": {"stats": [{"hp": 3, "def": 2, "atk": 5, "spd": 1}, {"hp": 3, "def": 2, "atk": 4, "spd": 1}], "bal": "nerf"}}]}
+         "changes": {"stats": [{"hp": 3, "def": 2, "atk": 5, "spd": 1}, {"hp": 3, "def": 2, "atk": 4, "spd": 1}], "bal": "nerf"}},
+        {"id": "D-P-3", "kind": "discord", "date": "2027-01-01T00:00:00+00:00", "channel": "new-cards", "image": pic("alpha", "P-3.webp"),
+         "w": 40, "h": 80, "fields": {}, "changes": {}}],
+        "git_first": {"date": "2023-06-01T00:00:00+00:00", "approx": True,
+                      "changes": {"stats": [{"hp": 3, "def": 2, "atk": 4, "spd": 1}, {"hp": 3, "def": 2, "atk": 3, "spd": 1}], "bal": "nerf"}}}
     joke = {"card": "joke-card", "key": "Joke Card", "name": "Joke Card", "kind_of": "joke",
-            "first": {"day": "2020-07-14", "channel": "meme-cards"},
+            "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
     for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke)):
@@ -505,8 +512,9 @@ def _timelines(root):
 
 def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     """The card timelines before the card repo (HISTORY_DIR, AutoCroissant discord_preview's layout): Image versions rows
-    after the repo's (versions.json early) with their webps, the Morgue's entries from Discord (never cards[]), a paper
-    card's Created ("Before 2020") and their changes under Recorded changes; without HISTORY_DIR, none of it."""
+    after the repo's (versions.json early) with their webps, none at or after the card's first version here, the Morgue's
+    entries from Discord (never cards[], never on a renamed card's old page), a paper card's Created ("Before 2020") and
+    their changes under Recorded changes, a confirmed fact once; without HISTORY_DIR, none of it."""
     if not hasattr(bs, "HISTORY_DIR"):
         pytest.skip("a site before HISTORY_DIR")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
@@ -516,6 +524,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # after the repo's rows, newest first, the undated paper card last; no review field, no link
     assert [r["k"] for r in rows] == ["old repo", "first repo", "discord", "paper"]
     assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[2]["ch"] == "new-cards" and rows[3]["label"] == "Before 2020"
+    assert rows[3]["cov"] == 1 and "cov" not in rows[2]
     assert "img" not in rows[1] and rows[2]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
     assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows if "img" in r)
     assert alpha["ive"] == 4 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
@@ -524,11 +533,17 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # the Morgue's entry from Discord: picture only, never a live card
     joke = [c for c in out["cards.json"]["morgue"] if c["name"] == "Joke Card"]
     assert joke and joke[0]["lost"] == "joke" and joke[0]["pic"] == "history/_morgue/joke-card/P-9.webp"
+    assert joke[0]["first"] == "2020-07-13"                                         # the Pacific day, as its rows
+    taken = bs.history_morgue({"morgue": [("_morgue/joke-card", json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()))]},
+                              bs.slugify, {"joke-card"})[0]
+    assert taken[0]["id"] == "joke-card-morgue"                                      # a renamed card's old page stays its
     assert "Joke Card" not in _by_name(out["cards.json"]["cards"]) and out["versions.json"]["early"][joke[0]["id"]]
     # Recorded changes: the old repo's nerf and the changelog's fact (data, never its text), each saying where from
     changes = out["analytics.json"]["cards"][alpha["id"]]["changes"]
     assert {"ts": 1682899200, "stats": [[3, 2, 5, 1], [3, 2, 4, 1]], "bal": "nerf", "early": "old repo"} in changes
     assert {"ts": 1664582400, "fact": {"field": "atk", "from": 5, "to": 4}, "early": "text"} in changes
+    assert not [r for r in changes if r["ts"] == 1681948800]                         # confirmed: the old repo's nerf says it
+    assert {"ts": 1685577600, "stats": [[3, 2, 4, 1], [3, 2, 3, 1]], "bal": "nerf", "early": "git", "approx": True} in changes
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")

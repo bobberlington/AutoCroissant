@@ -1,11 +1,15 @@
 """discord_preview build on a made-up archive: only sure fields are published (value, method, confidence; not one of
-the wrong kind or one the eye dropped), no message, poster, note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read
-from its git dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new."""
+the wrong kind or one the eye dropped; a title snapped to an old casing as the picture prints it), no message, poster,
+note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read from its git
+dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new. Stop at git: a card moved and
+redrawn in one commit starts at its first file."""
 import json
 import subprocess
+from os import environ
 
 from PIL import Image
 
+import commands.discord_match as dm
 import commands.discord_preview as dp
 
 BAD_KEYS = {"message", "jump_url", "poster", "author_id", "content", "note", "why", "review", "conf", "file", "box"}
@@ -39,13 +43,14 @@ def test_build(tmp_path):
          "git_first": None, "created": {}, "entries": [
              {"id": "D-P-a", "kind": "discord", "date": "2021-01-01T00:00:00+00:00", "day": "2021-01-01", "channel": "new-cards",
               "look": {"draft": True}, "era": "D2", "pictures": [pic("P-a", "a.png")], "minor": False,
-              "fields": {"name": sure("Bolt", "ocr+name"), "ability": {"method": "ocr", "confidence": "review", "why": "x", "review": "chain-1"}},
+              "fields": {"name": sure("BOLT", "ocr+name"), "ability": {"method": "ocr", "confidence": "review", "why": "x", "review": "chain-1"}},
               "changes": {"ability_change": "first"}},
              {"id": "D-P-s-c2", "kind": "discord", "date": "2021-02-01T00:00:00+00:00", "day": "2021-02-01", "channel": "ideas",
               "look": {"git": {"commit": "c"}}, "pictures": [pic("P-s-c2", "s.png", 2, [0.5, 0.0, 1.0, 1.0])], "minor": False,
               "fields": {"stars": sure(3, "eye")}, "changes": {"ability_change": "unknown"}},
              {"id": "F-1", "kind": "text", "date": "2022-01-01T00:00:00+00:00", "day": "2022-01-01", "channel": "update-05",
-              "source": "changelog", "change": {"field": "atk", "from": 5, "to": 4, "stated": {"from": 5}}, "confidence": "sure"},
+              "source": "changelog", "change": {"field": "atk", "from": 5, "to": 4, "stated": {"from": 5}}, "confidence": "sure",
+              "confirmed_by": "O-1"},
              {"id": "O-1", "kind": "old repo", "date": "2023-05-01T00:00:00+00:00", "day": "2023-05-01", "badge": "old repo",
               "author": "Maker", "subject": "Bolt", "commit": "c" * 40, "path": "Creatures/Bolt.png", "blob": blob,
               "thumb": "x", "minor": True, "share": 0.01, "fields": {"stats": sure({"hp": 3, "def": 2, "atk": 4, "spd": 1}, "picture")},
@@ -67,15 +72,21 @@ def test_build(tmp_path):
                                   "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord", "printed": True}]}]}
     (root / "derived" / "morgue" / "candidates.json").write_text(json.dumps(morgue))
     (root / "derived" / "preview").mkdir(parents=True)
-    (root / "derived" / "preview" / "eye.json").write_text(json.dumps({"drop": {"bolt|O-1|stats": "the eye: another value"}}))
+    (root / "derived" / "preview" / "eye.json").write_text(json.dumps({"drop": {"bolt|O-1|stats": "the eye: another value"},
+                                                                    "covered": {"bolt|D-P-a": "under another card"}}))
+    (root / "derived" / "readers" / "text").mkdir(parents=True)
+    (root / "derived" / "readers" / "text" / "reads.jsonl").write_text(json.dumps(
+        {"src": "discord", "file": "attachments/a.png", "title": {"ocr": "* Bolt", "value": "BOLT"}}) + "\n")
     t["entries"][1]["fields"]["name"] = sure(["Bolt", "Bolt2"], "ocr+name")   # a value of the wrong kind
     (root / "derived" / "chain" / "timelines" / "bolt.json").write_text(json.dumps(t))
-    index = dp.build(str(root), str(git), workers=1)
+    index = dp.build(str(root), str(git), workers=1, cards_repo=None)
     out = root / "derived" / "preview" / "history"
     got = json.loads((out / "bolt" / "timeline.json").read_text())
     assert [e["kind"] for e in got["entries"]] == ["discord", "discord", "text", "old repo"]
     first, cell, fact, old = got["entries"]
     assert first["fields"] == {"name": {"value": "Bolt", "method": "ocr+name", "confidence": "sure"}}   # the review field left out
+    assert first["covered"] and "covered" not in cell and fact["confirmed_by"] == "O-1"
+    assert dp.printed_name("DooPliss", ["f"], {"f": "O DooPliss"}, "Doopliss") == "DooPliss"     # printed so: kept
     assert cell["git_look"] and fact["change"] == {"field": "atk", "from": 5, "to": 4} and old["minor"] and old["author"] == "Maker"
     assert "name" not in cell["fields"] and "stats" not in old["fields"]          # the wrong kind; the eye's drop
     assert not keys(got) & BAD_KEYS and not keys(index) & BAD_KEYS
@@ -90,5 +101,38 @@ def test_build(tmp_path):
     assert mdw["entries"][0]["date"] is None and mdw["entries"][0]["printed"]       # a printed card's photo: no day
     # a rebuild keeps the webps, and drops one no entry names any more
     (out / "bolt" / "stale.webp").write_bytes(b"x")
-    dp.build(str(root), str(git), workers=1)
+    dp.build(str(root), str(git), workers=1, cards_repo=None)
     assert not (out / "bolt" / "stale.webp").exists() and (out / "bolt" / "P-a.webp").exists()
+
+
+def test_stop_at_git(tmp_path):
+    """A card moved and redrawn in one commit (4 Stars -> 3 Stars: the matcher's stop is that commit) starts at its first
+    file, as the website follows it: the Discord post after that is left out, the stop moves back, and git_first is
+    diffed again, dated by its PSD's commit and approx (an older PSD version came first)."""
+    repo = tmp_path / "cards"
+    who = {"GIT_AUTHOR_NAME": "M", "GIT_AUTHOR_EMAIL": "m@x", "GIT_COMMITTER_NAME": "M", "GIT_COMMITTER_EMAIL": "m@x"}
+    git = lambda *a, at=0: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True, env={
+        **environ, **who, "GIT_AUTHOR_DATE": f"@{at} +0000", "GIT_COMMITTER_DATE": f"@{at} +0000"}).stdout
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for n, (folder, at) in enumerate((("4 Stars", 1610000000), ("3 Stars", 1740000000)), 1):
+        for f in repo.glob("Bolt/*/*"):
+            f.unlink()
+        (repo / "Bolt" / folder).mkdir(parents=True, exist_ok=True)
+        (repo / "Bolt" / folder / "Bolt.png").write_bytes(b"png %d" % n)
+        (repo / "Bolt" / folder / "Bolt.psd").write_bytes(b"psd %d" % n)
+        git("add", "-A")
+        git("commit", "-q", "-m", folder, at=at)
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    commits = dp.repo_log(str(repo))
+    pngs = dp.lineage(commits, {"bolt": "Bolt/3 Stars/Bolt.png"})["bolt"]
+    psds = dp.lineage(commits, {"bolt": "Bolt/3 Stars/Bolt.psd"}, ".psd")["bolt"]
+    assert [(r[0], r[2]) for r in pngs] == [(1740000000, "Bolt/3 Stars/Bolt.png"), (1610000000, "Bolt/4 Stars/Bolt.png")]
+    line = lambda atk: {"value": {"hp": 3, "def": 2, "atk": atk, "spd": 1}, "method": "picture", "confidence": "sure"}
+    t = {"stop": {"date": dm.iso(1740000000), "day": "2025-02-19", "source": "git"}, "entries": [
+        {"id": "D-1", "kind": "discord", "date": "2020-06-01T00:00:00+00:00", "fields": {"stats": line(5)}},
+        {"id": "D-2", "kind": "discord", "date": "2022-01-01T00:00:00+00:00", "fields": {"stats": line(4)}}],
+        "git_first": {"date": "2025-03-01T00:00:00+00:00", "fields": {"stats": line(3)}, "changes": {}}}
+    done = dp.stop_at_git(t, pngs, psds, {"blob_sha": psds[0][3]})
+    assert done == {"stop": "2021-01-07", "was": "2025-02-19", "dropped": ["D-2"], "approx": True}
+    assert [e["id"] for e in t["entries"]] == ["D-1"] and t["stop"]["path"] == "Bolt/4 Stars/Bolt.png"
+    assert t["git_first"]["date"] == dm.iso(1740000000) and t["git_first"]["changes"]["stats"][0]["atk"] == 5
