@@ -311,6 +311,9 @@ def test_stars_refuse_per_field(parser, tmp_path):
     assert pe.star_folder(REL) is None and pe.star_folder("Auxiliary/Status Effects/Buffs/Fixture.psd") is None
     with pytest.raises(pe.Refused, match="the parser reads no stars on a buff card"):
         _plan(parser, paths[0], "Auxiliary/Status Effects/Buffs/Fixture.psd", "stars", 2)
+    with pytest.raises(pe.Refused, match="no stars on this card$"):            # psd_details' type "": no "card card"
+        pe.plan_stars(PSDImage.open(paths[0]), {"card": {"stars": 1, "path": "Auxiliary/Status Effects/Buffs/Fixture.psd",
+                                                         "type": ""}, "info": None}, 2, parser)
     low = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Low")      # a star below the middle: no count reads
     with pytest.raises(pe.Refused, match="draws 1 more below its middle"):      # it, so no layout redraws it (refused)
         _plan(parser, low[0], REL, "stars", 2)

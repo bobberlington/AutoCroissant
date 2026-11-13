@@ -7711,7 +7711,8 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
     if not stars_from_psd(rel):
         folder = rel.split("/")[len(rel.split("/")) - 2] if "/" in rel else ""
         if not fullmatch(STAR_FOLDER, folder, IGNORECASE):
-            refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
+            kind = parsed["card"].get("type")
+            refuse(f"the parser reads no stars on a {kind} card" if kind else "the parser reads no stars on this card")
     if value < 1:
         refuse("a card shows at least one")
     types = parser.all_types if parser is not None else ()
