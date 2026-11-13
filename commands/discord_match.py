@@ -2585,8 +2585,6 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
     found["stop"] = {"date": iso(stop), "from": card.get("fs_from") or "git"} if stop else None
     found["names"] = chat_names(cid, card, mine, names, ctx)
     found["notes"] = card_notes(cid, mine, named, ctx)
-    found["series_hints"] = series_hints(card, mine)
-    found["posters"] = dict(Counter(poster_name(post_info(record, channels)) for record, *_ in mine).most_common(5))
     found["fs_check"] = fs_check(card.get("fs"), epoch(found["first"]["date"]) if mine else None)
     return found
 
@@ -2664,16 +2662,6 @@ def card_notes(cid: str, mine: list, named: list, ctx: Context) -> list:
     if len(found) > NOTES_PER_CARD:
         found = found[:NOTES_PER_CARD // 2] + found[len(found) - NOTES_PER_CARD // 2:]
     return found
-
-
-def series_hints(card: dict, mine: list) -> list:
-    """Channel and thread names of its posts (series or set context)."""
-    places = Counter()
-    for record, *_ in mine:
-        for place in (record.get("channel_name"), (record.get("thread") or {}).get("name")):
-            if place:
-                places[place] += 1
-    return [{"place": p, "posts": n} for p, n in places.most_common(4)]
 
 
 def fs_check(fs, first: Optional[float]) -> dict:
@@ -3185,8 +3173,7 @@ def _summary_lines(result: dict, entries: list) -> list:
             f"- First chat mention: {sum(1 for c in cards.values() if (c.get('discord') or {}).get('first_mention'))} "
             f"cards; {len(named)} named 90+ days before first shown (many names are the games' own, so a mention isn't "
             "creation evidence).",
-            "- Per card also: every poster of it (`posters`), the channels and threads it was posted in "
-            "(`series_hints`), the first and last post, links to each.", ""]
+            "- Per card also: the first and last post, links to each (no posters or series: owner 2026-11-13).", ""]
 
     out += ["## Proposal (nothing is applied or published)", "",
             "1. **created**, for the site's created sort and card pages: the earliest confident appearance, the "
