@@ -511,6 +511,13 @@ def report_main():
         f"{sum(bool(v.get('new_look')) for v in versions)} (moves and blobs a file had before are not).")
     out(f"Old cards: {len(index['old_cards'])} (one file name's PSD+PNG, renames/moves/case changes followed); "
         f"{sum(1 for o in index['old_cards'].values() if o['at_end'])} still in the tree at the end.")
+    out("Scope: card PSD/PNG under Creatures/, Auxillary/, Items/, Field/ (rule pages and markers left out, as the "
+        "website does); a version = a blob new at its path (add, edit, move+edit, copy; a pure move or a blob the file "
+        "had before is kept with new_look false). Dates: ts = committer time (as the website dates versions), date = "
+        "its ISO form, authored = author time. old_id joins versions.jsonl to map.json.")
+    out("Hashes: discord_match.features(ocr=False) (pHash 64 'p', pHash 256 'q', dHash 'd'; whole card and art box "
+        "ART, after trim, flattened on black), the matcher's own recipe; thumbs/<blob>.webp at most 480 px "
+        "(PNG versions and PSD composites).")
     out("")
     psd = [r for r in reads if r["kind"] == "psd"]
     out(f"PSD READS (today's parser, PARSER_VERSION as in AC; vocabulary: today's Types/ + old-only {vocab['old_only_types']})")
