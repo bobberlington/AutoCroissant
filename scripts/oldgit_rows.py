@@ -4,14 +4,16 @@ The old repo's version rows for the card timelines (STAGE1 S3; docs/Future/CARD_
 Each PNG version of a card's old file (oldgit map.json) is a row: date, mapped author, commit subject, badge "old repo",
 no link, its thumb, and its fields from the PSD read of the same commit (else the PSD nearest it in the commit range),
 each checked against the picture: stats read off the PNG (the printed value wins; a disagreement goes to review), name
-and ability against the PNG's OCR (the matcher's card cache), stars against the 'N Stars' folder, types by their header
-icon layers' pictures (Types/), and the PSD's composite against the PNG. Two-creature cards are flagged, never summed.
+and ability against the PNG's OCR both ways (the matcher's card cache), stars the PSD draws against the 'N Stars'
+folder, types by their header icon layers' pictures (Types/; today's names), and the PSD's composite against the PNG.
+Two-creature cards are flagged, never summed.
 Minor looks (under png_changes.VISIBLE of the pixels, no data change) fold under "minor changes"; formatting-only text
 changes merge (owner 11-09). A renamed card's rows show the old name (old_name, old_file); never an alias.
 
     python oldgit_rows.py reread [-j N]     PSDs whose read has no ability, read again with the text layers named
                                             after their own text as the Ability (rereads.jsonl)
     python oldgit_rows.py icons [-j N]      each PSD's header icon layers matched to Types/ pictures (icons.jsonl)
+    python oldgit_rows.py stars [-j N]      the stars each PSD draws (stars.jsonl)
     python oldgit_rows.py pictures [-j N]   each PNG version: stats off the picture (two bar readers, each row's two
                                             halves) and the change share from the version before it (pictures.jsonl)
     python oldgit_rows.py rows              rows.jsonl (live cards, sure maps), review.jsonl (what is not sure, the
@@ -63,6 +65,12 @@ ICON_GAP = 4                # ... nearer than the next type's by this much or ha
 ICON_NEAR = 6               # nearest types kept per icon
 TWO_ROWS = 2                # rows whose top and bottom halves read apart: two creatures
 SPLITS = {"Twin Princes": ("Lothric", "Lorian")}    # one old card, two live ones (STAGE1 Q3, provisional A)
+STAR_BAND = 1 / 6           # the card's top, where its stars are: the composite there = the PNG's
+MISSING_WORDS = 4           # card words in OCR'd ability lines the PSD text lacks: the card prints more (Pix)
+OLD_TYPES = {"undread": "undead", "tornado": "wind"}    # renamed types (same pictures)
+OLD_TOKENS = re.compile(r"\[(" + "|".join(OLD_TYPES) + r")(?=[\]:])")   # their [tokens] in an ability
+MINION_ICONS = {"equip": "offensive_minion", "protective": "defensive_minion"}   # 2023 minion role icons
+SEPARATORS = re.compile(r"[^a-z0-9\-' ]")              # what a printed name's form keeps besides letters
 SEED = 1113
 
 
@@ -88,6 +96,11 @@ def text_key(text) -> str:
 
 def norm(text) -> str:
     return re.sub(r"[^0-9a-z]", "", oi.alnum(text or ""))
+
+
+def card_words(text) -> set:
+    """Words of 3+ letters (no numbers, [tokens] dropped): an ability's vocabulary."""
+    return set(words3(text))
 
 
 def folder_stars(path: str):
@@ -301,6 +314,41 @@ def icons_main(workers: int):
 
 
 # ========================
+# The stars each PSD draws (the parser takes most kinds' stars from the 'N Stars' folder)
+# ========================
+def w_stars(sha: str) -> dict:
+    from psd_tools import PSDImage
+    row = {"blob": sha}
+    try:
+        psd = PSDImage.open(BytesIO(oi.w_blob(sha)))
+        row["drawn"] = oi._W["parser"]._count_stars(psd)
+    except Exception as e:
+        row["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return row
+
+
+def stars_main(workers: int):
+    blobs = sorted({r["blob"] for r in oi.read_jsonl(join(oi.OUT, "reads.jsonl")) if r["kind"] == "psd"})
+    target = join(OUT, "stars.jsonl")
+    done = {r["blob"] for r in oi.read_jsonl(target) if "error" not in r}
+    blobs = [b for b in blobs if b not in done]
+    vocab = json.load(open(join(oi.OUT, "vocabulary.json")))
+    from commands.card_check import clone_vocabulary
+    manifest = clone_vocabulary(oi.TC).manifest
+    log(f"stars: {len(blobs)} PSDs")
+    os.makedirs(OUT, exist_ok=True)
+    n = 0
+    with open(target, "a", encoding="utf-8") as out, ProcessPoolExecutor(
+            workers, initializer=oi.w_init, initargs=(vocab["types"], vocab["stars"], manifest)) as pool:
+        for row in pool.map(w_stars, blobs, chunksize=4):
+            out.write(json.dumps(row) + "\n")
+            n += 1
+            if n % 200 == 0 or n == len(blobs):
+                out.flush()
+                log(f"{n}/{len(blobs)} PSDs")
+
+
+# ========================
 # The pictures: stats off the PNG, the change from the version before
 # ========================
 def halves(R, arr, found: dict, info) -> dict:
@@ -397,7 +445,11 @@ class Data:
             if (r.get("read") or {}).get("ability"):
                 self.rereads.setdefault(r["blob"], r)          # the same PSD under another path (Unused/)
         self.icons = {r["blob"]: r["icons"] for r in oi.read_jsonl(join(OUT, "icons.jsonl")) if "error" not in r}
+        self.drawn = {r["blob"]: r["drawn"] for r in oi.read_jsonl(join(OUT, "stars.jsonl")) if "drawn" in r}
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
+        self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
+        for r in list(self.psd.values()) + list(self.rereads.values()):
+            self.vocab.update(card_words(((r.get("read") or {}).get("ability") or "")))
         self.ocr = {}
         if exists(CARD_CACHE):
             for line in open(CARD_CACHE, encoding="utf-8"):
@@ -418,7 +470,11 @@ class Data:
             pass
         for key, card in stats.items():
             names = {key, card.get("display_name") or key, (edits.get(key) or {}).get("name") or key}
-            self.today[key] = {"names": names, "creatures": bool(card.get("creatures")), "type": card.get("card_type")}
+            s = card.get("stats") or {}
+            self.today[key] = {"names": names, "creatures": len(card.get("creatures") or ()), "type": card.get("card_type"),
+                               "stars": card.get("stars"), "stats": valid_stats(
+                                   {k: s.get(w) for k, w in zip(ORDER, ("hp", "defense", "attack", "speed"))})}
+            self.vocab.update(card_words(card.get("ability") or ""))
 
     def ocr_of(self, blob: str) -> dict:
         return self.ocr.get("b" + blob[:20]) or {}
@@ -439,13 +495,15 @@ class Data:
         return self.thumbs[blob]
 
 
-def picture_off(data: Data, psd_blob: str, png_blob: str):
-    """Share of 8 px blocks of the PSD's composite thumb off the PNG's (None: no composite or sizes differ)."""
+def picture_off(data: Data, psd_blob: str, png_blob: str, top: float = 1.0):
+    """Share of 8 px blocks of the PSD's composite thumb off the PNG's (top: only that share of the card's height, from
+    its top; None: no composite or sizes differ)."""
     import numpy as np
     a, b = data.thumb(psd_blob), data.thumb(png_blob)
     if a is None or b is None or a.shape != b.shape:
         return None
     d = np.abs(a - b).max(axis=2)
+    d = d[:max(8, int(d.shape[0] * top))]
     h, w = d.shape[0] // 8 * 8, d.shape[1] // 8 * 8
     blocks = d[:h, :w].reshape(h // 8, 8, w // 8, 8).mean(axis=(1, 3))
     return round(float((blocks > BLOCK_DIFF).mean()), 4)
@@ -505,6 +563,88 @@ def title_match(ocr: str, name) -> bool:
     return a == b or (len(b) >= 4 and b in a) or SequenceMatcher(None, a, b, autojunk=False).ratio() >= NAME_RATIO
 
 
+def name_form(text) -> str:
+    """A name's letters and separators (hyphens, apostrophes, spaces), lower case, trimmed: 'WX-78' -> 'wx-78'."""
+    text = re.sub(r"\s+", " ", SEPARATORS.sub("", (text or "").lower().replace("’", "'")))
+    return re.sub(r"\s*-\s*", "-", text).strip(" -'")
+
+
+def shape(text) -> str:
+    return re.sub(r"[a-z0-9]+", "a", name_form(text))
+
+
+def with_separators(name: str, ocr: str) -> str:
+    """name (same letters as ocr) with the OCR'd separators: 'All Purpose Medical Kit' -> 'All-Purpose Medical Kit'."""
+    letters = iter(c for c in name if c.isalnum())
+    return "".join(next(letters) if c.isalnum() else c for c in name_form(ocr))
+
+
+def check_name(ocr_title: str, printed, stem: str, today, same_look: bool) -> dict:
+    """The printed name: of the PSD's title, the file name (a trailing picture number dropped too) and today's names,
+    one the OCR'd title spells letter for letter (one with its separators first; else it takes the OCR'd ones), else
+    the first near it."""
+    names = [(printed, "psd"), (stem, "file name")]
+    bare = re.sub(r"\s*\d+$", "", stem)
+    if bare and bare != stem and not re.search(r"\d$", norm(ocr_title)):
+        names.append((bare, "file name"))                      # a second picture's file ('..._Kit2')
+    names = [(n, how) for n, how in names + [(n, "today") for n in sorted(today)] if n]
+    want = norm(ocr_title)
+    exact = [(n, how) for n, how in names if want and norm(n) == want]
+    if exact:
+        n, how = next(((n, how) for n, how in exact if shape(n) == shape(ocr_title)), exact[0])
+        if how != "psd" and shape(n) != shape(ocr_title):
+            n = with_separators(n, ocr_title)
+        return field(n, how, True, "ocr")
+    hit = next(((n, how) for n, how in names if title_match(ocr_title, n)), None)
+    if hit:
+        return field(hit[0], hit[1], True, "ocr")
+    if printed and same_look and text_key(printed) == text_key(stem):
+        return field(printed, "psd", True, "composite, file name")
+    return field(printed or stem, "psd" if printed else "file name", False,
+                 why="the OCR'd title names neither the PSD's title nor the file")
+
+
+def check_stars(folder, drawn, star_look: bool, kind: str):
+    """The printed stars: those the PSD draws (its composite = the PNG where the stars are), checked with the 'N Stars'
+    folder (the parser's count for most kinds: no check alone); with no drawn stars the folder (card_rows may confirm
+    it); None for a buff with neither."""
+    if drawn and (folder is None or drawn == folder):
+        out = field(drawn, "psd", star_look, "drawn" + (", folder" if folder is not None else "") +
+                    (", composite" if star_look else ""), "" if star_look else "the PSD's look is not the picture's")
+    elif drawn:
+        out = field(drawn if star_look else folder, "psd" if star_look else "folder", False,
+                    why=f"the PSD draws {drawn}, the folder says {folder}")
+    elif folder is not None:
+        out = field(folder, "folder", False, why="the PSD draws no stars (custom icons or no Stars group)")
+    elif kind == "buff":
+        return None                                            # buffs have no stars
+    else:
+        return field(None, "none", False, why="no stars read")
+    out["reads"] = {"folder": folder, "drawn": drawn}
+    return out
+
+
+def confirm_stars(rows: list, today: dict):
+    """Stars across a card's rows: one picture filed under two star folders -> review; a folder the PSD can't confirm
+    (no drawn stars) is sure when it never changes and today's stars are the same."""
+    folders = defaultdict(set)
+    for row in rows:
+        folders[row["blob"]].add(folder_stars(row["path"]))
+    every = {folder_stars(row["path"]) for row in rows} - {None}
+    for row in rows:
+        f = row["fields"].get("stars")
+        if not f:
+            continue
+        moved = sorted(folders[row["blob"]] - {None})
+        if len(moved) > 1:
+            f.update(confidence="review", why=f"the same picture is filed under {' and '.join(map(str, moved))} Stars")
+            f.pop("check", None)
+        elif f["method"] == "folder" and not (f.get("reads") or {}).get("drawn") and len(every) == 1 \
+                and today.get("stars") in every and f["value"] in every:
+            f.update(confidence="sure", check="today, never changed")
+            f.pop("why", None)
+
+
 def valid_stats(stats, high: bool = False):
     top = 40 if high else 10
     if not stats or any(not isinstance(stats.get(s), int) or not 0 <= stats[s] <= top for s in ORDER):
@@ -525,17 +665,23 @@ def field(value, method: str, sure: bool, check: str = "", why: str = "") -> dic
     return out
 
 
-def check_stats(read, pic, two: bool, square: bool, keys: tuple = ORDER) -> dict:
+def check_stats(read, pic, two, square: bool, keys: tuple = ORDER) -> dict:
     """The printed stats (keys: an item's HP/DEF bars): the picture's read (two readers), the PSD's digit rows where
-    they agree."""
+    they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart."""
     def only(stats):
         return {k: stats[k] for k in keys} if stats and all(isinstance(stats.get(k), int) for k in keys) else None
     psd = only((read or {}).get("stats"))
     psd = psd if psd and all(0 <= v <= (40 if square else 10) for v in psd.values()) else None
-    if two:
+    if two:                                                    # True or the creature count
         creatures = (read or {}).get("creatures")
+        if int(two) >= 3:                                      # Pix: shared HP, a DEF/ATK/SPD row each
+            out = field(None, "picture", False, why=f"{int(two)} creatures: read each creature's bars by eye "
+                                                    "(the halves reader splits a row in two only), never summed")
+            out["creatures"] = {"count": int(two), "psd": creatures, "picture": None}
+            return out
         out = field(None, "picture", False, why="two creatures: each half read apart, never summed")
-        out["creatures"] = {"psd": creatures, "picture": [(pic.get("halves") or {}).get(k) for k in ("top", "bottom")]}
+        out["creatures"] = {"count": 2, "psd": creatures,
+                            "picture": [(pic.get("halves") or {}).get(k) for k in ("top", "bottom")]}
         return out
     if square:
         return field(psd, "psd", False, why="raid rows (40 cells): no picture reader")
@@ -571,38 +717,28 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
     fields = {}
     stem = splitext(basename(png["path"]))[0].replace("_", " ")
     printed = (read or {}).get("printed_title") or (read or {}).get("title") or (read or {}).get("name")
-    named = [n for n in (printed, stem, *sorted(today.get("names") or ())) if n]
-    hit = next((n for n in named if title_match(ocr_title, n)), None)
-    if hit:
-        fields["name"] = field(hit, "psd" if hit == printed else "file name" if hit == stem else "today", True, "ocr")
-    elif printed and same_look and text_key(printed) == text_key(stem):
-        fields["name"] = field(printed, "psd", True, "composite, file name")
-    else:
-        fields["name"] = field(printed or stem, "psd" if printed else "file name", False,
-                               why="the OCR'd title names neither the PSD's title nor the file")
-    folder = folder_stars(png["path"])
-    stars = (read or {}).get("stars")
-    if stars is not None and stars == folder:
-        fields["stars"] = field(stars, "psd", True, "folder")
-    elif stars is not None and folder is None:
-        fields["stars"] = field(stars, "psd", same_look, "composite" if same_look else "",
-                                "" if same_look else "the PSD's look is not the picture's")
-    elif stars is not None:
-        fields["stars"] = field(stars, "psd", False, why=f"the folder says {folder}")
-    elif folder is not None or kind != "buff":                 # buffs have no stars
-        fields["stars"] = field(folder, "folder", False, why="the PSD read no stars")
+    fields["name"] = check_name(ocr_title, printed, stem, today.get("names") or (), same_look)
+    star_look = same_look
+    if psd and not same_look:                                  # the stars' band alone
+        top = picture_off(data, psd["blob"], png["blob"], STAR_BAND)
+        star_look = top is not None and top <= SAME_PICTURE
+    stars = check_stars(folder_stars(png["path"]), data.drawn.get(psd["blob"]) if psd else None, star_look, kind)
+    if stars:
+        fields["stars"] = stars
     if read is not None:
-        fields["types"] = check_types(list(read.get("types") or []), data.icons.get(psd["blob"]), same_look, data.type_names)
+        fields["types"] = check_types(list(read.get("types") or []), data.icons.get(psd["blob"]), same_look,
+                                      data.type_names, kind)
     pic = data.pictures.get(png["blob"]) or {}
-    two = kind in STAT_KINDS and bool((read or {}).get("creatures") or today.get("creatures") or png["old_id"] in SPLITS
-                                      or (pic.get("halves") or {}).get("apart", 0) >= TWO_ROWS)
+    count = max(len((read or {}).get("creatures") or ()), today.get("creatures") or 0)
+    two = kind in STAT_KINDS and bool(count or png["old_id"] in SPLITS or (pic.get("halves") or {}).get("apart", 0) >= TWO_ROWS)
+    two = max(count, 2) if two else 0                          # how many creatures
     keys = ORDER if kind in STAT_KINDS else tuple(k for k in ORDER if kind in ITEM_KINDS and (
         k in (pic.get("labels") or ()) or ((read or {}).get("stats") or {}).get(k, -1) >= 0))
     if kind in STAT_KINDS or len(keys) >= 2:                   # an item's HP/DEF bars too
         size = (data.png.get(png["blob"]) or {}).get("size") or [0, 0]
         fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys)
     if kind in ABILITY_KINDS:
-        fields["ability"] = check_ability(read, ocr.get("lines") or [], kind)
+        fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab)
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,
             **({"off": off} if off is not None else {})} if psd else None
     return fields, kind, two, note
@@ -624,7 +760,23 @@ def icon_type(icon: dict, names: set):
     return None
 
 
-def check_types(read: list, icons, same_look: bool, names: set) -> dict:
+def today_types(types: list, kind: str) -> list:
+    """Types under today's names: renamed types (undread, tornado) and, on a minion, the 2023 role icons (the Equip
+    sword marked an offensive minion, the Protective shield a defensive one)."""
+    types = [OLD_TYPES.get(t, t) for t in types]
+    return [MINION_ICONS.get(t, t) for t in types] if kind == "minion" else types
+
+
+def check_types(read: list, icons, same_look: bool, names: set, kind: str = "") -> dict:
+    """The types (check_icons) under today's names; the icons' own names kept as raw when they differ."""
+    out = check_icons(read, icons, same_look, names)
+    value = out["value"]
+    if value is not None and today_types(value, kind) != value:
+        out["raw"], out["value"] = value, today_types(value, kind)
+    return out
+
+
+def check_icons(read: list, icons, same_look: bool, names: set) -> dict:
     """The PSD's types, checked by its header icons' pictures: an icon layer's picture names its type (where the
     parser missed the layer's name, or the name is another type's); a read type no icon layer explains stays."""
     look = "composite" if same_look else ""
@@ -652,16 +804,56 @@ def check_types(read: list, icons, same_look: bool, names: set) -> dict:
     return out
 
 
+def ability_top(lines: list) -> float:
+    """Where a 1:2 card's ability starts: under its stat labels."""
+    R = _W.get("readers") or _W.setdefault("readers", readers())
+    ys = [b[3] for b in R.labels(lines).values()]
+    return (max(ys) + 0.01) if ys else 0.69
+
+
+def ability_zone(lines: list, kind: str) -> list:
+    """The OCR'd lines where the ability is printed, in reading order: under the bars above a 1:2 card's class line
+    zone; under the title on other cards."""
+    if kind not in STAT_KINDS:
+        return sorted((line for line in lines if line[3] + line[5] / 2 >= 0.13), key=lambda line: (line[3], line[2]))
+    top = ability_top(lines)
+    return sorted((line for line in lines if top <= line[3] + line[5] / 2 <= CLASS_ZONE), key=lambda line: (line[3], line[2]))
+
+
 def ability_lines(lines: list, kind: str) -> list:
     """The OCR'd ability two ways: the eras reader's (lines under the bars, its class line dropped), and every line
     under the bars above a 1:2 card's class line zone (an ability's last short line kept)."""
     R = _W.get("readers") or _W.setdefault("readers", readers())
     if kind not in STAT_KINDS:
         return [R.ability_of(lines, 0.13, 1.0, drop_class=False)]
-    ys = [b[3] for b in R.labels(lines).values()]
-    top = (max(ys) + 0.01) if ys else 0.69
-    kept = sorted((line for line in lines if top <= line[3] + line[5] / 2 <= CLASS_ZONE), key=lambda line: (line[3], line[2]))
-    return [R.ability_of(lines, top), " ".join(line[0] for line in kept)]
+    return [R.ability_of(lines, ability_top(lines)), " ".join(line[0] for line in ability_zone(lines, kind))]
+
+
+def words3(text) -> list:
+    return [w for w in re.findall(r"[a-z0-9]+", re.sub(r"\[[^\]]*\]", " ", text or "").lower())
+            if len(w) >= 3 and not w.isdigit()]
+
+
+def printed_back(text: str, zone: list, vocab: set) -> dict:
+    """The check the other way round: of the card words (vocab) OCR reads where the ability is printed, the share the
+    PSD text has (near spellings count: OCR), the lines it lacks (3+ card words, at most a third of them in the text)
+    and whether the digits are the same."""
+    from difflib import SequenceMatcher
+    truth = set(words3(text))
+    near = lambda w: w in truth or any(abs(len(w) - len(t)) <= 2 and SequenceMatcher(None, w, t).ratio() >= NAME_RATIO
+                                       for t in truth)
+    real = found = 0
+    lacking = []
+    for line in zone:
+        ws = [w for w in words3(line[0]) if w in vocab]
+        hit = sum(1 for w in ws if near(w))
+        real, found = real + len(ws), found + hit
+        if len(ws) >= 3 and hit <= len(ws) / 3:
+            lacking.append((line[0][:120], len(ws)))
+    digits = sorted(re.findall(r"\d", re.sub(r"\[[^\]]*\]", " ", text))) == \
+        sorted(d for line in zone for d in re.findall(r"\d", line[0]))
+    return {"share": round(found / real, 2) if real else None, "digits": digits,
+            "lacking": [t for t, _ in lacking], "lacking_words": sum(n for _, n in lacking)}
 
 
 def recall(R, text: str, seen: list):
@@ -679,24 +871,29 @@ def recall(R, text: str, seen: list):
     return {"words": round(words, 2), "letters": round(letters, 2)}
 
 
-def check_ability(read, lines: list, kind: str) -> dict:
+def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=frozenset()) -> dict:
+    """The PSD's ability checked against the OCR both ways: its words are printed (recall), and the printed card words
+    are in it (printed_back: no lines it lacks; with the composite off the PNG, every card word and digit)."""
     R = _W.get("readers") or _W.setdefault("readers", readers())
-    text = ((read or {}).get("ability") or "").strip()
+    text = OLD_TOKENS.sub(lambda m: "[" + OLD_TYPES[m.group(1)], ((read or {}).get("ability") or "").strip())
     seen = ability_lines(lines, kind)
     if text:
         found = recall(R, text, seen)
+        back = printed_back(text, ability_zone(lines, kind), vocab)
         if GAP.search(text):
-            out = field(text, "psd", False, why="a gap in the text: an icon not read")
-            out["recall"] = found
-            return out
-        if (read or {}).get("ability_layers", 1) > 1:
-            out = field(text, "psd", False, why=f"joined from {read['ability_layers']} text layers")
-            out["recall"] = found
-            return out
-        if found is None or found["words"] >= RECALL or found["letters"] >= LETTERS:
-            return field(text, "psd", True, "ocr")
-        out = field(text, "psd", False, why="the OCR'd text has too little of it")
-        out["recall"] = found
+            why = "a gap in the text: an icon not read"
+        elif (read or {}).get("ability_layers", 1) > 1:
+            why = f"joined from {read['ability_layers']} text layers"
+        elif not (found is None or found["words"] >= RECALL or found["letters"] >= LETTERS):
+            why = "the OCR'd text has too little of it"
+        elif back["lacking_words"] >= MISSING_WORDS:
+            why = "the card prints ability lines the PSD text lacks"
+        elif not same_look and not (back["share"] == 1 and back["digits"]):
+            why = "the PSD's look is not the picture's, and the printed words or digits differ from its text"
+        else:
+            return field(text, "psd", True, "ocr" if same_look else "ocr both ways")
+        out = field(text, "psd", False, why=why)
+        out["recall"], out["back"] = found, back
         return out
     if max(len(R.words(got)) for got in seen) >= TEXT_SEEN:
         out = field(None, "none", False, why="the card prints text the PSD read has not")
@@ -747,7 +944,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
         if names and norm(stem) not in names:
             row["old_file"] = stem                             # a renamed file (oldgit map's renames)
         if two:
-            row["two_creatures"] = True
+            row["two_creatures"], row["creatures"] = True, two
         if prev is None:
             row["minor"], row["data_change"], row["ability_change"] = False, [], "first"
         else:
@@ -763,6 +960,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
         row["text_run"] = run                                  # one text, formatting aside: its last form, dated by its first
         rows.append(row)
         prev = row
+    confirm_stars(rows, today)
     return rows
 
 
@@ -779,26 +977,36 @@ def review_items(rows: list, kind: str = "field") -> list:
             items.append({"id": "oldrows-" + stable_id(kind, row["id"], name), "kind": f"{name} unsure", "card": row["card"],
                           "row": row["id"], "date": row["date"], "thumb": row["thumb"], "field": name,
                           "proposed": f.get("value"), "why": f.get("why"),
-                          **{k: f[k] for k in ("reads", "creatures", "recall", "ocr") if k in f}})
+                          **{k: f[k] for k in ("reads", "creatures", "recall", "back", "ocr", "raw") if k in f}})
     return items
 
 
 def split_rows(data: Data, old_id: str, rows: list) -> dict:
     """STAGE1 Q3 (provisional A): each half's rows 'as <old name>', its half's stats; the halves matched to the
-    live cards by their first versions' stats."""
+    live cards by today's stats (else their last old versions'). Every reading is kept for the owner: the first
+    versions after the split read the other way round (Twin Princes 10-16)."""
     cards = SPLITS[old_id]
-    first = {}
+    refs = {"today": {}, "last old version": {}, "first old version": {}}
     for key in cards:
+        if (data.today.get(key) or {}).get("stats"):
+            refs["today"][key] = data.today[key]["stats"]
         ids = [o for o, c in data.map["cards"].items() if c.get("key") == key and c.get("confidence") == "sure"]
-        for v in sorted((v for o in ids for v in data.versions.get(o, []) if v["ext"] == "psd"), key=lambda v: v["ts"]):
-            stats = valid_stats(((data.psd.get((v["blob"], v["path"])) or {}).get("read") or {}).get("stats"))
-            if stats:
-                first[key] = stats
-                break
+        found = [s for s in (valid_stats(((data.psd.get((v["blob"], v["path"])) or {}).get("read") or {}).get("stats"))
+                             for v in sorted((v for o in ids for v in data.versions.get(o, []) if v["ext"] == "psd"),
+                                             key=lambda v: v["ts"])) if s]
+        if found:
+            refs["first old version"][key], refs["last old version"][key] = found[0], found[-1]
     last = (rows[-1]["fields"].get("stats") or {}).get("creatures", {}).get("picture") or [None, None]
     dist = lambda a, b: sum(abs(a[s] - b[s]) for s in ORDER) if a and b and None not in a.values() else 99
-    order = cards if dist(last[0], first.get(cards[0])) + dist(last[1], first.get(cards[1])) <= \
-        dist(last[0], first.get(cards[1])) + dist(last[1], first.get(cards[0])) else cards[::-1]
+    readings = {}
+    for name, ref in refs.items():
+        if len(ref) == len(cards):
+            ways = {"top": cards[0], "bottom": cards[1]}, {"top": cards[1], "bottom": cards[0]}
+            costs = [dist(last[0], ref[w["top"]]) + dist(last[1], ref[w["bottom"]]) for w in ways]
+            readings[name] = {**ways[costs.index(min(costs))], "distance": min(costs), "other way": max(costs),
+                              "stats": ref}
+    by = next((n for n in refs if n in readings), None)
+    order = (readings[by]["top"], readings[by]["bottom"]) if by else cards
     out = {}
     for half, key in enumerate(order):
         out[key] = [{**r, "card": key, "old_name": old_id, "split_from": old_id,
@@ -806,7 +1014,8 @@ def split_rows(data: Data, old_id: str, rows: list) -> dict:
                                                               .get("picture", [None, None])[half], "picture", False,
                                                               why=f"{'top' if half == 0 else 'bottom'} half of {old_id}'s rows")}}
                     for r in rows]
-    return {"halves": {k: ("top" if i == 0 else "bottom") for i, k in enumerate(order)}, "first_stats": first, "rows": out}
+    return {"halves": {k: ("top" if i == 0 else "bottom") for i, k in enumerate(order)}, "matched_by": by,
+            "readings": readings, "rows": out}
 
 
 def rows_main():
@@ -981,6 +1190,8 @@ def main(argv):
         reread_main(workers)
     elif argv[0] == "icons":
         icons_main(workers)
+    elif argv[0] == "stars":
+        stars_main(workers)
     elif argv[0] == "pictures":
         pictures_main(workers)
     elif argv[0] == "rows":

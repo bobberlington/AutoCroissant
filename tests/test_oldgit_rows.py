@@ -43,6 +43,8 @@ def test_the_printed_stats_win_and_two_creatures_never_sum(rows):
     assert (only["value"], only["confidence"], only["check"]) == (printed, "sure", "second reader")
     lone = rows.check_stats(None, {"best": printed, "template": stats(6, 4, 4, 3)}, False, False)
     assert lone["confidence"] == "review"
+    three = rows.check_stats({"stats": stats(10, 4, 6, 8)}, {"best": printed, "halves": two["creatures"]["picture"]}, 3, False)
+    assert (three["value"], three["creatures"]["count"], three["creatures"]["picture"]) == (None, 3, None)
 
 
 def test_an_ability_set_in_a_layer_named_after_its_text(rows):
@@ -73,7 +75,10 @@ def test_types_are_checked_by_their_icons_pictures(rows):
     tomato = rows.check_types([], [icon("tomato", ("food", 10.3), ("buff", 33.4))], True, names)
     assert (tomato["value"], tomato["method"]) == (["food"], "icon pictures")
     kept = rows.check_types(["machine", "undread"], [icon("undread", ("undread", 1.7), ("undead", 1.7))], True, names)
-    assert (kept["value"], kept["confidence"]) == (["undread", "machine"], "sure")
+    assert (kept["value"], kept["raw"], kept["confidence"]) == (["undead", "machine"], ["undread", "machine"], "sure")
+    sword = [icon("sword", ("equip", 1.1), ("fire", 30.0))]
+    assert rows.check_types([], sword, True, names | {"equip"}, "minion")["value"] == ["offensive_minion"]
+    assert rows.check_types([], sword, True, names | {"equip"}, "item")["value"] == ["equip"]
     stars = [icon("Pinwheel", ("buff", 40.0), ("food", 41.0)), icon("Pinwheel copy", ("buff", 40.0), ("food", 41.0))]
     assert rows.check_types([], stars, True, names)["confidence"] == "sure"
     unknown = rows.check_types([], [icon("Layer 3", ("debuffstack", 41.0), ("buff", 42.5))], True, names)
@@ -81,16 +86,59 @@ def test_types_are_checked_by_their_icons_pictures(rows):
 
 
 class FakeData:
-    def __init__(self, versions, reads, pictures, shares, ocr):
+    def __init__(self, versions, reads, pictures, shares, ocr, drawn=None):
         self.versions, self.psd, self.rereads, self.pictures, self.shares = versions, reads, {}, pictures, shares
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
-        self.icons, self.type_names, self.by_commit = {}, set(), {}
+        self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
 
     def ocr_of(self, blob):
         return self._ocr.get(blob, {})
 
     def thumb(self, blob):
-        return None
+        import numpy as np
+        return np.zeros((64, 32, 3), dtype=np.int16)          # every composite = its PNG
+
+
+def test_stars_are_the_drawn_ones_checked_by_the_folder(rows):
+    """The parser takes most kinds' stars from the folder: the PSD's drawn stars check it (a disagreement goes to
+    review, the drawn count proposed); one picture under two star folders goes to review; with no drawn stars the
+    folder is sure only when it never changes and today's card has it."""
+    assert rows.check_stars(5, 5, True, "creature")["confidence"] == "sure"
+    sans = rows.check_stars(6, 5, True, "creature")
+    assert (sans["value"], sans["confidence"], sans["reads"]) == (5, "review", {"folder": 6, "drawn": 5})
+    assert rows.check_stars(5, 5, False, "creature")["confidence"] == "review"
+    assert rows.check_stars(None, 0, True, "buff") is None
+    row = lambda blob, folder, drawn: {"blob": blob, "path": f"Creatures/X/{folder} Stars/A.png",
+                                       "fields": {"stars": rows.check_stars(folder, drawn, True, "creature")}}
+    moved = [row("a", 6, 6), row("a", 5, 5)]
+    rows.confirm_stars(moved, {"stars": 5})
+    assert [r["fields"]["stars"]["confidence"] for r in moved] == ["review", "review"]
+    custom = [row("a", 2, 0), row("b", 2, 0)]
+    rows.confirm_stars(custom, {"stars": 2})
+    assert [r["fields"]["stars"]["confidence"] for r in custom] == ["sure", "sure"]
+    later = [row("a", 1, 0)]
+    rows.confirm_stars(later, {"stars": 2})
+    assert later[0]["fields"]["stars"]["confidence"] == "review"
+
+
+def test_the_ability_is_checked_both_ways_and_the_name_as_printed(rows):
+    """Printed lines of card words the PSD text lacks (a second text layer) go to review; with the composite off the
+    PNG, one printed word or digit the text lacks does too; old type tokens take today's names. The name keeps the
+    printed separators; a second picture's file number is dropped."""
+    vocab = {"green", "attacks", "from", "cannot", "negated", "inflict", "paralysis", "paralyzed", "turns", "creature"}
+    line = lambda text, y: [text, 1.0, 0.1, y, 0.8, 0.03]
+    text = "Attacks inflict Paralyzed for 2 turns."
+    same = [line("Attacks inflict Paralyzed for 2 turns.", 0.75)]
+    assert rows.check_ability({"ability": text}, same, "creature", True, vocab)["confidence"] == "sure"
+    assert rows.check_ability({"ability": text}, same, "creature", False, vocab)["check"] == "ocr both ways"
+    more = same + [line("Green: attacks from green cannot be negated", 0.8)]
+    assert rows.check_ability({"ability": text}, more, "creature", True, vocab)["confidence"] == "review"
+    reworded = [line("Attacks inflict paralysis for 2 turns.", 0.75)]
+    assert rows.check_ability({"ability": text}, reworded, "creature", False, vocab)["confidence"] == "review"
+    assert rows.check_ability({"ability": "[undread] +2 DEF"}, [], "field")["value"] == "[undead] +2 DEF"
+    assert rows.check_name("WX-78", "wx-", "Wx78", {"WX-78"}, True)["value"] == "WX-78"
+    kit = rows.check_name("ALL-PURPOSE MEDICAL KIT", None, "All Purpose Medical Kit2", (), False)
+    assert (kit["value"], kit["confidence"]) == ("All-Purpose Medical Kit", "sure")
 
 
 def test_rows_fold_minor_looks_merge_formatting_and_show_the_old_name(rows):
@@ -111,7 +159,8 @@ def test_rows_fold_minor_looks_merge_formatting_and_show_the_old_name(rows):
                                                     "stars": 3, "types": ["fire"], "stats": line, "ability": text}}
         pictures[f"g{i}"] = {"best": line, "halves": {"apart": 0}}
         ocr[f"g{i}"] = {"title": [["PLAN AHEAD", 1.0]], "lines": [[text, 1.0, 0.1, 0.8, 0.8, 0.05]]}
-    data = FakeData({"Plan Ahead": versions}, reads, pictures, {("g0", "g1"): 0.01, ("g1", "g2"): 0.02}, ocr)
+    data = FakeData({"Plan Ahead": versions}, reads, pictures, {("g0", "g1"): 0.01, ("g1", "g2"): 0.02}, ocr,
+                    {f"p{i}": 3 for i in range(3)})
     today = {"names": {"Tomorrow I'll"}, "creatures": False}
     found = rows.card_rows(data, "Tomorrow I'll", ["Plan Ahead"], today)
     assert [r["minor"] for r in found] == [False, True, False]
