@@ -62,6 +62,15 @@ def test_dilate_grows_a_square():
     assert pe.dilate(edge, 2).sum() == 9                # no wrap-around
 
 
+@pytest.mark.parametrize("opaque", [0.1, 0.95])          # both of _flat's paths
+def test_like_mode_rgb_is_the_image_over_white(opaque):
+    rng = np.random.default_rng(7)
+    rgba = rng.integers(0, 256, (37, 23, 4), np.uint8)
+    rgba[..., 3] = np.where(rng.random((37, 23)) < opaque, 255, rgba[..., 3])
+    out = pe.like_mode(Image.fromarray(rgba, "RGBA"), "RGB")
+    assert out.mode == "RGB" and np.array_equal(np.asarray(out), psd_edit._flat(Image.fromarray(rgba, "RGBA"))[..., :3])
+
+
 # ========================
 # Fixture PSDs: the gates
 # ========================

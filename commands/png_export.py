@@ -267,7 +267,7 @@ def like_mode(image: Image.Image, mode: str) -> Image.Image:
     if image.mode == mode:
         return image
     if image.mode == "RGBA" and mode == "RGB":
-        return Image.fromarray(psd_edit._flat(image)[..., :3])
+        return Image.fromarray(psd_edit._flat(image), "RGBA").convert("RGB")   # drops alpha, one copy
     return image.convert(mode)
 
 
