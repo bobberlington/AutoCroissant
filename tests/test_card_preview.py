@@ -276,8 +276,9 @@ def test_the_rest_blob_path(cards, tmp_path, monkeypatch):
 
 def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     """card_preview_reads (card-preview.yml's Reads step: the standard library alone) takes what the preview reads first
-    (a key, a PSD path in another case, a numbered picture's parts, an MDW PSD, an unknown card) and writes the blobs into
-    a blobless clone, where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
+    (a key, a PSD path in another case, a numbered picture's parts, a picture-only duplicate's any fields, an MDW PSD, an
+    unknown card) and Card Edits.json (a duplicate's first: it names the PSD), and writes the blobs into a blobless clone,
+    where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
     assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
     for python in filter(None, (executable, shutil.which("python3.12"))):     # the runner's python3: 3.12 (ubuntu-24.04)
         assert run_process([python, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0, python
@@ -287,16 +288,24 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     assert REPO / "commands" / "card_preview_reads.py" in closure and len(closure) > 1, closure
     for path in closure:                                                        # 3.12's grammar, with or without a 3.12
         ast_parse(path.read_text(encoding="utf-8"), str(path), feature_version=(3, 12))
+    dup, edits = "Auxiliary/Minions/Breakfast.png", {"Breakfast": {"dup_of": "Mini Doomer"}}
+    cards.files.update({dup: b"a drawn duplicate", cb.EDITS_PATH: cb.dump_edits({"cards": edits}).encode()})
+    for path in (dup, cb.EDITS_PATH):
+        (cards.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (cards.repo / path).write_bytes(cards.files[path])
+    head = _commit(cards.repo)
     snapshot = cb.local_snapshot(cb.CARD_REPO, str(cards.repo))
     snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability or parts edit
     tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
     for card, fields in (("Mini Doomer", {"hp": 8}), (DOOMER.upper(), {"ability": "x"}), ("Mini Doomer", {"ability": None, "hp": 8}),
-                         ("A Snack2", {"parts": {"1": {}}}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8})):
+                         ("A Snack2", {"parts": {"1": {}}}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
+                         ("Breakfast", {"name": "x"}), ("Breakfast", {"ability": "x", "hp": 3})):
         try:
             want = [p for p in cp.blobs_of(snapshot, cp.resolve(snapshot, card, fields)) if p in tree]
         except cp.BadInput:
             want = []
-        assert early.paths_of(tree, card, fields) == want, card
+        assert early.paths_of(tree, card, fields, edits) == want, card
+    assert early.paths_of(tree, "Breakfast", {"name": "x"}, edits) == [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, dup]
     blobless = tmp_path / "blobless"
     _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(blobless))
 
@@ -307,11 +316,14 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
             return b'{"x": {}}'
         return run_process(["git", "-C", str(cards.repo), "cat-file", "blob", url.rsplit("/", 1)[1]], capture_output=True, check=True).stdout
     monkeypatch.setattr(early, "_get", get)
-    done = early.reads("Mini Doomer", {"hp": 8}, str(blobless), cb.CARD_REPO, cards.head, str(tmp_path / "records"))
-    assert sorted(done) == sorted([cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}"])
-    assert [done[p][1] for p in (cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG)] == ["ok"] * 3 and done[f"db/{pe.SPOT_RECORD}"][1] == "OSError: down"
+    done = early.reads("Mini Doomer", {"hp": 8}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
+    blobs = [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, cb.EDITS_PATH]
+    assert sorted(done) == sorted(blobs + [f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}"])
+    assert [done[p][1] for p in blobs] == ["ok"] * 4 and done[f"db/{pe.SPOT_RECORD}"][1] == "OSError: down"
     assert sorted(p.name for p in (tmp_path / "records").iterdir()) == [pe.RENDER_RECORD]
-    for path in (cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG):
+    done = early.reads("Breakfast", {"name": "x"}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
+    assert {p: done[p][1] for p in blobs + [dup]} == {**dict.fromkeys(blobs, "in the clone"), cb.EDITS_PATH: "ok", dup: "ok"}
+    for path in blobs + [dup]:
         assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
 
 

@@ -1,8 +1,9 @@
 """
 A card preview's reads, started early: card-preview.yml runs this in the background while its setup runs. The data's
 render and spot records (db/ on the data branch) go to a folder (CARD_RECORDS_DIR), and the blobs card_preview reads
-first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, the status chart for an ability or parts edit)
-into the clone's object store, where card_bake.fetch_verified looks before REST. The same reads, earlier; a miss only
+first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, a picture-only duplicate's own PNG, the status
+chart for an ability or parts edit; and Card Edits.json, bake_card's first read, which a duplicate's PSD waits for) into
+the clone's object store, where card_bake.fetch_verified looks before REST. The same reads, earlier; a miss only
 costs the time (the bake checks every blob's sha and fetches what the clone lacks).
 
     python3 -S -m commands.card_preview_reads --card <key or PSD path> --edit <json file> --clone <checkout>
@@ -24,9 +25,9 @@ from time import perf_counter
 from typing import Optional
 from urllib.request import Request, urlopen
 
-from commands.card_edits import CardAuthors
+from commands.card_edits import CardAuthors, dup_pictures
 from commands.card_models import card_name
-from global_config import API_BASE, DATA_BRANCH, ICON_MANIFEST_PATH
+from global_config import API_BASE, DATA_BRANCH, EDITS_PATH, ICON_MANIFEST_PATH
 
 # ========================
 # Configuration
@@ -52,7 +53,7 @@ def tree_of(clone: str, head: str) -> dict:
     return tree
 
 
-def paths_of(tree: dict, card: str, fields: dict) -> list:
+def paths_of(tree: dict, card: str, fields: dict, cards: Optional[dict] = None) -> list:
     """
     What card_preview reads first for this edit (resolve, then blobs_of), in the tree.
 
@@ -60,11 +61,13 @@ def paths_of(tree: dict, card: str, fields: dict) -> list:
         tree: {path: blob sha}
         card: The dispatch's card: a key or a PSD path
         fields: The edit's fields
+        cards: Card Edits.json's "cards", for a key with no PSD of its own (None: unread): a picture-only duplicate's
+            PSD (card_bake.dup_entry)
 
     Returns:
         Repo paths; [] for a PSD path the bake takes none at (the preview's input error)
     """
-    psds = {}
+    psds, dup = {}, ""
     for path in tree:
         if path.lower().endswith(".psd") and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
             psds[CardAuthors.key(card_name(path))] = path
@@ -82,6 +85,9 @@ def paths_of(tree: dict, card: str, fields: dict) -> list:
             if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() in lower:
                 rel = number.group(1) + ".psd"
                 break
+        if not rel and cards is not None:       # a picture-only duplicate (Gust of Trees): its PSD and its own PNG
+            rel, dup = next(((psd, png) for psd, pngs in dup_pictures(list(tree), cards).items() for png in pngs
+                             if CardAuthors.key(card_name(png)) == key), ("", ""))
     if not rel:
         return [ICON_MANIFEST_PATH]
     folder, name = dirname(rel), basename(rel[:len(rel) - 4]).lower()
@@ -90,7 +96,7 @@ def paths_of(tree: dict, card: str, fields: dict) -> list:
         if dirname(path) == folder and path.lower().endswith(".png") and basename(path)[:len(basename(path)) - 4].lower() == name:
             png = path
     chart = STATUS_CHART if any(fields.get(f) is not None for f in ("ability", "parts")) else ""   # psd_fields' rule
-    return [p for p in (ICON_MANIFEST_PATH, rel, png, chart) if p in tree]
+    return [p for p in (ICON_MANIFEST_PATH, rel, png, dup, chart) if p in tree]
 
 
 # ========================
@@ -122,32 +128,47 @@ def missing(clone: str, shas: list) -> set:
     return {line.split(" ")[0] for line in out.splitlines() if line.endswith(" missing")}
 
 
-def read_blob(repository: str, sha: str, clone: str) -> None:
+def read_blob(repository: str, sha: str, clone: str) -> bytes:
     """A blob by REST into the clone's object store; raises when it does not hash to sha."""
     data = _get(f"{API_BASE}{repository}/git/blobs/{sha}")
     if sha1(b"blob %d\0" % len(data) + data).hexdigest() != sha:
         raise ValueError(f"blob {sha[:8]} does not hash to its sha")
     run(["git", "-C", clone, "hash-object", "-w", "--stdin"], input=data, capture_output=True, env=NO_LAZY, check=True,
         timeout=60)
+    return data
+
+
+def read_cards(repository: str, sha: str, clone: str) -> dict:
+    """Card Edits.json's "cards" from the clone, else by REST into it (read_blob)."""
+    out = run(["git", "-C", clone, "cat-file", "blob", sha], capture_output=True, env=NO_LAZY, timeout=60)
+    cards = loads(out.stdout if out.returncode == 0 else read_blob(repository, sha, clone)).get("cards")
+    return cards if isinstance(cards, dict) else {}
 
 
 def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str) -> dict:
     """The records and the card's blobs side by side. Returns {what: [seconds, "ok" or why not]}; never raises."""
     started, done = perf_counter(), {}
 
-    def one(what: str, read, *args) -> None:
+    def one(what: str, read, *args):
         try:
-            read(*args)
+            value = read(*args)
             done[what] = [round(perf_counter() - started, 2), "ok"]
+            return value
         except Exception as error:              # noqa: BLE001 - the preview reads it as before
             done[what] = [round(perf_counter() - started, 2), f"{type(error).__name__}: {error}"[:200]]
+            return None
     makedirs(records, exist_ok=True)
-    with ThreadPoolExecutor(len(RECORDS) + 4) as pool:
+    with ThreadPoolExecutor(len(RECORDS) + 5) as pool:
         for name in RECORDS:
             pool.submit(one, f"db/{name}", read_record, repository, name, records)
         try:
             tree = tree_of(clone, head)
             paths = paths_of(tree, card, fields)
+            if paths == [ICON_MANIFEST_PATH] and EDITS_PATH in tree:    # no PSD of its own: a duplicate's? Edits first
+                cards = one(EDITS_PATH, read_cards, repository, tree[EDITS_PATH], clone)
+                paths = paths_of(tree, card, fields, cards)
+            if paths and EDITS_PATH in tree and EDITS_PATH not in done:
+                paths.append(EDITS_PATH)        # bake_card's first read (Snapshot.dup_pictures)
             lacking = missing(clone, [tree[p] for p in paths]) if paths else set()
         except Exception as error:              # noqa: BLE001
             done["tree"] = [round(perf_counter() - started, 2), f"{type(error).__name__}: {error}"[:200]]
