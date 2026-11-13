@@ -153,7 +153,7 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
 
     Returns:
         The notes, [] for a clean card; a PSD with variant tags: each picture's, "A Snack2: " before variant 2's (a
-        drawn duplicate's own name: "Gust Of Trees: ")
+        drawn duplicate's own name: "Gust of Trees: ")
     """
     opened = psd
     if not isinstance(psd, PSDImage):
@@ -170,7 +170,8 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
     notes, drawn = [], drawn_names(opened, rel, edits)
     for n in pictures:
         card = parse_card(parser, opened, rel, n)
-        name = card.name if n == 1 else drawn.get(n, f"{card.name}{n}")
+        name = card.name if n == 1 else f"{card.name}{n}" if n not in drawn else card.display_name \
+            if CardAuthors.key(card.display_name or "") == drawn[n] else drawn[n].title()    # its printed title's case
         if edits is not None:
             edits.apply(name, card)
         notes += [note if n == 1 else f"{name}: {note}" for note in CardValidator.validate(card)]
@@ -178,8 +179,9 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
 
 
 def drawn_names(psd: PSDImage, rel: str, edits: Optional[CardEdits]) -> dict:
-    """{n: name} of the tagged PSD's pictures that picture-only duplicates are (their Card Edits.json dup_of names the
-    card: Gust of Trees, Stubborn Queen), as picture_numbers matches their PNGs beside it (a tag first)."""
+    """{n: card key} of the tagged PSD's pictures that picture-only duplicates are (their Card Edits.json dup_of names
+    the card: gust of trees, stubborn queen), as picture_numbers matches their PNGs beside it (a tag first); a numbered
+    PNG's (A Snack2) stays out."""
     own = CardAuthors.key(card_name(rel))
     keys = [key for key, fields in (edits.cards if edits is not None else {}).items()
             if isinstance(fields.get("dup_of"), str) and CardAuthors.key(fields["dup_of"]) == own and key != own]
@@ -187,7 +189,7 @@ def drawn_names(psd: PSDImage, rel: str, edits: Optional[CardEdits]) -> dict:
         return {}
     folder = rel[:rel.rfind("/") + 1]
     found = picture_numbers(psd, [f"{folder}{key.replace(' ', '_')}.png" for key in keys])
-    return {n: " ".join(w[:1].upper() + w[1:] for w in card_name(path).split()) for path, n in found.items()}
+    return {n: CardAuthors.key(card_name(path)) for path, n in found.items() if CardAuthors.key(card_name(path)) != f"{own}{n}"}
 
 
 # ========================

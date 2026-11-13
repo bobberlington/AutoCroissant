@@ -158,8 +158,9 @@ def test_a_drawn_duplicates_picture_takes_its_name(clone):
     for layer in psd.descendants():
         if layer.layer_id in tags:
             layer.name = {**tags, 1022: "Morning Meal #2"}[layer.layer_id]
-    edits = cc.CardEdits.parse(json.dumps({"cards": {"Morning Meal": {"dup_of": "A Snack"}, "Other": {"dup_of": "Kit"}}}))
-    assert cc.drawn_names(psd, rel, edits) == {2: "Morning Meal"} and cc.drawn_names(psd, rel, None) == {}
+    edits = cc.CardEdits.parse(json.dumps({"cards": {"Morning Meal": {"dup_of": "A Snack"}, "A Snack3": {"dup_of": "A Snack"},
+                                                     "Other": {"dup_of": "Kit"}}}))
+    assert cc.drawn_names(psd, rel, edits) == {2: "morning meal"} and cc.drawn_names(psd, rel, None) == {}
 
 
 def test_cli_psd_mode(clone, tmp_path, capsys):
