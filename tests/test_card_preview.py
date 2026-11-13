@@ -126,7 +126,7 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     preview skips what only a commit uses (duplicates, crops, banding) and makes before.avif beside the bake."""
     from PIL import Image
     seen, bands = [], []
-    monkeypatch.setattr(cb.png_export, "band", lambda data: bands.append(len(data)))  # None: kept as baked
+    monkeypatch.setattr(cb.png_export, "band", lambda data, old=None: bands.append(len(data)))  # None: kept as baked
     monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
     monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
     monkeypatch.setattr(cp, "_small_of", lambda image, path, _f=cp._small_of: seen.append(path) or _f(image, path))

@@ -1798,7 +1798,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
                 continue
             pictured = picture_numbers(after, numbered_pngs + mine)   # a duplicate it draws: a picture (owner 11-09)
             numbered = {p: png_export.open_png(blobs[tree[p]]) for p in numbered_pngs + [p for p in mine if p in pictured]}
-            found_png = png_export.export(old, after, png, numbered, main)
+            found_png = png_export.export(old, after, png, numbered, main, old_file=blobs.get(tree[main]))
             refused = [why for data, why in (found_png.numbered or {}).values() if data == b""]
             if found_png.outcome not in ("re-exported", "current") or refused:
                 why = found_png.why or (refused or [found_png.outcome])[0]

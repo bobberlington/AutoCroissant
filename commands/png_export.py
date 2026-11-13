@@ -23,9 +23,10 @@ draw those.
     png_check(psd, png) -> dict                              R10: a PNG against its PSD (its stored image, else the render)
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
-    recompress(data, minimum, floor) -> bytes or None        the PNG banded (a preview's: oxipng), checked, or None
+    recompress(data, minimum, floor, old=) -> bytes or None  the PNG banded (a preview's: oxipng), checked, or None
     deflated(data) -> bytes                                  a STORED PNG band() couldn't take, at DEFLATED
-    band(data) -> bytes or None                              the PNG deflated in BAND-row bands (git deltas a change)
+    band(data, old) -> bytes or None                         the PNG deflated in BAND-row bands (git deltas a change);
+                                                             old (the file it replaces): its unchanged bands kept
     use_cores(count), share(workers)                         band()'s threads: a pool worker's share of the cores
     same_png(a, b) -> bool                                   the same image: size, RGBA pixels and every chunk but text
 
@@ -294,9 +295,9 @@ def _bbox(mask: np.ndarray) -> Optional[tuple]:
     return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
 
 
-def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
-    """The PNG file: like's colour chunks kept (psd_edit.save_png), banded (recompress, whatever its size); saved
-    STORED for band(), at DEFLATED when band() can't take it."""
+def encode(image: Image.Image, like: Optional[Image.Image], old: Optional[bytes] = None) -> bytes:
+    """The PNG file: like's colour chunks kept (psd_edit.save_png), banded (recompress, whatever its size; old: the
+    file it replaces, band's); saved STORED for band(), at DEFLATED when band() can't take it."""
     def saved(level: int) -> bytes:
         buf = BytesIO()
         if like is not None:
@@ -304,7 +305,7 @@ def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
         else:
             image.save(buf, "PNG", compress_level=level)
         return buf.getvalue()
-    return recompress(saved(STORED), None) or saved(DEFLATED)
+    return recompress(saved(STORED), None, old=old) or saved(DEFLATED)
 
 
 def deflated(data: bytes) -> bytes:
@@ -489,12 +490,60 @@ def _deflate(raw: bytes, last: bool) -> bytes:
     return deflate.compress(raw) + deflate.flush(zlib.Z_FINISH if last else zlib.Z_FULL_FLUSH)
 
 
-def band(data: bytes) -> Optional[bytes]:
+def _deflates(raw: list, last: list) -> list:
+    """_deflate of each band, side by side on this process's threads (use_cores)."""
+    count = min(DEFLATES, _cores[0], len(raw))
+    if count > 1:
+        with ThreadPoolExecutor(count) as pool:
+            return list(pool.map(_deflate, raw, last))
+    return list(map(_deflate, raw, last))
+
+
+def _bands(data: bytes, keep: Callable[[int, bytes], bool]) -> Optional[dict]:
+    """band()'s file by its flush points: band n -> its IDAT payload, for each band keep(n, its filtered rows) takes
+    (inflated one at a time); None when it is not one."""
+    try:
+        width, height, depth, kind = _header(data)
+        parts = [payload for name, payload, _ in _all(data) if name == b"IDAT"]
+    except ValueError:
+        return None
+    if depth != 8 or kind not in PIXEL_BYTES or data[28] or len(parts) != -(-height // BAND) \
+            or not all(part.endswith(FLUSH) for part in parts[:-1]):
+        return None
+    inflate, stride, out = zlib.decompressobj(), 1 + width * PIXEL_BYTES[kind], {}
+    try:
+        for n, part in enumerate(parts):
+            rows = inflate.decompress(part)
+            if len(rows) != stride * min(BAND, height - n * BAND):
+                return None
+            if keep(n, rows):
+                out[n] = part
+    except zlib.error:
+        return None
+    return out if inflate.eof else None
+
+
+def _kept(raw: list, old: Optional[bytes], header: tuple) -> dict:
+    """Band n -> old's deflate of it (the stream's header and checksum off), for each band whose filtered rows raw
+    has too: old a band() file of the same header (_bands), else none."""
+    try:
+        same = old is not None and _header(old) == header
+    except ValueError:
+        same = False
+    bands = _bands(old, lambda n, rows: rows == raw[n]) if same else None
+    end = len(raw) - 1
+    return {n: part[2 if n == 0 else 0:len(part) - 4 if n == end else len(part)] for n, part in (bands or {}).items()}
+
+
+def band(data: bytes, old: Optional[bytes] = None) -> Optional[bytes]:
     """
     An 8-bit PNG deflated in BAND-row bands, each its own IDAT ending in a full flush (_filtered's rows, zlib at
     BAND_LEVEL; the bands deflate side by side, _deflate): an unchanged band is the same bytes in the next version, so
     git deltas a small change (owner, 2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every other
     chunk kept in place. Unchecked: recompress checks it.
+    old: the file it replaces. A band whose filtered rows old's band has keeps old's deflate of it (a band deflates
+    from its own rows alone), when this zlib deflates old's longest such band to the same bytes (else every band is
+    deflated: old came from another zlib or level). Either way the same file.
 
     Returns:
         The new file (maybe not smaller); None for a PNG not 8-bit or one that cannot be read
@@ -518,12 +567,15 @@ def band(data: bytes) -> Optional[bytes]:
     rows = np.ascontiguousarray(pixels, np.uint8).reshape(height, width * step)
     zero, tops = np.zeros(width * step, np.uint8), range(0, height, BAND)
     raw = [_filtered(rows[top:top + BAND], rows[top - 1] if top else zero, step) for top in tops]
-    count, last = min(DEFLATES, _cores[0], len(raw)), [n == len(raw) - 1 for n in range(len(raw))]
-    if count > 1:
-        with ThreadPoolExecutor(count) as pool:
-            parts = list(pool.map(_deflate, raw, last))
-    else:
-        parts = list(map(_deflate, raw, last))
+    last = [n == len(raw) - 1 for n in range(len(raw))]
+    kept = _kept(raw, old, (width, height, 8, kind))
+    probe = [max(kept, key=lambda n: len(kept[n]))] if kept else []    # old's zlib and level are ours: checked once
+    todo = [n for n in range(len(raw)) if n not in kept] + probe
+    made = dict(zip(todo, _deflates([raw[n] for n in todo], [last[n] for n in todo])))
+    if probe and made[probe[0]] != kept[probe[0]]:
+        rest = [n for n in kept if n not in made]
+        made.update(zip(rest, _deflates([raw[n] for n in rest], [last[n] for n in rest])))
+    parts = [made[n] if n in made else kept[n] for n in range(len(raw))]
     adler = 1
     for part in raw:
         adler = zlib.adler32(part, adler)
@@ -543,21 +595,7 @@ def band(data: bytes) -> Optional[bytes]:
 def banded(data: bytes) -> bool:
     """Whether a PNG is band()'s: by its flush points, an IDAT for each BAND rows ending in a full flush (the last: the
     stream's end). Photoshop's and PIL's files split their image data at byte counts, never so."""
-    try:
-        width, height, depth, kind = _header(data)
-        parts = [payload for name, payload, _ in _all(data) if name == b"IDAT"]
-    except ValueError:
-        return False
-    if depth != 8 or kind not in PIXEL_BYTES or data[28] or len(parts) != -(-height // BAND) \
-            or not all(part.endswith(FLUSH) for part in parts[:-1]):
-        return False
-    inflate, stride = zlib.decompressobj(), 1 + width * PIXEL_BYTES[kind]
-    try:
-        if any(len(inflate.decompress(part)) != stride * min(BAND, height - n * BAND) for n, part in enumerate(parts)):
-            return False
-    except zlib.error:
-        return False
-    return inflate.eof
+    return _bands(data, lambda n, rows: False) is not None
 
 
 def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:
@@ -566,7 +604,8 @@ def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int =
     return saved > 0 and saved > minimum * before and saved >= floor
 
 
-def recompress(data: bytes, minimum: Optional[float] = 0.0, floor: int = 0, committed: bool = True) -> Optional[bytes]:
+def recompress(data: bytes, minimum: Optional[float] = 0.0, floor: int = 0, committed: bool = True,
+               old: Optional[bytes] = None) -> Optional[bytes]:
     """
     The PNG losslessly smaller, the result checked by same_png: a committed file banded (band), a preview by oxipng
     (optimize). A banded file is done: None.
@@ -577,13 +616,14 @@ def recompress(data: bytes, minimum: Optional[float] = 0.0, floor: int = 0, comm
             size (the bot's own file: banded even when PIL's was smaller)
         floor: The bytes it must shrink by, at least (RECOMPRESS_BYTES)
         committed: False for a file never committed (card_preview's)
+        old: The file it replaces (band's: its unchanged bands kept)
 
     Returns:
         The new file; None when it gives none, it saves too little, or it is not the same image
     """
     if committed and banded(data):
         return None
-    out = band(data) if committed else optimize(data)
+    out = band(data, old) if committed else optimize(data)
     if out is None or minimum is not None and not worth(len(data), len(out), minimum, floor) \
             or not same_png(data, out):
         return None
@@ -818,7 +858,8 @@ def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image]
 # Public API Functions
 # ========================
 def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
-           main: str = "", fonts: Optional[Callable] = None, kept=(), data: bool = True) -> Export:
+           main: str = "", fonts: Optional[Callable] = None, kept=(), data: bool = True,
+           old_file: Optional[bytes] = None) -> Export:
     """
     _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
     it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only; a
@@ -828,6 +869,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     fonts: gives MDW/Fonts for faces (card_guards.Source.fonts_for): _restyled lays out the restyled text in them.
     kept: picture PNG paths a push brought (kept as pushed): no PNG made for their tags.
     data: False leaves Export.data empty (the caller encodes the image only when it keeps it).
+    old_file: old_png's file (encode: band keeps its unchanged bands).
     """
     what = _undrawn(old, new)
     if what:
@@ -843,7 +885,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     else:
         found = _export(old, new, old_png, fonts)
     if data and found.outcome == "re-exported":
-        found.data = encode(found.image, old_png)
+        found.data = encode(found.image, old_png, old_file)
     for path in sorted(numbered or {}) if found.outcome == "re-exported" else ():
         if path not in tagged:
             found.numbered[path] = (b"", UNTAGGED.format(name=path.rsplit("/", 1)[-1]))

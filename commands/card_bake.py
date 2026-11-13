@@ -1356,14 +1356,18 @@ def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: lis
     _relocate(card, folder)
 
 
-def _smaller(path: str, committed: bool = True) -> bytes:
+def _smaller(path: str, committed: bool = True, old: str = "") -> bytes:
     """A baked PNG file's bytes, recompressed losslessly (png_export.recompress: XMP stripped, an opaque card as RGB;
     docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed.
-    A committed one (saved STORED: bake_card) banded whatever its size, else at DEFLATED; a preview's (committed False)
-    by oxipng, when smaller."""
+    A committed one (saved STORED: bake_card) banded whatever its size (old: the PNG it replaces, its unchanged bands
+    kept), else at DEFLATED; a preview's (committed False) by oxipng, when smaller."""
     with open(path, "rb") as fh:
         data = fh.read()
-    smaller = png_export.recompress(data, None if committed else 0.0, committed=committed)
+    before = None
+    if committed and old and exists(old):
+        with open(old, "rb") as fh:
+            before = fh.read()
+    smaller = png_export.recompress(data, None if committed else 0.0, committed=committed, old=before)
     if smaller is None and committed and not png_export.banded(data):
         smaller = png_export.deflated(data)     # band() couldn't take it: never an 8-11 MB stored file
     if smaller is None:
@@ -1543,11 +1547,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
-            card.files = {card.rel: psd_bytes, card.png: _smaller(card.baked.png_path, not lean)}
+            card.files = {card.rel: psd_bytes, card.png: _smaller(card.baked.png_path, not lean, old_png)}
             if card.views:                      # each picture the edit shows in: its own PNG
                 card.files = {card.rel: psd_bytes}
                 for n, baked in card.views.items():
-                    card.files[card.pictures[n]] = _smaller(baked.png_path, not lean)
+                    card.files[card.pictures[n]] = _smaller(baked.png_path, not lean,
+                                                            join(folder, "old", basename(card.pictures[n])))
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
             for path, data in (getattr(card.baked, "files", None) or {}).items():     # a placed title's file
                 card.files[path] = data

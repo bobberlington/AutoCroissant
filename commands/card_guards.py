@@ -214,6 +214,7 @@ class Job:
     base_png: str = ""                          # pair: the PNG's blob before the push (its pictures follow from it)
     font_kept: bool = False                     # its last change before the push had this icon font (Source.font_kept)
     before: str = ""                            # the push's before (R10's earlier PNGs: Source.older_pngs)
+    olds: dict = field(default_factory=dict)    # PNG path the push brought -> its blob before (band keeps its bands)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -654,6 +655,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     for job in jobs:
         job.font_kept = job.psd in kept and job.psd_old == olds.get(job.psd)
         job.before = before
+        job.olds = {p: pngs[p].old for p in (*job.pushed, *job.dups_pushed, job.png) if p in pngs and pngs[p].old}
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
 
 
@@ -798,20 +800,34 @@ def _size(n: int) -> str:
     return f"{n / 1e6:.1f} MB" if n >= 1e6 else f"{n / 1e3:.0f} KB"
 
 
-def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes], sha: str = "") -> None:
+def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes], sha: str = "",
+                before: Optional[Callable[[], bytes]] = None) -> None:
     """A PNG the push brought (read() gives it), recompressed losslessly (owner, 2026-10-23) when more than RECOMPRESS_MIN
     and RECOMPRESS_BYTES smaller (our thresholds): a write of its own kind, resting on that PNG alone and never told on
     Discord. A failure is a comment note, never the card's error (which Discord would tell). One _overlap started (its
-    blob sha) is left to _collect, which puts it where it goes here."""
+    blob sha) is left to _collect, which puts it where it goes here. before() gives the file it replaces (_prior)."""
     if sha in _early:
-        _waiting.append((result, len(result.writes), len(result.notes), out, path, read, _early[sha]))
+        _waiting.append((result, len(result.writes), len(result.notes), out, path, read, _early[sha], before))
         return
-    write, note = _made(out, path, read)
+    write, note = _made(out, path, read, before=before)
     result.writes += [write] if write else []
     result.notes += [note] if note else []
 
 
-def _made(out: str, path: str, read: Callable[[], bytes], early=None) -> tuple:
+def _prior(read: Optional[Callable[[], bytes]]) -> Optional[bytes]:
+    """The file a PNG replaces, for band() to keep its unchanged bands; None: none, or unread (band's speed alone)."""
+    try:
+        return read() if read is not None else None
+    except Exception:                           # noqa: BLE001 - every band deflated, as before
+        return None
+
+
+def _before(source: Source, job: Job, path: str) -> Optional[Callable[[], bytes]]:
+    """path's blob before the push (Job.olds), read when wanted."""
+    return partial(source.blob, job.olds[path]) if job.olds.get(path) else None
+
+
+def _made(out: str, path: str, read: Callable[[], bytes], early=None, before=None) -> tuple:
     """_recompress's (write, note), either None: early's (size, file) when its process gave them, else made here."""
     done = None
     if early is not None:
@@ -822,7 +838,8 @@ def _made(out: str, path: str, read: Callable[[], bytes], early=None) -> tuple:
     try:
         if done is None:
             data = read()
-            done = len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+            done = len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES,
+                                                    old=_prior(before))
     except Exception as error:                  # it only saves bytes: the card goes on
         print(format_exc(), file=stderr)
         return None, (f"{basename(path)} not recompressed ({type(error).__name__}: {error})", False)
@@ -836,24 +853,28 @@ def _made(out: str, path: str, read: Callable[[], bytes], early=None) -> tuple:
 def _collect() -> None:
     """The recompressions _recompress left waiting, each at the place it would have taken (last first: the order holds)."""
     waiting, _waiting[:] = list(_waiting), []
-    for result, at, noted, out, path, read, early in reversed(waiting):
-        write, note = _made(out, path, read, early)
+    for result, at, noted, out, path, read, early, before in reversed(waiting):
+        write, note = _made(out, path, read, early, before)
         if write:
             result.writes.insert(at, write)
         if note:
             result.notes.insert(noted, note)
 
 
-def _recompressed(clone: str, repository: str, sha: str) -> tuple:
-    """_overlap's process: a pushed PNG's size and png_export.recompress's file (None: not worth it)."""
-    data = Source(clone, repository).blob(sha)
-    return len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+def _recompressed(clone: str, repository: str, sha: str, old: str = "") -> tuple:
+    """_overlap's process: a pushed PNG's size and png_export.recompress's file (None: not worth it); old: the blob it
+    replaces."""
+    source = Source(clone, repository)
+    data = source.blob(sha)
+    return len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES,
+                                            old=_prior(partial(source.blob, old) if old else None))
 
 
 def _pngs(job: Job) -> list:
-    """The blobs _run recompresses, in its order: the numbered PNGs the push brought, then the pushed PNG (R10)."""
-    return [job.pushed[path] for path in sorted(job.pushed)] + (
-        [job.png_new] if job.case in ("pair", "png-only") and job.png_new else [])
+    """The blobs _run recompresses, in its order, each with the blob it replaces (Job.olds): the numbered PNGs the push
+    brought, then the pushed PNG (R10)."""
+    return [(job.pushed[path], job.olds.get(path, "")) for path in sorted(job.pushed)] + (
+        [(job.png_new, job.olds.get(job.png, ""))] if job.case in ("pair", "png-only") and job.png_new else [])
 
 
 def _init_pool() -> None:
@@ -872,11 +893,15 @@ def _overlap(source: Source, jobs) -> Iterator[None]:
     """The jobs' pushed PNGs recompressed in one process of their own (_pngs), started now: band() runs beside the rest
     of the check, on all but one of its cores. The same writes in the same order; a start that fails leaves them
     inline."""
-    shas, pool = list(dict.fromkeys(sha for job in jobs for sha in _pngs(job))), None
+    shas: dict = {}
+    for job in jobs:
+        for sha, old in _pngs(job):
+            shas.setdefault(sha, old)
+    pool = None
     try:
         pool = ProcessPoolExecutor(1, initializer=_init_overlap, initargs=(png_export.cores() - 1,)) if shas else None
-        for sha in shas:
-            _early[sha] = pool.submit(_recompressed, source.clone, source.repository, sha)
+        for sha, old in shas.items():
+            _early[sha] = pool.submit(_recompressed, source.clone, source.repository, sha, old)
     except Exception:                           # inline, as before
         print(format_exc(), file=stderr)
     try:
@@ -964,7 +989,7 @@ def run_job(source: Source, job: Job, context, parser, out: str, earlier: tuple 
 
 def _run(source: Source, job: Job, context, parser, out: str, result: Result, earlier: tuple = ()) -> None:
     for path, sha in sorted(job.pushed.items()):
-        _recompress(out, result, path, partial(source.blob, sha), sha)
+        _recompress(out, result, path, partial(source.blob, sha), sha, _before(source, job, path))
     if job.case == "numbered":
         return
     if job.case == "deleted":
@@ -999,7 +1024,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             job.numbered[path] = job.dups.pop(path)
         elif path in job.dups_pushed:           # the push's: kept as a pushed NameN.png is
             job.pushed[path] = job.dups_pushed.pop(path)
-            _recompress(out, result, path, partial(source.blob, job.pushed[path]), job.pushed[path])
+            _recompress(out, result, path, partial(source.blob, job.pushed[path]), job.pushed[path],
+                        _before(source, job, path))
     if job.case not in ("png-only", "whole"):   # a PSD write below reads its own
         result.links = _links(source, new, job.psd, job.psd_new)
     if job.case == "convert":
@@ -1012,10 +1038,11 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     shown: dict = {}                            # the PNGs (path: image) that show the pushed PSD: R8's redraw follows
     # guard 1
     if job.case in ("stale", "beside"):
-        old_png = png_export.open_png(source.blob(job.png_old))
+        old_file = source.blob(job.png_old)
+        old_png = png_export.open_png(old_file)
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png, faces,
-                                  list(job.pushed))
+                                  list(job.pushed), old_file=old_file)
         # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
         # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
         # a G5/G6 refusal retried, the anchored export kept unless it refuses
@@ -1023,7 +1050,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             anchor = png_export.open_psd(source.blob(job.psd_anchor), job.psd)
             matched = png_export.shows(old_png, anchor, old)
             if matched or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
-                anchored = png_export.export(anchor, new, old_png, numbered, job.png, faces, list(job.pushed))
+                anchored = png_export.export(anchor, new, old_png, numbered, job.png, faces, list(job.pushed),
+                                             old_file=old_file)
                 if matched or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                     found = anchored
                     result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
@@ -1075,7 +1103,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     if job.case in ("pair", "png-only", "whole") and job.png_new:
         data = source.blob(job.png_new)
         if job.case != "whole":
-            _recompress(out, result, job.png, lambda: data, job.png_new)
+            _recompress(out, result, job.png, lambda: data, job.png_new, _before(source, job, job.png))
         png, kept = png_export.open_png(data), {}
         measured = png_export.png_check(new, png, kept)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
@@ -1205,7 +1233,8 @@ def _went_back(source: Source, job: Job, result: Result, png, render, out: str, 
     prev_sha = job.png_old if job.case == "png-only" else job.base_png
     if not prev_sha or png.mode not in ("RGB", "RGBA"):
         return
-    prev = png_export.open_png(source.blob(prev_sha))
+    prev_file = source.blob(prev_sha)
+    prev = png_export.open_png(prev_file)
     area = _back_area(png, prev, render)
     if area is None:
         return
@@ -1222,17 +1251,17 @@ def _went_back(source: Source, job: Job, result: Result, png, render, out: str, 
         result.r10["line"] = f"{name} differs from the PSD where the PNG before it showed the PSD ({px:,} px): kept as pushed"
         return
     if job.case == "pair":
-        found = png_export.export(old, new, prev, None, "", faces) if old is not None else None
+        found = png_export.export(old, new, prev, None, "", faces, old_file=prev_file) if old is not None else None
         if found is None or found.outcome == "refused":
             why = found.why if found is not None else "no PSD before the push"
             result.r10["line"] = f"{name} went back to an earlier picture (`{older[:8]}`, {px:,} px); not made again: {why}"
             return
-        image, data = (found.image, found.data) if found.outcome == "re-exported" else (prev, source.blob(prev_sha))
+        image, data = (found.image, found.data) if found.outcome == "re-exported" else (prev, prev_file)
     elif not (changed_area(_rgba(png), _rgba(prev)) & ~area).any():
-        image, data = prev, source.blob(prev_sha)       # its one visible change went back: the PNG before, as it was
+        image, data = prev, prev_file           # its one visible change went back: the PNG before, as it was
     else:
         image = _put_back(png, prev, area)
-        data = png_export.encode(image, png)
+        data = png_export.encode(image, png, prev_file)
     result.r10["line"] = f"{name} went back to an earlier picture (`{older[:8]}`, {px:,} px): made again"
     _made_again(out, job, result, data, f"made again: it went back to an earlier picture ({px:,} px)", "back")
     shown[job.png] = image
@@ -1257,7 +1286,8 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     as the export, silent; else, or no export made, it stays as pushed (the comment says it).
     """
     try:
-        prev = png_export.open_png(source.blob(job.base_png))
+        prev_file = source.blob(job.base_png)
+        prev = png_export.open_png(prev_file)
         if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
             return
         found = png_export.export(old, new, prev, None, "", faces, data=False)   # encoded only when made again
@@ -1293,7 +1323,7 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
         result.r10["line"] = f"{name}'s own change does not match the PSD ({int(changed.sum()):,} px): kept as pushed"
         return
     result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px): made again"
-    _made_again(out, job, result, png_export.encode(found.image, prev),
+    _made_again(out, job, result, png_export.encode(found.image, prev, prev_file),
                 f"made again: it did not show the PSD's change ({px:,} px)"
                 + "".join(f"; {note}" for note in png_export.miss_notes(found)), "skipped")
     _crops(out, job.png, png, found.image, found.box)

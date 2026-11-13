@@ -544,7 +544,7 @@ def test_recompress_leaves_16_bit_and_bands_without_oxipng(monkeypatch):
     assert pe.recompress(data, committed=False) is None
     out, made = pe.recompress(data), pe.encode(art(), pe.open_png(data))
     assert pe.banded(out) and pe.banded(made) and pe.same_png(data, out) and pe.same_png(data, made)
-    padded = lambda d, _b=pe.band: _b(d)[:-12] + pe._chunk(b"tEXt", b"pad\0" + bytes(len(d))) + _b(d)[-12:]
+    padded = lambda d, old=None, _b=pe.band: _b(d)[:-12] + pe._chunk(b"tEXt", b"pad\0" + bytes(len(d))) + _b(d)[-12:]
     monkeypatch.setattr(pe, "band", padded)                               # bigger than PIL's file
     assert pe.recompress(data) is None and pe.banded(pe.encode(art(), pe.open_png(data)))   # the bot's own: banded
 
@@ -612,6 +612,29 @@ def test_a_small_change_leaves_the_other_bands_as_they_were(tmp_path):
     ids = b"".join(run("hash-object", "-w", "--stdin", data=data) for data in (first, second))
     pack = run("pack-objects", "-q", "--stdout", "--window=10", "--depth=50", data=ids)
     assert len(pack) < len(first) + len(second) // 5                    # one stream: the second costs it whole
+
+
+@pytest.mark.oxipng
+def test_the_file_replaced_lends_its_unchanged_bands(monkeypatch):
+    """band(data, old): old's deflate of each unchanged band is kept, so only the changed band and one check are
+    deflated, and the file is band(data)'s. An old of another level fails the check, one of another size or not banded
+    lends nothing: every band deflated, the same file still."""
+    y, x = np.mgrid[:600, :400]
+    image = Image.fromarray((np.stack([x * 255 // 400, y * 255 // 600, (x + y) % 256], 2)
+                             + np.random.default_rng(7).integers(0, 8, (600, 400, 3))).astype(np.uint8))
+    old = pe.band(photoshop_png(image))
+    with monkeypatch.context() as m:
+        m.setattr(pe, "BAND_LEVEL", 1)
+        other = pe.band(photoshop_png(image))
+    image.putpixel((10, 300), (0, 0, 0))
+    data, deflate, deflated = photoshop_png(image), pe._deflate, []
+    want = pe.band(data)
+    monkeypatch.setattr(pe, "_deflate", lambda raw, last: deflated.append(raw) or deflate(raw, last))
+    for given, count in ((old, 2), (other, 10), (pe.band(photoshop_png(image.crop((0, 0, 400, 599)))), 10),
+                         (photoshop_png(image), 10), (b"not a png", 10), (None, 10)):
+        deflated.clear()
+        assert pe.band(data, given) == want and len(deflated) == count
+    assert pe.recompress(data, None, old=old) == want == pe.encode(image, pe.open_png(data), old)
 
 
 # ========================

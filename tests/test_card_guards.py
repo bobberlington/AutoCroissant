@@ -1181,9 +1181,9 @@ def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeyp
                          f"{FOLDER}/Snack2.png": photoshop_png(art("RGB", (300, 470)))}, "Photoshop exports")
     early, made = [], cg._made
 
-    def spy(out, path, read, future=None):
+    def spy(out, path, read, future=None, before=None):
         early.append(future is not None and future.exception() is None)
-        return made(out, path, read, future)
+        return made(out, path, read, future, before)
     monkeypatch.setattr(cg, "_made", spy)
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)        # in this process: fewer cards than POOL_MIN
     writes = [[(c["card"], [(w["path"], w["kind"], w["sha"], w["line"]) for w in c["writes"]]) for c in

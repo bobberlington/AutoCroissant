@@ -364,7 +364,7 @@ def no_oxipng(request, monkeypatch):
     png_export = sys.modules.get("commands.png_export")
     if png_export and not request.node.get_closest_marker("oxipng"):
         monkeypatch.setattr(png_export, "optimize", lambda data: None)
-        monkeypatch.setattr(png_export, "band", lambda data: None)
+        monkeypatch.setattr(png_export, "band", lambda data, old=None: None)
 
 
 @pytest.fixture(scope="session", autouse=True)

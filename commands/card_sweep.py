@@ -107,12 +107,15 @@ def sweep_card(job) -> dict:
         out["layers"], out["notes"] = list(fixed.redrawn[kind]), fixed.notes
         if not job.png:
             return {**out, "state": "refused", "why": "no PNG"}
-        pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in {job.png: job.png_new, **numbered}.items()}
+        png_file = source.blob(job.png_new)
+        pngs = {path: png_export.open_png(png_file if path == job.png else source.blob(sha))
+                for path, sha in {job.png: job.png_new, **numbered}.items()}
         for path, image in pngs.items():        # the PNGs must show the PSD, as the guards' redraw asks
             if png_export.png_check(pushed, image).get("ok") is not True:
                 return {**out, "state": "refused", "why": f"{basename(path)} does not show the PSD"}
         after = png_export.open_psd(fixed.data)
-        found = png_export.export(pushed, after, pngs[job.png], {p: i for p, i in pngs.items() if p != job.png})
+        found = png_export.export(pushed, after, pngs[job.png], {p: i for p, i in pngs.items() if p != job.png},
+                                  old_file=png_file)
         if found.outcome == "refused" or any(not d for d, _ in found.numbered.values()):
             why = found.why or next((why for d, why in found.numbered.values() if not d), "")
             return {**out, "state": "refused", "why": f"PNG not made: {why}"}
