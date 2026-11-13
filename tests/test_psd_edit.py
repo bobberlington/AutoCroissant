@@ -589,17 +589,14 @@ BABA = ("2746abaa00679647b385787c4bb4e384b135ad87", "Creatures/Other/5 Stars/Bab
 
 
 def test_bars_printing_their_value_refuse(clone, parser, tmp_path):
-    """Baba's bars spell 'HEALTH IS GREEN AND IS 6' (a '6' text layer in each row): a stat edit refuses (owner 11-13),
-    and Card checks says so."""
-    import commands.card_checks as cc
+    """Baba's bars spell 'HEALTH IS GREEN AND IS 6' (a '6' text layer in each row): a stat edit refuses (owner 11-13;
+    Card checks' bars info: test_card_checks)."""
     path = tmp_path / "Baba.psd"
     path.write_bytes(card_blob(clone, BABA[0]))
     psd = PSDImage.open(str(path))
     parsed = pe.parse_card(parser, str(path), BABA[1], psd)
     with pytest.raises(pe.Refused, match=r"hp 8: its bar prints '6' as text"):
         pe.set_comp(psd, parsed, "hp", 8)
-    assert cc._stat_notes(None, BABA[1], psd, parsed, "new", None) == \
-        ["Stat edits need Photoshop: its bar prints '6' as text, which no stat edit changes."]
 
 
 ZEMER = ("a2d3064be84eebb4b9dc4cbf6cf5090ea1d5a48f", "Creatures/Hollow Knight/5 Stars/Ze'mer.psd")
