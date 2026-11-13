@@ -546,6 +546,32 @@ def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path, monkeypatch):
         pe.comp_render(comp_bars(PSDImage.open(path))["hp"][0][0], 4)
 
 
+NO_COMP_APPLIED = "cb26aca2f52767a2d8c680a85a3d5ad26e576d08"     # Croissant's 11-12 bars (fff77760), guards' pass
+
+
+def test_bars_with_no_comp_applied_last(clone, parser, tmp_path):
+    """A bar whose document has no comp applied last reads its saved state from the cmls' trailing entry: Pandanoko's
+    (a shape's sliding pixel mask, every comp's -1 px vector mask) on the template's path and Retro Kirby's (every
+    comp's FXRefPoint) on comp_document's set a stat that re-parses; stored otherwise, either is refused."""
+    from psd_tools.api.layers import TypeLayer
+    for rel, stat in (("Creatures/Pandas/2 Stars/Pandanoko.psd", "hp"),
+                      ("Creatures/Kirby/3 Stars/Retro_Kirby.psd", "atk")):
+        path = str(tmp_path / Path(rel).name)
+        Path(path).write_bytes(at_rev(clone, NO_COMP_APPLIED, rel))
+        psd = PSDImage.open(path)
+        assert pe.comp_custom(comp_bars(psd)[stat][0][0]) == (stat == "atk")
+        edit = pe.set_comp(psd, pe.parse_card(parser, path, rel, psd), stat, 3)
+        saved = str(tmp_path / "new.psd")
+        psd.save(saved, update_preview=False)
+        pe.gate_bytes(path, saved, [edit])
+        assert pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"][stat] == 3, rel
+        layer, value, _ = comp_bars(PSDImage.open(path))[stat][0]
+        rgba, where = pe.comp_render(layer, value)
+        TypeLayer._store_raster(layer, rgba * np.float32([1, 1, 1, 0.9]), where)
+        with pytest.raises(pe.Refused, match="otherwise than Photoshop"):
+            pe.comp_render(layer, 3)
+
+
 CROISSANT_BARS = {"cf80568654aa0785af7de45a698d36a0e73c8c6b": "Creatures/Everhood/5 Stars/Chris_&_Jordi.psd",
                   "90b2f475f6dd704dc92f6ae5ff835b0bfcb63554": "Creatures/Other/3 Stars/Pizza.psd"}  # his 11-11, guards' pass
 

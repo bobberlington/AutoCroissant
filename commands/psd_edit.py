@@ -3408,7 +3408,7 @@ def _comp_states(layer, order: list) -> dict:
     """
     {comp ID: {setting key: value}} of one embedded layer: its layer comp settings (cmls) list each comp in order with
     only what changed since the comp before (a comp's missing keys carry over), "enab" its eye, imageMask/vectorMask
-    their offsets.
+    their offsets; an ID no entry lists (lastAppliedComp unset: -1) gets the trailing entry's, the document's own.
     """
     settings = next((item.data for item in layer.tagged_blocks.get_data(Tag.METADATA_SETTING) or []
                      if item.key == b"cmls"), None)
@@ -3498,8 +3498,9 @@ def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = Tru
     vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
     placed on its transform's rectangle. Resized: by mode, else as its stored pixels show (stored_mode), else nearest if
     hard_edged, else bicubic. The card stores no mode; Photoshop's redraw on a copy equals nearest (2026-11-07).
-    Any other embedded document (groups, effects, knockout: the Isaac bars) is drawn by comp_document, refused unless
-    it draws the comp the bar shows as Photoshop stored it (check; COMP_SEEN).
+    Any other embedded document (groups, effects, knockout: the Isaac bars) is drawn by comp_document; it, and a bar
+    with no comp applied last (Pandanoko), is refused unless it draws the comp the bar shows as Photoshop stored it
+    (check; COMP_SEEN).
 
     Returns:
         (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
@@ -3529,12 +3530,11 @@ def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = Tru
     x0, y0, x1, y1 = corners[0], corners[1], corners[2], corners[5]
     width, height = doc.width, doc.height
     rgb, alpha = np.zeros((height, width, 3), np.float32), np.zeros((height, width), np.float32)
-    flat = last in names and all(_flat_layer(inner) for inner in doc
-                                 if _comp_states(inner, [want])[want].get(b"enab", True))
+    flat = all(_flat_layer(inner) for inner in doc if _comp_states(inner, [want])[want].get(b"enab", True))
+    if check and not (flat and last in names) and _comp_off(layer, mode) > COMP_SEEN:
+        refuse("its bar draws otherwise than Photoshop stored it")
     if not flat:
-        if check and _comp_off(layer, mode) > COMP_SEEN:
-            refuse("its bar draws otherwise than Photoshop stored it")
-        rgb, alpha = comp_document(layer, doc, comps, want, last if last in names else None)
+        rgb, alpha = comp_document(layer, doc, comps, want, last)
     for inner in doc if flat else ():
         states = _comp_states(inner, [want, last])
         now, then = states[want], states[last]
@@ -3614,7 +3614,7 @@ def comp_custom(layer) -> bool:
 
 COMP_SHOWN, COMP_PLACED, COMP_LOOK = 1, 2, 4      # a layer comp's capturedInfo: visibility, position, appearance
 COMP_LOOKS = (b"Lefx", b"blendOptions", b"FXRefPoint", b"layerSpecific")   # cmls keys COMP_LOOK applies
-COMP_SEEN = 8               # levels comp_document's bar at its shown comp may be off the stored pixels (Tainted Lost 4)
+COMP_SEEN = 8               # levels a checked bar at its shown comp may be off the stored pixels (Tainted Lost 4)
 
 
 def _comp_off(layer, mode: Optional[int]) -> float:
@@ -3639,12 +3639,12 @@ def _comp_off(layer, mode: Optional[int]) -> float:
     return float(np.abs(plane(rgba, where) - plane(stored, box)).max()) * 255
 
 
-def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[int]) -> tuple:
+def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: int) -> tuple:
     """
     comp_render's second path: the comp applied to every layer of the bar's embedded document at any depth, as
     Photoshop applies it (only what its capturedInfo holds), and the document composited by psd-tools: its pixel masks
-    moved by the comp's offset less the saved state's (the last applied comp's, else none: the raw offsets), its eyes
-    set when it captures visibility. Equal to Photoshop's renders at every comp of the Isaac bars (knockout groups,
+    moved by the comp's offset less the saved state's (the last applied comp's, else the cmls' trailing entry's), its
+    eyes set when it captures visibility. Equal to Photoshop's renders at every comp of the Isaac bars (knockout groups,
     Transparency Shapes Layer off, nested smart objects; custombars 2026-11-11).
 
     Returns:
@@ -3664,9 +3664,8 @@ def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[i
     if captured & ~(COMP_SHOWN | COMP_PLACED | COMP_LOOK):
         refuse("a layer comp holding more than eyes, places and looks")
     for inner in doc.descendants():
-        order = [want] if last is None else [want, last]
-        states = _comp_states(inner, order)
-        now, then = states[want], states[last] if last is not None else {}
+        states = _comp_states(inner, [want, last])
+        now, then = states[want], states[last]
         if captured & COMP_LOOK and any(now.get(key) != then.get(key) for key in COMP_LOOKS):
             refuse(f"a layer comp changes the look of {inner.name!r}")
         if captured & COMP_PLACED:
