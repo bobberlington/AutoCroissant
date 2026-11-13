@@ -24,6 +24,7 @@ from oldgit_index import (OG, OUT, TC_INIT, TENV, TG, alnum, ext_of, folder_stem
 REPORT = os.path.expanduser("~/Documents/Tools/wt/scratch/s1110/timelines/oldgit.txt")
 CARD_EXTS = ("*.png", "*.PNG", "*.psd", "*.PSD")
 ABILITY_KINDS = ("creature", "minion", "item", "aux item", "field")
+MORGUE = "MDW/The Morgue/"   # retired cards (build_site MORGUE): status morgue, key = file name
 PICTURE_SAME = 4.0          # bits: the same picture (a re-save, a small fix)
 PICTURE_NEAR = 9.0          # bits: near enough to back a name or a path
 PICTURE_GAP = 4.0           # bits: a picture match with nothing else behind it (an unsure one) beats the runner-up by
@@ -215,10 +216,12 @@ def map_main():
 
     def related(a, b) -> bool:
         return a == b or (a[0] == b[0] == "live" and b[1] in family_of.get(a[1], ()))
-    arch_by_path = {}
+    arch_by_path, arch_by_moved = {}, defaultdict(set)
     for name, tag in archived.items():
         if tag.get("path"):
             arch_by_path.setdefault(tag["path"], name)
+        if tag.get("moved_to"):                                # a record named before a rename (Pandiety)
+            arch_by_moved[basename(tag["moved_to"])].add(name)
 
     # today's file -> key (the PSD's and the PNG's)
     key_of_path = {}
@@ -231,6 +234,8 @@ def map_main():
 
     def kind_of(path: str) -> str:
         parts = path.replace("Auxillary/", "Auxiliary/").split("/")
+        if parts[0] == "N.M.E":                                # N.M.E. shop items came from Items/ (Double Pain)
+            return "Items"
         return "/".join(parts[:2]) if parts[0] == "Auxiliary" else parts[0]
 
     def target_of(today_path: str) -> tuple:
@@ -241,6 +246,9 @@ def map_main():
             if path in arch_by_path:
                 return resolve_archived(arch_by_path[path], stats, archived), "archived path"
             name = splitext(basename(path))[0].replace("_", " ")
+            moved = arch_by_moved.get(basename(path), ())
+            if len(moved) == 1 and name not in archived and name not in stats:
+                return resolve_archived(next(iter(moved)), stats, archived), "archived path"
             target = resolve_archived(name, stats, archived) if name in archived or name in stats else ("archived", name)
             if target[0] == "live" and kind_of(stats[target[1]]["path"]) != kind_of(path):
                 target = ("archived", name)                    # a live card of that name, another kind (Pizza)
@@ -274,6 +282,14 @@ def map_main():
                     break
         init_target[p] = target
     lost_init = sorted(p for p, t in init_target.items() if t is None)
+    morgue_old = defaultdict(list)                             # blob -> MDW/The Morgue path (old tip, init)
+    for commit in (index["tip"], TC_INIT):
+        for entry in git(OG, "ls-tree", "-z", commit, "--", MORGUE).decode("utf-8", "surrogateescape").split("\0"):
+            if "\t" in entry:
+                meta, path = entry.split("\t", 1)
+                morgue_old[meta.split()[2]].append(path)
+    morgue_today = set(git(TG, "ls-tree", "-z", "--name-only", head, "--", MORGUE, env=TENV)
+                       .decode("utf-8", "surrogateescape").split("\0"))
     log(f"init tree: {len(init)} card files; {sum(1 for t in init_target.values() if t and t[0] == 'live')} reach a "
         f"live card, {sum(1 for t in init_target.values() if t and t[0] == 'archived')} an archived one, "
         f"{len(lost_init)} untracked")
@@ -415,6 +431,16 @@ def map_main():
             if old_copy and not path_target:
                 why.append("an old copy ('Old' in the file name)")
             confidence = "unsure" if why else "sure"
+        if not target:                                         # moved into MDW/The Morgue: today's Morgue card
+            for blob in [d["blob"] for d in old["deleted"]] + list(old["at_end"].values()):
+                for p in morgue_old.get(blob, ()):
+                    psd = splitext(p)[0] + ".psd"
+                    if psd in morgue_today and splitext(psd)[0] + ".png" in morgue_today:
+                        target = ("morgue", splitext(basename(psd))[0].replace("_", " "))
+                        evidence["path"] = {"via": "moved to MDW/The Morgue", "today": psd, "target": list(target)}
+            if target:
+                confidence = "sure"
+                how.append("path")
         record = {"key": target[1] if target else None, "status": target[0] if target else "lost",
                   "confidence": confidence, "how": how, "why_unsure": why or None,
                   "first": {"commit": old["first"], "date": commits_meta[old["first"]]["date"]},
@@ -435,7 +461,7 @@ def map_main():
             record["read"] = {k: last_read.get(k) for k in ("title", "type", "stars", "types", "stats")}
         cards[oid] = record
         if target:
-            by_key[f"{target[1]}" if target[0] == "live" else f"archived:{target[1]}"].append(oid)
+            by_key[f"{target[1]}" if target[0] == "live" else f"{target[0]}:{target[1]}"].append(oid)
         if confidence == "unsure":
             review.append(oid)
 
@@ -446,14 +472,15 @@ def map_main():
     status = Counter((c["status"], c["confidence"]) for c in cards.values())
     summary = {"old_cards": len(cards), "live_sure": status[("live", "sure")], "live_unsure": status[("live", "unsure")],
                "archived_sure": status[("archived", "sure")], "archived_unsure": status[("archived", "unsure")],
-               "lost": status[("lost", None)], "review": len(review),
+               "morgue": status[("morgue", "sure")], "lost": status[("lost", None)], "review": len(review),
                "live_cards_reached": len({c["key"] for c in cards.values() if c["status"] == "live"}),
                "keys_with_several_old_cards": len(shared),
                "by_how": dict(Counter("+".join(c["how"]) or "-" for c in cards.values()))}
     write_json(join(OUT, "map.json"), {
         "about": "Each old card (oldgit index.json old_cards: one file name's PSD+PNG over the old history, renames "
                  "followed) -> today's card key (stats.json; status live) or an archived card (old_stats.json; status "
-                 "archived), or none (lost). confidence sure/unsure; unsure ones are listed in review with why_unsure. "
+                 "archived), a Morgue card (MDW/The Morgue; status morgue), or none (lost). confidence sure/unsure; "
+                 "unsure ones are listed in review with why_unsure. "
                  "Picture distances in bits of 64 (discord_match.hash_distance).",
         "today": {"main": head, "cards": len(stats)}, "summary": summary, "review": sorted(review),
         "by_key": {k: sorted(v) for k, v in sorted(by_key.items())}, "cards": cards})
@@ -466,7 +493,8 @@ def map_main():
                      "versions": c["versions"], "read": c.get("read"), "thumb": c["thumb"], "note": c.get("note"),
                      "nearest": (c["evidence"].get("picture") or {}).get("nearest", [])[:3]})
     write_json(join(OUT, "lost.json"), {
-        "about": "Old cards with no counterpart among today's or archived cards: Morgue candidates (owner 11-13). "
+        "about": "Old cards with no counterpart among today's, archived or Morgue cards: Morgue candidates "
+                 "(owner 11-13). "
                  "nearest: the closest pictures, for the owner's check.", "cards": lost})
     log(f"map: {json.dumps(summary)}")
     return cards
@@ -623,7 +651,8 @@ def report_main():
     s = mapped["summary"]
     out("MAP (old card -> today's card key)")
     out(f"  {s['old_cards']} old cards: live sure {s['live_sure']}, live unsure {s['live_unsure']}, archived sure "
-        f"{s['archived_sure']}, archived unsure {s['archived_unsure']}, lost {s['lost']}; review list {s['review']}")
+        f"{s['archived_sure']}, archived unsure {s['archived_unsure']}, Morgue {s.get('morgue', 0)}, lost {s['lost']}; "
+        f"review list {s['review']}")
     out(f"  {s['live_cards_reached']} of today's {mapped['today']['cards']} cards get old-repo versions; "
         f"{s['keys_with_several_old_cards']} cards get several old cards")
     out(f"  evidence: {s['by_how']}")
@@ -636,7 +665,11 @@ def report_main():
         if len(oids) > 1:
             out(f"    {key}: {oids}")
     out("")
-    out(f"LOST (no live or archived counterpart; Morgue candidates): {len(lost)}")
+    for oid, c in mapped["cards"].items():
+        if c["status"] == "morgue":
+            out(f"  Morgue: {oid} -> {c['evidence']['path']['today']} (moved there, still in today's Morgue)")
+    out("")
+    out(f"LOST (no live, archived or Morgue counterpart; Morgue candidates): {len(lost)}")
     for c in lost:
         near = c["nearest"][0] if c["nearest"] else None
         out(f"  {c['old_id']}: {', '.join(c['paths'][:3])}; {c['first']['date'][:10]}..{c['last']['date'][:10]}"
