@@ -3850,7 +3850,7 @@ def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = Tru
             paint = np.broadcast_to(color, (height, width, 3))
         else:
             cover, paint = np.zeros((height, width), np.float32), np.zeros((height, width, 3), np.float32)
-            image = inner.topil()
+            image = inner.topil(apply_icc=False)        # raw values, as Photoshop draws them
             if image is not None:
                 px = np.asarray(image.convert("RGBA"), np.float32) / 255.0
                 l, t = inner.bbox[0], inner.bbox[1]

@@ -542,6 +542,17 @@ def test_resized_bar_mode(clone, tmp_path):
         assert pe.stored_mode(layer) == mode
 
 
+def test_display_profile_bar_draws_raw(clone, tmp_path):
+    """A template bar's pixel layers in Croissant's 'Display' profile (Empress Bulblax, his 11-11, guards' pass) draw
+    their raw values, as Photoshop stored them (converted to sRGB: 9 levels off)."""
+    rel = "Creatures/Other/3 Stars/Empress Bulblax.psd"
+    path = tmp_path / Path(rel).name
+    path.write_bytes(at_rev(clone, "518b4486b762313bfbba3a8c7695707e4279b1c2", rel))
+    layer = comp_bars(PSDImage.open(str(path)))["hp"][0][0]
+    assert not pe.comp_custom(layer)
+    assert pe._comp_off(layer, None) < 2
+
+
 ISAAC_BARS = "77733fc93579d5fd30513b3e2df9d5540cddfa2f"     # Croissant's Isaac bars (cc68ac36, 647aa0d1), guards' pass
 
 
