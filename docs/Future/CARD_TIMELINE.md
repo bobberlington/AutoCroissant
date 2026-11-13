@@ -1,7 +1,8 @@
 # Card timelines from Discord
 
 **Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post, fields read, chains
-and Created built, review page built; a local preview next. Nothing published (preview first, owner 11-13).
+and Created built, review page built; a local preview built (`discord_preview`, the website's `HISTORY_DIR`).
+Nothing published (preview first, owner 11-13).
 
 ## Goal
 
@@ -97,18 +98,26 @@ the card's Image versions on the website before the git versions. Cards that nev
    confirming answer carries what it confirms (a field's 'yes' its value, a Created pick or hint its day, a picture's
    or a map's answer its card): an answer no radio takes any more (that version gone, a rerun proposing another value,
    day or card) is not applied either.
-6. **Publish:** the `history` branch holds per card `history/<card id>/timeline.json` (versions: date, fields, method and
-   confidence per field, image name, text entries) and one webp per version (the card's PNG size class), plus an index. Written
-   by a script run by hand (no Action), one commit per run.
-7. **Website:** Image versions reads the index and shows Discord-era versions first, marked "from Discord" with their date and,
-   for text entries, the described change; stat history and the balance charts take the reconstructed stats; lost cards get a
-   list of their own.
+6. **Publish** (`commands/discord_preview.py build`, the preview first, owner 11-13): `derived/preview/history/` in the
+   `history` branch's layout: `index.json` (each card's folder; the Morgue's entries from Discord, owner Q1/Q2; the MDW
+   Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" for a paper
+   card), `<card id>/timeline.json` (entries oldest first: paper, discord, first repo, text, old repo; only sure fields,
+   each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
+   wide (the website's card view), `_morgue/<slug>/` the same. The `history` branch itself (one commit per run, a script
+   run by hand, no Action) waits for the owner's OK.
+7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
+   lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo";
+   Discord: date and channel; a paper card "Before 2020"; first repo: text only), each compared with the current card
+   as today (its own sure ability as "Text then"), never with a link or Revert; their changes and the changelog facts
+   (data only, owner Q4) join Recorded changes, the trend and the balance charts; the Morgue lists the joke and lost
+   cards from Discord (picture only, never in cards[]); the proposed Created dates apply (never later, never over hand).
 
 ## Verification
 
 - `discord_match selftest` (degraded copies of every PNG and version) before trusting a new era reader; a reader's accuracy on
   that era's git versions reported per field.
-- Every published version's fields re-read from its webp agree with timeline.json.
+- Every published version's fields re-read from its webp agree with timeline.json (`discord_preview check`: the
+  timelines' own readers on the webp; what they can't read again is counted apart, a disagreement goes to the eye).
 - The website build and its checks pass with and without the `history` branch.
 
 ## Open questions (for the start of the task)

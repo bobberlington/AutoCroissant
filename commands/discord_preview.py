@@ -1,12 +1,14 @@
 """
 Card timelines' local preview (docs/Future/CARD_TIMELINE.md, steps 6 and 7; STAGE1 S9): the history data the website
 reads, under the archive's derived/preview/history/ (never a repo; the layout of the history branch). Run from the
-repo root with the fork Python (Pillow with WebP; check also needs numpy, cv2 and scripts/timeline_text.py's Vision CLI):
+repo root with the fork Python (Pillow with WebP; check also needs numpy, cv2 and scripts/timeline_text.py's Vision
+CLI):
 
     python -m commands.discord_preview build [--root <dir>] [--old-git <dir>] [--workers <n>] [--force]
-    python -m commands.discord_preview check [--root <dir>] [--workers <n>]
+    python -m commands.discord_preview check [--root <dir>] [--workers <n>] [--redo]
 
-build   From the chain (derived/chain/timelines, created.json) and the Morgue candidates (derived/morgue/candidates.json):
+build   From the chain (derived/chain/timelines, created.json) and the Morgue candidates (derived/morgue/
+        candidates.json):
           index.json             every card with a history (its folder, counts), the Morgue's new entries, the MDW
                                  Morgue cards' Discord pictures, and the Created dates the chain proposes (earlier or
                                  new only; "Before 2020" for a paper card, owner Q6)
@@ -43,6 +45,7 @@ CHAIN = ("derived", "chain", "timelines")
 CREATED = ("derived", "chain", "created.json")
 MORGUE = ("derived", "morgue", "candidates.json")
 MORGUE_DIR = ("derived", "morgue")
+EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why}}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
 PICTURE_KINDS = ("discord", "old repo", "paper")
@@ -51,11 +54,12 @@ BADGE = {"discord": "Discord", "old repo": "old repo", "paper": "paper card", "f
          "text": "changelog"}
 WEBP_W, WEBP_Q = 720, 80                   # the website's card view width; quality
 MAX_PIXELS = 40_000_000                    # a picture past this is shrunk on open (phone photos)
+KINDS_OF = {"name": str, "stars": int, "types": list, "stats": dict, "ability": str}   # another kind: left out
 CHANGE_KEYS = ("name", "stars", "types", "stats", "bal", "buffs", "nerfs", "ability_change", "unknown")
 FACT_KEYS = ("field", "from", "to", "by", "op", "unit")
 PAPER_DAY = "Before 2020"                  # owner Q6 (discord_chain.PAPER_DAY)
-ABOUT = ("Card timelines before the card repo (preview): per card its versions from Discord (date and channel), the old "
-         "pre-wipe repo (date, mapped author, commit subject), paper cards (Before 2020), the first repo's push "
+ABOUT = ("Card timelines before the card repo (preview): per card its versions from Discord (date and channel), the "
+         "old pre-wipe repo (date, mapped author, commit subject), paper cards (Before 2020), the first repo's push "
          "notices (text only) and changelog facts (data only). Only sure fields; no message text, posters or links.")
 
 
@@ -66,11 +70,13 @@ def log(text: str):
 # ========================
 # Data
 # ========================
-def published(fields: Optional[dict]) -> dict:
-    """The sure fields only: {field: {value, method, confidence}} (a review or unread field never goes in)."""
+def published(fields: Optional[dict], drop=()) -> dict:
+    """The sure fields only: {field: {value, method, confidence}} (a review or unread field never goes in, nor a value
+    of the wrong kind, nor one the eye ruled wrong: drop)."""
     out = {}
     for name, f in (fields or {}).items():
-        if isinstance(f, dict) and f.get("confidence") == "sure" and "value" in f:
+        if isinstance(f, dict) and f.get("confidence") == "sure" and "value" in f and name not in drop \
+                and isinstance(f["value"], KINDS_OF.get(name, object)) and not isinstance(f["value"], bool):
             out[name] = {"value": f["value"], "method": f.get("method"), "confidence": "sure"}
     return out
 
@@ -94,7 +100,7 @@ def picture_job(e: dict, root: str) -> tuple:
     return ("file", join(root, pic["file"]), tuple(pic["box"]) if pic.get("box") else None)
 
 
-def entry_out(e: dict, image: Optional[str]) -> dict:
+def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
     """One timeline entry as published."""
     kind = e["kind"]
     out = {"id": e["id"], "kind": kind, "date": e.get("date"), "day": e.get("day"), "badge": BADGE[kind]}
@@ -107,7 +113,8 @@ def entry_out(e: dict, image: Optional[str]) -> dict:
     if e.get("as"):
         out["as"] = e["as"]
     if kind in PICTURE_KINDS:
-        out.update(image=image, fields=published(e.get("fields")), changes=changes_of(e), minor=bool(e.get("minor")))
+        out.update(image=image, fields=published(e.get("fields"), drop), changes=changes_of(e),
+                   minor=bool(e.get("minor")))
         if kind == "discord":
             out["posts"] = len(e.get("pictures") or ())
             if (e.get("look") or {}).get("git"):
@@ -121,21 +128,38 @@ def entry_out(e: dict, image: Optional[str]) -> dict:
     return out
 
 
-def timeline_out(t: dict, created: Optional[dict]) -> tuple:
-    """(the published timeline, [(webp name, picture job)])."""
+CHANGE_OF = {"stats": ("stats", "bal", "buffs", "nerfs"), "stars": ("stars",), "types": ("types",), "name": ("name",)}
+
+
+def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None) -> tuple:
+    """(the published timeline, [(webp name, picture job)]). eye: the eye's drops for this card {entry id: {field}}:
+    the field is left out, and so are the changes it made (its own against the version before, the next version's
+    against it)."""
     entries, jobs = [], []
     for e in t["entries"]:
         image = None
         if e["kind"] in PICTURE_KINDS:
             image = picture_name(e)
             jobs.append((image, e))
-        entries.append(entry_out(e, image))
+        entries.append(entry_out(e, image, (eye or {}).get(e["id"], ())))
+    pictures = [e for e in entries if e["kind"] in PICTURE_KINDS]
+    for i, e in enumerate(pictures):
+        for field in (eye or {}).get(e["id"], ()):
+            for other in pictures[i:i + 2]:
+                ch = other["changes"]
+                for key in CHANGE_OF.get(field, ()):
+                    ch.pop(key, None)
+                if field == "ability" and ch.get("ability_change") in ("changed", "same", "formatting"):
+                    ch["ability_change"] = "unknown"
     stop = t.get("stop") or {}
     out = {"card": t["card"], "key": t["key"], "name": t["name"], "kind": t.get("kind"),
            "stop": {"day": stop.get("day"), "source": stop.get("source")} if stop else None, "entries": entries}
     first = t.get("git_first") or {}
     if first.get("date") and first.get("changes"):
         out["git_first"] = {"date": first["date"], "changes": changes_of(first)}   # its first recorded version's change
+        for field in (eye or {}).get(pictures[-1]["id"] if pictures else None, ()):
+            for key in CHANGE_OF.get(field, ()):
+                out["git_first"]["changes"].pop(key, None)
     if created:
         out["created"] = created
     return out, jobs
@@ -223,13 +247,15 @@ def _init_worker(old_git: str):
 
 
 def open_picture(kind: str, source: str, box: Optional[tuple]):
-    """A version's picture, upright, RGBA (a sheet's cell: its box of the trimmed sheet, trimmed, as the matcher cut it)."""
+    """A version's picture, upright, RGBA (a sheet's cell: its box of the trimmed sheet, trimmed, as the matcher cut
+    it)."""
     from PIL import Image, ImageOps
     Image.MAX_IMAGE_PIXELS = None
     if box:
         img = dm.trim(dm.load_image(source))
         w, h = img.size
-        return dm.trim(img.crop((round(box[0] * w), round(box[1] * h), round(box[2] * w), round(box[3] * h)))).convert("RGBA")
+        cell = img.crop((round(box[0] * w), round(box[1] * h), round(box[2] * w), round(box[3] * h)))
+        return dm.trim(cell).convert("RGBA")
     data = _BLOBS.get(source) if kind == "blob" else None
     with Image.open(BytesIO(data) if data is not None else source) as im:
         if im.width * im.height > MAX_PIXELS:
@@ -270,6 +296,10 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False):
     out_dir = join(root, *OUT)
     makedirs(out_dir, exist_ok=True)
     created = dm.read_json(join(root, *CREATED), {}) or {}
+    eye = {}                                     # {card: {entry id: {field}}}
+    for key in ((dm.read_json(join(root, *EYE), {}) or {}).get("drop") or {}):
+        card, entry, field = key.split("|")
+        eye.setdefault(card, {}).setdefault(entry, set()).add(field)
     by_key = (created.get("cards") or {})
     index = {"version": 1, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "about": ABOUT,
              "cards": {}, "morgue": [], "mdw": [], "created": created_proposals(created)}
@@ -285,7 +315,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False):
         c = by_key.get(t["key"]) or {}
         mine = {"date": c.get("date"), "sort": c.get("sort"), "source": (c.get("ours") or {}).get("source"),
                 "status": c.get("status")} if c else None
-        out, pics = timeline_out(t, mine)
+        out, pics = timeline_out(t, mine, eye.get(t["card"]))
         folder = t["card"]
         want[folder] = set()
         for image, e in pics:
@@ -379,12 +409,13 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--old-git", default=dm.OLD_GIT)
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--redo", action="store_true", help="check: read again only what last read otherwise")
     args = parser.parse_args(argv)
     if args.command == "build":
         build(args.root, args.old_git, args.workers, args.force)
     else:
         from commands.discord_preview_check import check
-        check(args.root, args.workers)
+        check(args.root, args.workers, args.redo)
     return 0
 
 

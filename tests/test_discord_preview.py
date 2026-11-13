@@ -1,5 +1,5 @@
-"""discord_preview build on a made-up archive: only sure fields are published (value, method, confidence), no message,
-poster, note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read
+"""discord_preview build on a made-up archive: only sure fields are published (value, method, confidence; not one of
+the wrong kind or one the eye dropped), no message, poster, note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read
 from its git dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new."""
 import json
 import subprocess
@@ -66,6 +66,10 @@ def test_build(tmp_path):
               "not_candidates": [{"id": "LC-2", "name": "Old One", "card": "Old One", "status": "morgue", "first": {},
                                   "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord", "printed": True}]}]}
     (root / "derived" / "morgue" / "candidates.json").write_text(json.dumps(morgue))
+    (root / "derived" / "preview").mkdir(parents=True)
+    (root / "derived" / "preview" / "eye.json").write_text(json.dumps({"drop": {"bolt|O-1|stats": "the eye: another value"}}))
+    t["entries"][1]["fields"]["name"] = sure(["Bolt", "Bolt2"], "ocr+name")   # a value of the wrong kind
+    (root / "derived" / "chain" / "timelines" / "bolt.json").write_text(json.dumps(t))
     index = dp.build(str(root), str(git), workers=1)
     out = root / "derived" / "preview" / "history"
     got = json.loads((out / "bolt" / "timeline.json").read_text())
@@ -73,6 +77,7 @@ def test_build(tmp_path):
     first, cell, fact, old = got["entries"]
     assert first["fields"] == {"name": {"value": "Bolt", "method": "ocr+name", "confidence": "sure"}}   # the review field left out
     assert cell["git_look"] and fact["change"] == {"field": "atk", "from": 5, "to": 4} and old["minor"] and old["author"] == "Maker"
+    assert "name" not in cell["fields"] and "stats" not in old["fields"]          # the wrong kind; the eye's drop
     assert not keys(got) & BAD_KEYS and not keys(index) & BAD_KEYS
     sizes = {e["image"]: Image.open(out / "bolt" / e["image"]).size for e in got["entries"] if e.get("image")}
     assert sizes["P-a.webp"] == (dp.WEBP_W, 2 * dp.WEBP_W) and sizes[f"O-{blob[:12]}.webp"] == (300, 600)
