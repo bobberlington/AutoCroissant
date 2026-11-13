@@ -58,7 +58,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
 SMALL_AS = ("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None,
-                     "tile_rows": 3, "tile_cols": 2})   # 8x4 tiles: an edit's codec noise stays near it
+                     "tile_rows": 3, "tile_cols": 2})   # 8x4 tiles; codec noise still spreads: the Diff keeps to the region
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
