@@ -2544,11 +2544,12 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
     seen, drafts, undecided, after = {}, [], 0, 0   # look -> (record, image, note); drafts: [(look, image)]
     stop = card.get("fs")                      # the chain ends at its first git record (old repo, else this one)
     for n, (record, image, scored, status) in enumerate(mine):
-        if n and stop and (epoch(record.get("timestamp")) or 0) >= stop:
+        late = bool(stop) and (epoch(record.get("timestamp")) or 0) >= stop
+        if late and n:
             after += 1
             continue
         look, pick = shown_look(scored, image, versions)
-        if look == ("draft",):
+        if look == ("draft",) and not late:
             match = next((d for d, other in drafts if same_draft(image, other)), None)
             look = match or ("draft", len(drafts) + 1)
             if match is None:
@@ -2556,10 +2557,9 @@ def card_discord(cid: str, card: dict, mine: list, every: list, pending: list, m
         note = version_note(look, pick, versions)
         if n == 0:
             first_note = note
-            if stop and (epoch(record.get("timestamp")) or 0) >= stop:
-                after += 1
-                continue
-        if look is None:
+        if late:                                # its first post after git: no chain
+            after += 1
+        elif look is None:
             undecided += int(bool(image.get("shape")))
         elif look not in seen:
             seen[look] = (record, image, note)
