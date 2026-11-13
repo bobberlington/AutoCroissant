@@ -11,6 +11,7 @@ from subprocess import run as run_process
 from sys import executable
 
 import pytest
+import yaml
 
 import commands.card_data as cd
 import commands.card_db as cdb
@@ -65,10 +66,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
 
 
 def _sync_doc():
-    yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 

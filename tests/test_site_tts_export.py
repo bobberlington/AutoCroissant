@@ -1,21 +1,17 @@
 """
 The deck builder's "Download for TTS" (TTSCardMaker site/assets/deck.js ttsSave, in node) makes each card as the TTS save
 holds its own: CardCustom at the size its back is played at (creatures 3, items and field cards 2, x = z), each pile at
-its cards' size. Sizes from the save when the checkout has it. Loads the site from $AC_SITE_SRC or the clone; skips
-without deck.js (2026-11-10).
+its cards' size. Sizes from the save when the checkout has it. Loads the site from $AC_SITE_SRC or the clone.
 """
 import json
 from collections import Counter
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
 ROOT = SITE_SRC
 DECK_JS = ROOT / "site" / "assets" / "deck.js"
 SAVE = ROOT / "TTS" / "Impossibility Simulator.json"
-pytestmark = pytest.mark.skipif(not DECK_JS.is_file(), reason=f"no {DECK_JS}")
 
 
 def played_sizes():

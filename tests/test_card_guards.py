@@ -1353,9 +1353,6 @@ def test_a_persons_drawn_duplicate_is_kept_as_pushed(cards, clone, tmp_path):
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================
 def test_replay_of_the_stale_png_push(clone, tmp_path):
-    source = cg.Source(str(clone))
-    if not (source.commit("38c55bd3") and source.commit("07589cc7")):
-        pytest.skip("the clone lacks the push")
     data = cg.check(str(clone), "07589cc7", "38c55bd3", out=str(tmp_path / "out"), workers=1, cards={"god tamer"})
     by = {c["card"]: c for c in data["cards"]}
     assert list(by) == ["God Tamer"] and by["God Tamer"]["export"].get("outcome") == "current"
@@ -1412,10 +1409,7 @@ def test_action_shaped_copy(tmp_path):
 
 
 def _workflow(clone) -> Path:
-    path = SITE_SRC / ".github" / "workflows" / "card-guards.yml"
-    if not path.exists():
-        pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout)")
-    return path
+    return SITE_SRC / ".github" / "workflows" / "card-guards.yml"
 
 
 def _guard_steps(clone) -> tuple:
@@ -1515,7 +1509,6 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     the guards' comment and comments the card check's report; a re-run edits that comment, keeps the mark and posts
     nothing, and so does a re-run of the tell job alone (its Told already looks the mark up). With CARD_GUARDS off the
     card check alone posts, its comment carrying the mark."""
-    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     bin_dir = _fake_tools(tmp_path)
     bot = tmp_path / "bot"
@@ -1616,7 +1609,6 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     fetch that fails: those blobs by REST, the warning and a failed step."""
     import commands.card_bake as cb
     import commands.github_api as gh
-    pytest.importorskip("yaml")
     _, steps, _ = _guard_steps(clone)
     for wait in ("Card and font checks", "Check start"):                       # the bot's wait reads the list
         assert steps[wait]["env"][gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
@@ -1688,7 +1680,6 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     """Earlier fonts start lists the icon font, current first, then its past versions and fetches them by commit in the
     background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API and
     no wait for the fonts restore; one missing, or not its blob, by the API."""
-    pytest.importorskip("yaml")
     _, steps, _ = _guard_steps(clone)
     repo, temp, bin_dir = tmp_path / "repo", tmp_path / "temp", tmp_path / "bin"
     for folder in (repo, temp, bin_dir):

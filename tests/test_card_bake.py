@@ -88,8 +88,6 @@ def _records(tmp_path) -> tuple:
 # ========================
 def test_live_edits_file_round_trips_byte_identical():
     """S4's gate: today's site/Card Edits.json through the port, unchanged (read-only)."""
-    if not LIVE_EDITS.exists():
-        pytest.skip(f"no {LIVE_EDITS}")
     text = LIVE_EDITS.read_text(encoding="utf-8")
     assert cb.dump_edits(json.loads(text)) == text
 
@@ -102,8 +100,6 @@ def test_dump_edits_layout():
 
 
 def _node(script_dir, text, ops, at="2026-10-20T00:00:00Z", by="tester") -> str:
-    if not EDIT_JS.exists():
-        pytest.skip("edit.js missing")
     script = script_dir / "edits_file.mjs"
     script.write_text('import { readFileSync } from "node:fs";\n'
                       f'const {{ editsFile }} = await import({json.dumps(EDIT_JS.as_uri())});\n'
@@ -746,8 +742,6 @@ def test_local_head_the_clone_lacks_is_a_failed_run(github, monkeypatch):
 def test_workflow_pending_edits_line_calls_pending(github, capsys, monkeypatch):
     """card-sync.yml's Pending edits line, run as written: the pending card names, one per line; its Leftover edits
     script (the chain's count)."""
-    if not WORKFLOW.exists():
-        pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     code = re.search(r"Pending edits.*?python\" -c '([^']+)'", text, re.S).group(1)
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, str(github.clone), str(DB[0] / "verdicts.json")])

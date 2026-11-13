@@ -1,20 +1,17 @@
 """
 Card flags (Card Edits.json flags, TTSCardMaker site/assets/flags.js): the bot's field lists are the build's and
 flags.js's, and the build carries flags, never counting them as pending. Loads the site from $AC_SITE_SRC (a TTSCardMaker
-checkout) or the clone; skips without a flags.js (2026-11-07).
+checkout) or the clone.
 """
 import importlib.util
 import json
 from subprocess import run as run_process
-
-import pytest
 
 from commands.card_edits import FLAG_MAX, FLAGS, ORDER, CardEdits
 from conftest import SITE_SRC
 
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
-pytestmark = pytest.mark.skipif(not (ASSETS / "flags.js").is_file(), reason=f"no flags.js in {ASSETS}")
 
 
 def node(tmp_path, body: str):

@@ -2,8 +2,7 @@
 The card page's text over time (TTSCardMaker site/assets/history.js, in node): the current text dated from when it
 started (cards.json since, the bot's carried start), not from the last PSD commit, in the History block, the image
 versions' "Text then" and the Recently updated feed; and every date the site shows in Pacific time, the bot's TIMEZONE,
-whatever the viewer's zone. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or
-a site before history.js.
+whatever the viewer's zone. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 from os import environ
@@ -15,7 +14,6 @@ from conftest import SITE_SRC
 
 ASSETS = SITE_SRC / "site" / "assets"
 HISTORY_JS = ASSETS / "history.js"
-pytestmark = pytest.mark.skipif(not HISTORY_JS.is_file(), reason=f"no history.js at {ASSETS}")
 IMAGE_AT = 1792648620   # Beldam's 2026-10-21 22:57 PT image
 
 

@@ -2,21 +2,17 @@
 The website's card image previews in edit mode (TTSCardMaker site/assets/preview.js and mockup.js, in node), one smoke
 test each (owner 2026-11-12): the rendered preview's panel for each state of card-preview.yml's contract
 (commands/card_preview.py's result.json) and the quick mock-up's tokens, wrapping and fit; and the bot against the site:
-the mock-up's port of card_plates' stat rows. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone;
-skips without preview.js.
+the mock-up's port of card_plates' stat rows. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 from pathlib import Path
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
 SITE = SITE_SRC
 ASSETS = SITE / "site" / "assets"
 PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
-needs_js = pytest.mark.skipif(not PREVIEW_JS.is_file(), reason=f"no preview.js at {ASSETS}")
 
 
 def has(path: Path, word: str) -> bool:
@@ -34,7 +30,6 @@ def node(tmp_path, body: str):
     return json.loads(done.stdout)
 
 
-@needs_js
 def test_the_panel_for_each_state(tmp_path):
     """Baked: current and preview side by side with Diff, each field's outcome, notes escaped; refused: the
     reason (with the bake's render when it made one); an input error is the website's bug; a transient one says try
@@ -61,7 +56,6 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
     assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
 
 
-@needs_js
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
     empty line; a long text shrinks until it fits, a name keeps its line count."""
@@ -76,7 +70,6 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
     assert out[1] is True and out[2] is True and out[3] == 1
 
 
-@needs_js
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
@@ -87,7 +80,6 @@ out([jobs([30, 2210, 1170, 2388]), jobs(false), jobs(undefined)]);""")
     assert out == [[["+ability", [30, 2210, 1170, 2388]]], [], [["+ability", [405, 1778, 793, 1856]]]]
 
 
-@needs_js
 def test_plates_port_of_the_rows(tmp_path):
     """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one
     at its label, art, a drawn bar showing another value), and with its margin at least that."""

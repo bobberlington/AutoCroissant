@@ -65,8 +65,6 @@ def test_badge_tags_are_the_fonts_glyphs():
     from fontTools.ttLib import TTFont
     from conftest import CLONE
     font = CLONE / "MDW/Fonts/stoogedings.ttf"
-    if not font.exists():
-        pytest.skip("no stoogedings.ttf")
     glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_") and "." not in n]   # not .salt
     tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs if "_cost_" not in n}
     assert tags == set(psd_edit.BADGE_TAGS) and len(psd_edit.BADGE_TAGS) == len(set(psd_edit.BADGE_TAGS)) == 1139
@@ -82,8 +80,6 @@ def test_glyph_boxes_drawn_when_asked():
     from fontTools.ttLib import TTFont
     from conftest import CLONE
     font = CLONE / "MDW/Fonts/stoogedings.ttf"
-    if not font.exists():
-        pytest.skip("no stoogedings.ttf")
     full = TTFont(str(font), lazy=True)
     glyphs, order = full.getGlyphSet(), full.getGlyphOrder()
     picks = [next(g for g, n in enumerate(order) if n.startswith(p)) for p in ("badge_", "icon_")] + [len(order) - 1]
@@ -889,8 +885,6 @@ def test_clean_on_a_real_card(clone, tmp_path):
     """Kingsoul (11-09 pass): its hidden Delicate Flower star and the hidden copy of its art go; parse and picture as
     they were (fix's gates)."""
     rel = "Items/Equip/4 Stars/Kingsoul.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
     data = (clone / rel).read_bytes()
     fixed = cs.fix(data, rel, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), only="clean")
     assert fixed.data and not fixed.redrawn and fixed.pixel_left == [], fixed.pixel_left

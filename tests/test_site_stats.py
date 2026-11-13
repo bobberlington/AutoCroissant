@@ -1,19 +1,15 @@
 """
 The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node), one smoke test (owner
-2026-11-12): power creep. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a
-stats.js (2026-10-25).
+2026-11-12): power creep. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 STATS_JS = ASSETS / "stats.js"
-pytestmark = pytest.mark.skipif(not STATS_JS.is_file(), reason=f"no {STATS_JS}")
 
 # twelve creatures in two series and two years; 2★ median 10, 3★ median 14 (strength = total - median):
 # Mario +2 -1 +2 -1 0 +1 (mean 0.5), Kirby -2 -2 +1 +3 -4 0 (mean -0.7); 2020: 0.0, 2021: -0.2

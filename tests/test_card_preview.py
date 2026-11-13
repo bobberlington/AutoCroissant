@@ -27,6 +27,7 @@ from sys import executable
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 import commands.card_bake as cb
 import commands.card_preview as cp
@@ -519,11 +520,7 @@ def test_publish_on_a_warm_read(remote, tmp_path, monkeypatch):
 # card-preview.yml
 # ========================
 def _workflow() -> tuple:
-    path = WORKFLOWS / "card-preview.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout with it)")
-    yaml = pytest.importorskip("yaml")
-    text = path.read_text(encoding="utf-8")
+    text = (WORKFLOWS / "card-preview.yml").read_text(encoding="utf-8")
     return text, yaml.safe_load(text)
 
 
@@ -547,7 +544,6 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish (its
     `python -S`: this Python without site-packages). Returns {step: exit code, None when skipped}.
     """
-    yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(text)
     steps = {job: {s["name"]: s for s in doc["jobs"][job]["steps"] if s.get("name")} for job in ("preview", "publish")}
     bin_dir = tmp_path / "bin"

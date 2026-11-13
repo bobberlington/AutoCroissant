@@ -66,8 +66,8 @@ one test looping over it). Shared helpers live in `tests/helpers.py`, never impo
 Website tests (owner, 2026-11-12): one smoke test per site piece, plus the tests that check the bot against the site.
 Workflow tests (owner, 2026-11-12): only the ones that catch a bot change breaking the Actions (a bot checkout's list is
 the module's `SPARSE_FILES`, steps that run the bot's own code or CLIs), the import closure tests and actionlint. A
-missing tool fails, never skips (conftest `TOOLS`); a site test skips only while its feature is on a work branch
-(test_site_previews `has()`).
+missing tool (conftest `TOOLS`) or TTSCardMaker file (site code, workflow, font) fails, never skips; a site test skips
+only while its feature is on a work branch (test_site_previews `has()`), until that feature is on TTSCardMaker's main.
 
 **Card images (the edit pipeline's bake, 2026-10-23).** Pixel parity against the official PNG (bad <= 0.5% past 24,
 mean <= 2.0) is evidence about the psd-tools fork, not a gate on a card: a miss bakes, and the report and commit note
@@ -537,3 +537,5 @@ c69f7c24 -> 0640adac). Only the ability text changed; types, stars, stats, alt_n
 2026-11-05 (ring badges): row 1c names the font pin `conftest.RING` (0ade8c3d) and test_badge_parity.py; 689 tests collected at 3641756 (not a pass count).
 
 2026-11-12 (asks-1112, owner G7): §1c's lean rule: the website tests cut to one smoke test per site piece plus the checks of the bot against the site; the workflow YAML/shell tests cut to the ones above; the tool and old-site skips and the listed TTSCardMaker-file skips removed.
+
+2026-11-13 (cards-1110 r20-2): §1c: a missing TTSCardMaker file fails, never skips (G7's rule finished: the site, workflow, clone and pin file skips and the yaml importorskips removed; `has()` kept).

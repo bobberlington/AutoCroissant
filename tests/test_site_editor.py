@@ -1,19 +1,15 @@
 """
 The website editor's helpers (TTSCardMaker site/assets, in node), one smoke test (owner 2026-11-12): drafts of unsaved
 edits (drafts.js), the type palette (palette.js) loaded beside it. Loads them from $AC_SITE_SRC (a TTSCardMaker checkout)
-or the clone; skips without them.
+or the clone.
 """
 import json
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
 ASSETS = SITE_SRC / "site" / "assets"
 MODULES = ("drafts", "palette")
-pytestmark = pytest.mark.skipif(not all((ASSETS / f"{m}.js").is_file() for m in MODULES),
-                                reason=f"no {', '.join(m + '.js' for m in MODULES)} in {ASSETS}")
 
 
 def node(tmp_path, body: str):

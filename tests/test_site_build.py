@@ -3,8 +3,7 @@ The website build (TTSCardMaker site/build/build_site.py): one smoke test per pi
 the bot against the site. The build on a small card repo made here, offline, from the card sync's db/ (CARD_DATA_DIR,
 load_card_data): the current text dated from its start; the bundle's lazy chunks; website-only fields (edit.js and
 CardEdits); the parser notes an edit answers; a real card's inks (psd_details); R14's names (card_standards); web-only
-rulebook chapters (rulebook.js). Loads build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips
-without it.
+rulebook chapters (rulebook.js). Loads build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import importlib.util
 import json
@@ -34,8 +33,6 @@ PALACE = "Field/4 Stars/White_Palace.psd"
 
 @pytest.fixture(scope="module")
 def bs(tmp_path_factory):
-    if not BUILD_SITE.is_file():
-        pytest.skip(f"no card repo build_site at {BUILD_SITE}")
     spec = importlib.util.spec_from_file_location("site_build_site", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -206,8 +203,6 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
     """`_site` (owner 10-25): applied, never "PSD pending", the card's siteOnly (its "Website only" tag); edit.js stores it
     from an op's ticks as parse_edits and CardEdits.site_only clean it (a field without a value goes); unticked: pending."""
     from commands.card_edits import CardEdits
-    if not EDIT_JS.is_file():
-        pytest.skip("edit.js missing")
     script = tmp_path / "site.mjs"
     script.write_text(f'const {{ editsFile }} = await import({json.dumps(EDIT_JS.as_uri())});\n'
                       'const text = JSON.stringify({about: "x", cards: {"Mini Doomer": {"name": "Tiny Doomer", "hp": 9, "_by": "w"}}});\n'

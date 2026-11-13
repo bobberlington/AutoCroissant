@@ -11,7 +11,7 @@ from sys import executable
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
+import yaml
 
 import commands.card_checks as cc
 from commands.card_edits import CardEdits
@@ -437,13 +437,10 @@ def test_action_shaped_copy(tmp_path):
     bad, closure = done.stdout.splitlines()
     assert bad == "[]"
     assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == {f for f in cc.SPARSE_FILES if f.endswith(".py")}
-    workflow = SITE_SRC / ".github/workflows/card-checks.yml"
-    if workflow.is_file():
-        yaml = pytest.importorskip("yaml")
-        doc = yaml.safe_load(workflow.read_text(encoding="utf-8"))
-        checkout = next(s for s in doc["jobs"]["check"]["steps"] if s.get("with", {}).get("repository"))
-        assert checkout["with"]["sparse-checkout"] == "${{ env.BOT_FILES }}"     # and Clones start's
-        assert doc["env"]["BOT_FILES"].split() == ["/" + f for f in cc.SPARSE_FILES]
+    doc = yaml.safe_load((SITE_SRC / ".github/workflows/card-checks.yml").read_text(encoding="utf-8"))
+    checkout = next(s for s in doc["jobs"]["check"]["steps"] if s.get("with", {}).get("repository"))
+    assert checkout["with"]["sparse-checkout"] == "${{ env.BOT_FILES }}"     # and Clones start's
+    assert doc["env"]["BOT_FILES"].split() == ["/" + f for f in cc.SPARSE_FILES]
 
 
 def test_link_notes_word_the_links_against_the_tree():
@@ -478,8 +475,6 @@ def test_link_notes_word_the_links_against_the_tree():
 def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
     """The stat notes as TTSCardMaker's mockup.js handStats reads them (those stats aren't drawn); old bars name none."""
     mockup = SITE_SRC / "site" / "assets" / "mockup.js"
-    if not mockup.is_file():
-        pytest.skip(f"no {mockup}")
     monkeypatch.setattr(cc.psd_edit, "stat_caps", lambda psd: None)
     monkeypatch.setattr(cc, "stat_rows", lambda psd: dict.fromkeys(cc.STAT_ORDER, [([], [], None)]))
     monkeypatch.setattr(cc, "_real_bake", lambda ctx, rel, fields, png: ("refused", "unsupported-card: 'Health': x", None))

@@ -1,12 +1,10 @@
 """
 The website's password sign-in (TTSCardMaker site/assets/signin.js in node), one smoke test (owner 2026-11-12): a sealed
 file opens only with the right password, and OpenSSL reads its format. Loads it from $AC_SITE_SRC (a TTSCardMaker
-checkout) or the clone; skips without it.
+checkout) or the clone.
 """
 import json
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
@@ -16,8 +14,6 @@ LOGIN_JS = SITE / "assets" / "signin.js"
 
 def node(tmp_path, body: str):
     """Run body after importing signin.js as auth; its stdout as JSON."""
-    if not LOGIN_JS.is_file():
-        pytest.skip(f"no signin.js at {LOGIN_JS}")
     script = tmp_path / "probe.mjs"
     script.write_text(f"const auth = await import({json.dumps(LOGIN_JS.as_uri())});\n{body}\n", encoding="utf-8")
     return json.loads(run_process(["node", str(script)], capture_output=True, text=True, check=True).stdout)

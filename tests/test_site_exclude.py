@@ -1,18 +1,14 @@
 """
 The cards grid's exclusions (TTSCardMaker site/assets/grid.js dropExcluded, flip, in node): x<key> params drop the cards
 matching any of their values, xmissing keeps the cards that have it, and a click / right-click cycle the include and
-exclude lists. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a grid.js
-with dropExcluded (2026-10-25).
+exclude lists. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 from subprocess import run as run_process
 
-import pytest
-
 from conftest import SITE_SRC
 
 GRID_JS = SITE_SRC / "site" / "assets" / "grid.js"
-pytestmark = pytest.mark.skipif(not GRID_JS.is_file(), reason=f"no {GRID_JS}")
 
 
 def test_exclusions_and_clicks(tmp_path):
