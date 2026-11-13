@@ -210,3 +210,18 @@ def test_an_icon_at_a_line_end_the_psd_text_lacks_goes_to_review(rows):
     assert rows.dangling("-1 Cost per\nTrickster: deals 2 damage") == ["per"]
     assert rows.dangling("Deal 2 damage to\nevery creature.\n(OPT) Heal the") == ["the"]
     assert rows.dangling("Summon an [undead] minion.") == []
+
+
+def test_a_line_starting_with_punctuation_goes_to_review(rows):
+    """A printed word or icon before ':' or ',' the PSD read lost (God Tamer's 'Beast: top stats', The Freezer's
+    '[ice], [water]: +2 DEF'): review, even when the words are found elsewhere in the text."""
+    line = lambda text, y: [text, 1.0, 0.1, y, 0.8, 0.03]
+    tamer = ": top stats,: bottom stats.\nIf the beast is attacked while the tamer is alive"
+    seen = [line("Beast: top stats, Tamer: bottom stats.", 0.72),
+            line("If the beast is attacked while the tamer is alive", 0.76)]
+    got = rows.check_ability({"ability": tamer}, seen, "creature", True, {"beast", "top", "stats", "tamer", "bottom"})
+    assert (got["confidence"], got["value"]) == ("review", tamer) and "':'" in got["why"]
+    freezer = rows.check_ability({"ability": ", [ice]: +2 DEF [water]"}, [line("+2 DEF", 0.9)], "field")
+    assert freezer["confidence"] == "review"
+    assert rows.leading("Heal 2 HP\r/ turn") == "/"
+    assert rows.leading("(1CD) Deal 2 damage: twice.\n-1 ATK") is None

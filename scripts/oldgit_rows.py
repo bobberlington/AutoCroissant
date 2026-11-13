@@ -61,6 +61,7 @@ GAP = re.compile(r"\S {5,}\S")  # an icon the parser left as spaces ('not       
 DANGLING = {"affect", "per", "against", "vs", "to", "a", "an", "the", "of", "on", "by", "with", "from", "any", "all",
             "each", "every", "is", "are"}       # a line ending so wants an icon after it ("can't affect [fire]")
 TOKEN = re.compile(r"\[[^\]]*\]")
+LEADING = ":;,.)/"                # a line starting so: a word or icon before it not read
 TEXT_SEEN = 2               # OCR words under the bars/title: the card prints text ('-25% SPD')
 HEADER, ICON_MAX = 0.32, 0.3      # type icon layers: bottom and largest side, in card widths
 ICON_SIDE = 32              # type icons compared at this size; one matches a type's picture within
@@ -888,6 +889,12 @@ def dangling(text: str) -> list:
     return out
 
 
+def leading(text: str):
+    """The punctuation a line of the text starts with (': top stats', ', [ice]: +2 DEF'), or None."""
+    lines = (line.strip() for line in re.split(r"[\r\n]+", text or ""))
+    return next((line[0] for line in lines if line and line[0] in LEADING), None)
+
+
 def with_icons(text: str, today) -> bool:
     """Today's ability is this text's words with more icons."""
     bare = lambda t: text_key(TOKEN.sub(" ", t or ""))
@@ -897,16 +904,19 @@ def with_icons(text: str, today) -> bool:
 def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=frozenset(), today=None) -> dict:
     """The PSD's ability checked against the OCR both ways: its words are printed (recall), and the printed card words
     are in it (printed_back: no lines it lacks; with the composite off the PNG, every card word and digit). A line
-    ending in a word that wants an icon goes to review (today's text proposed when it is these words with icons)."""
+    starting with punctuation, or ending in a word that wants an icon, goes to review (the latter: today's text proposed
+    when it is these words with icons)."""
     R = _W.get("readers") or _W.setdefault("readers", readers())
     text = OLD_TOKENS.sub(lambda m: "[" + OLD_TYPES[m.group(1)], ((read or {}).get("ability") or "").strip())
     seen = ability_lines(lines, kind)
     if text:
         found = recall(R, text, seen)
         back = printed_back(text, ability_zone(lines, kind), vocab)
-        ends = dangling(text)
+        ends, lead = dangling(text), leading(text)
         if GAP.search(text):
             why = "a gap in the text: an icon not read"
+        elif lead:
+            why = f"a line starts with '{lead}': a word or icon before it not read"
         elif ends:
             why = f"a line ends in '{ends[0]}': an icon there not read"
             if with_icons(text, today):
