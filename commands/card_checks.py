@@ -300,16 +300,26 @@ def _cut(pixels: np.ndarray, box: tuple, width: int) -> Optional[np.ndarray]:
     return pixels[y0:y1, x0:x1] if 0 <= x0 < x1 <= pixels.shape[1] and 0 <= y0 < y1 <= pixels.shape[0] else None
 
 
+def printed(psd: PSDImage) -> set:
+    """The boxes of the shown layer-comp bars that print their value (psd_edit.bar_digits: Baba's word bars)."""
+    return {tuple(box) for bars in comp_bars(psd).values() for layer, value, box in bars
+            if value is not None and layer.is_visible() and psd_edit.bar_digits(psd, box, value)}
+
+
 def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict:
     """
-    {stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say.
+    {stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say, nor
+    one printing its value ("printed": its words misread as cells; check_card reads it by the bake's drawing).
     cells: the template's bars, a busy row read by its cells (split_row, _tell_busy, then colour_row).
     """
     pixels = np.asarray(image.convert("RGB"))
-    out, rows = {}, []
+    out, rows, words = {}, [], printed(psd)
     for stat, boxes in by_label(psd, bar_boxes(psd)).items():
         out[stat] = []
         for box in boxes:
+            if box in words:
+                out[stat].append({"best": None, "could": None, "printed": True})
+                continue
             row = _cut(pixels, box, psd.width)
             if row is None:
                 out[stat].append({"best": None, "could": None})
@@ -463,11 +473,12 @@ def bar_looks(psd: PSDImage, raw: bytes) -> list:
     """
     The shown layer-comp bars as the bake draws them: [(label, value 0-10, lit cells, empty cells)] (_look_cells of the
     card with every bar at comp 10, then at comp 0: comp_render, as set_comp stores it); a bar the bake cannot draw
-    raises Refused; one printing its value (Baba's word bars: a word a cell) is left out.
+    raises Refused; one printing its value (printed: Baba's word bars, a word a cell) is left out.
     """
     from psd_tools.api.layers import TypeLayer
+    words = printed(psd)
     found = [(stat, layer, value, tuple(box)) for stat, bars in comp_bars(psd).items() for layer, value, box in bars
-             if value is not None and layer.is_visible() and not psd_edit.bar_digits(psd, box, value)]
+             if value is not None and layer.is_visible() and tuple(box) not in words]
     if not found:
         return []
     x0, y0, x1, y1 = union_box([box for *_, box in found])
@@ -688,7 +699,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"} and, on a card with
     no ability, "room" (ability_room); mismatches() and flags() word it. plate: the mock-up's (card_plates, published
     apart: save leaves it out of db/). A custom card's reads are its plate's bar pictures against its PNG (drawn_reads)
-    when the bake drew any. bars: CUSTOM_NOTES.
+    when the bake drew any, as are bars printing their value (printed: Baba's). bars: CUSTOM_NOTES.
 
     Args:
         ctx: context()
@@ -728,6 +739,10 @@ def check_card(ctx: Context, rel: str) -> dict:
             if style and image is not None and not counted else {}
     if style == "custom" and votes:
         reads = drawn_reads(votes, parsed["card"])
+    elif votes:                                 # a bar printing its value: by the bake's drawing too
+        drawn = drawn_reads(votes, parsed["card"])
+        reads = {stat: [drawn[stat][n] if row.get("printed") and n < len(drawn.get(stat, [])) else row
+                        for n, row in enumerate(bars)] for stat, bars in reads.items()}
     notes += _stat_notes(ctx, rel, psd, parsed, style, image)
     if style == "new":
         with variant_view(psd, 1):
@@ -1093,6 +1108,7 @@ __all__ = [
     'mismatches',
     'name_note',
     'png_key',
+    'printed',
     'psd_steps',
     'read_picture',
     'read_row',

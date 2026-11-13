@@ -269,7 +269,8 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   a Photoshop save at 3/7/10/0). Its dark is a black shape at 67% under a mask each comp slides. Hidden:
   a full bar (10). `psd_regions.comp_bars`; the bake sets it with `psd_edit.set_comp` (renders equal
   Photoshop's at 0, 3, 5, 7, 10), and a digit the bar prints as text to the new value (`bar_digits`: Baba's
-  'IS 6', the only one; its other words stay, owner 2026-11-13); the details call it "template". Since 2026-11-06 the bar shows 0-20 (comps
+  'IS 6', the only one; its other words stay, owner 2026-11-13; Card checks reads such a bar by the bake's
+  drawing, never its cells: `card_checks.printed`); the details call it "template". Since 2026-11-06 the bar shows 0-20 (comps
   11-20: a full top row and a bottom half row of darks, `comp_render` draws every layer of the bar doc), and
   356 cards moved onto the template on 2026-11-06 (a one-time sweep, deleted 2026-11-12; the guards never convert).
   `Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).

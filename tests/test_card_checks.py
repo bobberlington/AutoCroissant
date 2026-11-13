@@ -147,6 +147,40 @@ def test_custom_bars_read_by_the_bakes_drawing(clone):
     assert cc.mismatches(record, {"stats": {"defense": 4}}) == ["The DEF bar shows 9 but the data says 4."]
 
 
+def test_printed_bars_read_by_the_bakes_drawing(clone):
+    """Baba's word bars print their value ('IS 6'), which the cells misread (its own PNG after a DEF 11 bake read 0: a
+    false hand flag): read_picture gives them no say; the bake's drawing reads that PNG as 11, the old one as 6."""
+    from io import BytesIO
+    from PIL import Image
+    from psd_tools import PSDImage
+    import commands.card_plates as cp
+    import commands.psd_edit as psd_edit
+    from conftest import card_blob
+    rel, parser = "Creatures/Other/5 Stars/Baba.psd", psd_edit._bare_parser()
+    old = Image.open(BytesIO(card_blob(clone, "31b457d7a5bbb076e1c10a4eebe1999ab46ef4c8")))
+    old.load()
+
+    def card(raw):
+        psd = psd_edit.use_record(PSDImage.open(BytesIO(raw)), rel)
+        return psd, raw, psd_edit.parse_card(parser, rel, rel, psd)
+    psd, raw, parsed = card(card_blob(clone, "2746abaa00679647b385787c4bb4e384b135ad87"))
+    icc = psd_edit.export_icc(psd, old)
+    png = cp.bar_value(psd, raw, old, parsed, parser, rel, "def", 11, icc)          # the bake's PNG
+    new = psd_edit.edit_copy(psd, raw)
+    psd_edit.set_stat(new, parsed, "def", 11)
+    new.save(saved := BytesIO())
+    psd, raw, parsed = card(saved.getvalue())
+    assert cc.read_picture(psd, png, cells=True)["def"] == [{"best": None, "could": None, "printed": True}]
+
+    def read(picture):
+        seen = []
+        cp.bar_value(psd, raw, picture, parsed, parser, rel, "def", 6, icc, seen=seen)
+        return {"style": "new", "reads": {"def": [cc.drawn_read({6: seen[0]}, parsed["card"]["def"])]}}
+    data = {"stats": {"defense": 11}}
+    assert cc.mismatches(read(png), data) == []
+    assert cc.mismatches(read(old), data) == ["The DEF bar shows 6 but the data says 11."]
+
+
 def test_name_note():
     """Owner 11-10/11-11: the website's name against the printed title (exact), the title's file form against the file
     name (no . : [ ] ? * " < > | / \\, spaces as underscores, small words' case and TM (R) (C) aside); a second picture
