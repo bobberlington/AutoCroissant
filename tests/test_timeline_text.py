@@ -102,6 +102,34 @@ def test_stars_never_count_a_full_copy_list(tt):
     assert tt.field_read(one, "stars", {"rule": {"ncc": 0.85, "mad": 30}})[2] == 0.0
 
 
+def test_star_counts_in_doubt_are_never_sure(tt):
+    """A star cut by the picture's right edge is found (read_edge) and makes the count doubtful, as do shurikens and a
+    copy on a title letter; two whole stars alone are no doubt."""
+    import cv2
+    side, y, x_from = 30, 20, 162
+    star = np.array([[15, 0], [19, 11], [30, 11], [21, 18], [25, 30], [15, 23], [5, 30], [9, 18], [0, 11], [11, 11]])
+
+    def card(xs):
+        a = np.full((720, 360, 3), 30, np.uint8)
+        for x in xs:
+            cv2.fillPoly(a, [star + [x, y]], (230, 200, 40))
+        return a
+    st = {"icon": "star", "size": side / 360, "copies": [[1.0, 0.0, 250 - x_from, y], [0.95, 1.0, 286 - x_from, y],
+                                                          [0.3, 90.0, 10, 100]]}
+    rule = {"ncc": 0.7, "mad": 45}
+    cut = tt.read_edge(card([250, 286, 340]), st, 0.28, x_from)
+    assert cut and cut[0][0] > 0.9 and cut[0][3] in range(y - 2, y + 3)
+    assert tt.star_doubt({"stars": st, "star_edge": {"x_from": x_from, "edge": cut}}, rule) == "a star cut by the edge"
+    whole = tt.read_edge(card([250, 286]), st, 0.28, x_from)
+    assert tt.star_doubt({"stars": st, "star_edge": {"x_from": x_from, "edge": whole}}, rule) is None
+    assert tt.star_doubt({"stars": dict(st, icon="ninja star")}, rule) == "shuriken stars"
+    word = [[240, 0, 330, 100]]                                     # a title word four times the copies' height
+    small = dict(st, size=12 / 360)
+    assert tt.star_doubt({"stars": small, "star_edge": {"x_from": x_from, "words": word}}, rule) == \
+        "a title letter counted"
+    assert tt.star_doubt({"stars": st, "star_edge": {"x_from": x_from, "words": [[240, 10, 330, 60]]}}, rule) is None
+
+
 def test_types_are_the_one_known_set_the_picture_shows(tt, monkeypatch):
     """A known set whose icons are all there while the others' are not; equip on a creature is the minion mark;
     a set known only from the version itself (exclude) is never offered."""

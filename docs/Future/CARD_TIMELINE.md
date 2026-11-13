@@ -53,14 +53,20 @@ the card's Image versions on the website before the git versions. Cards that nev
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
-   by icon match. Every field keeps its method (psd, picture, ocr, text) and a confidence.
+   by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
+   picture's right edge: `scripts/timeline_text.py edges`). Every field keeps its method (psd, picture, ocr, text) and a
+   confidence.
 4. **Chain** (`commands/discord_chain.py build`, outputs under `derived/chain/`; the owner's answers of 11-13, Q1-Q6):
    per live card, the Discord looks posted before its first git record (a git look, or a draft; a later git look posted
    early is the git part's; an older template posted after a newer one goes to review). Reposts of one look merge, the
-   earliest post dating it: a draft joins the nearest look (whole-card hash) with the same numbers and timing tags whose
-   every picture prints the same words (the abilities' OCR words alike, no real word on one picture missing from the
-   other: a reworded ability or a renamed class line is a new version); a field a picture didn't read (a sheet's cell,
-   unread bars) is never filled from its repost, only proposed. Then the sure changelog facts before it (Q4; item kinds
+   earliest post dating it: a draft joins the nearest look (whole-card hash) with the same numbers and timing tags
+   (counted: a swapped digit is a new version) whose every picture prints the same words (the abilities' OCR words
+   alike, no real word on one picture missing from the other: a reworded ability or a renamed class line is a new
+   version) and isn't alike but for one area (an icon, stars, a bar or a word edited: a grid cell far apart); a field a
+   picture didn't read (a sheet's cell, unread bars) is never filled from its repost, only proposed, and a repost's own
+   contrary star or stat read takes a reader's sure value to review. An icon-read star count that changes with nothing
+   to back it (no eye or PSD read, no second read apart, no changelog fact, the versions around it say otherwise) goes
+   to review. Then the sure changelog facts before it (Q4; item kinds
    never), the first repo's push notices naming the card alone as text-only rows (Q5: date, mapped author, commit
    message, badge "first repo"; no picture or link), the old repo's rows, a split card's versions "as <old name>" on
    both halves (Q3), and first a paper card's photo named as the card (by the matcher or by eye,

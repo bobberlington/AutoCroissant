@@ -12,7 +12,8 @@ build   Under derived/chain/:
                           paper       a paper card's photo named as the card (the matcher, or by eye in
                                       derived/readers/paper/eye.json): owner Q6, dated "Before 2020" (no day), first
                           discord     one look posted before the card's first git record: a git look (version_sure) or
-                                      a look not in git (draft); its reposts merged (the earliest post dates it); a
+                                      a look not in git (draft); its reposts merged (looks: hash, counted numbers,
+                                      words, no local edit; the earliest post dates it); a
                                       split card's (owner Q3) "as <old name>" on both halves
                           text        a sure changelog fact before the stop (owner Q4: a field change as data, or
                                       "ability changed" with no text); item kinds never (hand-crafted metadata)
@@ -20,7 +21,8 @@ build   Under derived/chain/:
                                       first_repo_rows on): date, mapped author, commit subject; no picture or link
                           old repo    the old pre-wipe repo's PNG versions (derived/oldrows), with their fold
                         Each version's fields keep their method and confidence; only sure values are kept, the rest
-                        name their review item (types with nothing read: 'unread'). Each is diffed with the version
+                        name their review item (types with nothing read: 'unread'; an icon-read star change nothing
+                        backs: review, star_guard). Each is diffed with the version
                         before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
                         (text_key; formatting alone is no change, owner 11-09). Discord looks fold as minor only when
@@ -50,12 +52,12 @@ from json import dumps, loads
 from os import makedirs, remove
 from os.path import exists, join
 from random import Random
-from re import findall
+from re import findall, sub
 from typing import Callable, Optional
 
 from commands import discord_match as dm
 from commands.changelog import text_key
-from commands.discord_verdicts import read_marks
+from commands.discord_verdicts import NUMBER, TAG, read_marks
 from global_config import CARD_BRANCH, DATA_BRANCH, LOCAL_DIR_LOC
 
 # ========================
@@ -64,6 +66,7 @@ from global_config import CARD_BRANCH, DATA_BRANCH, LOCAL_DIR_LOC
 OUT = ("derived", "chain")
 VERDICTS, LOST = ("derived", "match", "verdicts.jsonl"), ("derived", "match", "lost_groups.json")
 TEXT_READS, TEXT_TRUTH = ("derived", "readers", "text", "reads.jsonl"), ("derived", "readers", "text", "truth.jsonl")
+TEXT_OCR = ("derived", "readers", "text", "ocr.jsonl")      # the text readers' OCR lines with their boxes
 BAR_READS = ("derived", "readers", "bars", "reads.jsonl")
 OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrows", "review.jsonl")
 FACTS, FACT_SWITCHES = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "switches.json")
@@ -83,6 +86,11 @@ SAME_WORDS, ABILITY_WORDS = 0.92, 4                           # ... ability word
 NEAR_WORD, LABEL_WORD = 0.75, 0.6                             # an OCR'd word's near twin; a stat label misread
 STAT_LABELS = ("health", "defense", "defence", "attack", "speed", "armor")
 WORDS = "/usr/share/dict/words"                               # real words: OCR noise aside
+LOCAL_W, LOCAL_CELL = 240, 12                                 # drafts compared in grey at this width, by these cells
+LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a cell this far apart (grey levels) and
+                                                              # this many times the pair's 90th percentile cell (floored)
+BACKED = ("eye", "psd", "git look")                           # star reads no icon reader made
+APART_DAYS = 30                                               # two icon reads this far apart: read separately
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
 ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "attack", "infliction", "counter",
               "negation", "deploy"}                           # an item's kind (its subtype): never a fact here
@@ -225,6 +233,7 @@ class Inputs:
     """The parts' outputs and the card repo's data, read once."""
     def __init__(self, root: str, cards_repo: str):
         p = Paths(root)
+        self.root = root
         pairs = dm.read_json(dm.Paths(root).pairs, {}) or {}
         if not pairs.get("cards"):
             raise SystemExit("no matcher pairs: run python -m commands.discord_match score first")
@@ -321,7 +330,8 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
             fields[key] = sure(sorted(read["value"]) if key == "types" else read["value"], read.get("method") or "ocr",
                                read.get("conf"))
         elif text:
-            why = "Discord types are never sure (icons outside Types/)" if key == "types" else "read under its bar"
+            why = "Discord types are never sure (icons outside Types/)" if key == "types" else \
+                f"stars: {read['doubt']}" if read.get("doubt") else "read under its bar"
             fields[key] = unsure(read.get("method") or "ocr", why, read.get("value"), read.get("conf"))
         else:
             fields[key] = unsure("none", "not read (no card era)")
@@ -392,6 +402,8 @@ def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict
     for key, field in other.items():
         mine = out.get(key)
         if not is_sure(field):
+            if fill and contrary(key, mine, field):
+                out[key] = unsure(mine["method"], f"a picture of this look reads otherwise ({how})", mine["value"])
             continue
         if is_sure(mine):
             if differs(key, field["value"], mine["value"]):
@@ -409,6 +421,19 @@ def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict
         else:
             out[key] = {**field, "method": f"{field['method']} ({how})"}
     return out
+
+
+def contrary(key: str, mine: Optional[dict], other: Optional[dict]) -> bool:
+    """A repost's own unsure read of stars or stats says otherwise than the look's sure value, read by a reader (an
+    eye or PSD value stands): the rows both read differ."""
+    if key not in ("stars", "stats") or not is_sure(mine) or str(mine["method"]).startswith(BACKED) or \
+            not other or other.get("proposed") is None:
+        return False
+    a, b = mine["value"], other["proposed"]
+    if key == "stats":
+        return isinstance(a, dict) and isinstance(b, dict) and any(
+            isinstance(a.get(k), int) and isinstance(b.get(k), int) and a[k] != b[k] for k in STATS)
+    return a != b
 
 
 def conflict(a: dict, b: dict) -> bool:
@@ -437,9 +462,64 @@ def near_look(a: dict, b: dict) -> bool:
     return bits <= MERGE_BITS and a["marks"] == b["marks"]
 
 
-def same_look(a: dict, b: dict) -> bool:
-    """Two drafts of a card show one look: near_look, the same words (same_words) and no sure read differs."""
-    return near_look(a, b) and same_words(a, b) and not conflict(a["fields"], b["fields"])
+def mark_counts(lines) -> Optional[Counter]:
+    """discord_verdicts.read_marks counted (a multiset): a number swapped for one printed elsewhere on the card
+    (5/7/6/6 -> 5/7/7/6) tells two looks apart; None when too little text is read."""
+    if read_marks(lines) is None:
+        return None
+    raw = " ".join(line if isinstance(line, str) else line[0] for line in lines or []
+                   if isinstance(line, str) or line[1] >= 0.3)
+    found = Counter("t:" + next(g for g in m.groups() if g).lower().translate(dm.CONFUSABLE) for m in TAG.finditer(raw))
+    found.update(f"n:{sub(r'^0+(?=[0-9])', '', n.replace(',', '.'))}:{w}" for n, w in NUMBER.findall(dm.fold(raw)))
+    return found
+
+
+@lru_cache(maxsize=2048)
+def grey_card(root: str, file: str, box: Optional[tuple]):
+    """A picture (its sheet cell's box) in grey at LOCAL_W wide, None when it can't be read."""
+    import numpy as np
+    from PIL import Image
+    try:
+        with Image.open(join(root, file)) as img:
+            img = img.convert("L")
+            if box:
+                w, h = img.size
+                img = img.crop((int(box[0] * w), int(box[1] * h), int(box[2] * w), int(box[3] * h)))
+            if img.width < 8 or img.height < 8:
+                return None
+            return np.asarray(img.resize((LOCAL_W, max(1, round(LOCAL_W * img.height / img.width))),
+                                         Image.BILINEAR), dtype=np.float32)
+    except OSError:
+        return None
+
+
+def edited_cells(root: str, a: dict, b: dict) -> list:
+    """Two pictures alike but for one area (an icon added, stars, a bar, a digit, a word): the grid cells far apart
+    (LOCAL_EDIT, and LOCAL_RATIO times the pair's 90th percentile cell), what the whole-card hash averages away, as
+    [x0, y0, x1, y1] shares of the card. Pictures of other shapes or crops can't tell ([])."""
+    import numpy as np
+    x = grey_card(root, a["file"], tuple(a["box"]) if a.get("box") else None)
+    y = grey_card(root, b["file"], tuple(b["box"]) if b.get("box") else None)
+    if x is None or y is None or x.shape != y.shape:
+        return []
+    d = np.abs(x - y)
+    h, w = (d.shape[0] // LOCAL_CELL) * LOCAL_CELL, (d.shape[1] // LOCAL_CELL) * LOCAL_CELL
+    if not h or not w:
+        return []
+    cells = d[:h, :w].reshape(h // LOCAL_CELL, LOCAL_CELL, w // LOCAL_CELL, LOCAL_CELL).mean(axis=(1, 3))
+    bar = max(LOCAL_EDIT, LOCAL_RATIO * max(float(np.percentile(cells, 90)), LOCAL_FLOOR))
+    H, W = d.shape
+    return [[j * LOCAL_CELL / W, i * LOCAL_CELL / H, (j + 1) * LOCAL_CELL / W, (i + 1) * LOCAL_CELL / H]
+            for i, j in zip(*np.nonzero(cells >= bar))]
+
+
+def formatting_edit(cells: list, mine: list, theirs: list) -> bool:
+    """Every edited cell lies on OCR'd lines (boxes: x, y, w, h shares) that say the same words on both pictures
+    (text_key: case, punctuation, spacing aside): a formatting change, one look (owner 11-09)."""
+    def on(lines, c):
+        return {text_key(l[0]) for l in lines if l[2] < c[2] and c[0] < l[2] + l[4] and l[3] < c[3] and
+                c[1] < l[3] + l[5]}
+    return bool(cells) and all(on(mine, c) and on(mine, c) == on(theirs, c) for c in cells)
 
 
 @lru_cache(maxsize=1)
@@ -493,11 +573,29 @@ class Chain:
         self.review_of = {(item.get("row"), item.get("field")): item["id"] for item in inputs.old_review
                           if item.get("row") and item.get("field")}
         self.splits = {g["id"]: g for g in inputs.lost if g.get("split_of")}
+        self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
         for row in sorted((r for r in inputs.verdicts if r.get("first") and r["verdict"] == "unsure"),
                           key=lambda r: r["first"]["date"]):
             for cid in row.get("maybe") or []:
                 self.maybe.setdefault(cid, row)
+
+    def ocr_lines(self, sha: str) -> list:
+        """A picture's OCR'd lines with their boxes (the text readers' whole-card read), read once when first asked."""
+        if self._ocr is None:
+            self._ocr = {r["id"][2:]: r.get("fix") or [] for r in dm.read_jsonl(join(self.inputs.root, *TEXT_OCR))
+                         if str(r.get("id", "")).startswith("d:")}
+        return self._ocr.get(sha) or []
+
+    def local_edit(self, a: dict, b: dict) -> bool:
+        """Two pictures alike but for one edited area that isn't formatting alone (edited_cells, formatting_edit;
+        a sheet's cell has no lines of its own)."""
+        cells = edited_cells(self.inputs.root, a, b)
+        if not cells:
+            return False
+        if a.get("cell") or b.get("cell"):
+            return True
+        return not formatting_edit(cells, self.ocr_lines(a["sha256"]), self.ocr_lines(b["sha256"]))
 
     def add_review(self, kind: str, key: str, **item) -> str:
         rid = review_id(kind, key)
@@ -635,13 +733,13 @@ class Chain:
         lines = picture_lines(self.inputs, row)
         ability = (self.inputs.text.get(row["file"]) or {}).get("ability") or {} if not row.get("cell") else {}
         return {"row": row, "fields": fields, "git": git, "when": dm.epoch((row.get("first") or {}).get("date")),
-                "marks": read_marks(lines), "words": ocr_words(lines),
+                "marks": mark_counts(lines), "words": ocr_words(lines),
                 "ability_words": set(findall(r"[a-z]+", str(ability.get("value") or "").lower()))}
 
     def looks(self, cid: str, rows: list) -> list:
-        """Pictures grouped into looks, oldest first: one git look each, a card's paper photos one; drafts by
-        same_look, each into its nearest group (the hash to its first picture) whose every picture prints the same
-        words."""
+        """Pictures grouped into looks, oldest first: one git look each, a card's paper photos one; a draft into its
+        nearest group (the hash to its first picture) near_look and without a conflict, whose every picture prints the
+        same words (same_words) with no local edit (Chain.local_edit)."""
         groups = []
         pictures = sorted((self.picture(cid, r) for r in rows),
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))
@@ -655,9 +753,12 @@ class Chain:
                 near = [g for g in groups if g["key"] is None and g.get("as") == row.get("as")
                         and near_look(g["pictures"][0], pic) and not conflict(g["pictures"][0]["fields"], pic["fields"])
                         and not conflict(g["fields"], pic["fields"])]
-                fits = [g for g in near if all(same_words(q, pic) for q in g["pictures"])]
-                if near and not fits:
+                worded = [g for g in near if all(same_words(q, pic) for q in g["pictures"])]
+                fits = [g for g in worded if not any(self.local_edit(q["row"], row) for q in g["pictures"])]
+                if near and not worded:
                     self.tally["discord: a near look kept apart (its words differ)"] += 1
+                elif worded and not fits:
+                    self.tally["discord: a near look kept apart (a local edit)"] += 1
                 home = min(fits, key=lambda g: dm.hash_distance(g["pictures"][0]["row"]["whole"], row["whole"]),
                            default=None)
             if home is None:
@@ -814,6 +915,51 @@ class Chain:
             out.append(entry)
         return out
 
+    def star_guard(self, entries: list) -> None:
+        """Icon-read star counts that change with nothing to back them go to review. The versions' sure stars in runs
+        of one value; a run is backed by a read no icon reader made (BACKED, an old repo row), by reads apart (two
+        template eras, or APART_DAYS), or by a sure changelog fact giving its value since the run before. An
+        unbacked run between two others (a blip), at an end beside a backed run, or last after an unbacked run (the
+        change's new value, nothing after agrees) goes to review; again until none is left."""
+        versions = [e for e in entries if e["kind"] in ("discord", "old repo") and is_sure(e["fields"].get("stars"))]
+        facts = [e for e in entries if e["kind"] == "text" and e["change"].get("field") == "stars" and
+                 "to" in e["change"]]
+        out = set()
+
+        def backed(runs: list, i: int) -> bool:
+            run, value = runs[i], runs[i][0]["fields"]["stars"]["value"]
+            if any(e["kind"] != "discord" or str(e["fields"]["stars"]["method"]).startswith(BACKED) for e in run):
+                return True
+            when = [dm.epoch(e["date"]) for e in run]
+            if len({e.get("era") for e in run if e.get("era")}) > 1 or when[-1] - when[0] >= APART_DAYS * 86400:
+                return True
+            since = dm.epoch(runs[i - 1][-1]["date"]) if i else float("-inf")
+            return any(since <= dm.epoch(f["date"]) <= when[-1] and f["change"]["to"] == value for f in facts)
+        while True:
+            runs = []
+            for e in versions:
+                if e["id"] in out:
+                    continue
+                if runs and runs[-1][-1]["fields"]["stars"]["value"] == e["fields"]["stars"]["value"]:
+                    runs[-1].append(e)
+                else:
+                    runs.append([e])
+            if len(runs) < 2:
+                break
+            ok, last = [backed(runs, i) for i in range(len(runs))], len(runs) - 1
+            pick = [r for i, r in enumerate(runs) if 0 < i < last and not ok[i]] or \
+                [r for i, r in enumerate(runs) if i in (0, last) and not ok[i] and ok[1 if i == 0 else i - 1]] or \
+                ([runs[last]] if not ok[last] and not ok[last - 1] else [])
+            if not pick:
+                break
+            out |= {e["id"] for r in pick for e in r}
+        for e in versions:
+            if e["id"] in out:
+                f = e["fields"]["stars"]
+                e["fields"]["stars"] = unsure(f["method"], "an icon read change no other read backs (the versions "
+                                              "around it say otherwise)", f["value"], f.get("conf"))
+                self.tally["discord: stars, an icon read change nothing backs (review)"] += 1
+
     def check_facts(self, cid: str, entries: list) -> list:
         """A stat or stars fact whose next picture (within NEAR_DAYS, before the next fact on that field) reads
         another value goes to review; one it agrees with is confirmed by it."""
@@ -894,6 +1040,7 @@ class Chain:
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
                                     {"paper": 0, "discord": 1, "text": 2, "first repo": 3, "old repo": 4}[e["kind"]],
                                     e["id"]))
+        self.star_guard(entries)
         entries = self.check_facts(cid, entries)
         self.diff(entries)
         self.field_reviews(cid, entries)

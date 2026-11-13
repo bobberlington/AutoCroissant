@@ -13,6 +13,8 @@ makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (mac
     python timeline_text.py calibrate      calibration.json (per era per field: bar, n, accuracy at the bar, share
                                            above it) and reads.jsonl (each read with method, confidence, sure)
     python timeline_text.py stars [-j N]   the stars read again (stars.jsonl; calibrate takes them over raw.jsonl's)
+    python timeline_text.py edges [-j N]   the star reads' doubts (edges.jsonl: the title's words, a star cut by the
+                                           right edge; calibrate never takes such a count, nor shurikens, as sure)
     python timeline_text.py types [-j N]   the title and the types read again, every bank type's places kept
                                            (types.jsonl; calibrate takes them over raw.jsonl's)
     python timeline_text.py abilities [-j N]   the abilities in raw.jsonl read again from the stored OCR (in place)
@@ -59,6 +61,9 @@ TYPE_SIZES = [0.05 * 1.13 ** k for k in range(12)]     # type icon width / card 
 MIN_STAR = 0.04                                  # a star at least this share of the card's width
 COPY_FLOOR, MAX_COPIES = 0.2, 12                 # star copies kept: correlation at least this, at most this many
 KNOWN_STARS_ONLY = ("A", "C")                    # eras whose star counts are sure only when a known count agrees
+SHURIKENS = ("ninja star",)                      # stars turned and staggered over the art (PoD): copies miss them
+EDGE_FROM, EDGE_SEEN = 0.3, 0.5                  # a star cut by the right edge: this share shows; copies this alike seen
+LETTER_SIZE = 0.6                                # a copy under this share of a title word's height inside it: a letter
 NMS_STAR, NMS_TYPE = 0.45, 0.6                   # peaks nearer than this share of the icon are one
 INLINE_FLOOR = 0.6                               # an icon inside the ability's lines
 CLASS_Y = 0.96                                   # a creature's class line sits under this (share of height)
@@ -907,9 +912,7 @@ def read_stars(a, band_h, title_box):
     import cv2
     import numpy as np
     H, W = a.shape[:2]
-    x_from = int(W * 0.45)
-    if title_box:
-        x_from = max(int(W * 0.3), min(x_from, int(title_box[2] * W) - int(0.03 * W)))
+    x_from = star_x_from(W, title_box)
     region = a[:max(8, int(band_h * H)), x_from:].astype(np.float32)
     if region.shape[1] < 16:
         return {"icon": None}
@@ -944,6 +947,97 @@ def read_stars(a, band_h, title_box):
         copies.append([round(c, 3), round(diff, 1), px, py])
     return {"icon": name, "bank": round(v, 3), "ncc": round(ncc, 3), "mad": round(mad, 1),
             "size": round(side / W, 3), "copies": copies}
+
+
+def star_x_from(W, title_box):
+    """Where read_stars' region starts (px): right of the title, a little into its end."""
+    x_from = int(W * 0.45)
+    if title_box:
+        x_from = max(int(W * 0.3), min(x_from, int(title_box[2] * W) - int(0.03 * W)))
+    return x_from
+
+
+def title_words(rec, title, W, H, shp):
+    """The title's words of 3+ letters as boxes on the work image (px): a star copy inside one is maybe a letter."""
+    bh = BAND[shp] * H
+    return [[round(w[1] * W, 1), round(w[2] * bh, 1), round((w[1] + w[3]) * W, 1), round((w[2] + w[4]) * bh, 1)]
+            for l in rec.get("band") or [] if title["text"] and l[0].strip() and l[0].strip() in title["text"]
+            for w in (l[6] if len(l) > 6 else []) if len(re.findall(r"[A-Za-z]", w[0])) >= 3]
+
+
+def read_edge(a, st, band_h, x_from):
+    """Stars running off the right edge: read_stars' template (at its own first copy), turned in 10 degree steps, its
+    left part (EDGE_FROM of it or more) matched against the region's last columns at each copy's row, away from the
+    copies seen (>= EDGE_SEEN). [[ncc, colour difference, share shown, y, x], ...] best first, one per row."""
+    import cv2
+    import numpy as np
+    copies = (st or {}).get("copies") or []
+    if not copies or copies[0][0] < 0.999:
+        return []
+    H, W = a.shape[:2]
+    region = a[:max(8, int(band_h * H)), x_from:].astype(np.float32)
+    g = gray(region)
+    side = int(round(st["size"] * W))
+    x0, y0 = copies[0][2], copies[0][3]
+    templ, colour = g[y0:y0 + side, x0:x0 + side], region[y0:y0 + side, x0:x0 + side]
+    if side < 6 or templ.shape != (side, side):
+        return []
+    _, circle = rotated(templ, 0)
+    inside = circle > 0
+    ref = colour[inside].mean(0)
+    turns = [rotated(templ, angle) for angle in range(0, 90, 10)]
+    wr, hr = g.shape[1], g.shape[0]
+    seen = [c for c in copies if c[0] >= EDGE_SEEN]
+    rows, out = [], []
+    for c in copies:
+        if all(abs(c[3] - y) > side / 2 for y in rows):
+            rows.append(c[3])
+    for y in rows:
+        lo, hi = max(0, y - 2), min(hr - side, y + 2)
+        if hi < lo:
+            continue
+        best = None
+        for v in range(int(np.ceil(EDGE_FROM * side)), side):
+            x = wr - v
+            if x < 0 or any(abs(s[2] - x) < side / 2 and abs(s[3] - y) < side / 2 for s in seen):
+                continue
+            strip = np.ascontiguousarray(g[lo:hi + side, x:wr])
+            for t, m in turns:
+                tp, mp = np.ascontiguousarray(t[:, :v]), np.ascontiguousarray(m[:, :v])
+                if tp.std() < 1 or not mp.any():
+                    continue
+                r = np.nan_to_num(cv2.matchTemplate(strip, tp, cv2.TM_CCOEFF_NORMED, mask=mp), nan=0.0, posinf=0.0,
+                                  neginf=0.0)
+                k = int(r.argmax())
+                if best is None or r.flat[k] > best[0]:
+                    yy = lo + k // r.shape[1]
+                    patch = region[yy:yy + side, x:wr]
+                    diff = float(np.abs(patch[inside[:, :v]].mean(0) - ref).mean())
+                    best = (float(r.flat[k]), diff, v / side, yy, x)
+        if best:
+            out.append([round(best[0], 3), round(best[1], 1), round(best[2], 2), best[3], best[4]])
+    return sorted(out, key=lambda e: -e[0])
+
+
+def star_doubt(rd, rule):
+    """Why an icon star count can't be sure: SHURIKENS (turned and staggered over the art: the copies aren't the
+    stars), a counted copy on a title letter (an 'o' taken for a star), or a star cut by the picture's right edge in
+    a counted copy's row (one more may print). None: no doubt."""
+    st = rd.get("stars") or {}
+    if st.get("icon") in SHURIKENS:
+        return "shuriken stars"
+    geo = rd.get("star_edge") or {}
+    side = (st.get("size") or 0) * WORK_W
+    good = [c for c in st.get("copies") or [] if c[0] >= rule["ncc"] and c[1] <= rule["mad"]]
+    x_from = geo.get("x_from") or 0
+    for x0, y0, x1, y1 in geo.get("words") or []:
+        if side < LETTER_SIZE * (y1 - y0) and any(x0 - 1 <= x_from + c[2] and x_from + c[2] + side <= x1 + 1 and
+                                                  y0 - 1 <= c[3] and c[3] + side <= y1 + 1 for c in good):
+            return "a title letter counted"
+    for ncc, mad, shown, y, x in geo.get("edge") or []:
+        if ncc >= rule["ncc"] and mad <= rule["mad"] and any(abs(c[3] - y) <= side / 2 for c in good):
+            return "a star cut by the edge"
+    return None
 
 
 def read_star_blobs(a, title_box, band=0.11):
@@ -1201,6 +1295,35 @@ def star_task(args):
         shp = rec.get("shape") or shape(W0, H0)
         tb = title_box(rec, read_title(rec.get("band")), BAND[shp])
         return {"id": item["id"], "stars": read_stars(work, STAR_BAND[shp], tb), "star_blobs": read_star_blobs(work, tb)}
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+_STARS = None
+
+
+def edge_task(args):
+    """The star read's doubts (edges.jsonl; calibrate takes them): read_stars' region start, the title's words and a
+    star cut by the right edge (read_edge), from stars.jsonl's read of the same picture."""
+    import cv2
+    import numpy as np
+    global _STARS
+    item, rec = args
+    try:
+        if _STARS is None:
+            _STARS = {r["id"]: r.get("stars") for r in jsonl(join(OUT, "stars.jsonl")) if not r.get("error")}
+        st = _STARS.get(item["id"]) or {}
+        if not st.get("icon"):
+            return {"id": item["id"], "edge": []}
+        img = load(item)
+        a = np.asarray(img.convert("RGB"))
+        W0, H0 = img.size
+        work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
+        shp = rec.get("shape") or shape(W0, H0)
+        title = read_title(rec.get("band"))
+        x_from = star_x_from(WORK_W, title_box(rec, title, BAND[shp]))
+        return {"id": item["id"], "x_from": x_from, "words": title_words(rec, title, WORK_W, work.shape[0], shp),
+                "edge": read_edge(work, st, STAR_BAND[shp], x_from)}
     except Exception as e:
         return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
@@ -1653,6 +1776,9 @@ def calibrate():
     for r in jsonl(join(OUT, "stars.jsonl")):
         if r["id"] in raw and not r.get("error"):
             raw[r["id"]].update(stars=r["stars"], star_blobs=r.get("star_blobs"))
+    for r in jsonl(join(OUT, "edges.jsonl")):
+        if r["id"] in raw and not r.get("error"):
+            raw[r["id"]]["star_edge"] = r
     for r in jsonl(join(OUT, "types.jsonl")):
         if r["id"] in raw and not r.get("error"):
             raw[r["id"]]["title"] = r["title"]
@@ -1820,7 +1946,11 @@ def calibrate():
             sure = bool(bar is not None and val is not None and conf >= bar and not why)
             if not card and not sure and field in ("title", "ability") and method in ("ocr", "ocr+icons"):
                 val = None              # OCR of a picture no era confirms (screenshots): never kept
-            row[field] = {"value": val, "method": method, "conf": conf, "sure": sure}
+            doubt = star_doubt(rd, how.get("rule") or STAR_RULES[0]) if field == "stars" and val is not None and \
+                not (how.get("rule") or {}).get("kind") else None
+            row[field] = {"value": val, "method": method, "conf": conf, "sure": sure and not doubt}
+            if doubt:
+                row[field]["doubt"] = doubt     # never sure (the bars stay as fitted)
             if field == "title" and card and rd.get("title", {}).get("text"):
                 row[field]["ocr"] = rd["title"]["text"]
             if field == "title" and rd.get("title", {}).get("clash"):
@@ -1845,7 +1975,8 @@ def calibrate():
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "types", "abilities", "truth", "calibrate"))
+    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "edges", "types", "abilities", "truth",
+                                     "calibrate"))
     ap.add_argument("-j", "--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
     a = ap.parse_args(argv)
@@ -1860,6 +1991,8 @@ def main(argv):
         run_reads(which, a.workers)
     elif a.step == "stars":
         run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
+    elif a.step == "edges":
+        run_reads(which, a.workers, join(OUT, "edges.jsonl"), task=edge_task)
     elif a.step == "types":
         run_reads(which, a.workers, join(OUT, "types.jsonl"), task=types_task)
     elif a.step == "abilities":

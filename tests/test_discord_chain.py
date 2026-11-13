@@ -1,6 +1,6 @@
 """discord_chain on made-up cards: the buff/nerf rule and ability changes, which pictures enter a timeline, reposts
-merged (nearest look, same words, no fill a picture didn't read), facts checked by pictures, first-repo rows, splits,
-paper cards and Created against the file."""
+merged (nearest look, same words, same numbers counted, no local edit, no fill a picture didn't read), icon star
+changes nothing backs, facts checked by pictures, first-repo rows, splits, paper cards and Created against the file."""
 from collections import defaultdict
 from types import SimpleNamespace
 
@@ -43,7 +43,7 @@ def picture(n, when, verdict="draft", whole=H, card="bolt", **extra):
 
 
 def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, lost=(), old_review=(), images=None,
-           first_repo=(), paper_eye=None):
+           first_repo=(), paper_eye=None, root="/nonexistent"):
     cards = {"bolt": {"key": "Bolt", "name": "Bolt", "type": "creature", "fs": T + 100 * DAY, "fs_from": "old git"},
              "pike": {"key": "Pike", "name": "Pike", "type": "creature", "fs": T + 100 * DAY, "fs_from": "old git"},
              "lorn": {"key": "Lorn", "name": "Lorn", "type": "minion", "fs": T + 300 * DAY, "fs_from": "git"}}
@@ -54,7 +54,7 @@ def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, 
     rows = defaultdict(list)
     for row in old_rows:
         rows[row["card"]].append(row)
-    return SimpleNamespace(cards=cards, by_key={c["key"]: k for k, c in cards.items()}, versions=versions,
+    return SimpleNamespace(root=str(root), cards=cards, by_key={c["key"]: k for k, c in cards.items()}, versions=versions,
                            images=images or {}, verdicts=verdicts, lost=list(lost), text=text or {}, text_truth={},
                            bars=bars or {}, old_rows=rows, old_review=list(old_review), facts=list(facts),
                            switches={"first_repo_rows": True}, first_repo=list(first_repo),
@@ -181,3 +181,56 @@ def test_created_against_the_file_and_splits():
     assert made["bolt"]["status"] == "hand" and made["bolt"]["date"] == "2001-01-01"
     row = next(e for e in lorn["entries"] if e["kind"] == "old repo")                      # its own review item
     assert chain.review[row["fields"]["stats"]["review"]]["proposed"] == {"hp": 3, "def": 2, "atk": 3, "spd": 4}
+
+
+def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
+    """A swapped number counts (5/7/6/6 -> 5/7/7/6); a picture alike but for one area (an icon added) is its own
+    look; an icon-read star count changing with nothing to back it goes to review; a repost's own contrary read
+    takes a reader's sure stars to review."""
+    import numpy as np
+    from PIL import Image
+    a, b = ["Mettaton X form (5/7/6/6) for two turns"], ["Mettaton X form (5/7/7/6) for two turns"]
+    assert dc.read_marks(a) == dc.read_marks(b) and dc.mark_counts(a) != dc.mark_counts(b)
+    (tmp_path / "attachments").mkdir()
+    base = np.tile(np.linspace(40, 200, 400, dtype=np.float32), (800, 1))
+    edit, noisy, cased = base.copy(), base + np.random.RandomState(1).uniform(-3, 3, base.shape), base.copy()
+    edit[20:60, 20:60] = 0                                                             # an icon added
+    cased[400:420, 100:130] = 0                                                        # 'deal' -> 'Deal'
+    for n, img in ((1, base), (2, base), (3, edit), (4, noisy), (5, cased)):
+        Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(tmp_path / f"attachments/{n}.png")
+    row = lambda n: {"file": f"attachments/{n}.png"}
+    assert dc.edited_cells(str(tmp_path), row(1), row(3))
+    assert not dc.edited_cells(str(tmp_path), row(1), row(2)) and not dc.edited_cells(str(tmp_path), row(1), row(4))
+    ocr = lambda n, text: dc.dumps({"id": f"d:{n:064d}", "fix": [["Bolt", 1, 0.3, 0.02, 0.4, 0.05, []],
+                                                                 [text, 1, 0.2, 0.49, 0.6, 0.04, []]]})
+    (tmp_path / "derived" / "readers" / "text").mkdir(parents=True)
+    (tmp_path / "derived" / "readers" / "text" / "ocr.jsonl").write_text(
+        "\n".join(ocr(n, "deal two damage.") for n in (1, 2, 3)) + "\n" + ocr(5, "Deal two damage!") + "\n")
+    lines = ["Bolt", "Deal two damage to a creature."]
+    images = {f"{n:064d}": {"lines": lines} for n in (1, 2, 3, 5)}
+    chain = dc.Chain(inputs([picture(1, T), picture(2, T + DAY), picture(3, T + 2 * DAY), picture(5, T + 3 * DAY)],
+                            images=images, root=tmp_path))
+    found, _ = chain.discord_rows()
+    entries = [e for e in chain.card("bolt", found["bolt"], [])["entries"] if e["kind"] == "discord"]
+    assert [[p["id"] for p in e["pictures"]] for e in entries] == [["P-000000000001", "P-000000000002",
+                                                                    "P-000000000005"], ["P-000000000003"]]
+    assert chain.tally["discord: a near look kept apart (a local edit)"] == 1          # formatting alone: one look
+
+    def version(n, when, stars, how="icon+known", kind="discord", era="D2"):
+        return {"id": f"E{n}", "kind": kind, "date": iso(T + when * DAY), "era": era,
+                "fields": {"stars": dc.sure(stars, how)}}
+    fact = {"id": "F1", "kind": "text", "date": iso(T + 45 * DAY), "change": {"field": "stars", "to": 4}}
+    cases = [([version(1, 0, 5), version(2, 40, 5), version(3, 50, 1), version(4, 100, 5, "psd", "old repo")], {"E3"}),
+             ([version(1, 0, 2), version(2, 100, 3, "psd", "old repo")], {"E1"}),        # an edge-cut star
+             ([version(1, 0, 2, "eye"), version(2, 100, 3, "psd", "old repo")], set()),  # eye backs it
+             ([version(1, 0, 5), version(2, 40, 5), version(3, 50, 4), fact, version(4, 100, 5, "psd", "old repo")],
+              set()),                                                                    # a changelog fact backs it
+             ([version(1, 0, 3), version(2, 5, 4)], {"E2"})]                             # nothing after agrees
+    for entries, held in cases:
+        chain.star_guard(entries)
+        assert {e["id"] for e in entries if e["kind"] != "text" and not dc.is_sure(e["fields"]["stars"])} == held
+    mine = {"stars": dc.sure(2, "icon+known")}
+    other = {"stars": dc.unsure("icon", "read under its bar", 4)}
+    assert dc.merge_fields(mine, other, "repost P-1")["stars"]["confidence"] == "review"
+    assert dc.is_sure(dc.merge_fields({"stars": dc.sure(2, "eye")}, other, "repost P-1")["stars"])
+    assert dc.is_sure(dc.merge_fields(mine, other, "the picture", fill=False)["stars"])
