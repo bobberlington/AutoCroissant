@@ -30,9 +30,13 @@ the card's Image versions on the website before the git versions. Cards that nev
    production bot on the same token, resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:
    check free disk first.
-2. **Match** (`commands/discord_match.py`, same commit): each picture to a card by perceptual hashes of the card and its art
-   against every git version, OCR'd title (macOS Vision), OCR'd text against the ability, file name, chat text and aliases; sheets
-   cut into cells. New: a match against no live card starts a lost card (grouped by title and art).
+2. **Match** (`commands/discord_match.py`, restored 2026-11-13): each picture to a card by perceptual hashes of the card and
+   its art against every version (`refs`: today's cards from the data branch, every git version of their PNGs in
+   TTSCardMaker's history and the old pre-wipe repo's versions from `derived/oldgit`, else TTSCardMaker's alone), OCR'd title
+   (macOS Vision), OCR'd text against the ability, file name, chat text and aliases; sheets cut into cells. Each card's chain
+   stops at its first git record (the old repo's, else TTSCardMaker's). The morgue channels (meme, joke and scrapped cards)
+   feed lost-card candidates (`lost.json`), never live cards, as do card-shaped posts naming no card. Outputs under the
+   archive's `derived/matcher/`.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
