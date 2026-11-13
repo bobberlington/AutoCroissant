@@ -3409,22 +3409,32 @@ def _toggle_row(row: TemplateRow, target: Optional[int]) -> tuple:
 def _comp_states(layer, order: list) -> dict:
     """
     {comp ID: {setting key: value}} of one embedded layer: its layer comp settings (cmls) list each comp in order with
-    only what changed since the comp before (a comp's missing keys carry over), "enab" its eye, imageMask/vectorMask
-    their offsets; an ID no entry lists (lastAppliedComp unset: -1) gets the trailing entry's, the document's own.
+    only what changed since the comp before (a comp's missing keys carry over, blendOptions' too), "enab" its eye,
+    "Ofst" its place, imageMask/vectorMask their offsets; an ID no entry lists (lastAppliedComp unset: -1) gets the
+    trailing entry's, the document's own.
     """
     settings = next((item.data for item in layer.tagged_blocks.get_data(Tag.METADATA_SETTING) or []
                      if item.key == b"cmls"), None)
     state, out = {}, {}
     for setting in (settings or {}).get(b"layerSettings") or []:
-        state = {**state, **{key: value for key, value in setting.items() if key != b"compList"}}
+        change = {key: value for key, value in setting.items() if key != b"compList"}
+        if b"blendOptions" in change:           # lists only the options changed (Puzzled Cat's Speed)
+            change[b"blendOptions"] = {**(state.get(b"blendOptions") or {}), **change[b"blendOptions"]}
+        state = {**state, **change}
         for cid in setting.get(b"compList") or []:
             out[int(cid)] = state
     return {cid: out.get(cid, state) for cid in order}
 
 
-def _offset(state: dict, key: bytes) -> tuple:
-    off = (state.get(key) or {}).get(b"Ofst") or {}
+def _offset(state: dict, key: Optional[bytes] = None) -> tuple:
+    """A comp state's offset: the layer's own place (key None), else its imageMask's or vectorMask's."""
+    off = (state if key is None else state.get(key) or {}).get(b"Ofst") or {}
     return int(off.get(b"Hrzn", 0)), int(off.get(b"Vrtc", 0))
+
+
+def _percent(value) -> float:
+    """A comp state's opacity (blendOptions Opct); unlisted is 100: cmls list only what is off the defaults."""
+    return 100.0 if value is None else float(getattr(value, "value", value))
 
 
 def hard_edged(rgba: np.ndarray) -> bool:
@@ -3548,6 +3558,10 @@ def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = Tru
             refuse(f"its bar holds a {inner.kind} layer {inner.name!r} the bake cannot draw")
         if _offset(now, b"vectorMask") != _offset(then, b"vectorMask"):
             refuse("a comp moves its vector mask")
+        if _offset(now) != _offset(then):       # comp_document draws these (no flat bar has one: allbars census)
+            refuse(f"a comp moves {inner.name!r}")
+        if any(now.get(key) != then.get(key) for key in COMP_LOOKS):
+            refuse(f"a layer comp changes the look of {inner.name!r}")
         if inner.kind == "shape":
             cover = np.asarray(draw_vector_mask(inner, (0, 0, width, height)), np.float32).reshape(height, width)
             cover = cover / 255.0 if cover.max() > 1.0 else cover
@@ -3644,15 +3658,17 @@ def _comp_off(layer, mode: Optional[int]) -> float:
 def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: int) -> tuple:
     """
     comp_render's second path: the comp applied to every layer of the bar's embedded document at any depth, as
-    Photoshop applies it (only what its capturedInfo holds), and the document composited by psd-tools: its pixel masks
-    moved by the comp's offset less the saved state's (the last applied comp's, else the cmls' trailing entry's), its
-    eyes set when it captures visibility. Equal to Photoshop's renders at every comp of the Isaac bars (knockout groups,
-    Transparency Shapes Layer off, nested smart objects; custombars 2026-11-11).
+    Photoshop applies it (only what its capturedInfo holds), and the document composited by psd-tools: its pixel and
+    smart object layers and pixel masks moved by the comp's offset less the saved state's (the last applied comp's,
+    else the cmls' trailing entry's; a group's own offset is left to its layers, each lists it too), its opacities set,
+    its eyes set when it captures visibility. Equal to Photoshop's renders at every comp of the Isaac bars (knockout
+    groups, Transparency Shapes Layer off, nested smart objects; custombars 2026-11-11), Ze'mer's moving flowers and
+    Puzzled Cat's Speed opacity (allbars 2026-11-12).
 
     Returns:
         (straight RGB, alpha) float32 at the document's size; Refused for another colour profile or mode, a layer
-        the installed fork cannot draw (undrawable: knockout before cards-20261112), a comp that moves a vector mask
-        or a layer, changes a look, or captures what is not read
+        the installed fork cannot draw (undrawable: knockout before cards-20261112), a comp that moves a vector mask,
+        a masked layer or another kind of layer, changes another look, or captures what is not read
     """
     def refuse(why: str):
         raise Refused("unsupported-card", f"{layer.name!r}: {why}: set it in Photoshop")
@@ -3668,13 +3684,21 @@ def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: int) -> tu
     for inner in doc.descendants():
         states = _comp_states(inner, [want, last])
         now, then = states[want], states[last]
-        if captured & COMP_LOOK and any(now.get(key) != then.get(key) for key in COMP_LOOKS):
-            refuse(f"a layer comp changes the look of {inner.name!r}")
+        if captured & COMP_LOOK:
+            blend, was = (dict(state.get(b"blendOptions") or {}) for state in (now, then))
+            opacity, before = (_percent(options.pop(b"Opct", None)) for options in (blend, was))
+            if blend != was or any(now.get(key) != then.get(key) for key in COMP_LOOKS if key != b"blendOptions"):
+                refuse(f"a layer comp changes the look of {inner.name!r}")
+            if opacity != before:
+                inner.opacity = round(opacity * 2.55)
         if captured & COMP_PLACED:
             if _offset(now, b"vectorMask") != _offset(then, b"vectorMask"):
                 refuse("a comp moves its vector mask")
-            if (now.get(b"Ofst") or {}) != (then.get(b"Ofst") or {}):
-                refuse(f"a comp moves {inner.name!r}")
+            dx, dy = (a - b for a, b in zip(_offset(now), _offset(then)))
+            if (dx or dy) and not inner.is_group():         # a group's own Ofst: each of its layers lists it too
+                if inner.kind not in ("pixel", "smartobject") or inner.has_mask():
+                    refuse(f"a comp moves {inner.name!r}")
+                inner.offset = (inner.left + dx, inner.top + dy)
             dx, dy = (a - b for a, b in zip(_offset(now, b"imageMask"), _offset(then, b"imageMask")))
             if (dx or dy) and inner.has_mask():
                 try:

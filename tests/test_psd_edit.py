@@ -572,6 +572,33 @@ def test_bars_with_no_comp_applied_last(clone, parser, tmp_path):
             pe.comp_render(layer, 3)
 
 
+ZEMER = ("a2d3064be84eebb4b9dc4cbf6cf5090ea1d5a48f", "Creatures/Hollow Knight/5 Stars/Ze'mer.psd")
+
+
+def test_comps_move_layers_and_set_opacity(clone):
+    """comp_document applies a comp's moves and opacity as Photoshop 2023 does (its layer states after each comp,
+    allbars 2026-11-12): Ze'mer's flowers move (alpha as stored at every shown comp); Puzzled Cat's Speed comp 10
+    lists no opacity for 'Group 1 copy' (100%), comp 9 lists 33%."""
+    from psd_tools.constants import Resource
+
+    def alpha(rgba, where, box):
+        out = np.zeros((box[3] - box[1], box[2] - box[0]), np.float32)
+        out[where[1] - box[1]:where[3] - box[1], where[0] - box[0]:where[2] - box[0]] = rgba[..., 3]
+        return out * 255
+    for layer, value, box in (bars[0] for bars in comp_bars(PSDImage.open(BytesIO(at_rev(clone, *ZEMER)))).values()):
+        drawn = alpha(*pe.comp_render(layer, value, check=False), box)
+        assert np.abs(drawn - alpha(layer.numpy(), layer.bbox, box)).max() <= 2, layer.name
+    psd = PSDImage.open(BytesIO(at_rev(clone, NO_COMP_APPLIED, "Creatures/Other/3 Stars/Puzzled_Cat.psd")))
+    layer = comp_bars(psd)["spd"][0][0]
+    for value, opacity in ((10, 255), (9, 84)):
+        pe.comp_render(layer, value)
+        doc = PSDImage.open(BytesIO(layer.smart_object.data))
+        comps = doc.image_resources.get_data(Resource.LAYER_COMPS)
+        want = next(int(c[b"compID"]) for c in comps[b"list"] if str(c[b"Nm  "].value).strip("\x00 ") == str(value))
+        pe.comp_document(layer, doc, comps, want, int(comps[b"lastAppliedComp"]))
+        assert next(inner for inner in doc if inner.name == "Group 1 copy").opacity == opacity
+
+
 CROISSANT_BARS = {"cf80568654aa0785af7de45a698d36a0e73c8c6b": "Creatures/Everhood/5 Stars/Chris_&_Jordi.psd",
                   "90b2f475f6dd704dc92f6ae5ff835b0bfcb63554": "Creatures/Other/3 Stars/Pizza.psd"}  # his 11-11, guards' pass
 
