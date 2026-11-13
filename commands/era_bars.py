@@ -11,13 +11,15 @@ truth      truth/psd.json: each old-repo creature or minion PNG version's stats 
            (today's parser on digit rows and comp bars; the rows' own layers on the alt template and masked rows).
 read       Each distinct card picture of the card channels (the eras pass's derived/eras/discord_feats.jsonl: look
            features and Vision OCR lines, its first post) gets an era (era_of; by-eye classes in truth/eras.json win)
-           and, when it shows stat bars, its stats by that era's readers; each old-repo PNG version
-           (derived/oldgit/versions.jsonl, blobs from the old .git, read only) the same, plus a 400 px JPEG copy of it
-           (as Discord shows cards). Every stat carries its method ('picture'), reader and confidence. -> reads.jsonl
+           and, when it shows stat bars, its stats by that era's readers (the matcher's card, derived/match/
+           verdicts.jsonl when there, names two-creature, icon, three-form and busy-bar cards beside the OCR'd title);
+           each old-repo PNG version (derived/oldgit/versions.jsonl, blobs from the old .git, read only) the same, plus
+           a 400 px JPEG copy of it (as Discord shows cards). Every stat carries its method ('picture'), reader,
+           confidence and how its row was found. -> reads.jsonl
 calibrate  Each era's truth (truth/*.json: old-repo PSD stats where its digit rows give them, by-eye readings
            elsewhere) against reads.jsonl: per era the lowest confidence bar whose reads at or above it are SURE right,
-           with per stat n, accuracy at the bar and the share above it -> calibration.json; reads.jsonl's 'sure'
-           marks follow it.
+           with per stat n, accuracy at the bar and the share above it (and on Discord pictures alone, with a Wilson
+           bound) -> calibration.json; reads.jsonl's 'sure' marks follow it (never on a held row or a NEVER_SURE group).
 Outputs go to the archive root's derived/readers/bars/ (never a repo). Nothing here talks to Discord.
 """
 from argparse import ArgumentParser
@@ -42,6 +44,8 @@ from commands import discord_match as dm
 OUT = ("derived", "readers", "bars")                # under the archive root
 ERAS = ("derived", "eras")                          # the eras pass's outputs
 OLDGIT = ("derived", "oldgit")
+VERDICTS = ("derived", "match", "verdicts.jsonl")   # the matcher's card per Discord picture (when there)
+CARD_SURE = ("version_sure", "version_unsure", "draft")
 ORDER = ("hp", "def", "atk", "spd")                 # the bar rows, top to bottom
 LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|def",
           "atk": r"attack|atack|attak|attach|atk", "spd": r"speed|spead|spee|spd"}
@@ -50,7 +54,7 @@ D_BOX = (360 / 1200, 1173 / 1200)                   # the template's bars (eras 
 D_ROWS, D_H = (1200, 1326, 1452, 1578), 84          # their rows' tops and height, of 2400
 RAID_BOX = (451 / 2400, 2317 / 2400)                # the raid template (2400x2400): 20 cells a row
 RAID_ROWS, RAID_H, RAID_CELLS = (1139, 1286, 1433, 1580), 97, 20
-TWINS = re_compile(r"twin\s*princes|god\s*tamer|twin\s*emperors")   # two creatures' bars in each row (top, bottom)
+TWINS = re_compile(r"tw[il1][nm]\s*(princes?|emperors?)|g[o0]d\s*tamer")   # two creatures' bars a row (top, bottom); OCR slips
 WORK = 1600                                         # pictures read at this long side (small ones scaled up)
 SPLIT_MIN = 8.0                                     # a row's best split scores this (Lab) or it is one colour
 TEMPLATE_PRIOR = 1.15                               # a 1:2 card: its fixed box unless a fit's cells are this much more even
@@ -65,6 +69,11 @@ CREATURE_ERAS = ("A", "B", "C", "D1", "D2", "D3", "R")
 TEMPLATE_FROM = "2022-06"                            # the 400x800 template's first post (era D1)
 ICONS = re_compile(r"satou|tainted\s*(keeper|lost)|hive\s*knight|minecraft\s*panda|tyler\s*zao")   # icon bars at times
 MULTI = re_compile(r"\bpix\b|computer\s*virus")      # three forms' colours in each row: one stat set can't say
+BUSY = re_compile(r"\W*omori\W*")                    # bars drawn as arms: never sure
+BUSY_TEMPLATE = re_compile(r"\W*(paint\s*warrior|frog)\W*")   # heavy texture bars on the template (D1-D3): never sure
+NEVER_SURE = ("multi", "busy")                       # groups no bar applies to
+TEMPLATE_ERAS = ("D1", "D2", "D3")
+ITEM_W, ITEM_ASP = 1150, (1.45, 1.55)                # the item template (1200x1800): bars there are an item's
 
 
 def log(text: str):
@@ -88,10 +97,17 @@ def uniform(n: int = 10) -> tuple:
     return tuple(range(n + 1))
 
 
-def labels(lines) -> dict:
-    """{stat: (x0, y0, x1, y1) fractions} of the printed stat labels among OCR lines."""
+def is_item_size(w: int, h: int) -> bool:
+    return w >= ITEM_W and ITEM_ASP[0] <= h / w <= ITEM_ASP[1]
+
+
+def labels(lines, strict: bool = False) -> dict:
+    """{stat: (x0, y0, x1, y1) fractions} of the printed stat labels among OCR lines (strict: no line with a digit
+    or '+', as an item's '+2 HP' text)."""
     out = {}
     for text, _conf, x, y, w, h in lines or []:
+        if strict and search(r"[0-9+]", text):
+            continue
         word = sub(r"[^a-z]", "", text.lower())
         for stat, pattern in LABELS.items():
             if stat not in out and fullmatch(pattern, word):
@@ -213,6 +229,49 @@ def cell_spread(img: np.ndarray, yp: list, half: float, span: tuple, cells: tupl
 # ========================
 # Readers: each returns {stat: split_read result} (rows as read) and how
 # ========================
+def _label_rows(H: int, found: dict, only: bool):
+    """(row middles px, half height px) by the labels; only: the labels' own rows (an item's), none placed past them."""
+    ys, pitch = fill_rows(found)
+    if pitch is None:
+        return None, None
+    return {s: ys[s] * H for s in ORDER if not only or s in found}, abs(pitch) * H * 0.34
+
+
+def bar_extent(img: np.ndarray, y: float, half: float, span: tuple, cells: tuple) -> Optional[tuple]:
+    """
+    The bar's own rows (y0, y1 px) about its label's middle y (which can sit off the bar's): the pixel rows where most
+    cell dividers are darker than the cells beside them, lit or empty; None when no clear run.
+    """
+    H = img.shape[0]
+    x0, x1 = span
+    a, b = int(max(0, y - 1.4 * half)), int(min(H, y + 1.4 * half))
+    w = x1 - x0
+    if b - a < 8 or w < 20:
+        return None
+    g = img[a:b, x0:x1].astype(np.float32).mean(-1)
+    pad = max(2, w // 120)
+    edge = [int(round(e * w / cells[-1])) for e in cells]
+    mid = [g[:, max(0, (e0 + e1) // 2 - pad):(e0 + e1) // 2 + pad + 1].mean(1) for e0, e1 in zip(edge, edge[1:])]
+    hits = [(np.minimum(mid[k], mid[k + 1]) - g[:, max(0, e - pad):e + pad + 1].min(1)) > 12
+            for k, e in enumerate(edge[1:-1])]
+    on = np.mean(hits, 0) >= 0.6
+    runs, start = [], None
+    for i, v in enumerate(list(on) + [False]):
+        if v and start is None:
+            start = i
+        elif not v and start is not None:
+            if runs and start - runs[-1][1] <= max(4, 0.3 * min(i - start, runs[-1][1] - runs[-1][0])):
+                runs[-1] = (runs[-1][0], i)              # a line between the halves
+            else:
+                runs.append((start, i))
+            start = None
+    if not runs:
+        return None
+    at = y - a
+    r0, r1 = min(runs, key=lambda r: 0 if r[0] <= at < r[1] else min(abs(at - r[0]), abs(at - r[1])))
+    return (a + r0, a + r1) if r1 - r0 >= 6 else None
+
+
 def _rows(img: np.ndarray, yp: dict, half: float, span: tuple, cells: tuple, halves: bool = False) -> dict:
     """Each stat's row (or its top and bottom halves: two creatures) read across span."""
     H = img.shape[0]
@@ -224,6 +283,8 @@ def _rows(img: np.ndarray, yp: dict, half: float, span: tuple, cells: tuple, hal
             out[s] = None
             continue
         y0, y1 = int(max(0, y - half)), int(min(H, y + half))
+        if halves:                                       # two creatures: split the bar itself, not the label's window
+            y0, y1 = bar_extent(img, y, half, span, cells) or (y0, y1)
         row = img[y0:y1, x0:x1]
         if row.size == 0 or row.shape[0] < 3:
             out[s] = None
@@ -240,30 +301,27 @@ def _rows(img: np.ndarray, yp: dict, half: float, span: tuple, cells: tuple, hal
     return out
 
 
-def read_uniform(img: np.ndarray, found: dict) -> tuple:
-    """Label rows and one grid of 10 equal cells fitted right of the labels (the white, black and full-art eras)."""
+def read_uniform(img: np.ndarray, found: dict, halves: bool = False, only: bool = False) -> tuple:
+    """Label rows and one grid of 10 equal cells fitted right of the labels (the white, black and full-art eras);
+    halves: each row's top and bottom halves (two creatures)."""
     H, W = img.shape[:2]
-    ys, pitch = fill_rows(found)
-    if pitch is None:
+    yp, half = _label_rows(H, found, only)
+    if yp is None:
         return None, None
-    half = abs(pitch) * H * 0.34
-    yp = {s: ys[s] * H for s in ORDER}
     span = grid_fit(img, list(yp.values()), half, max(b[2] for b in found.values()) * W + 2, uniform(), "sum")
-    return _rows(img, yp, half, span, uniform()), dict(span=(span[0] / W, span[1] / W), cells=10)
+    return _rows(img, yp, half, span, uniform(), halves), dict(span=(span[0] / W, span[1] / W), cells=10)
 
 
-def read_best(img: np.ndarray, found: dict, halves: bool = False) -> tuple:
+def read_best(img: np.ndarray, found: dict, halves: bool = False, only: bool = False) -> tuple:
     """
     Label rows and the most even of several grids (uniform or template cells, fitted from the labels' right with the
     summed rows or from the shortest label with the median row; on a 1:2 card the template's own box, kept unless a
     fit's cells are TEMPLATE_PRIOR times more even).
     """
     H, W = img.shape[:2]
-    ys, pitch = fill_rows(found)
-    if pitch is None:
+    yp, half = _label_rows(H, found, only)
+    if yp is None:
         return None, None
-    half = abs(pitch) * H * 0.34
-    yp = {s: ys[s] * H for s in ORDER}
     starts = {"sum": max(b[2] for b in found.values()) * W + 2, "median": (min(b[2] for b in found.values()) - 0.02) * W}
     cands = [(name, cells, mode, grid_fit(img, list(yp.values()), half, x_from, cells, mode))
              for name, cells in (("uniform", uniform()), ("template", TEMPLATE_CELLS)) for mode, x_from in starts.items()]
@@ -341,6 +399,8 @@ def era_of(rec: dict, span: Optional[tuple], lines=None) -> tuple:
     text = " ".join(line[0] for line in lines or []).lower()
     if span:
         x0, x1 = span
+        if is_item_size(w, h):
+            return "D-item", "item template size, bars"
         if asp < 1.2:
             return ("R", "square, bars") if w >= 2000 else ("sheet", "square, bars")
         if 0.285 <= x0 <= 0.335 and x1 >= 0.955:
@@ -403,47 +463,69 @@ def confidence(st: dict) -> float:
     return round(0.5 * min(1.0, max(0.0, st.get("margin", 0.0) / MARGIN_FULL)) + 0.5 * agree, 3)
 
 
-def flags(title: str) -> dict:
-    """What a card's name (its OCR'd title, an old-repo card's own) says about its bars: icon rows, three forms."""
-    title = (title or "").lower()
-    return {**({"icons": True} if ICONS.search(title) else {}), **({"multi": True} if MULTI.search(title) else {})}
+def _names(names) -> list:
+    return [sub(r"[-_\s]+", " ", n.lower()).strip() for n in ([names] if isinstance(names, str) else names) if n]
 
 
-def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional[str] = None, title: str = "") -> dict:
+def is_twin(names) -> bool:
+    """Two creatures' bars in each row, by any of the card's names (OCR'd title, the matcher's card id, old name)."""
+    return any(TWINS.search(n) for n in _names(names))
+
+
+def flags(names, era: Optional[str] = None) -> dict:
+    """
+    What a card's names (its OCR'd title, the matcher's card id, an old-repo card's own) say about its bars: icon rows,
+    three forms, bars drawn as pictures or heavy texture (busy; Paint Warrior and Frog only on the template).
+    """
+    names = _names(names)
+    busy = any(BUSY.fullmatch(n) or (era in TEMPLATE_ERAS and BUSY_TEMPLATE.fullmatch(n)) for n in names)
+    return {**({"icons": True} if any(ICONS.search(n) for n in names) else {}),
+            **({"multi": True} if any(MULTI.search(n) for n in names) else {}), **({"busy": True} if busy else {})}
+
+
+def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional[str] = None, title: str = "",
+              card: str = "") -> dict:
     """
     A card picture's era (era_of with rec's look, unless given) and the stats it prints by that era's readers:
-    {'era', 'era_how', 'labels', 'reader', 'cells', 'stats': {stat: {v, method, reader, conf, ...the row's split}},
-    'stats2' (two creatures: their bottom halves), 'readers': every reader's values}.
-    Readers: 'uniform' (label rows, 10 equal cells: eras A-C), 'best' (label rows, the most even grid: D1-D3),
-    'template' (a 1:2 card's fixed template rows, no OCR), 'raid' / 'raid_fixed' (20-cell rows).
+    {'era', 'era_how', 'labels', 'reader', 'cells', 'stats': {stat: {v, method, reader, conf, row, ...the row's split}},
+    'stats2' (two creatures: their bottom halves), 'readers': every reader's values}. card: the matcher's card id.
+    Readers: 'uniform' (label rows, 10 equal cells: eras A-C), 'best' (label rows, the most even grid: D1-D3 and an
+    item's labelled rows), 'template' (a 1:2 card's fixed template rows, no OCR), 'raid' / 'raid_fixed' (20 cells).
+    A row its label OCR missed ('placed' by the others) holds ('hold': never sure) unless the template reader agrees.
     """
     arr = work_array(img)
     H, W = arr.shape[:2]
-    found = labels(lines)
+    item = is_item_size(*img.size)
+    found = labels(lines, strict=item)
     runs, infos = {}, {}
     if len(found) >= 2:
-        runs["uniform"], infos["uniform"] = read_uniform(arr, found)
+        runs["uniform"], infos["uniform"] = read_uniform(arr, found, only=item)
     out = {}
     if rec is not None:
-        rule, why = era_of(rec, infos.get("uniform", {}).get("span") if "uniform" in infos else None, lines)
+        rule, why = era_of(rec, infos["uniform"]["span"] if "uniform" in infos else None, lines)
         out.update(era_rule=rule, era_why=why)
         era, how = (era, "given") if era else (rule, "rule")
     else:
         how = "given"
-    twin = bool(TWINS.search((title or "").lower()))
-    out.update(era=era, era_how=how, labels=len(found), **flags(title))
+    twin = is_twin((title, card))
+    out.update(era=era, era_how=how, labels=len(found), **flags((title, card), era))
     if era == "R":
         runs = {}
         runs["raid"], infos["raid"] = read_raid(arr, found)
         runs["raid_fixed"], infos["raid_fixed"] = read_fixed(arr, "raid")
         main, n = ("raid_fixed" if 0.95 <= W / H <= 1.05 else "raid"), RAID_CELLS     # the template's own box when square
+    elif era == "D-item" and len(found) >= 2:            # an item's bars: only the rows it labels
+        n, twin = 10, False
+        runs["uniform"], infos["uniform"] = read_uniform(arr, found, only=True)
+        runs["best"], infos["best"] = read_best(arr, found, only=True)
+        main = "best"
     elif era in CREATURE_ERAS or era in ("bars-other", "other"):
         n = 10
         if len(found) >= 2:
-            runs["best"], infos["best"] = read_best(arr, found, halves=twin)
+            runs["best"], infos["best"] = read_best(arr, found, halves=twin, only=item)
             if twin:
-                runs["uniform"], infos["uniform"] = read_uniform_halves(arr, found)
-        if 1.8 <= H / W <= 2.2 and era in ("D1", "D2", "D3"):
+                runs["uniform"], infos["uniform"] = read_uniform(arr, found, halves=True, only=item)
+        if 1.8 <= H / W <= 2.2 and era in TEMPLATE_ERAS:
             runs["template"], infos["template"] = read_fixed(arr, "template", halves=twin)
         main = ("uniform" if (era in ("A", "B", "C") or twin) and "uniform" in runs else "best" if "best" in runs
                 else "template" if "template" in runs else None)
@@ -458,6 +540,9 @@ def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional
     for key, h in zip(("stats", "stats2"), halves):
         vals = {}
         for s in ORDER:
+            if era == "D-item" and s not in found:       # the item prints no such row
+                vals[s] = {"v": None, "method": "picture", "reader": main, "row": "none", "conf": 0.0}
+                continue
             r = _row_of(runs[main], s, h)
             st = {"v": None if r is None else r.get("best"), "method": "picture", "reader": main}
             if r is not None:
@@ -467,20 +552,18 @@ def read_card(img: Image.Image, lines, rec: Optional[dict] = None, era: Optional
             others = [(_row_of(runs[o], s, h) or {}).get("best") for o in runs if o != main]      # None: can't tell
             if others:
                 st["agree"] = round(sum(o == st["v"] for o in others) / len(others), 3)
+            if main in ("template", "raid_fixed"):
+                st["row"] = "template"
+            elif s in found:
+                st["row"] = "label"
+            else:
+                st["row"] = "placed"
+                if "template" not in runs or (_row_of(runs["template"], s, h) or {}).get("best") != st["v"]:
+                    st["hold"] = "row placed by the other labels"
             st["conf"] = confidence(st)
             vals[s] = st
         out[key] = vals
     return out
-
-
-def read_uniform_halves(arr: np.ndarray, found: dict) -> tuple:
-    """read_uniform on two creatures' rows: each row's top and bottom halves."""
-    H, W = arr.shape[:2]
-    ys, pitch = fill_rows(found)
-    half = abs(pitch) * H * 0.34
-    yp = {s: ys[s] * H for s in ORDER}
-    span = grid_fit(arr, list(yp.values()), half, max(b[2] for b in found.values()) * W + 2, uniform(10), "sum")
-    return _rows(arr, yp, half, span, uniform(10), True), dict(span=(span[0] / W, span[1] / W), cells=10)
 
 
 # ========================
@@ -622,7 +705,7 @@ def read_task(job: dict) -> list:
         if job["src"] == "discord":
             img = dm.load_image(job["path"])
             rec = job["rec"] or look(img, job["row"]["ts"])
-            got = read_card(img, job["lines"], rec, job.get("era"), title_of(job["lines"]))
+            got = read_card(img, job["lines"], rec, job.get("era"), title_of(job["lines"]), job["row"].get("match_card"))
             if job.get("era"):
                 got["era_how"] = "eye"
             return [{**job["row"], **got}]
@@ -637,8 +720,23 @@ def read_task(job: dict) -> list:
         return [{**job["row"], "error": f"{type(e).__name__}: {str(e)[:160]}"}]
 
 
+def match_cards(root: str) -> dict:
+    """{picture file: card id} where the matcher is sure of the card (derived/match/verdicts.jsonl; {} without it)."""
+    path = join(root, *VERDICTS)
+    if not exists(path):
+        return {}
+    out = {}
+    for line in open(path):
+        r = loads(line)
+        if r.get("verdict") in CARD_SURE and r.get("card") and not r.get("cell"):
+            out[r["file"]] = r["card"]
+    return out
+
+
 def discord_jobs(root: str) -> list:
-    """Each distinct picture of the card channels (the eras pass's) at its first post, with its by-eye class if any."""
+    """Each distinct picture of the card channels (the eras pass's) at its first post, with its by-eye class and the
+    matcher's card if any."""
+    cards = match_cards(root)
     first = {}
     for line in open(join(root, *ERAS, "discord_feats.jsonl")):
         r = loads(line)
@@ -653,7 +751,8 @@ def discord_jobs(root: str) -> list:
         rec = {k: r[k] for k in keys} if all(k in r for k in keys) else None      # else measured from the picture
         jobs.append({"src": "discord", "path": join(root, f), "lines": r.get("lines"), "rec": rec,
                      "era": eye.get(f, {}).get("era"),
-                     "row": {"src": "discord", "file": f, "ts": r["ts"], "ch": r["ch"], "w": r["w"], "h": r["h"]}})
+                     "row": {"src": "discord", "file": f, "ts": r["ts"], "ch": r["ch"], "w": r["w"], "h": r["h"],
+                             **({"match_card": cards[f]} if f in cards else {})}})
     return jobs
 
 
@@ -703,9 +802,9 @@ def read_all(root: str, old_git: str, workers: int, only: Optional[str] = None):
 # calibrate
 # ========================
 def group_of(row: dict) -> Optional[str]:
-    """The calibration group of a read: three forms (no truth: never sure), two creatures, icon rows, else its era."""
-    return ("multi" if row.get("multi") else "two" if row.get("two") else "icons" if row.get("icons")
-            else row.get("era"))
+    """The calibration group of a read: three forms and busy bars (NEVER_SURE), two creatures, icon rows, else its era."""
+    return ("multi" if row.get("multi") else "two" if row.get("two") else "busy" if row.get("busy")
+            else "icons" if row.get("icons") else row.get("era"))
 
 
 def row_key(row: dict) -> str:
@@ -713,7 +812,8 @@ def row_key(row: dict) -> str:
 
 
 def load_truth(root: str) -> dict:
-    """{picture key: {'stats': {stat: v}, 'stats2', 'from'}}: old-repo PSD stats, then by-eye readings (win)."""
+    """{picture key: {'stats': {stat: v}, 'stats2', 'from'}}: old-repo PSD stats, then by-eye readings (win; one the
+    eye can't read keeps the PSD's)."""
     base = join(root, *OUT, "truth")
     out = {}
     psd = join(base, "psd.json")
@@ -724,7 +824,7 @@ def load_truth(root: str) -> dict:
     for name in sorted(n for n in listdir(base) if n.startswith("eye_") and n.endswith(".json")):
         for key, t in load(open(join(base, name)))["items"].items():
             if t.get("stats") is None:
-                out.pop(key, None)                           # no truth: unreadable by eye too
+                continue                                     # unreadable by eye: a PSD truth stands
             else:
                 out[key] = {**t, "from": "eye"}
     return out
@@ -768,11 +868,11 @@ def scored(rows: list, truth: dict) -> list:
             if not r.get(key) or not t.get(tkey):
                 continue
             for s in ORDER:
-                want = t[tkey].get(s)
-                if want is None:
-                    continue
-                st = r[key][s]
-                out.append((group_of(r), r.get("variant", "discord"), s, st.get("conf", 0.0), st.get("v") == want, row_key(r)))
+                want, st = t[tkey].get(s), r[key][s]
+                if want is None or (want == "none" and st.get("v") is None):
+                    continue                                 # no truth; an unprinted row left unread
+                conf = 0.0 if st.get("hold") else st.get("conf", 0.0)     # a held row is never sure
+                out.append((group_of(r), r.get("variant", "discord"), s, conf, st.get("v") == want, row_key(r)))
     return out
 
 
@@ -815,32 +915,41 @@ def calibrate(root: str):
     rows = [loads(line) for line in open(join(base, "reads.jsonl"))]
     for r in rows:                                           # confidence and an old-repo card's flags by today's rules
         if r["src"] == "oldgit":
-            r.update(flags(r["card"]))
+            for k in ("icons", "multi", "busy"):
+                r.pop(k, None)
+            r.update(flags(r["card"], r.get("era")))
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
                 st["conf"] = confidence(st)
     truth = load_truth(root)
     pts = scored(rows, truth)
-    cal = {"about": f"Per era (two: two-creature cards, icons: icon rows) the confidence bar whose reads at or above it "
-                    f"are at least {SURE:.0%} right on that era's truth, the {WINDOW} least sure of them too; per stat n, "
-                    f"accuracy at the bar, share above it; 'discord': the share of every Discord read above it.",
-           "sure": SURE, "groups": {}}
+    cal = {"about": f"Per era (two: two-creature cards, icons: icon rows; {' and '.join(NEVER_SURE)}: never sure) the "
+                    f"confidence bar whose reads at or above it are at least {SURE:.0%} right on that era's truth, the "
+                    f"{WINDOW} least sure of them too; per stat n, accuracy at the bar, share above it; 'discord_truth': "
+                    f"the same on the group's Discord pictures alone, with the Wilson 95% lower bound at the bar; "
+                    f"'discord': the share of every Discord read above it. A row placed by the other labels (hold) is "
+                    f"never sure.", "sure": SURE, "groups": {}}
     for g in sorted({p[0] for p in pts if p[0]}):
         gp = [p for p in pts if p[0] == g]
-        bar = bar_for([(p[3], p[4]) for p in gp])
+        bar = None if g in NEVER_SURE else bar_for([(p[3], p[4]) for p in gp])
         entry = {"bar": bar, **_at_bar(gp, bar), "accuracy_all": round(sum(p[4] for p in gp) / len(gp), 4),
                  "pictures": len({p[5] for p in gp}), "truth": dict(Counter(truth[p[5]]["from"] for p in gp))}
         above = [p for p in gp if bar is not None and p[3] >= bar]
         entry["wilson_low"] = round(_wilson(sum(p[4] for p in above), len(above)), 4) if above else None
         entry["fields"] = {s: _at_bar([p for p in gp if p[2] == s], bar) for s in ORDER}
         entry["variants"] = {v: _at_bar([p for p in gp if p[1] == v], bar) for v in sorted({p[1] for p in gp})}
+        dp = [p for p in gp if p[1] == "discord"]
+        dabove = [p for p in dp if bar is not None and p[3] >= bar]
+        entry["discord_truth"] = {**_at_bar(dp, bar), "pictures": len({p[5] for p in dp}),
+                                  "wilson_low": round(_wilson(sum(p[4] for p in dabove), len(dabove)), 4) if dabove else None,
+                                  "fields": {s: _at_bar([p for p in dp if p[2] == s], bar) for s in ORDER}}
         cal["groups"][g] = entry
     reads = defaultdict(lambda: [0, 0])
     for r in rows:
         bar = cal["groups"].get(group_of(r), {}).get("bar")
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
-                st["sure"] = bar is not None and st["conf"] >= bar
+                st["sure"] = bar is not None and st["conf"] >= bar and not st.get("hold")
                 if r["src"] == "discord" and group_of(r) in cal["groups"]:
                     reads[group_of(r)][0] += st["sure"]
                     reads[group_of(r)][1] += 1

@@ -1,4 +1,6 @@
-"""era_bars on drawn cards: template, uniform, two-creature and raid rows, the template fallback, eras and the bar."""
+"""era_bars on drawn cards: template, uniform, two-creature, item and raid rows, the template fallback, eras, the bar."""
+import json
+
 from PIL import Image, ImageDraw
 
 import commands.era_bars as eb
@@ -62,7 +64,34 @@ def test_uniform_grid_and_two_creatures():
     got = eb.read_card(twin, lines, era="D2", title="TWIN PRINCES")
     assert got["two"] and {s: v["v"] for s, v in got["stats"].items()} == STATS
     assert {s: v["v"] for s, v in got["stats2"].items()} == {"hp": 2, "def": 4, "atk": 4, "spd": 6}
+    low = [[t, c, x, y + 0.012, w, h] for t, c, x, y, w, h in lines]       # labels sit lower than the bars
+    got = eb.read_card(twin, low, era="D2", title="TWIM EMPERORS")            # OCR slips
+    assert got["two"] and {s: v["v"] for s, v in got["stats"].items()} == STATS
+    assert {s: v["v"] for s, v in got["stats2"].items()} == {"hp": 2, "def": 4, "atk": 4, "spd": 6}
+    assert eb.read_card(twin, lines, era="D2", title="", card="god-tamer").get("two")   # the matcher's card
     assert eb.group_of(eb.read_card(twin, lines, era="D2", title="PiX")) == "multi"     # three forms: never sure
+    assert eb.flags("OMORI").get("busy") and eb.flags("Frog", "D2").get("busy")         # drawn / textured bars
+    assert not eb.flags("Frog", "C") and not eb.flags("Shattered Omori")
+
+
+def test_rows_ocr_missed_and_items():
+    img, lines = template_card(STATS)
+    got = eb.read_card(img, lines[:3], era="D2")             # SPEED not read: its row placed by the others
+    assert got["stats"]["spd"]["row"] == "placed" and "hold" not in got["stats"]["spd"]     # the template agrees
+    card = Image.new("RGB", (400, 800), (250, 250, 250))
+    rows = [(s, 400 + 45 * n) for n, s in enumerate(eb.ORDER)]
+    bars(ImageDraw.Draw(card), (90, 390), STATS, eb.uniform(10), rows, 30)
+    got = eb.read_card(card, label_lines(rows, 30, card.size, 0.21)[:3], era="A")
+    assert got["stats"]["spd"]["hold"] and "hold" not in got["stats"]["hp"]
+    item = Image.new("RGB", (1200, 1800), (90, 120, 160))
+    rows = [("hp", 1100), ("def", 1210)]
+    bars(ImageDraw.Draw(item), (360, 1150), {"hp": 6, "def": 2}, eb.uniform(10), rows, 80)
+    lines = label_lines(rows, 80, item.size, 0.28) + [["+2 HP", 1.0, 0.4, 0.8, 0.2, 0.03]]
+    look = {"w": 1200, "h": 1800, "ts": "2023-06-01", "frame_white": 0.0, "low_white": 0.0, "low_black": 0.1}
+    got = eb.read_card(item, lines, look)
+    assert got["era"] == "D-item" and got["labels"] == 2
+    assert {s: v["v"] for s, v in got["stats"].items()} == {"hp": 6, "def": 2, "atk": None, "spd": None}
+    assert got["stats"]["atk"]["row"] == "none"
 
 
 def test_raid_rows_of_twenty():
@@ -86,3 +115,16 @@ def test_eras_and_the_bar():
     assert eb.bar_for(points) == 0.9                          # 90/93 right from 0.5: under 98%
     assert eb.bar_for(points + [(0.5, True)] * 100) == 0.5
     assert eb.bar_for([(0.9, True)] * 5) is None              # too few to set a bar
+
+
+def test_truth_keeps_the_psd(tmp_path):
+    base = tmp_path.joinpath(*eb.OUT, "truth")
+    base.mkdir(parents=True)
+    base.joinpath("psd.json").write_text(json.dumps({"versions": {"b1": {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 5}}}}))
+    base.joinpath("eye_x.json").write_text(json.dumps({"items": {"b1": {"stats": None}, "f1": {
+        "stats": {"hp": 6, "def": 1, "atk": "none", "spd": "none"}}}}))
+    truth = eb.load_truth(str(tmp_path))
+    assert truth["b1"]["from"] == "psd"                       # the eye can't read it: the PSD stands
+    row = {"file": "f1", "era": "D-item", "stats": {"hp": {"v": 6, "conf": 1.0}, "def": {"v": 1, "conf": 1.0},
+                                                    "atk": {"v": None}, "spd": {"v": 4, "conf": 0.9}}}
+    assert [(p[2], p[4]) for p in eb.scored([row], truth)] == [("hp", True), ("def", True), ("spd", False)]
