@@ -29,6 +29,7 @@ from typing import Optional
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
+from psd_tools.composite import rcache
 
 import commands.psd_edit as psd_edit
 from commands.png_export import FX_EXTRA, like_mode
@@ -519,7 +520,7 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
     icc = psd_edit.export_icc(psd, png)
     was, base = np.asarray(view(png).convert("RGBA")), _base(png)
     out, at = {}, {**{stat: card[stat] for stat in stats}, **_creature_stats(card)}
-    with psd_edit.render_cache(shared=True):
+    with psd_edit.render_cache(shared=True), rcache.frozen(psd):     # psd only read: its keys once
         caps = psd_edit.stat_caps(psd)          # once: each value edits its own copy
         for key, now_at in at.items():
             stat, _, n = key.partition("@")
@@ -546,7 +547,7 @@ def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, pars
     icc = psd_edit.export_icc(psd, png)
     was, base = np.asarray(view(png).convert("RGBA")), _base(png)
     out = {}
-    with psd_edit.render_cache(shared=True):
+    with psd_edit.render_cache(shared=True), rcache.frozen(psd):     # psd only read: its keys once
         for value in range(1, top + 1):
             merged = None if value == count else star_value(psd, raw, png, parsed, parser, rel, value, icc)
             moved = _moved(was, merged, base) if merged is not None else None

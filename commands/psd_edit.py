@@ -9157,6 +9157,12 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
         A canvas-sized render_all(old) valid inside the box only (baseline's crop_pair reads the regions, inside it);
         raises Refused("region") as gate_untouched does
     """
+    from psd_tools.composite import rcache
+    with rcache.frozen(new):                    # new only read here: its draws reuse dirty_box's keys
+        return _gate_dirty(old, new, edits, keep, icon)
+
+
+def _gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict], icon: bool) -> np.ndarray:
     w, h = new.width, new.height
     box = union_box([clip_to(edit.region, (0, 0, w, h)) for edit in edits if edit.region]
                     + [dirty_box(old, new, _lines(edits))])
