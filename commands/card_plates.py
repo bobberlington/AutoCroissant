@@ -1,14 +1,15 @@
 """
-Plates for the website's mock-up: the card drawn without one text layer, cut to that layer's box (its effects' reach
-and PAD past it), per title and ability layer of its parts (psd_parts). The mock-up pastes a plate over the old text
-instead of guessing the backdrop from the PNG. One file per PSD blob, crops at the site's card view scale (VIEW_W
-wide) in one AVIF; a crop whose backdrop differs from the PNG off the layer's ink is left out (the mock-up's old way).
-Card checks makes them (check_card's "plate") and publishes them on the `plates` branch as <PSD blob>.json, those of
-PSDs gone from main dropped; the website fetches the open card's in edit mode. With the fonts, a layer's crop also
-carries the fork's layout of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows
-the mock-up's cells cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it
-takes, at that view, which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own
-stars at every count, pasted in place of the mock-up's erased and redrawn ones.
+Plates for the website's mock-up: the card drawn without one text layer, cut to that layer's box (its effects' reach and
+PAD past it), per title and ability layer of its parts (psd_parts; a tagged PSD's layers shown in one other picture
+alone, Name #2, against that picture's PNG). The mock-up pastes a plate over the old text instead of guessing the
+backdrop from the PNG. One file per PSD blob, crops at the site's card view scale (VIEW_W wide) in one AVIF; a crop
+whose backdrop differs from the PNG off the layer's ink is left out (the mock-up's old way). Card checks makes them
+(check_card's "plate") and publishes them on the `plates` branch as <PSD blob>.json, those of PSDs gone from main
+dropped; the website fetches the open card's in edit mode. With the fonts, a layer's crop also carries the fork's layout
+of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows the mock-up's cells
+cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it takes, at that view,
+which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own stars at every count,
+pasted in place of the mock-up's erased and redrawn ones.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
@@ -171,7 +172,8 @@ def layout(layer, fonts_dir: str) -> Optional[dict]:
             "frame": [r(xx * box[0] + tx), r(xx * (box[0] + box[2]) + tx)] if box else None}
 
 
-def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None) -> Optional[dict]:
+def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None,
+           pictures: Optional[dict] = None) -> Optional[dict]:
     """
     The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"}, or None when no layer gave one.
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
@@ -184,6 +186,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
         png: Its PNG (picture 1)
         parts: Its details record's parts (psd_parts.card_parts)
         fonts_dir: MDW/Fonts (the layouts'); None: none
+        pictures: A tagged PSD's {n: picture n's PNG}: the layers shown in picture n alone (Name #2) cropped against it
     """
     if psd.width <= 0 or png.size != psd.size:
         return None
@@ -192,28 +195,35 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     step = step if step <= 20 else 1
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
-    truth = _rgb(png)
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
     found = []
-    with variant_view(psd, 1 if len(variants_of(psd)) > 1 else None):
-        for lid in dict.fromkeys(layer_ids(parts)):
-            layer = by_id.get(lid)
-            if layer is None:
-                continue
-            copies = [by_id[f["id"]] for f in follow if lid in (f.get("of") or []) and f.get("id") in by_id]
-            got = crop(psd, layer, truth, icc, step, copies)
-            if got:
-                try:
-                    lay = layout(layer, fonts_dir) if fonts_dir else None
-                except Exception as error:      # noqa: BLE001 - no layout: the mock-up finds the lines
-                    print(f"{layer.name}: no layout: {type(error).__name__}: {error}", file=stderr)
-                    lay = None
-                found.append(({"id": lid, **(lay or {})}, *got))
-            fx = [x for x in psd_edit.fx_layers(psd, layer) if _meets(layer, x)]
-            got = crop(psd, layer, truth, icc, step, [*copies, *fx]) if fx else None
-            if got:
-                words = [w.strip() for x in fx for w in x.name.split(EFFECT_LAYER_TAG, 1)[1].split("#")[0].split("|") if w.strip()]
-                found.append(({"id": lid, "fx": list(dict.fromkeys(words))}, *got))
+    tagged = len(variants_of(psd)) > 1
+    views = [(1 if tagged else None, png, dict.fromkeys(layer_ids(parts)))]
+    for n, picture in sorted((pictures or {}).items()) if tagged else ():
+        ids = [p["id"] for k in KINDS for p in (parts or {}).get(k) or [] if isinstance(p, dict) and p.get("variants") == [n]]
+        if n > 1 and ids and picture.size == psd.size:
+            views.append((n, picture, ids))
+    for n, picture, ids in views:
+        truth = _rgb(picture)
+        with variant_view(psd, n):
+            for lid in ids:
+                layer = by_id.get(lid)
+                if layer is None:
+                    continue
+                copies = [by_id[f["id"]] for f in follow if lid in (f.get("of") or []) and f.get("id") in by_id]
+                got = crop(psd, layer, truth, icc, step, copies)
+                if got:
+                    try:
+                        lay = layout(layer, fonts_dir) if fonts_dir else None
+                    except Exception as error:      # noqa: BLE001 - no layout: the mock-up finds the lines
+                        print(f"{layer.name}: no layout: {type(error).__name__}: {error}", file=stderr)
+                        lay = None
+                    found.append(({"id": lid, **(lay or {})}, *got))
+                fx = [x for x in psd_edit.fx_layers(psd, layer) if _meets(layer, x)]
+                got = crop(psd, layer, truth, icc, step, [*copies, *fx]) if fx else None
+                if got:
+                    words = [w.strip() for x in fx for w in x.name.split(EFFECT_LAYER_TAG, 1)[1].split("#")[0].split("|") if w.strip()]
+                    found.append(({"id": lid, "fx": list(dict.fromkeys(words))}, *got))
     if not found:
         return None
     small = [(key, box, ink, image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),

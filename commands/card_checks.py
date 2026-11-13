@@ -721,9 +721,12 @@ def check_card(ctx: Context, rel: str) -> dict:
     except Exception as error:                  # noqa: BLE001 - no plate or room then, never a failed check
         print(f"{rel}: no parts: {type(error).__name__}: {error}", flush=True)
     room = ability_room(ctx, rel, psd, parsed, parts)
+    dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
+    drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if image is not None else {}   # {PNG: picture n}
     if image is not None and parts is not None:
         try:
-            plate = card_plates.plates(psd, image, parts, ctx.fonts)
+            pictures = {n: png_export.open_png(snapshot.fetch(snapshot.sha(path))) for path, n in drawn.items()}
+            plate = card_plates.plates(psd, image, parts, ctx.fonts, pictures)
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
@@ -747,9 +750,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     if style == "new":
         with variant_view(psd, 1):
             notes += look_notes(psd, raw)
-    dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
-    drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
-    for path in dups:                           # nothing redraws the others (owner 11-07)
+    for path in dups:                           # a picture: drawn (owner 11-09); nothing redraws the others (owner 11-07)
         if path not in drawn and png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
             notes.append(DUP_NOTE.format(name=basename(path)))
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads, "notes": notes,
@@ -938,11 +939,14 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
 
 def blobs_of(snapshot: Snapshot, rels: list) -> list:
     """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart and manifest (a card read as
-    it lands waits for none at the end), then each card's PSD, PNG and duplicates."""
+    it lands waits for none at the end), then each card's PSD, PNG, numbered PNGs and duplicates."""
     if not rels:
         return []
     first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
-    cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
+    cards = []
+    for rel in rels:
+        png, numbered = snapshot.png_for(rel)
+        cards += [path for path in [rel, png, *numbered, *snapshot.dup_pictures().get(rel, [])] if path]
     return list(dict.fromkeys(snapshot.sha(path) for path in first + cards))
 
 

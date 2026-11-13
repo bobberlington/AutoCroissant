@@ -19,6 +19,9 @@ from commands.psd_edit import card_parts, _bare_parser
 DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Ability FX: Blazing"
 PUZZLED = "Creatures/Other/3 Stars/Puzzled_Cat.psd"    # her own pictures under the old template's digit rows
 PIX = "Creatures/Kirby/3 Stars/Pix.psd"                 # three creatures: their own DEF rows, one HP bar for all
+SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
+         "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
+         "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
 
 
 def test_plates_of_a_card(clone):
@@ -49,6 +52,26 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+
+
+def test_a_tagged_cards_other_pictures_titles():
+    """A Snack (Name #1/#2/#3): picture 1's crops as without pictures; Name #2 and #3 cut against A_Snack2/3.png."""
+    from conftest import CLONE, card_blob
+    psd, *pngs = (io.BytesIO(card_blob(CLONE, sha)) for sha in SNACK)
+    psd, pngs = PSDImage.open(psd), dict(zip((1, 2, 3), map(Image.open, pngs)))
+    parts = card_parts(psd, "Items/Heal/2 Stars/A_Snack.psd", "A Snack", _bare_parser())
+    own = [p["id"] for n in (2, 3) for p in parts["title"] if p["variants"] == [n]]
+    alone, found = cp.plates(psd, pngs[1], parts), cp.plates(psd, pngs[1], parts, pictures={2: pngs[2], 3: pngs[3]})
+    assert len(own) == 2 and [c["id"] for c in found["crops"]] == [c["id"] for c in alone["crops"]] + own
+    sheet = np.asarray(Image.open(io.BytesIO(base64.b64decode(found["img"].split(",", 1)[1]))).convert("RGB"), np.int16)
+    for c, n in zip(found["crops"][-2:], (2, 3)):
+        x0, y0, x1, y1 = (round(v * cp.VIEW_W / psd.width) for v in c["box"])
+        small = np.asarray(cp.view(pngs[n]).convert("RGB"), np.int16)[y0:y1, x0:x1]
+        off = np.ones(small.shape[:2], bool)
+        ix0, iy0, ix1, iy1 = (round(v * cp.VIEW_W / psd.width) for v in c["ink"])
+        off[max(0, iy0 - y0 - 1):iy1 - y0 + 1, max(0, ix0 - x0 - 1):ix1 - x0 + 1] = False
+        crop = sheet[c["at"][1]:c["at"][1] + c["at"][3], :c["at"][2]]
+        assert np.abs(crop - small).max(-1)[off].mean() < 8 and np.abs(crop - small).max(-1)[~off].mean() > 20
 
 
 def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):

@@ -398,14 +398,14 @@ def test_to_check_and_file():
 
 
 def test_blobs_of_in_reading_order():
-    """The chart and manifest first, then each card's PSD, PNG and duplicates together."""
-    paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd", "Types/Fire.png", "Types/Dark.png",
-             cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
+    """The chart and manifest first, then each card's PSD, PNG, numbered PNGs and duplicates together."""
+    paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "A Copy.png", "B.psd", "Types/Fire.png",
+             "Types/Dark.png", cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
     tree = {path: ("", path) for path in paths}
-    snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A2.png"]},
-                               png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
+    snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A Copy.png"]},
+                               png_for=lambda rel: ("A.png", ["A2.png"]) if rel == "A.psd" else ("", []))
     assert cc.blobs_of(snapshot, ["A.psd", "B.psd"]) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
-                                                        "A.psd", "A.png", "A2.png", "B.psd"]
+                                                        "A.psd", "A.png", "A2.png", "A Copy.png", "B.psd"]
     assert cc.blobs_of(snapshot, []) == []
 
 
