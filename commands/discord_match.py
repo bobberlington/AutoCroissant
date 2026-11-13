@@ -2443,39 +2443,39 @@ def _build(root: str, paths: Paths, log: Callable) -> dict:
 
 
 SURE_TIERS = ("ruled", "high", "confident")
-EDITS_FILE = "Card Edits - created.json"
+CREATED_FILE = "created.json"
 
 
 def proposals(paths: Paths, result: dict) -> dict:
-    """What the matches would change on the site, for the owner to review (nothing is applied): created dates (the
-    earliest confident appearance: a first sure post before the card's first git record). No authors (owner
-    2026-11-13: hand-crafted metadata is never changed), no aliases (owner 2026-10-22). Card names and dates only: no
-    message text, links or Discord names."""
+    """What the matches would change on the site, for the owner to review (nothing is applied): created dates, the
+    earliest confident appearance with its source (owner 2026-11-13: earliest wins): the first sure Discord post or
+    the first git record (old repo, else TTSCardMaker). No authors (owner 2026-11-13: hand-crafted metadata is never
+    changed), no aliases (owner 2026-10-22). Card names and dates only: no message text, links or Discord names."""
     ready, pending = {}, {}
     for cid, entry in sorted(result["cards"].items(), key=lambda kv: (kv[1].get("key") or kv[0]).lower()):
         d, key = entry.get("discord") or {}, entry.get("key") or entry.get("name") or cid
         first, fields = d.get("first"), {}
-        if first and d.get("tier") in SURE_TIERS and (d.get("fs_check") or {}).get("verdict") in (
-                "discord_earlier", "no_fs"):
-            fields["created"] = first["date"][:10]
+        dates = ([(epoch(first["date"]), "discord")] if first and d.get("tier") in SURE_TIERS else []) + (
+            [(epoch(entry["fs"]), entry.get("fs_from") or "git")] if entry.get("fs") else [])
+        if dates:
+            at, source = min(dates)
+            fields.update({"created": iso(at)[:10], "from": source})
         waits = sorted(set(d.get("earlier_ambiguous") or []) | set(d.get("to_confirm") or []), key=lambda a: int(a[1:]))
         if d.get("suspect") and d.get("earliest_open"):     # its first sure post is after fs: one is likely missed
             fields["created_if_ruled"] = {"id": d["earliest_open"]["id"], "date": d["earliest_open"]["date"][:10]}
         if fields:
             (pending if waits else ready)[key] = {**fields, **({"waits_on": waits} if waits else {})}
     makedirs(paths.proposal, exist_ok=True)
-    write_json(join(paths.proposal, EDITS_FILE), {
-        "about": "Superseded: the dates go to TTSCardMaker's site/Card Creation Dates.json (review_pages.py, then "
-                 "python -m commands.discord_edits created). The first proposal, kept for reference: "
-                 "created, the date of the card's first Discord post, as a Card Edits.json field. pending: waits "
-                 "on rulings in ambiguous.html; "
-                 "created_if_ruled (not a field): a card whose first sure post is after fs gets this date if that "
-                 "entry is ruled to show it.",
+    write_json(join(paths.proposal, CREATED_FILE), {
+        "about": "Created dates for the owner's review (nothing applied): the earliest confident appearance, its "
+                 "first sure Discord post or its first git record (from: discord, old git or git). pending: waits on "
+                 "rulings in ambiguous.html; created_if_ruled: a card whose first sure post is after its first git "
+                 "record gets this date if that entry is ruled to show it.",
         "generated": result["generated"], "cards": ready, "pending": pending})
     return {"created_ready": sum(1 for f in ready.values() if "created" in f),
             "created_pending": sum(1 for f in pending.values() if "created" in f),
             "created_if_ruled": sum(1 for f in pending.values() if "created_if_ruled" in f),
-            "files": [paths.rel(join(paths.proposal, EDITS_FILE))]}
+            "files": [paths.rel(join(paths.proposal, CREATED_FILE))]}
 
 
 def card_thumb(versions: dict, cid: str) -> Optional[str]:
@@ -3188,20 +3188,12 @@ def _summary_lines(result: dict, entries: list) -> list:
             "- Per card also: every poster of it (`posters`), the channels and threads it was posted in "
             "(`series_hints`), the first and last post, links to each.", ""]
 
-    example = next(((c.get("key"), c) for _, c in dated if c["discord"].get("tier") in SURE_TIERS
-                    and c["discord"]["fs_check"].get("verdict") == "discord_earlier"), (None, None))
     out += ["## Proposal (nothing is applied or published)", "",
-            "1. **created**, for the site's created sort and card pages: the earliest evidence, the card's first sure "
-            "Discord post or its first git upload (fs), whichever is earlier. `review_pages.py` writes them to "
-            "`created_dates.json` (provisional while an open entry can move one); AutoCroissant's `python -m "
-            "commands.discord_edits created` turns that into TTSCardMaker's `site/Card Creation Dates.json` (its own "
-            "file, not a Card Edits.json field), one line per card:", "",
-            "   ```json", f"   \"{example[0] or 'Card Name'}\": {{\"date\":"
-            f"\"{(example[1] or {}).get('discord', {}).get('first', {}).get('date', '2020-07-22')[:10]}\",\"from\":"
-            "\"discord\"}", "   ```", "",
-            "   Re-run both after rulings. Only dates leave this folder: no message text, links or Discord names. "
-            f"The older proposal (a Card Edits.json field): {proposal.get('created_ready', 0)} ready, "
-            f"{proposal.get('created_pending', 0)} waiting on rulings, in `proposal/{EDITS_FILE}`.",
+            "1. **created**, for the site's created sort and card pages: the earliest confident appearance, the "
+            "card's first sure Discord post or its first git record (the old repo's, else TTSCardMaker's), with its "
+            f"source: {proposal.get('created_ready', 0)} ready, {proposal.get('created_pending', 0)} waiting on "
+            f"rulings, in `proposal/{CREATED_FILE}`. Re-run after rulings. Only dates leave this folder: no message "
+            "text, links or Discord names.",
             "2. **History**: each look's first post before the card's first git record (revisions) dates the "
             "Discord-era Image versions.",
             "3. **Lost cards**: `lost.json`'s candidates go to the owner for the Morgue (never live cards).", "",

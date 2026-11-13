@@ -496,8 +496,9 @@ def test_twins_bots_and_suspects(tmp_path):
     assert d["suspect"] and d["earliest_open"]["date"].startswith("2020-09-13")
     entries = json.loads((root2 / OUT / "ambiguous.json").read_text())["entries"]
     assert entries[0]["suspect"] == ["fang"]
-    edits = json.loads((root2 / OUT / "proposal" / dm.EDITS_FILE).read_text())
+    edits = json.loads((root2 / OUT / "proposal" / dm.CREATED_FILE).read_text())
     assert edits["pending"]["Fang"]["created_if_ruled"]["date"] == "2020-09-13"
+    assert (edits["pending"]["Fang"]["created"], edits["pending"]["Fang"]["from"]) == ("2020-06-15", "git")   # earliest
     assert not any("aliases" in f for f in [*edits["cards"].values(), *edits["pending"].values()])   # owner: none
 
 
@@ -671,6 +672,9 @@ def test_score_build_and_rulings(tmp_path, capsys):
     assert sorted((v["card"], v["current"]) for v in pairs["versions"]) == [
         ("alpha-wolf", False), ("alpha-wolf", True), ("beta-bear", True), ("gamma-ray", True)]
     assert pairs["cards"]["gamma-ray"]["aliases"] == ["Ray of Gamma"]
+    created = json.loads((root / OUT / "proposal" / dm.CREATED_FILE).read_text())["cards"]
+    assert created["Alpha Wolf"] == {"created": "2020-09-13", "from": "discord"}
+    assert created["Gamma Ray"] == {"created": "2023-11-14", "from": "git"}
     entries = json.loads((root / OUT / "ambiguous.json").read_text())["entries"]
     assert [e["id"] for e in entries] == ["A1"] and entries[0]["affects_earliest"] == ["beta-bear"]
     page = (root / OUT / "ambiguous.html").read_text()
