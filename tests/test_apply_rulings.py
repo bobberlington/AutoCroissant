@@ -1,5 +1,5 @@
 """scripts/apply_rulings.py (by hand): the review page's exported answers checked, stored and withdrawn; the page's
-radios and the Morgue list with the answers (commands/timeline_review.py)."""
+radios and the Morgue list with the answers (commands/timeline_review.py). A 'yes' carries the value it confirms."""
 import importlib.util
 import json
 from pathlib import Path
@@ -18,7 +18,8 @@ def load():
 
 def items():
     field = tr.item("field", "chain-f1", "matches", "fields", "Bolt: stats", card="bolt")
-    field["choices"] = [tr.choice("yes", "yes: 5/2/6/4"), tr.choice("no", "no")]
+    field["choices"] = [tr.choice("yes", "yes: 5/2/6/4", {"hp": 5, "def": 2, "atk": 6, "spd": 4}),
+                        tr.choice("no", "no")]
     field["other"] = {"c": "value", "kind": "stats", "label": "the stats it shows"}
     card = tr.item("card not told", "match:P-1", "matches", "card", "2020-07-22", picture="P-1")
     card["choices"] = [tr.choice("card", "Bolt", "bolt"), tr.choice("none", "none of these")]
@@ -42,11 +43,12 @@ def test_answers_are_checked_stored_and_withdrawn(tmp_path):
     stored = lambda: json.loads((review / "rulings.json").read_text())["rulings"]
     logs = []
     run = lambda e: ar.apply(e, str(tmp_path), build=False, log=logs.append)
-    bad = {"chain-x": {"choice": "yes"}, "chain-q1": {"choice": "yes"}, "chain-f1": {"choice": "value", "value": "5/2"},
+    bad = {"chain-x": {"choice": "yes"}, "chain-q1": {"choice": "yes"}, "chain-f1": {"choice": "yes"},   # no value
            "chain-c1": {"choice": "date", "value": "1999-01-01"}, "match:P-1": {"choice": "card", "value": "Zed"},
            "R1": {"choice": "yes", "value": "inches"}}
     assert run(export(**bad)) == 1 and not (review / "rulings.json").exists()
     assert sum(" refused" in line for line in logs) == 1 and len(logs) == 7          # every error named, none kept
+    assert run(export(**{"chain-f1": {"choice": "value", "value": "5/2"}})) == 1
     assert run({"rulings": {}}) == 1                                                 # not the page's export
     good = {"chain-f1": {"choice": "value", "value": " 5 / 2 / 6 / 5 "}, "match:P-1": {"choice": "card",
                                                                                          "value": "pike"},
@@ -56,11 +58,12 @@ def test_answers_are_checked_stored_and_withdrawn(tmp_path):
     assert got["chain-f1"]["value"] == {"hp": 5, "def": 2, "atk": 6, "spd": 5} and got["chain-f1"]["kind"] == "field"
     assert (got["match:P-1"]["value"], got["chain-c1"]["value"], got["R1"]["item"]["fact"]) == (
         "pike", "Before 2020", "f9")
-    assert run(export(**{"chain-f1": {"choice": "yes"}, "R1": {"choice": "yes", "value": "points"},
+    yes = {"choice": "yes", "value": {"spd": 4, "atk": 6, "def": 2, "hp": 5}}        # the value it confirms
+    assert run(export(**{"chain-f1": yes, "R1": {"choice": "yes", "value": "points"},
                          "chain-c1": {"choice": "clear"}})) == 0
     got = stored()
-    assert "chain-c1" not in got and got["chain-f1"] == {**got["chain-f1"], "choice": "yes"} and \
-        "value" not in got["chain-f1"]
+    assert "chain-c1" not in got and got["chain-f1"]["choice"] == "yes" and \
+        got["chain-f1"]["value"] == {"hp": 5, "def": 2, "atk": 6, "spd": 4}
     assert "1 new or changed, 1 unchanged, 1 cleared" in logs[-1]
     (review / "items.json").write_text(json.dumps({"format": tr.FORMAT, "cards": {}, "items": []}))
     assert run(export(**{"R1": {"choice": "no"}})) == 0 and stored()["R1"]["choice"] == "no"   # taken in: still
@@ -130,12 +133,14 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     number = {"kind": "look not told", "choice": "look", "value": 1}         # an older page's look number
     put(("review", "rulings.json"), {"rulings": {"chain-old1": stale("chain-old1", stale=True),
                                                  "chain-old2": stale("chain-old2"),
-                                                 "chain-l1": number}})
+                                                 "chain-l1": number,                 # a yes on what it proposed then
+                                                 "chain-f1": {"kind": "field", "choice": "yes",
+                                                              "value": {"hp": 6, "def": 2}}}})
     put(("chain", "ruled.json"), {"used": ["chain-old1"]})
     inputs = tr.Inputs(str(tmp_path))
     got = {i["id"]: i for i in tr.gather(inputs)}
     assert [c["c"] for c in got["oldrows-a"]["choices"]] == ["no"] and got["oldrows-a"]["other"]["c"] == "card"
-    assert [c["c"] for c in got["oldrows-b"]["choices"]] == ["yes", "no"]
+    assert [(c["c"], c.get("value")) for c in got["oldrows-b"]["choices"]] == [("yes", "Bolt"), ("no", None)]
     assert [c.get("value") for c in got["match:P-1"]["choices"]] == ["tentacle", "blooper-tentacle", None]
     assert sorted(i for i in got if i.startswith("hint:")) == ["hint:LC-1:bolt", "hint:LC-3:kit"]
     assert got["hint:LC-1:bolt"]["picture"] == "P-m1"
@@ -145,6 +150,7 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert "changed" not in tr.item_html(got["chain-old1"]).split(">")[0]        # taken: its stored copy's mark gone
     page = tr.page(list(got.values()), inputs, "now")
     assert "<option value='kit2' label='Kit (kit2)'>" in page and "<option value='Bolt'>" in page
+    assert "1 answered and applied, 3 answered but not applied" in page
     names = {cid: c["name"] for cid, c in cards.items()}
     assert (ar.parse("card", "kit2", names), ar.parse("card", "Tentacle", names)) == ("kit2", "tentacle")
     try:
@@ -159,9 +165,14 @@ def test_the_page_s_items_from_the_parts(tmp_path):
         good["chain-f2"]["value"]["creatures"][1] == {"hp": 7, "def": 0, "atk": 4, "spd": 4}
     assert ar.check({"chain-f2": {"choice": "value", "value": "6/2"}}, got, {}, names)[2]       # one creature, 2 stats
     # a look's radio is its first version's key; a stored number no radio takes is not applied, kept as stored
-    assert [c.get("value") for c in got["chain-l1"]["choices"]] == [key("a"), key("b"), None, None]
+    assert [c.get("value") for c in got["chain-l1"]["choices"]] == [key("a"), key("b"), "bolt", "bolt"]
     assert got["chain-l1"]["stale"] and "Not applied" in tr.item_html(got["chain-l1"])
-    assert not any(i.get("stale") for i in got.values() if i["id"] != "chain-l1")
+    assert not any(i.get("stale") for i in got.values() if i["id"] not in ("chain-l1", "chain-f1"))
+    # a field's yes carries its value: the rerun proposes 6/1 now, so the stored 6/2 is not applied
+    assert got["chain-f1"]["choices"][0] == {"c": "yes", "label": "yes: 6/1/?/?", "value": {"hp": 6, "def": 1}}
+    assert got["chain-f1"]["stale"] and "data-v='{&quot;hp&quot;: 6, &quot;def&quot;: 1}'" in \
+        tr.item_html(got["chain-f1"])
+    assert tr.offered(got["chain-f1"], {"choice": "yes", "value": {"def": 1, "hp": 6}})
     answer = {"chain-l1": {"choice": "look", "value": 1}}
     assert ar.check(answer, got, {"chain-l1": number}, names)[0]["chain-l1"] == number and ar.check(answer, got, {},
                                                                                                     names)[2]

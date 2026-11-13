@@ -8,9 +8,9 @@ The owner's answers on the card timelines' review page (commands/timeline_review
 <export.json> is the page's "Export answers" file. Every answer is checked against the page's items
 (derived/review/items.json: its id, that it isn't read only, a choice the item offers, a typed value parsed: a card's
 id, or a name only one card has; stats as hp/def/atk/spd, hp/def where the item's stats have only those, 'a | b' for
-two creatures; stars, types, a date YYYY-MM-DD or "Before 2020"; a git look is its first version's key); one error
-stores nothing. An answer the same as the one stored is kept as is, even when its item no longer offers it (the page
-marks it not applied).
+two creatures; stars, types, a date YYYY-MM-DD or "Before 2020"; a git look is its first version's key; a 'yes'
+carries the value, day or card it confirms); one error stores nothing. An answer the same as the one stored is kept
+as is, even when its item no longer offers it (the page marks it not applied).
 Good answers go into derived/review/rulings.json (a later answer of an id wins; "clear" withdraws one), then the
 timelines are rebuilt (python -m commands.discord_chain build reads rulings.json), the Morgue list with the answers
 written to derived/review/morgue.json, and the page rebuilt with the answers checked. Never a repo; no message text.

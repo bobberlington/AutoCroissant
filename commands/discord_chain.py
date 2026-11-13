@@ -612,13 +612,20 @@ def told_look(inputs, cid: Optional[str], key) -> Optional[int]:
         if isinstance(key, str) else None
 
 
+def confirms(r: Optional[dict], value) -> bool:
+    """An answer carries what it confirms (the review page's radio value): it holds only while the build proposes
+    that same value (a field's, a Created day, a picture's card); a rerun proposing another leaves it not applied."""
+    return bool(r) and value is not None and dumps(r.get("value"), sort_keys=True) == dumps(value, sort_keys=True)
+
+
 def owner_rows(inputs) -> Counter:
     """The owner's answers that change what enters, applied to the inputs in place: a picture's card named, its look
     told (a git look by its first version's key, or a draft), a named-only picture confirmed, 'not this card', a joke
     picture that is the live card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's
-    rows given to a card. Fields, older templates, facts against pictures and Created are answered where the chain
-    makes them. The ids acted on go into inputs.used (ruled.json: the review page tells an answer taken in from one
-    whose item changed)."""
+    rows given to a card. A picture's answers (but a git look's key) and a map's 'yes' carry the card they were given
+    on: another card now, not applied. Fields, older templates, facts against pictures and Created are answered where
+    the chain makes them. The ids acted on go into inputs.used (ruled.json: the review page tells an answer taken in
+    from one whose item changed)."""
     rulings, done = getattr(inputs, "rulings", None) or {}, Counter()
     used = inputs.used = getattr(inputs, "used", None) or set()
     if not rulings:
@@ -629,6 +636,7 @@ def owner_rows(inputs) -> Counter:
         ids = {k: review_id(k, rid) for k in ("named only", "look not told", "joke picture", "paper photo")}
         named, told, joke, paper = (rulings.get(ids[k]) for k in ids)
         match = rulings.get("match:" + rid)
+        mine = lambda r: r.get("choice") == "look" or confirms(r, row.get("card"))        # given on its card
         if match and match.get("choice") == "card" and match.get("value") in cards and \
                 row["verdict"] not in SURE_CLASSES:
             row.update(card=match["value"], cards=[match["value"]], verdict="version_unsure", owner="card named",
@@ -637,6 +645,10 @@ def owner_rows(inputs) -> Counter:
             done["owner: a picture's card named"] += 1
         elif match and match.get("choice") == "none":
             used.add("match:" + rid)
+        for k, r in (("named only", named), ("look not told", told), ("joke picture", joke)):
+            if r and r.get("choice") in ("yes", "no", "draft", "live") and not mine(r):
+                done[f"owner: a {k} answer given on another card (not applied)"] += 1
+        named, told, joke = (r if r and mine(r) else None for r in (named, told, joke))
         no = [k for k, r in (("named only", named), ("look not told", told)) if r and r.get("choice") == "no"]
         if no:
             row.update(verdict="none", owner="not this card")
@@ -684,6 +696,9 @@ def owner_rows(inputs) -> Counter:
             used.add(rid)
             done[f"owner: an unsure fact {r.get('choice')}"] += 1
         if rid in maps:
+            if r.get("choice") == "yes" and not confirms(r, maps[rid].get("card")):
+                done["owner: an unsure old map's yes, its card changed (not applied)"] += 1
+                continue
             key = maps[rid].get("card") if r.get("choice") == "yes" else \
                 (cards.get(r.get("value")) or {}).get("key") if r.get("choice") == "card" else None
             if key not in live and r.get("choice") != "no":
@@ -714,6 +729,7 @@ class Chain:
         self.rulings = getattr(inputs, "rulings", None) or {}
         self.used = getattr(inputs, "used", None) or set()   # rulings acted on (owner_rows' too): ruled.json
         self.old_proposed = {i["id"]: i.get("proposed") for i in inputs.old_review}
+        self.not_applied: set = set()            # field answers whose value is no longer the one proposed
         self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
         for row in sorted((r for r in inputs.verdicts if r.get("first") and r["verdict"] == "unsure"),
@@ -1173,8 +1189,9 @@ class Chain:
             e.pop("old_ability_change", None)
 
     def owner_fields(self, cid: str, entries: list) -> None:
-        """The owner's answers on fields to review: yes takes the proposed value, a value given takes that (both
-        sure, method 'owner'); no leaves it to review."""
+        """The owner's answers on fields to review: yes takes the value it confirmed while that is still the one
+        proposed (else not applied: the page asks again), a value given takes that (both sure, method 'owner'); no
+        leaves it to review."""
         for e in entries if self.rulings else []:
             if e["kind"] not in ("discord", "paper", "old repo"):
                 continue
@@ -1183,8 +1200,14 @@ class Chain:
                     continue
                 rid = field.get("review") or review_id("field", f"{cid}|{e['id']}|{key}")
                 r = self.rulings.get(rid) or {}
-                value = r.get("value") if r.get("choice") == "value" else \
-                    field.get("proposed", self.old_proposed.get(rid)) if r.get("choice") == "yes" else None
+                value = r.get("value") if r.get("choice") == "value" else None
+                if r.get("choice") == "yes":
+                    if confirms(r, field.get("proposed", self.old_proposed.get(rid))):
+                        value = r["value"]
+                    elif rid not in self.not_applied:       # owner_fields runs twice: counted once
+                        self.not_applied.add(rid)
+                        self.tally[f"owner: {e['kind']} field {key} yes, its value no longer proposed "
+                                   "(not applied)"] += 1
                 if value is not None:
                     e["fields"][key] = sure(value, "owner", ruled=rid)
                     self.used.add(rid)
@@ -1325,15 +1348,17 @@ class Chain:
         return out
 
     def owner_pick(self, out: dict) -> tuple:
-        """(the owner's answer on the card's Created item, (the date it gives, its source)): ours, the file's or a date
-        given; else the date as built."""
+        """(the owner's answer on the card's Created item, (the date it gives, its source)): ours or the file's while
+        that is still the day the answer carries, or a date given; else the date as built."""
         r = (self.rulings.get(out["review"]) or {}) if out.get("review") else {}
         file, ours = out.get("file") or {}, out["ours"]
         given = {"ours": (ours.get("day"), {**ours, "from": "ours"}),
                  "file": (file.get("date"), {"day": file.get("date"), "source": "website", "from": "file",
                                              "file_from": file.get("from")}),
                  "date": (r.get("value"), {"day": r.get("value"), "source": "owner", "from": "typed"})}
-        if r.get("choice") in given and given[r["choice"]][0]:
+        if r.get("choice") in ("ours", "file") and not confirms(r, given[r["choice"]][0]):
+            self.tally["owner: Created picked, its day no longer the one shown (not applied)"] += 1
+        elif r.get("choice") in given and given[r["choice"]][0]:
             return r, given[r["choice"]]
         if out["date"] == ours.get("day"):
             return {}, (out["date"], {**ours, "from": "ours"})
@@ -1353,6 +1378,9 @@ class Chain:
                                 ("first_repo_earlier", "first repo", "first repo push")):
             hint = out.get(k)
             answer = (self.rulings.get(hint["review"]) or {}) if hint else {}
+            if answer.get("choice") == "yes" and not confirms(answer, hint["day"]):     # another line's day now
+                self.tally[f"owner: a {what} hint's yes, its day changed (not applied)"] += 1
+                continue
             if answer.get("choice") in ("yes", "no"):
                 ruled.append(hint["review"])
                 self.used.add(hint["review"])

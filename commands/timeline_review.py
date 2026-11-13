@@ -13,8 +13,10 @@ versions (a picture's card, its look, named-only pictures to confirm in bulk, jo
 photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
 earlier than the Created date in use), the Morgue list (candidates, ideas never ported, the rest) and splits. A name
 two cards share shows its id; a git look is answered by its first version's key (look numbers shift when a version is
-added). Answers already applied (derived/review/rulings.json) show checked; one whose item left the page says whether
-the rerun took it in (derived/chain/ruled.json) or the item changed, and one no radio takes any more is not applied.
+added), and a confirming answer carries what it confirms (a field's value, a Created day, a picture's card): a rerun
+proposing something else leaves it not applied. Answers already applied (derived/review/rulings.json) show checked;
+one whose item left the page says whether the rerun took it in (derived/chain/ruled.json) or the item changed, and one
+no radio takes any more is not applied.
 No message text or posters: pictures, dates, channels, read fields, and a Discord link for a changelog line (the page
 stays local).
 """
@@ -251,7 +253,7 @@ def old_maps(inputs: Inputs) -> list:
             it["choices"] = [choice("no", "no: not a live card's version (leave them out)")]
             it["other"] = {"c": "card", "kind": "card", "label": "a live card"}
         else:
-            it["choices"] = [choice("yes", f"yes: {r.get('card')}'s versions"),
+            it["choices"] = [choice("yes", f"yes: {r.get('card')}'s versions", r.get("card")),
                              choice("no", "no: not a live card's version (leave them out)")]
             it["other"] = {"c": "card", "kind": "card", "label": "another card"}
         out.append(it)
@@ -305,18 +307,18 @@ def chain_items(inputs: Inputs) -> list:
                 it["choices"].append(choice("look", f"look {look}{near}: in git {when(dm.iso(v['ts']))}"
                                             f"{' (old repo)' if v.get('old') else ''}", v["key"],
                                             pic("../matcher/" + v["thumb"], f"look {look}")))
-            it["choices"] += [choice("draft", "a look not in git (a draft)"), choice("no", "not this card")]
+            it["choices"] += [choice("draft", "a look not in git (a draft)", cid), choice("no", "not this card", cid)]
         elif kind == "named only":
             it = item(kind, r["id"], "matches", "named", head + date, **common)
             it["meta"] = [r.get("why") or ""]
             it["pics"] = [row_pic(row, "the picture"), card_pic(inputs, cid)]
-            it["choices"] = [choice("yes", f"yes, {inputs.name(cid)}"), choice("no", "no")]
+            it["choices"] = [choice("yes", f"yes, {inputs.name(cid)}", cid), choice("no", "no", cid)]
         elif kind == "joke picture":
             it = item(kind, r["id"], "matches", "jokes", head + date, **common)
             it["meta"] = ["Kept out as a joke picture (a meme channel's, or a joke look; your Q1 answer)",
                           f"why: {r['why']}" if r.get("why") not in (None, "version") else ""]
             it["pics"] = [row_pic(row, "the picture"), card_pic(inputs, cid)]
-            it["choices"] = [choice("live", f"{inputs.name(cid)}'s picture: show it in its timeline"),
+            it["choices"] = [choice("live", f"{inputs.name(cid)}'s picture: show it in its timeline", cid),
                              choice("joke", "a joke: leave it out")]
         elif kind == "older template later":
             it = item(kind, r["id"], "matches", "older", head + when(r.get("date")), card=cid, entry=r.get("entry"),
@@ -379,7 +381,7 @@ def field_item(inputs: Inputs, r: dict) -> dict:
                   r.get("why") or ""]
     it["pics"] = [entry_pic(inputs, cid, eid, "this version"), card_pic(inputs, cid)]
     if r.get("proposed") is not None:
-        it["choices"].append(choice("yes", f"yes: {show(r['proposed'])}"))
+        it["choices"].append(choice("yes", f"yes: {show(r['proposed'])}", r["proposed"]))   # the value confirmed
     it["choices"].append(choice("no", "no, or can't tell (stays out)"))
     it["other"] = value_other(field, stats_shape(r.get("proposed"), card_stats(inputs, cid)) if field == "stats"
                               else None)
@@ -402,7 +404,7 @@ def psd_items(inputs: Inputs) -> list:
         it["pics"] = [pic("../" + r["thumb"], "this version") if r.get("thumb") else None, card_pic(inputs, cid)]
         it["pics"] = [p for p in it["pics"] if p]
         if r.get("proposed") is not None:
-            it["choices"].append(choice("yes", f"yes: {show(r['proposed'])}"))
+            it["choices"].append(choice("yes", f"yes: {show(r['proposed'])}", r["proposed"]))
         seen = [dumps(r.get("proposed"), sort_keys=True)]
         for src, value in reads.items():
             if value is None or dumps(value, sort_keys=True) in seen:
@@ -485,13 +487,15 @@ def created_item(inputs: Inputs, r: dict) -> dict:
     it["pics"].append(card_pic(inputs, cid))
     date_other = {"c": "date", "kind": "date", "label": "another date (YYYY-MM-DD or Before 2020)"}
     if kind == "created earlier":
-        it["choices"] = [choice("ours", f"ours: {ours.get('day')}"), choice("file", f"the website's: {file.get('date')}")]
+        it["choices"] = [choice("ours", f"ours: {ours.get('day')}", ours.get("day")),
+                         choice("file", f"the website's: {file.get('date')}", file.get("date"))]
         it["other"] = date_other
     elif kind == "created new":
-        it["choices"] = [choice("ours", f"ours: {ours.get('day')}")]
+        it["choices"] = [choice("ours", f"ours: {ours.get('day')}", ours.get("day"))]
         it["other"] = date_other
     elif kind == "created later":
-        it["choices"] = [choice("file", f"keep the website's: {file.get('date')}"), choice("ours", f"ours: {ours.get('day')}")]
+        it["choices"] = [choice("file", f"keep the website's: {file.get('date')}", file.get("date")),
+                         choice("ours", f"ours: {ours.get('day')}", ours.get("day"))]
         it["other"] = date_other
     else:
         if kind == "changelog earlier":
@@ -501,7 +505,7 @@ def created_item(inputs: Inputs, r: dict) -> dict:
         else:
             row = next((q for q in inputs.first_repo if "Q-" + q["id"] == r.get("row")), {})
             it["meta"].append(f"first repo push: {row.get('author')}: {row.get('subject')}")
-        it["choices"] = [choice("yes", f"yes: Created {when(r.get('date'))}"), choice("no", "no")]
+        it["choices"] = [choice("yes", f"yes: Created {when(r.get('date'))}", when(r.get("date"))), choice("no", "no")]
     return it
 
 
@@ -630,7 +634,11 @@ body.open-only .item.done,body.open-only .item.ro{display:none}
 SCRIPT = """
 const STORE = PAGE.store, saved = JSON.parse(localStorage.getItem(STORE) || "{}");
 function state(id) { return saved[id] || RULED[id] || null; }
-function same(a, b) { return JSON.stringify(a ?? null) === JSON.stringify(b ?? null); }
+function canon(v) {                                            // keys sorted: a value as Python's == sees it
+  return JSON.stringify(v ?? null, (k, x) => x && typeof x === "object" && !Array.isArray(x) ?
+    Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x);
+}
+function same(a, b) { return canon(a) === canon(b); }
 function typedText(v) {                                         // a stored value as typed (stats: hp/def/atk/spd)
   if (Array.isArray(v)) return v.join(", ");
   if (v && typeof v === "object" && v.creatures) return v.creatures.map(typedText).join(" | ");
@@ -739,8 +747,9 @@ def item_html(it: dict) -> str:
     elif it.get("gone"):
         meta += "<div><b>Answered and taken in by the rerun.</b></div>"
     elif it.get("stale"):
-        meta += ("<div><b>Not applied: your answer is no longer one this item offers (a look's version left the "
-                 "card's history, a card no longer live). Answer it again, or clear it.</b></div>")
+        meta += ("<div><b>Not applied: your answer is no longer one this item offers (it proposes another value, "
+                 "date or card now, a look's version left the card's history, a card no longer live). Answer it "
+                 "again, or clear it.</b></div>")
     if it.get("link"):
         meta += f"<div><a href='{escape(it['link'], quote=True)}' target=_blank>open the line in Discord</a></div>"
     body = [head, f"<div class=meta>{meta}</div>"]
@@ -783,12 +792,14 @@ def page(items: list, inputs: Inputs, built: str) -> str:
         f"<option value='{escape(c.get('name') or cid, quote=True)}'>" for cid, c in sorted(inputs.cards.items())) + \
         "</datalist>"
     open_n = sum(1 for i in items if not i.get("read_only") and (i["id"] not in ruled or i.get("stale")))
+    missed = sum(1 for i in items if i.get("stale") or i.get("gone") == "changed")    # answered, not applied
     out = ["<!doctype html><meta charset='utf-8'><title>Card timelines: review</title>",
            f"<style>{STYLE}</style>",
            f"<script>const PAGE = {dumps(data)}; const RULED = {dumps(ruled, ensure_ascii=False)};{SCRIPT}</script>",
            "<header><h1>Card timelines: review</h1>",
-           f"<div>{open_n} items open, {len(ruled)} answered and applied. Pick an answer per item; your picks "
-           "are kept in this browser. Then press <b>Export answers</b> (a JSON file downloads) and run "
+           f"<div>{open_n} items open, {len(ruled) - missed} answered and applied"
+           + (f", {missed} answered but not applied (marked orange)" if missed else "") + ". Pick an answer per item; "
+           "your picks are kept in this browser. Then press <b>Export answers</b> (a JSON file downloads) and run "
            "<code>~/.venvs/ac-py314-fork/bin/python scripts/apply_rulings.py &lt;that file&gt;</code> in AutoCroissant: "
            "it checks every answer, keeps them in derived/review/rulings.json, rebuilds the timelines and this page. "
            "Items left unanswered stay as built. Nothing here is published.</div>",

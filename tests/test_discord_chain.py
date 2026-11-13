@@ -253,7 +253,8 @@ def test_the_owner_s_answers():
     """The review page's answers (rulings.json): a named-only picture confirmed enters and dates Created, a look told
     (by its version's key: the same look after the numbers shift; gone, not applied), 'not this card', a card named,
     a paper photo named, a field given, an unsure fact right, Created picked with its source, earlier hints only
-    before the Created date in use, a map to a card that isn't live, the ids acted on."""
+    before the Created date in use, a map to a card that isn't live, the ids acted on; an answer carrying what a rerun
+    no longer proposes (a field's value, a picture's card, a Created day, a hint's day, a map's card): not applied."""
     rid = dc.review_id
     text = {"attachments/1.png": {"title": {"value": "Bolt", "sure": False, "conf": 0.5, "method": "ocr+name"}}}
     verdicts = [picture(1, T, created_review="named only, before its first picture evidence (x)"),
@@ -262,15 +263,16 @@ def test_the_owner_s_answers():
                 picture(5, None, "none", card=None, paper=True)]
     facts = [{"id": "f9", "card": "Bolt", "source": "changelog", "confidence": "unsure", "date": iso(T + 4 * DAY),
               "field": "hp", "by": -2, "unit": "unknown", "channel": "update-01"}]
-    rulings = {rid("named only", "P-000000000001"): {"choice": "yes"},
+    rulings = {rid("named only", "P-000000000001"): {"choice": "yes", "value": "bolt"},
                rid("look not told", "P-000000000002"): {"choice": "look", "value": "b" + "a" * 20},
-               rid("look not told", "P-000000000003"): {"choice": "no"},
+               rid("look not told", "P-000000000003"): {"choice": "no", "value": "bolt"},
                "match:P-000000000004": {"choice": "card", "value": "bolt"},
                rid("paper photo", "P-000000000005"): {"choice": "card", "value": "bolt"},
-               rid("field", "bolt|D-P-000000000001|name"): {"choice": "yes"},
+               rid("field", "bolt|D-P-000000000001|name"): {"choice": "yes", "value": "Bolt"},
                "R1": {"kind": "unsure fact", "choice": "yes", "value": "points", "item": {"fact": "f9"}},
-               rid("created earlier", "bolt"): {"choice": "file"}, rid("changelog earlier", "bolt"): {"choice": "yes"},
-               "oldrows-m1": {"kind": "unsure map", "choice": "yes"}}
+               rid("created earlier", "bolt"): {"choice": "file", "value": dc.day(T + 9 * DAY)},
+               rid("changelog earlier", "bolt"): {"choice": "yes", "value": dc.day(T + 4 * DAY)},
+               "oldrows-m1": {"kind": "unsure map", "choice": "yes", "value": "Zed Old"}}
     gone = {"id": "oldrows-m1", "kind": "unsure map", "card": "Zed Old", "status": "archived",
             "rows": [old_row("Zed", T + 50 * DAY, "d" * 40, 5)]}
     got = inputs(verdicts, text, facts=facts, created={"Bolt": {"date": dc.day(T + 9 * DAY), "from": "discord"}},
@@ -304,8 +306,8 @@ def test_the_owner_s_answers():
     sure_fact = {**facts[0], "id": "f7", "confidence": "sure", "date": iso(T + 2 * DAY)}
     later = inputs([picture(21, T + 3 * DAY, "version_sure", look=1)], facts=[sure_fact],
                    created={"Bolt": {"date": dc.day(T - 5 * DAY), "from": "discord"}})
-    for answers, status, hint in (({}, "later", None), ({rid("created later", "bolt"): {"choice": "ours"}}, "owner",
-                                                        dc.day(T + 2 * DAY))):
+    ours = {rid("created later", "bolt"): {"choice": "ours", "value": dc.day(T + 3 * DAY)}}
+    for answers, status, hint in (({}, "later", None), (ours, "owner", dc.day(T + 2 * DAY))):
         later.rulings = answers
         chain = dc.Chain(later)
         found, split = chain.discord_rows()
@@ -314,6 +316,43 @@ def test_the_owner_s_answers():
         assert (made["status"], (made.get("changelog_earlier") or {}).get("day")) == (status, hint)
     assert made["date"] == dc.day(T + 3 * DAY) and made["proposed"] and made["owner"]["source"]["picture"] == \
         "P-000000000021" and made["owner"]["source"]["from"] == "ours"
+    for n, date in ((2, T + 2 * DAY), (1, T + 3 * DAY)):         # the hint's yes on its own day, then another's
+        later.rulings = {**ours, rid("changelog earlier", "bolt"): {"choice": "yes", "value": dc.day(T + n * DAY)}}
+        chain = dc.Chain(later)
+        found, split = chain.discord_rows()
+        made = chain.created("bolt", chain.card("bolt", found["bolt"], split.get("bolt", [])), later.verdicts)
+        assert made["date"] == dc.day(date) and (rid("changelog earlier", "bolt") in chain.used) == (n == 2)
+    assert chain.tally["owner: a changelog line hint's yes, its day changed (not applied)"] == 1
+    # a rerun proposing other than what the answer carries: not applied, not used, the item back on the page
+    live = {"id": "oldrows-m2", "kind": "unsure map", "card": "Bolt", "status": "live",
+            "rows": [old_row("Bolt", T + 60 * DAY, "e" * 40, 5)]}
+    drift = {rid("named only", "P-000000000001"): {"choice": "yes", "value": "bolt"},
+             rid("look not told", "P-000000000003"): {"choice": "no", "value": "pike"},          # another card's
+             rid("field", "bolt|D-P-000000000001|name"): {"choice": "yes", "value": "Bolt II"},  # read again: 'Bolt'
+             rid("created earlier", "bolt"): {"choice": "file", "value": dc.day(T + 8 * DAY)},   # the file says T+9
+             "oldrows-m2": {"kind": "unsure map", "choice": "yes", "value": "Pike"}}
+    again = inputs([picture(1, T, created_review="named only, before its first picture evidence (x)"),
+                    picture(3, T + 2 * DAY, "version_unsure")], text,
+                   created={"Bolt": {"date": dc.day(T + 9 * DAY), "from": "discord"}}, old_review=[live])
+    again.rulings = drift
+    done = dc.owner_rows(again)
+    assert again.used == {rid("named only", "P-000000000001")} and not again.old_rows["Bolt"]
+    assert done["owner: a look not told answer given on another card (not applied)"] == 1 and \
+        done["owner: an unsure old map's yes, its card changed (not applied)"] == 1
+    chain = dc.Chain(again)
+    found, split = chain.discord_rows()
+    t = chain.card("bolt", found["bolt"], split.get("bolt", []))
+    name = next(e for e in t["entries"] if e["id"] == "D-P-000000000001")["fields"]["name"]
+    assert name["confidence"] == "review" and chain.review[name["review"]]["proposed"] == "Bolt"
+    assert chain.tally["owner: discord field name yes, its value no longer proposed (not applied)"] == 1
+    assert "P-000000000003" in {i["picture"] for i in chain.review.values() if i["kind"] == "look not told"}
+    made = chain.created("bolt", t, again.verdicts)
+    assert made["status"] == "earlier" and chain.used == {rid("named only", "P-000000000001")}
+    assert chain.tally["owner: Created picked, its day no longer the one shown (not applied)"] == 1
+    named = inputs([picture(1, T, created_review="named only, before its first picture evidence (x)")])
+    named.rulings = {rid("named only", "P-000000000001"): {"choice": "yes", "value": "pike"}}
+    assert dc.owner_rows(named)["owner: a named only answer given on another card (not applied)"] == 1 and \
+        not named.used and named.verdicts[0]["created_review"]
     # a look told by its first version's key: a new version shifts the numbers, the same look; its version gone, or an
     # older page's number: not applied (the picture stays to review)
     told = rid("look not told", "P-000000000002")

@@ -93,8 +93,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
    item left the page shows as taken in (in `ruled.json`) or as not applied (its item changed: answer it again). A git
-   look is answered by its first version's key, not its number (numbers shift when a version is added); an answer no
-   radio takes any more (that version gone) is not applied either.
+   look is answered by its first version's key, not its number (numbers shift when a version is added), and a
+   confirming answer carries what it confirms (a field's 'yes' its value, a Created pick or hint its day, a picture's
+   or a map's answer its card): an answer no radio takes any more (that version gone, a rerun proposing another value,
+   day or card) is not applied either.
 6. **Publish:** the `history` branch holds per card `history/<card id>/timeline.json` (versions: date, fields, method and
    confidence per field, image name, text entries) and one webp per version (the card's PNG size class), plus an index. Written
    by a script run by hand (no Action), one commit per run.
