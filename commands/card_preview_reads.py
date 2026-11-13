@@ -35,7 +35,7 @@ from global_config import API_BASE, DATA_BRANCH, EDITS_PATH, ICON_MANIFEST_PATH
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # card_bake's: not cards
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"     # psd_edit's
 RECORDS = ("render_record.json", "spot_record.json")                        # psd_edit's RENDER_RECORD, SPOT_RECORD
-PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # a picture's page files these under its PSD's entry (edit.js routeOps)
+PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # card_preview's
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}
 

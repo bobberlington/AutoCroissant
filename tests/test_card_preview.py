@@ -280,6 +280,7 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     unknown card) and Card Edits.json (a duplicate's first: it names the PSD), and writes the blobs into a blobless clone,
     where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
     assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
+    assert early.PICTURE_FIELDS == cp.PICTURE_FIELDS
     for python in filter(None, (executable, shutil.which("python3.12"))):     # the runner's python3: 3.12 (ubuntu-24.04)
         assert run_process([python, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0, python
     found = run_process([executable, "-S", "-c", "import sys, commands.card_preview_reads; print(*[getattr(m, '__file__', None) or '' for m in list(sys.modules.values())], sep='\\n')"],

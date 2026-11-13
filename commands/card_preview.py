@@ -44,7 +44,6 @@ from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fi
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, SMALL, blank, clean, stamp
-from commands.card_preview_reads import PICTURE_FIELDS
 from commands.github_api import token_from_env
 from global_config import CARD_REPO, ICON_MANIFEST_PATH
 
@@ -58,6 +57,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/psd_links.py", "commands/card_preview_reads.py",    # the Reads step's (stdlib)
                 "commands/ability_place.py", "commands/ability_index.json")    # a "+ability" (card_bake imports it)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
+PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # a picture's page files these under its PSD's entry (edit.js routeOps)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
 SMALL_AS = ("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None,
                      "tile_rows": 3, "tile_cols": 2})   # 8x4 tiles; codec noise still spreads: the Diff keeps to the region
