@@ -123,7 +123,8 @@ HARD_SMALL = 128            # px: its pixels show at this size; a larger one mus
 HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
 HARD_CLEAR = 4              # stored_mode: times closer one mode must redraw the stored pixels
 IMAGE_CLEAR = 2             # image_mode: times fewer pixels nearest must leave off the stored ones than any other mode
-NEAREST_CLEAR = 1.1        # ...in a same-size redraw (near ties, PoD05 Lead Bloon 1.004: smooth)
+NEAREST_CLEAR = 1.1         # ...in a same-size redraw (near ties, PoD05 Lead Bloon 1.004: smooth)
+TURNED_CLEAR = 1.2          # ...on a turned quad (its smooth modes are PIL's bicubic: Dark_Sword 1.14 smooth)
 GLYPH_TOL = 0.0001          # a restyled text layer's glyphs within this of where they were draw nothing new (canvas px)
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
@@ -3493,10 +3494,10 @@ def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) 
     Photoshop 2023's (psd_links PS_ modes; its relink and Update draw with the Image Interpolation preference), scored
     by the canvas pixels over 8 levels off its stored ones when it redraws `drawn` (the picture they were drawn from, in
     the card's colours as psd_links.picture gives it; by default the embedded one) on the layer's quad. Nearest when
-    NEAREST_CLEAR times better than every other (the maker's Photoshop draws nearest); else, the same size, the best
-    smooth one (a tie: Photoshop's default), so the stored look stays. A relink (a file of another size): nearest when
-    IMAGE_CLEAR times better, else Photoshop's default, Bicubic Automatic (143 of 288 relinked layers stored it, 60
-    nearest; effectsgaps 11-13).
+    NEAREST_CLEAR (a turned quad: TURNED_CLEAR) times better than every other (the maker's Photoshop draws nearest);
+    else, the same size, the best smooth one (a tie: Photoshop's default), so the stored look stays. A relink (a file
+    of another size): nearest when IMAGE_CLEAR times better, else Photoshop's default, Bicubic Automatic (143 of 288
+    relinked layers stored it, 60 nearest; effectsgaps 11-13).
     """
     stored = layer.numpy()
     if drawn is None and layer.smart_object.kind == "data":
@@ -3526,7 +3527,7 @@ def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) 
                 break
             errors[mode] = int((np.abs(plane(rgba, where) - own).max(-1) > 8 / 255).sum())
     if errors:
-        times = IMAGE_CLEAR if relink else NEAREST_CLEAR
+        times = IMAGE_CLEAR if relink else NEAREST_CLEAR if psd_links.upright(corners) else TURNED_CLEAR
         if all(errors[PS_NEAREST] * times < error for mode, error in errors.items() if mode != PS_NEAREST):
             return PS_NEAREST
         if not relink:
