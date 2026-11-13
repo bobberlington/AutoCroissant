@@ -84,8 +84,8 @@ import commands.psd_details  # noqa: F401  standards' folders gate (imported whe
 import commands.png_export as png_export
 import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
-from commands.card_bake import (PREFETCH_WORKERS, RENAME_SIDES, Snapshot, fetch_verified, follow_renames, local_snapshot,
-                                rename_trailers, snapshot_at)
+from commands.card_bake import (PREFETCH_WORKERS, RENAME_SIDES, Snapshot, exit_with_parent, fetch_verified,
+                                follow_renames, local_snapshot, rename_trailers, snapshot_at)
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors, dup_pictures
 from commands.card_models import NOT_IN_FILE_NAMES, card_name, file_stem
@@ -849,8 +849,14 @@ def _pngs(job: Job) -> list:
         [job.png_new] if job.case in ("pair", "png-only") and job.png_new else [])
 
 
-def _init_overlap(cores: int) -> None:
+def _init_pool() -> None:
+    """Every pool worker: the run's token; it exits once the run that made it is gone."""
     token_from_env()
+    exit_with_parent()
+
+
+def _init_overlap(cores: int) -> None:
+    _init_pool()
     png_export.use_cores(cores)
 
 
@@ -1408,7 +1414,7 @@ def changes(old, new, parser, fonts=None) -> list:
 
 
 def _init_worker(clone: str, repository: str, context, vocab, tree: dict, earlier: tuple = (), cores: int = 0) -> None:
-    token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
+    _init_pool()            # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
     wait_fonts()
@@ -1551,7 +1557,7 @@ def catalogue(source: Source, tree: dict, rels: list, index: Optional[dict], voc
     from commands import psd_links
     jobs = [(source.clone, source.repository, rel, tree[rel], vocab) for rel in psd_links.catalogue_order(rels)]
     if len(jobs) >= POOL_MIN and workers != 1:
-        with ProcessPoolExecutor(workers or pool_size(len(jobs)), initializer=token_from_env) as pool:
+        with ProcessPoolExecutor(workers or pool_size(len(jobs)), initializer=_init_pool) as pool:
             read = list(pool.map(_items, jobs, chunksize=1))
     else:
         read = [_items(job) for job in jobs]
@@ -1665,7 +1671,7 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
 
 
 def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, cores: int = 0) -> None:
-    token_from_env()
+    _init_pool()
     if cores:
         png_export.use_cores(cores)
     wait_fonts()

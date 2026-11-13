@@ -1598,12 +1598,17 @@ def name_clashes(cards: list) -> set:
     return clashes
 
 
+def exit_with_parent() -> None:
+    """A pool worker exits once the run that made it is gone (killed); in the run's own process (Inline), nothing."""
+    parent = parent_process()
+    if parent is not None:
+        Thread(target=lambda: (wait_fds([parent.sentinel]), _exit(1)), daemon=True).start()
+
+
 def _init_worker(repository: str, head: str, info: dict, tree: dict, local: str, fonts_dir: str, work: str,
                  cores: int = 0) -> None:
     token_from_env()        # a spawned worker (forkserver on 3.14) starts without the run's header
-    parent = parent_process()   # the run that made it: once gone (killed), the worker exits too
-    if parent is not None:      # None: Inline, in the run's own process
-        Thread(target=lambda: (wait_fds([parent.sentinel]), _exit(1)), daemon=True).start()
+    exit_with_parent()
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
     snapshot = Snapshot(repository, head, info, tree, local)
