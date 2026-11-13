@@ -4,11 +4,13 @@ blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off
 hand: the picture says other than the data, old-style bars, a stat edit that cannot bake or would bake bar cells unlike
 the card's (look_notes), a linked picture the repo lacks, one that looks the same as another file, or one Card sync
 could not draw again (db/links.json, worded at each
-save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
+save). bars: special bars that do not read like the template, or that print a stat as text (Baba: its stat edits are
+refused for good, info, owner 2026-11-13). name: the website's name and the printed title disagree
 (exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM
 (R) (C) aside); none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures
 left out; worded at each save (owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here
-blocks or tells anyone.
+blocks or tells anyone. room (no flag): on a card with no ability, where an added one goes, or false when the bake finds
+no room for one (the website then offers none, owner 2026-11-13).
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -44,6 +46,7 @@ import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
 
+import commands.ability_place as ability_place
 import commands.card_bake as card_bake
 import commands.card_plates as card_plates
 import commands.png_export as png_export
@@ -95,7 +98,7 @@ OWN = -0.5                                  # under which, on every value drawn,
 MAX_STARS = 7                               # the census's: a star added up to here
 # the notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
-# these and _note's "Stat edits need Photoshop": TC site/assets/mockup.js HAND_STATS reads them (keep in step)
+# these and _note's "Stat edits need Photoshop" (hand; printed_bars' in bars): TC site/assets/mockup.js HAND_STATS reads them (keep in step)
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
@@ -550,11 +553,12 @@ def look_notes(psd: PSDImage, raw: bytes) -> list:
 # ========================
 @dataclass
 class Context:
-    """What every card's check shares: the tree, the parser, the fonts and the status chart."""
+    """What every card's check shares: the tree, the parser, the fonts, the status chart and the templates."""
     snapshot: Snapshot
     parser: object
     fonts: str
     colors: list = field(default_factory=list)
+    templates: dict = field(default_factory=dict)
 
     def chart(self) -> Optional[dict]:
         """status_fills() of the status chart, once."""
@@ -563,6 +567,12 @@ class Context:
             self.colors.append(psd_edit.status_fills(PSDImage.open(BytesIO(self.snapshot.fetch(self.snapshot.sha(path)))))
                                if path in self.snapshot.tree else None)
         return self.colors[0]
+
+    def template(self, path: str) -> PSDImage:
+        """A template, opened once (fetched when the clone lacks it, as the bake's)."""
+        if path not in self.templates:
+            self.templates[path] = PSDImage.open(BytesIO(self.snapshot.fetch(self.snapshot.sha(path))))
+        return self.templates[path]
 
 
 def context(repository: str, clone: str, head: str = "") -> Context:
@@ -627,6 +637,16 @@ def _still(psd: PSDImage, moved: np.ndarray, style: str) -> list:
     return [stat for stat in STAT_ORDER if rows[stat] and all(row is not None and not row.any() for row in rows[stat])]
 
 
+def printed_bars(psd: PSDImage) -> Optional[str]:
+    """The note of new bars printing a stat as text (Baba's 'IS 6'): set_comp refuses its stat edits for good (owner
+    2026-11-13), nothing for a person to fix, so it is the bars flag (info), not a hand flag; None for others."""
+    for stat, bars in comp_bars(psd).items():
+        printed = psd_edit.bar_text(psd, bars[0][2]) if len(bars) == 1 else None
+        if printed is not None:
+            return _note(f"{stat}: its bar prints {printed!r} as text, which no stat edit changes")
+    return None
+
+
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
     """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
     over them; those and digit rows by a real bake of all four (an item's: the rows it has, Dirty Bed's DEF), one down and
@@ -645,9 +665,8 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
         for stat, bars in comp_bars(psd).items():
             if len(bars) == 1 and (bars[0][1] is None or not bars[0][0].is_visible()):
                 return [_note(f"{stat}: its bar shows no layer comp")]
-            printed = psd_edit.bar_text(psd, bars[0][2]) if len(bars) == 1 else None
-            if printed is not None:             # set_comp's refusal (Baba)
-                return [_note(f"{stat}: its bar prints {printed!r} as text, which no stat edit changes")]
+            if len(bars) == 1 and psd_edit.bar_text(psd, bars[0][2]) is not None:
+                return []                       # set_comp's refusal for good (Baba): printed_bars, the info flag
         if not _art_over_darks(psd):
             return []
     exposures = [layer for layer in _digits(stat_rows(psd)) if layer.kind == "exposure"]
@@ -679,9 +698,10 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
 # ========================
 def check_card(ctx: Context, rel: str) -> dict:
     """
-    A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"}; mismatches() and
-    flags() word it. plate: the mock-up's (card_plates, published apart: save leaves it out of db/). A custom card's
-    reads are its plate's bar pictures against its PNG (drawn_reads) when the bake drew any.
+    A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"} and, on a card with
+    no ability, "room" (ability_room); mismatches() and flags() word it. plate: the mock-up's (card_plates, published
+    apart: save leaves it out of db/). A custom card's reads are its plate's bar pictures against its PNG (drawn_reads)
+    when the bake drew any. bars: CUSTOM_NOTES, or printed_bars' note.
 
     Args:
         ctx: context()
@@ -697,11 +717,15 @@ def check_card(ctx: Context, rel: str) -> dict:
     parsed = psd_edit.parse_card(ctx.parser, rel, rel, psd)
     creatures = parsed["card"].get("creatures")
     style, why = bar_style(psd, creatures)
-    plate, votes = None, {}
-    if image is not None:
+    plate, votes, parts = None, {}, None
+    try:
+        parts = psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser)
+    except Exception as error:                  # noqa: BLE001 - no plate or room then, never a failed check
+        print(f"{rel}: no parts: {type(error).__name__}: {error}", flush=True)
+    room = ability_room(ctx, rel, psd, parsed, parts)
+    if image is not None and parts is not None:
         try:
-            plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser),
-                                       ctx.fonts)
+            plate = card_plates.plates(psd, image, parts, ctx.fonts)
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
@@ -726,9 +750,28 @@ def check_card(ctx: Context, rel: str) -> dict:
     for path in dups:                           # nothing redraws the others (owner 11-07)
         if path not in drawn and png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
             notes.append(DUP_NOTE.format(name=basename(path)))
-    return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads,
-            "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None,
-            "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate}
+    return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads, "notes": notes,
+            "bars": CUSTOM_NOTES[why] if style == "custom" else printed_bars(psd) if style == "new" else None,
+            "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate,
+            **({"room": room} if room is not None else {})}
+
+
+def ability_room(ctx: Context, rel: str, psd: PSDImage, parsed: dict, parts: Optional[dict]):
+    """On a card with no ability: the box an added one goes in (ability_place.room, the bake's room rule; the mock-up
+    draws it there), else False: no room, the website offers none (owner 2026-11-13). None: an ability, no template, or
+    not told (one console line)."""
+    if parts is None or parts.get("ability"):
+        return None
+    path = psd_edit.template_for(parsed["card"].get("type"), rel)
+    if not path or path not in ctx.snapshot.tree:
+        return None
+    try:
+        with variant_view(psd, 1):
+            box = ability_place.room(psd, rel, ctx.template(path), path, ctx.fonts, ctx.parser)
+    except Exception as error:                  # noqa: BLE001 - no fact, never a failed check
+        print(f"{rel}: no ability room: {type(error).__name__}: {error}", flush=True)
+        return None
+    return list(box) if box is not None else False
 
 
 def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
@@ -1047,6 +1090,7 @@ if __name__ == "__main__":
 __all__ = [
     'SPARSE_FILES',
     'VERSION',
+    'ability_room',
     'blobs_of',
     'by_person',
     'check_card',
@@ -1061,6 +1105,7 @@ __all__ = [
     'mismatches',
     'name_note',
     'png_key',
+    'printed_bars',
     'psd_steps',
     'read_picture',
     'read_row',

@@ -77,6 +77,17 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
+    """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
+    over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
+    out = node(tmp_path, """
+const rec = room => ({ parts: { title: [], ability: [] }, partsTemplate: { ability: { box: [405, 1778, 793, 1856] } }, ...(room === undefined ? {} : { addRoom: room }) });
+const jobs = room => m.partJobs(rec(room), { "+ability": { text: "Deal 3 damage." } }).map(j => [j.id, j.box]);
+out([jobs([30, 2210, 1170, 2388]), jobs(false), jobs(undefined)]);""")
+    assert out == [[["+ability", [30, 2210, 1170, 2388]]], [], [["+ability", [405, 1778, 793, 1856]]]]
+
+
+@needs_js
 def test_plates_port_of_the_rows(tmp_path):
     """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one
     at its label, art, a drawn bar showing another value), and with its margin at least that."""

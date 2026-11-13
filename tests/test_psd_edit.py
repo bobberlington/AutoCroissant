@@ -2807,7 +2807,8 @@ def test_plus_ability_skips_art_and_other_text(clone, parser):
 
 def test_plus_ability_needs_room_under_the_stats(clone, parser):
     """Owner 2026-11-13: "+ability" on a card with stats and no room for two lines under them is refused (NO_ROOM),
-    never laid over the art above them (Whelp) nor squeezed at the card's bottom edge (Paint Warrior); Mini Bee fits."""
+    never laid over the art above them (Whelp) nor squeezed at the card's bottom edge (Paint Warrior); Mini Bee fits.
+    room(), the fact card_checks keeps for the website: None, else a box under the stats."""
     for rel, room in (("Auxiliary/Minions/Whelp.psd", False), ("Auxiliary/Minions/Paint_Warrior.psd", False),
                       ("Auxiliary/Minions/Mini_Bee.psd", True)):
         psd = PSDImage.open(str(clone / rel))
@@ -2816,12 +2817,14 @@ def test_plus_ability_needs_room_under_the_stats(clone, parser):
         t = pe.template_for(pe.parse_card(parser, str(clone / rel), rel, psd)["card"]["type"], rel)
         plan = lambda: ability_place.plan(psd, rel, PSDImage.open(str(clone / t)), t, "Deal 3 damage to an enemy "
                                           "creature and inflict 2T Burn.", str(clone / pe.FONTS_DIR), parser)
+        box = ability_place.room(psd, rel, PSDImage.open(str(clone / t)), t, str(clone / pe.FONTS_DIR), parser)
         if room:
             stats = ability_place.elements(psd, parser.all_types)["stats"]
-            assert plan().ink[1] > max(b[3] for b in stats), rel
+            assert plan().ink[1] > max(b[3] for b in stats) and box[1] >= max(b[3] for b in stats), rel
         else:
             with pytest.raises(pe.Refused, match=ability_place.NO_ROOM):
                 plan()
+            assert box is None, rel
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '

@@ -438,10 +438,18 @@ def test_link_notes_word_the_links_against_the_tree():
 
 
 def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
-    """The stat notes as TTSCardMaker's mockup.js handStats reads them (those stats aren't drawn); old bars name none."""
+    """The stat notes as TTSCardMaker's mockup.js handStats reads them (those stats aren't drawn); old bars name none.
+    Baba's bars printing '6' (refused for good, owner 11-13): the bars flag's info, no hand note, still undrawn."""
+    from io import BytesIO
+    from psd_tools import PSDImage
+    from conftest import CLONE, card_blob
     mockup = SITE_SRC / "site" / "assets" / "mockup.js"
     if not mockup.is_file():
         pytest.skip(f"no {mockup}")
+    baba = PSDImage.open(BytesIO(card_blob(CLONE, OWN_LOOKS[4])))
+    printed = cc.printed_bars(baba)
+    assert printed == "Stat edits need Photoshop: its bar prints '6' as text, which no stat edit changes."
+    assert cc._stat_notes(None, "Baba.psd", baba, {"card": dict.fromkeys(cc.STAT_ORDER, 3)}, "new", None) == []
     monkeypatch.setattr(cc.psd_edit, "stat_caps", lambda psd: None)
     monkeypatch.setattr(cc, "stat_rows", lambda psd: dict.fromkeys(cc.STAT_ORDER, [([], [], None)]))
     monkeypatch.setattr(cc, "_real_bake", lambda ctx, rel, fields, png: ("refused", "unsupported-card: 'Health': x", None))
@@ -450,11 +458,12 @@ def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
              cc.OLD_NOTE + " " + cc.SWAP_NOTE.format("ATK and SPD"), cc.BRIGHT_NOTE, cc.OLD_NOTE]
     script = tmp_path / "probe.mjs"
     script.write_text(f"const m = await import({json.dumps(mockup.as_uri())});\nconsole.log(JSON.stringify("
-                      f"{json.dumps(notes)}.map(hand => m.handStats({{ checks: {{ hand }} }}))));\n", encoding="utf-8")
+                      f"{json.dumps(notes)}.map(hand => m.handStats({{ checks: {{ hand }} }})).concat([m.handStats("
+                      f"{{ checks: {{ bars: {json.dumps(printed)} }} }})])));\n", encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True)
     every = ["hp", "def", "atk", "spd"]
     assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout) == [every, every, ["hp", "def"], ["atk", "spd"], every, []]
+    assert json.loads(done.stdout) == [every, every, ["hp", "def"], ["atk", "spd"], every, [], every]
 
 
 ABIGAIL = ("69876f29527feae72106a91cf0aba6e59197851a", "0e0cf53cfd524eee909c05e1d729097d4bde8212")   # before / after 11-13

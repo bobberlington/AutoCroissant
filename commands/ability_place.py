@@ -23,6 +23,8 @@ effects, alignment and leading ratio stay the template's.
 
 The other cards come from ability_index.json, made by hand from the card repo's working tree:
     python -m commands.ability_place ~/Desktop/TTSCardMaker
+A rename batch moves its keys (rename_index, through card_bake.follow_renames). room(): the room rule alone, for
+card_checks.
 """
 import json
 import statistics as st
@@ -44,6 +46,7 @@ from commands.psd_regions import bar_box, regions
 # Configuration
 # ========================
 INDEX = Path(__file__).with_name("ability_index.json")
+INDEX_FILE = "commands/ability_index.json"   # INDEX in this repo: a rename batch passes it to card_bake.follow_renames
 STATS_TOL, PANEL_TOL = 40, 30       # px: two layouts match
 GAP = 15                            # px: least room between the text and an element
 EDGE = 12                           # px: least room to the canvas or panel bottom
@@ -600,6 +603,21 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
                 pan if mode == "panel" else None)
 
 
+def room(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, fonts_dir: str, parser=None,
+         index_path: Optional[str] = None) -> Optional[tuple]:
+    """plan()'s room rule as one fact per card (card_checks keeps it for the website): the area an added ability's ink
+    goes in (two short lines planned: the paragraph box from their first ink row down), or None when plan() refuses
+    NO_ROOM. Other refusals raise."""
+    from commands.psd_edit import Refused
+    try:
+        got = plan(psd, rel, template, template_rel, TWO_LINES, fonts_dir, parser, index_path)
+        return got.box[0], got.ink[1], got.box[2], got.box[3]
+    except Refused as refused:
+        if refused.why == NO_ROOM:
+            return None
+        raise
+
+
 # ========================
 # The index (by hand: python -m commands.ability_place <card repo>)
 # ========================
@@ -686,9 +704,22 @@ def build(clone: str, out: Path = INDEX, jobs: int = 2) -> dict:
     for card in cards.values():
         card["style"] = sorted(n for n in card.pop("names") if STYLE_COUNT[0] <= count[n] <= STYLE_COUNT[1]
                                and not SKIP_STYLE.search(n))
-    lines = ",\n".join(f"{json.dumps(rel)}: {json.dumps(cards[rel], sort_keys=True)}" for rel in sorted(cards))
-    out.write_text('{"version": 1, "cards": {\n' + lines + "\n}}\n", encoding="utf-8")
+    out.write_text(_index_text(cards), encoding="utf-8")
     return {"cards": len(cards), "errors": errors}
+
+
+def _index_text(cards: dict) -> str:
+    lines = ",\n".join(f"{json.dumps(rel)}: {json.dumps(cards[rel], sort_keys=True)}" for rel in sorted(cards))
+    return '{"version": 1, "cards": {\n' + lines + "\n}}\n"
+
+
+def rename_index(text: str, relocated: dict) -> Optional[str]:
+    """ability_index.json's text with renamed card files' keys (old path -> new path) moved, a rename keeping the card's
+    name too (card_bake.follow_renames); None when none is in it."""
+    cards = json.loads(text)["cards"]
+    if not any(old in cards for old in relocated):
+        return None
+    return _index_text({relocated.get(rel, rel): card for rel, card in cards.items()})
 
 
 if __name__ == "__main__":
