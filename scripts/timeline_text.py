@@ -1,0 +1,1478 @@
+#!/usr/bin/env python3
+"""
+Card timelines' text readers (docs/Future/CARD_TIMELINE.md, stage 2 S4): the title, ability, stars and types off card
+pictures with no PSD (Discord posts, the old repo's PNGs), each read with its method and confidence; a per-era bar
+makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (macOS Vision through a small Swift CLI).
+
+    python timeline_text.py icons          Types/ (+ the old repo's old-only types) and Types/Stars icons -> icons/
+    python timeline_text.py ocr [-j N]     Vision OCR of every input (whole card twice: language correction on and
+                                           off; the title band) -> ocr.jsonl (cached, resumable)
+    python timeline_text.py read [-j N]    raw reads (era, title, ability, stars, types + their scores) -> raw.jsonl
+                                           (eye files: eye/*.json {id: {title, stars, types, ability}} by hand)
+    python timeline_text.py truth          truth.jsonl: old-repo PNGs with their PSD's read, today's cards, eye files
+    python timeline_text.py calibrate      calibration.json (per era per field: bar, n, accuracy at the bar, share
+                                           above it) and reads.jsonl (each read with method, confidence, sure)
+    python timeline_text.py stars [-j N]   the stars read again (stars.jsonl; calibrate takes them over raw.jsonl's)
+
+Inputs (shared with the bars readers): every card-shaped picture of the catalogue (pictures.jsonl, size classes
+CARD_CLASSES) and every PNG version of the old repo (oldgit/versions.jsonl, read only, up to the cut); today's card
+PNGs are read for calibration only. Output under ~/Documents/Tools/discord-archive/derived/readers/text (never a repo):
+no message text is read or written. Fork Python from AC's scripts/ (cv2, numpy, PIL).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from difflib import SequenceMatcher
+from io import BytesIO
+from os.path import basename, dirname, exists, expanduser, join, splitext
+
+HOME = expanduser("~")
+HERE = dirname(os.path.abspath(__file__))
+AC = dirname(HERE)
+if AC not in sys.path:
+    sys.path.insert(0, AC)
+ROOT = join(HOME, "Documents/Tools/discord-archive")
+OUT = join(ROOT, "derived/readers/text")
+OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
+TC = join(HOME, "Desktop/TTSCardMaker")
+OLD_ICONS = ("86cd22b2d86586d51464d7cfe4e59ca3dc0fca46", "268c2b12")   # the old repo's first and last Types/ trees
+CARD_CLASSES = ("ps1200", "gen400", "gen350", "shot", "cardshape")      # the catalogue's card-shaped pictures
+SWIFT = join(HERE, "timeline_text_ocr.swift")
+OCR_SIDE = 1600                                  # whole card OCR'd at this long side
+WORK_W = 360                                     # icons matched on the card at this width
+BAND = {"1:2": 0.135, "2:3": 0.2, "1:1": 0.24}   # title band: share of the card's height
+ICON_BAND = {"1:2": 0.2, "2:3": 0.25, "1:1": 0.3}   # types (stacks of icons reach lower)
+STAR_BAND = {"1:2": 0.28, "2:3": 0.3, "1:1": 0.35}  # stars (stacks of five reach lower still)
+LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|def",
+          "atk": r"attack|atack|attak|atk", "spd": r"speed|spead|spee|spd"}
+STAR_SIZES = [0.045 * 1.14 ** k for k in range(11)]    # star icon width / card width
+TYPE_SIZES = [0.05 * 1.13 ** k for k in range(12)]     # type icon width / card width
+MIN_STAR = 0.04                                  # a star at least this share of the card's width
+NMS_STAR, NMS_TYPE = 0.45, 0.6                   # peaks nearer than this share of the icon are one
+INLINE_FLOOR = 0.6                               # an icon inside the ability's lines
+CLASS_Y = 0.96                                   # a creature's class line sits under this (share of height)
+NAME_MIN = 0.6                                   # a title this like a name takes the name
+BAR_TARGET = 0.98                                # "sure": this share right on the era's truth
+MIN_N = 8                                        # an era with less truth borrows its group's bar
+FIELDS = ("title", "ability", "stars", "types")
+TOKEN = re.compile(r"\[([^\]:]+)(?::[^\]]*)?\]")
+WORD = re.compile(r"[a-z0-9]+")
+CONFUSE = str.maketrans({"0": "o", "1": "l", "i": "l", "5": "s", "|": "l"})
+
+
+# ========================
+# Helpers
+# ========================
+def read_json(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(path, data):
+    os.makedirs(dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    os.replace(path + ".tmp", path)
+
+
+def jsonl(path):
+    if not exists(path):
+        return []
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def write_jsonl(path, rows):
+    with open(path + ".tmp", "w") as f:
+        for row in rows:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+    os.replace(path + ".tmp", path)
+
+
+def git(git_dir, *args, data=None):
+    """git output, None on failure: read only (no lazy fetch, fsmonitor off, no pager)."""
+    done = subprocess.run(["git", "--git-dir", git_dir, "-c", "core.fsmonitor=false", "--no-pager", *args],
+                          input=data, capture_output=True, env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+    return done.stdout if done.returncode == 0 else None
+
+
+def norm(text):
+    """Lower case letters and digits only (titles)."""
+    return "".join(WORD.findall((text or "").lower()))
+
+
+def loose(text):
+    return norm(text).translate(CONFUSE)
+
+
+def ratio(a, b):
+    return SequenceMatcher(None, a, b, autojunk=False).ratio() if a and b else 0.0
+
+
+def ability_words(text):
+    """An ability as words: tokens ([fire]) as '<fire>', the rest lower-case letters and digits."""
+    out = []
+    for part in re.split(r"(\[[^\]]*\])", text or ""):
+        m = TOKEN.fullmatch(part)
+        if m:
+            out.append("<%s>" % m.group(1).strip().lower())
+        else:
+            out += WORD.findall(part.lower())
+    return out
+
+
+def type_name(stem):
+    return stem.strip().lower().replace("_", " ")
+
+
+# ========================
+# Inputs
+# ========================
+def discord_inputs():
+    """The catalogue's card-shaped pictures: one row per stored picture (first post)."""
+    rows = []
+    for r in jsonl(join(ROOT, "derived/catalogue/pictures.jsonl")):
+        if r.get("size_class") in CARD_CLASSES:
+            sha = splitext(basename(r["file"]))[0]
+            rows.append({"id": "d:" + sha, "src": "discord", "file": r["file"], "at": r["at"], "channel": r["channel"],
+                         "w": r["w"], "h": r["h"]})
+    return rows
+
+
+def old_inputs():
+    """The old repo's PNG versions up to the cut: one row per blob (its first version)."""
+    rows, seen = [], set()
+    for v in sorted(jsonl(join(ROOT, "derived/oldgit/versions.jsonl")), key=lambda v: v["ts"]):
+        if v.get("ext") != "png" or v["blob"] in seen:
+            continue
+        seen.add(v["blob"])
+        rows.append({"id": "o:" + v["blob"], "src": "old", "blob": v["blob"], "at": v["date"], "path": v["path"],
+                     "old_id": v.get("old_id")})
+    return rows
+
+
+def today_inputs():
+    """Today's card PNGs (calibration only): the data branch's cards with their main-tree PNG."""
+    from commands.discord_match import load_cards
+    rows = []
+    for cid, card in sorted(load_cards(TC).items()):
+        if card.get("png") and exists(join(TC, card["png"])):
+            rows.append({"id": "t:" + cid, "src": "today", "path": card["png"], "key": card.get("key")})
+    return rows
+
+
+def all_inputs(which=("discord", "old", "today")):
+    out = []
+    if "old" in which:
+        out += old_inputs()
+    if "today" in which:
+        out += today_inputs()
+    if "discord" in which:
+        out += discord_inputs()
+    return out
+
+
+class Blobs:
+    """The old repo's blobs through one cat-file --batch (read only)."""
+    def __init__(self):
+        self.p = None
+
+    def get(self, sha):
+        if self.p is None:
+            self.p = subprocess.Popen(["git", "--git-dir", OLD_GIT, "-c", "core.fsmonitor=false", "cat-file",
+                                       "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+        self.p.stdin.write(sha.encode() + b"\n")
+        self.p.stdin.flush()
+        head = self.p.stdout.readline().split()
+        if len(head) < 3 or head[1] != b"blob":
+            raise FileNotFoundError(sha)
+        data = self.p.stdout.read(int(head[2]))
+        self.p.stdout.read(1)
+        return data
+
+
+_BLOBS = Blobs()
+
+
+def load(item):
+    """The item's picture: RGB, borders trimmed (discord_match's own load and trim)."""
+    from commands.discord_match import load_image, trim
+    if item["src"] == "discord":
+        source = join(ROOT, item["file"])
+    elif item["src"] == "old":
+        source = BytesIO(_BLOBS.get(item["blob"]))
+    else:
+        source = join(TC, item["path"])
+    return trim(load_image(source))
+
+
+def shape(w, h):
+    r = h / w
+    return "1:2" if r > 1.75 else "2:3" if r > 1.25 else "1:1"
+
+
+# ========================
+# OCR
+# ========================
+def ocr_bin():
+    path = join(OUT, "bin", "ocr")
+    if not exists(path) or os.path.getmtime(path) < os.path.getmtime(SWIFT):
+        os.makedirs(dirname(path), exist_ok=True)
+        subprocess.run(["swiftc", "-O", SWIFT, "-o", path], check=True)
+    return path
+
+
+class OCR:
+    """The Swift Vision CLI as a pipe."""
+    def __init__(self):
+        self.p = subprocess.Popen([ocr_bin()], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+    def __call__(self, path, crop=None, scale=1.0, fix=True):
+        job = {"path": path, "scale": float(scale), "fix": bool(fix)}
+        if crop:
+            job["crop"] = [float(c) for c in crop]
+        self.p.stdin.write(json.dumps(job) + "\n")
+        self.p.stdin.flush()
+        return json.loads(self.p.stdout.readline())
+
+    def close(self):
+        self.p.stdin.close()
+        self.p.wait()
+
+
+def rounded(lines):
+    return [[l[0], round(l[1], 2), *(round(x, 4) for x in l[2:6]),
+             [[w[0], *(round(x, 4) for x in w[1:5])] for w in (l[6] if len(l) > 6 else [])]] for l in lines or []]
+
+
+_OCR = None
+
+
+def ocr_task(item):
+    """One input's OCR: whole card (fix on, off) at OCR_SIDE and the title band at ~1600 px wide."""
+    global _OCR
+    if _OCR is None:
+        _OCR = OCR()
+    try:
+        img = load(item)
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:120]}"}
+    from PIL import Image
+    w, h = img.size
+    s = OCR_SIDE / max(w, h)
+    if s != 1:
+        img = img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
+    fd, tmp = tempfile.mkstemp(suffix=".png", dir=join(OUT, "tmp"))
+    os.close(fd)
+    try:
+        img.save(tmp, "PNG", compress_level=1)
+        band = BAND[shape(w, h)]
+        out = {"id": item["id"], "w": w, "h": h, "shape": shape(w, h)}
+        out["fix"] = rounded(_OCR(tmp, fix=True).get("lines"))
+        out["raw"] = rounded(_OCR(tmp, fix=False).get("lines"))
+        out["band"] = rounded(_OCR(tmp, crop=(0, 0, 1, band), scale=max(1.0, 1600 / img.size[0]), fix=False).get("lines"))
+        return out
+    finally:
+        os.remove(tmp)
+
+
+def run_pool(task, items, workers, path, label):
+    done = {r["id"] for r in jsonl(path)}
+    todo = [i for i in items if i["id"] not in done]
+    print(f"{label}: {len(done)} done, {len(todo)} to go", flush=True)
+    start, n = time.time(), 0
+    with open(path, "a") as f, ProcessPoolExecutor(workers) as ex:
+        futs = [ex.submit(task, i) for i in todo]
+        for fut in as_completed(futs):
+            f.write(json.dumps(fut.result()) + "\n")
+            f.flush()
+            n += 1
+            if n % 200 == 0:
+                print(f"{label}: {n}/{len(todo)} {time.time() - start:.0f}s", flush=True)
+
+
+# ========================
+# Icons
+# ========================
+def build_icons():
+    """Types/ and Types/Stars icons: today's (TC main's tree) and the old repo's first and last trees (read only)."""
+    import hashlib
+    from PIL import Image
+    seen, names, today = {}, {}, set()
+    for kind in ("types", "stars"):
+        os.makedirs(join(OUT, "icons", kind), exist_ok=True)
+
+    def keep(kind, stem, data):
+        digest = hashlib.sha1(data).hexdigest()[:10]
+        names.setdefault(digest, [])
+        if stem not in names[digest]:
+            names[digest].append(stem)
+        if digest in seen:
+            return
+        try:
+            im = Image.open(BytesIO(data)).convert("RGBA")
+        except Exception:
+            return
+        seen[digest] = stem
+        im.thumbnail((128, 128), Image.LANCZOS)
+        im.save(join(OUT, "icons", kind, f"{stem}~{digest}.png"))
+    tc_git = join(TC, ".git")
+    for tree, store in [(f"origin/main", tc_git)] + [(c, OLD_GIT) for c in OLD_ICONS]:
+        listing = git(store, "ls-tree", "-r", tree, "--", "Types") or b""
+        for line in listing.decode().splitlines():
+            meta, path = line.split("\t", 1)
+            sha = meta.split()[2]
+            stem, ext = splitext(basename(path))
+            if ext.lower() not in (".png", ".webp"):
+                continue
+            data = git(store, "cat-file", "blob", sha)
+            if data:
+                if store == tc_git:
+                    today.add(type_name(stem))
+                keep("stars" if "/Stars/" in path else "types", type_name(stem), data)
+    same = {}
+    for n in names.values():
+        if len(n) > 1:                  # byte-identical icons: today's name is the type's name
+            main = next((x for x in n if x in today), n[0])
+            same[main] = [x for x in n if x != main]
+    write_json(join(OUT, "icons", "same.json"), same)
+    print(len(os.listdir(join(OUT, "icons", "types"))), "type icons,",
+          len(os.listdir(join(OUT, "icons", "stars"))), "star icons")
+
+
+_BANK = {}
+
+
+def bank(kind):
+    """[(name, rgb float32, mask uint8)] for 'types' or 'stars' (+ eye-cut extras in icons/<kind>-extra)."""
+    if kind in _BANK:
+        return _BANK[kind]
+    from PIL import Image
+    import numpy as np
+    out = []
+    for folder in (kind, kind + "-extra"):
+        d = join(OUT, "icons", folder)
+        for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            im = Image.open(join(d, f)).convert("RGBA")
+            box = im.getchannel("A").getbbox()
+            if box:
+                im = im.crop(box)
+            a = np.asarray(im, np.float32)
+            out.append((f.split("~")[0], a[..., :3], (a[..., 3] > 127).astype(np.uint8) * 255))
+    _BANK[kind] = out
+    return out
+
+
+_SCALED = {}
+
+
+def scaled_icon(icon, width):
+    """(rgb, mask, coarse): the icon at width px; coarse: transparent pixels at the icon's mean (no weight in a
+    plain correlation)."""
+    import cv2
+    import numpy as np
+    key = (id(icon), int(round(width)))
+    if key not in _SCALED:
+        name, rgb, mask = icon
+        w = max(4, int(round(width)))
+        h = max(4, round(rgb.shape[0] * w / rgb.shape[1]))
+        t = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA)
+        m = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST) > 0
+        g = gray(t)
+        coarse = g.copy()
+        if m.any():
+            coarse[~m] = g[m].mean()
+        _SCALED[key] = (g, m, coarse)
+        alpha = cv2.resize(mask, (w, h), interpolation=cv2.INTER_AREA)
+        _SCALED[key + ("rgb",)] = (t, alpha >= 230)
+    return _SCALED[key]
+
+
+def gray(a):
+    """Luminance (float32): icons are matched by shape, since cards tint them."""
+    import numpy as np
+    a = np.asarray(a, np.float32)
+    return a @ np.array([0.299, 0.587, 0.114], np.float32) if a.ndim == 3 else a
+
+
+def match(region, templ):
+    """Plain normalized correlation map (nan-free), None when the template doesn't fit."""
+    import cv2
+    import numpy as np
+    if templ.shape[0] >= region.shape[0] or templ.shape[1] >= region.shape[1] or templ.std() < 1:
+        return None
+    r = cv2.matchTemplate(region, templ, cv2.TM_CCOEFF_NORMED)
+    return np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def verify(region, x, y, t, m):
+    """Masked correlation and mean absolute difference (luminance) of the icon at (x, y): (ncc, mad)."""
+    import numpy as np
+    patch = region[y:y + t.shape[0], x:x + t.shape[1]]
+    if patch.shape[:2] != t.shape[:2] or m.sum() < 12:
+        return 0.0, 255.0
+    p, q = patch[m], t[m]
+    mad = float(np.abs(p - q).mean())
+    p = p - p.mean()
+    q = q - q.mean()
+    den = float(np.sqrt((p * p).sum() * (q * q).sum()))
+    return (float((p * q).sum() / den) if den > 0 else 0.0), mad
+
+
+def peaks(score, size, radius, floor, most=12):
+    """Local maxima >= floor, at least radius*size apart: [(score, x, y)]."""
+    s = score.copy()
+    out = []
+    r = max(1, int(radius * size))
+    while len(out) < most:
+        i = int(s.argmax())
+        y, x = divmod(i, s.shape[1])
+        v = float(s[y, x])
+        if v < floor:
+            break
+        out.append((v, x, y))
+        s[max(0, y - r):y + r + 1, max(0, x - r):x + r + 1] = -1
+    return out
+
+
+def colour_fit(A, x, y, icon, width):
+    """The icon's opaque pixels against the card's at (x, y), in colour: (ncc, mad)."""
+    import numpy as np
+    scaled_icon(icon, width)
+    t, m = _SCALED[(id(icon), int(round(width)), "rgb")]
+    patch = A[y:y + t.shape[0], x:x + t.shape[1]]
+    if patch.shape[:2] != t.shape[:2] or m.sum() < 12:
+        return 0.0, 255.0
+    p, q = patch[m].astype(np.float32), t[m]
+    mad = float(np.abs(p - q).mean())
+    p, q = p - p.mean(0), q - q.mean(0)
+    den = float(np.sqrt((p * p).sum() * (q * q).sum()))
+    return (float((p * q).sum() / den) if den > 0 else 0.0), mad
+
+
+def icon_score(ncc, mad):
+    """One number per hit: the shape's masked correlation (tinted icons keep their shape)."""
+    return ncc
+
+
+def refine(region, icon, x, y, width, steps=(0.92, 0.96, 1.0, 1.04, 1.08), shift=2):
+    """The best masked correlation near (x, y) over nearby sizes and shifts: (ncc, mad, x, y, w, h)."""
+    best = (-1.0, 255.0, x, y, 0, 0)
+    for k in steps:
+        t, m, _ = scaled_icon(icon, width * k)
+        cx, cy = x + (round(width) - t.shape[1]) // 2, y + (round(width) - t.shape[1]) // 2
+        for dy in range(-shift, shift + 1):
+            for dx in range(-shift, shift + 1):
+                px, py = cx + dx, cy + dy
+                if px < 0 or py < 0:
+                    continue
+                ncc, mad = verify(region, px, py, t, m)
+                if ncc > best[0]:
+                    best = (ncc, mad, px, py, t.shape[1], t.shape[0])
+    return best
+
+
+def detect(region, kind, sizes, card_w, floor, radius, coarse_floor=0.3, per=3, top=30):
+    """Every bank icon at every size over region (luminance): a plain correlation finds places, the masked
+    correlation scores them, the best are refined over nearby sizes and shifts. [(score, name, x, y, w, h, ncc,
+    mad, icon)] best first, overlaps dropped."""
+    region = gray(region)
+    cands = []
+    for icon in bank(kind):
+        for size in sizes:
+            t, m, coarse = scaled_icon(icon, size * card_w)
+            s = match(region, coarse)
+            if s is None:
+                continue
+            for v, x, y in peaks(s, min(t.shape[:2]), radius, coarse_floor, per):
+                ncc, mad = verify(region, x, y, t, m)
+                cands.append((ncc, icon, x, y, t.shape[1]))
+    cands.sort(key=lambda c: -c[0])
+    found = []
+    for ncc, icon, x, y, w in cands[:top]:
+        ncc, mad, x, y, w, h = refine(region, icon, x, y, w)
+        sc = icon_score(ncc, mad)
+        if sc >= floor:
+            found.append((sc, icon[0], x, y, w, h, ncc, mad, icon))
+    found.sort(key=lambda c: -c[0])
+    kept = []
+    for c in found:
+        if all(overlap(c, k) < 0.3 for k in kept):
+            kept.append(c)
+    return kept
+
+
+def overlap(a, b):
+    ax0, ay0, ax1, ay1 = a[2], a[3], a[2] + a[4], a[3] + a[5]
+    bx0, by0, bx1, by1 = b[2], b[3], b[2] + b[4], b[3] + b[5]
+    iw, ih = max(0, min(ax1, bx1) - max(ax0, bx0)), max(0, min(ay1, by1) - max(ay0, by0))
+    return iw * ih / max(1, min((ax1 - ax0) * (ay1 - ay0), (bx1 - bx0) * (by1 - by0)))
+
+
+# ========================
+# Readers
+# ========================
+_NAMES = None
+_STAGE1 = None
+
+
+def names_index():
+    """Every name a title may print: today's cards (key, website name, printed title) and the old repo's cards and
+    titles (old names are matched, never made aliases)."""
+    global _NAMES
+    if _NAMES is None:
+        found = read_json(join(OUT, "names.json"))
+        if found is None:
+            found = {}
+            from commands.discord_match import load_cards
+            for card in load_cards(TC).values():
+                for n in (card.get("name"), card.get("key")):
+                    if n:
+                        found.setdefault(n, "live")
+            for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
+                t = (r.get("read") or {}).get("title")
+                if t:
+                    found.setdefault(t, "old")
+            for k in (read_json(join(ROOT, "derived/oldgit/map.json"), {}) or {}).get("cards", {}):
+                found.setdefault(k, "old")
+            write_json(join(OUT, "names.json"), found)
+        _NAMES = [(n, loose(n)) for n in sorted(found) if len(loose(n)) >= 2]
+    return _NAMES
+
+
+def stage1_eras():
+    global _STAGE1
+    if _STAGE1 is None:
+        _STAGE1 = {r["file"]: r["era"] for r in jsonl(join(ROOT, "derived/eras/discord_eras.jsonl"))}
+    return _STAGE1
+
+
+def stat_labels(lines):
+    """{stat: (x0, y0, x1, y1)} of the printed stat labels in whole-card OCR lines (fractions)."""
+    out = {}
+    for line in lines or []:
+        word = re.sub(r"[^a-z]", "", line[0].lower())
+        for stat, pat in LABELS.items():
+            if stat not in out and re.fullmatch(pat, word):
+                out[stat] = (line[2], line[3], line[2] + line[4], line[3] + line[5])
+    return out
+
+
+def look_of(a):
+    """Frame/panel shares of a card (the stage-1 classifier's look features)."""
+    import cv2
+    import numpy as np
+    small = cv2.resize(a, (200, max(2, round(200 * a.shape[0] / a.shape[1]))), interpolation=cv2.INTER_AREA)
+    small = small.astype(np.int16)
+    h, w = small.shape[:2]
+    b = max(2, w // 40)
+    frame = np.concatenate([small[:b].reshape(-1, 3), small[-b:].reshape(-1, 3), small[:, :b].reshape(-1, 3),
+                            small[:, -b:].reshape(-1, 3)])
+    white = lambda x: float((x > 225).all(-1).mean())
+    black = lambda x: float((x < 35).all(-1).mean())
+    return {"frame_white": white(frame), "low_black": black(small[int(h * .55):]), "low_white": white(small[int(h * .7):])}
+
+
+def era_of(item, w, h, labels, look):
+    """The card's template era: stage 1's for the card channels' pictures; else by size (old repo, today) or by the
+    stat labels' place and the look (the stage-1 rules)."""
+    if item["src"] == "discord":
+        known = stage1_eras().get(item["file"])
+        if known:
+            return known, "stage1"
+    asp = h / w
+    if item["src"] != "discord":
+        if asp < 1.2:
+            return ("R" if w >= 2000 else "S"), "size"
+        return ("D-item" if asp < 1.75 else "D2"), "size"
+    if len(labels) >= 3:
+        x1 = max(b[2] for b in labels.values())
+        if asp < 1.2:
+            return ("R" if w >= 2000 else "bars-other"), "labels"
+        if 1.4 <= asp <= 1.6 and 0.23 <= x1 <= 0.265:
+            return "B", "labels"
+        if 1.9 <= asp <= 2.1 and 0.25 <= x1 <= 0.315:
+            return ("D1" if w < 900 else "D2"), "labels"
+        if 1.9 <= asp <= 2.1 and 0.16 <= x1 <= 0.225:
+            return ("A" if look["frame_white"] > 0.45 else "C"), "labels"
+        return "bars-other", "labels"
+    if 0.9 <= asp <= 1.1 and w <= 1300:
+        return "S", "look"
+    if look["frame_white"] > 0.45 and look["low_white"] > 0.4:
+        return "A-item", "look"
+    if 1.4 <= asp <= 1.6 and w >= 1000:
+        return "D-item", "look"
+    if 1.9 <= asp <= 2.1 and w >= 1100:
+        return "D2", "look"              # the 1200x2400 template, labels unread
+    if look["low_black"] > 0.45 and asp < 1.7:
+        return "B-item", "look"
+    return "other", "look"
+
+
+STAR_GLYPHS = re.compile(r"[*★☆✦✧✩✪✫✬✭✮✯✰⭐☀]+")
+
+
+def read_title(band):
+    """The title off the title band's lines: the tallest lines (two-line titles joined), then the nearest name.
+    {text, name, s1, s2, conf}."""
+    cands = [l for l in band or [] if len(norm(STAR_GLYPHS.sub("", l[0]))) >= 2]
+    if not cands:
+        return {"text": None, "name": None, "s1": 0.0, "s2": 0.0, "conf": 0.0}
+    hmax = max(l[5] for l in cands)
+    big = [l for l in cands if l[5] >= 0.6 * hmax]
+    big.sort(key=lambda l: (round((l[3] + l[5] / 2) / max(hmax, 1e-3)), l[2]))
+    texts = [" ".join(STAR_GLYPHS.sub(" ", l[0]).strip() for l in big)]
+    texts += [STAR_GLYPHS.sub(" ", l[0]).strip() for l in big if len(big) > 1]
+    best = {}
+    for t in texts:
+        lt = loose(t)
+        for name, ln in names_index():
+            if abs(len(ln) - len(lt)) > max(len(ln), len(lt)) * 0.6:
+                continue
+            sm = SequenceMatcher(None, lt, ln, autojunk=False)
+            if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
+                continue
+            r = sm.ratio()
+            key = norm(name)
+            if r > best.get(key, (0, None))[0]:
+                best[key] = (r, name)
+    ranked = sorted(best.values(), reverse=True)
+    s1, name = ranked[0] if ranked else (0.0, None)
+    s2 = ranked[1][0] if len(ranked) > 1 else 0.0
+    conf = s1 - 0.5 * max(0.0, s2 - (s1 - 0.15))
+    return {"text": re.sub(r"\s+", " ", texts[0]).strip(), "name": name if s1 >= NAME_MIN else None,
+            "s1": round(s1, 4), "s2": round(s2, 4), "conf": round(conf, 4)}
+
+
+def visual_lines(lines):
+    """OCR lines grouped into printed lines (segments sharing a row), left to right: [[segments]]."""
+    rows = []
+    for l in sorted(lines, key=lambda l: l[3] + l[5] / 2):
+        cy = l[3] + l[5] / 2
+        for row in rows:
+            r0 = row[0]
+            if abs((r0[3] + r0[5] / 2) - cy) < 0.5 * min(r0[5], l[5]):
+                row.append(l)
+                break
+        else:
+            rows.append([l])
+    return [sorted(r, key=lambda l: l[2]) for r in rows]
+
+
+def ability_block(lines, era, labels, band, kind):
+    """The ability's printed lines (visual lines) and the class line dropped: (rows, class_row)."""
+    lines = [l for l in lines or [] if len(l[0].strip()) > 0]
+    top = band + 0.01
+    if len(labels) >= 2:
+        ys = sorted(((b[1] + b[3]) / 2) for b in labels.values())
+        pitch = (ys[-1] - ys[0]) / max(1, len(ys) - 1)
+        last = max(labels.values(), key=lambda b: b[3])
+        top = max(top, last[3])
+        if "spd" not in labels:
+            top = max(top, last[3] + 0.6 * pitch)
+    elif era in ("D1", "D2"):
+        top = max(top, 0.7)
+    lines = [l for l in lines if l[3] + l[5] / 2 >= top and len("".join(WORD.findall(l[0].lower()))) >= 2]
+    rows = visual_lines(lines)
+    if not rows:
+        return [], None
+    if kind == "card":                 # a creature or minion: everything under the bars
+        block = rows
+    else:                              # items, fields, statuses: the bottom block of evenly spaced lines
+        block = [rows[-1]]
+        for row in reversed(rows[:-1]):
+            prev = block[0]
+            hgt = max(l[5] for l in prev)
+            gap = min(l[3] for l in prev) - max(l[3] + l[5] for l in row)
+            hr = max(l[5] for l in row) / max(hgt, 1e-4)
+            if gap > 1.3 * hgt or not 0.6 <= hr <= 1.6:
+                break
+            block.insert(0, row)
+    cls = None
+    last = block[-1]
+    text = " ".join(l[0] for l in last)
+    x0, x1 = min(l[2] for l in last), max(l[2] + l[4] for l in last)
+    cy = (last[0][3] + last[0][5] / 2)
+    if kind == "card" and len(block) > 1 and cy >= CLASS_Y and abs((x0 + x1) / 2 - 0.5) < 0.13 \
+            and len(text.split()) <= 5 and not re.search(r"[0-9]|\.\s*$", text):
+        cls, block = last, block[:-1]
+    return block, cls
+
+
+def ability_text(rows):
+    return " ".join(" ".join(l[0] for l in row) for row in rows).strip()
+
+
+_VOCAB = None
+
+
+def vocab():
+    """Words an ability may print: the dictionary's and every known ability's (today's, the old repo's)."""
+    global _VOCAB
+    if _VOCAB is None:
+        found = set()
+        try:
+            with open("/usr/share/dict/words") as f:
+                found |= {w.strip().lower() for w in f}
+        except OSError:
+            pass
+        for t in known_abilities().values():
+            for a in t:
+                found |= set(WORD.findall(a.lower()))
+        _VOCAB = found
+    return _VOCAB
+
+
+_KNOWN = None
+
+
+def known_abilities():
+    """{loose name: {ability texts}} from today's cards and the old repo's PSD reads."""
+    global _KNOWN
+    if _KNOWN is None:
+        found = read_json(join(OUT, "known.json"))
+        if found is None:
+            found = defaultdict(set)
+            from commands.discord_match import load_cards
+            for card in load_cards(TC).values():
+                if card.get("ability"):
+                    for n in (card.get("name"), card.get("key")):
+                        if n:
+                            found[loose(n)].add(card["ability"])
+            for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
+                rd = r.get("read") or {}
+                if rd.get("ability") and rd.get("title"):
+                    found[loose(rd["title"])].add(rd["ability"])
+            found = {k: sorted(v) for k, v in found.items()}
+            write_json(join(OUT, "known.json"), found)
+        _KNOWN = {k: set(v) for k, v in found.items()}
+    return _KNOWN
+
+
+def ability_scores(text, other, title):
+    """Confidence parts: vocabulary share, the two OCR passes' agreement, a known text of the card equal to it."""
+    ws = ability_words(text)
+    alpha = [w for w in ws if not w.isdigit() and not w.startswith("<")]
+    voc = vocab()
+    share = sum(w in voc for w in alpha) / len(alpha) if alpha else 0.0
+    agree = ability_words(other) == ws if other is not None else False
+    known = False
+    if title and title.get("name"):
+        for t in known_abilities().get(loose(title["name"]), ()):
+            if ability_words(t) == ws:
+                known = True
+    return {"vocab": round(share, 4), "agree": agree, "known": known, "words": len(ws)}
+
+
+def inline_icons(a, rows, card_w):
+    """Type icons inside the ability's lines: [(row index, x fraction, name, score)] (score >= INLINE_FLOOR)."""
+    import numpy as np
+    H, W = a.shape[:2]
+    found = []
+    for i, row in enumerate(rows):
+        y0 = min(l[3] for l in row)
+        y1 = max(l[3] + l[5] for l in row)
+        hgt = (y1 - y0) * H
+        if hgt < 6:
+            continue
+        pad = 0.35 * hgt
+        ya, yb = int(max(0, y0 * H - pad)), int(min(H, y1 * H + pad))
+        region = a[ya:yb].astype(np.float32)
+        if region.shape[0] < 8:
+            continue
+        sizes = [hgt * k / card_w for k in (0.9, 1.1, 1.35)]
+        for c in detect(region, "types", sizes, card_w, 0.7, NMS_TYPE):
+            cn, cm = colour_fit(region, c[2], c[3], c[8], c[4])
+            mix = 0.5 * c[6] + 0.5 * cn - cm / 255.0
+            if mix >= INLINE_FLOOR:
+                found.append((i, (c[2] + c[4] / 2) / W, same_icons().get(c[1], c[1]), round(mix, 3)))
+    return found
+
+
+def place_icons(rows, icons):
+    """The ability text with the icons put among the words by x (a word the icon covers is dropped)."""
+    out = []
+    for i, row in enumerate(rows):
+        words = []
+        for l in row:
+            ws = l[6] if len(l) > 6 and l[6] else [[l[0], l[2], l[3], l[4], l[5]]]
+            words += [(w[1], w[1] + w[3], w[0]) for w in ws]
+        mine = sorted((x, n) for r, x, n, s in icons if r == i)
+        merged = []
+        for x0, x1, t in words:
+            if any(x0 <= x <= x1 and len(re.sub(r"[A-Za-z0-9]", "", t)) >= len(t) / 2 for x, n in mine):
+                continue
+            merged.append((x0, t))
+        merged += [(x, "[%s]" % n) for x, n in mine]
+        out.append(" ".join(t for _, t in sorted(merged)))
+    return " ".join(out).strip()
+
+
+def rotated(patch, angle):
+    """A patch turned about its centre, and its inscribed circle as the mask."""
+    import cv2
+    import numpy as np
+    h, w = patch.shape[:2]
+    m = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    turned = cv2.warpAffine(patch, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    yy, xx = np.mgrid[:h, :w]
+    circle = ((xx - w / 2 + 0.5) ** 2 + (yy - h / 2 + 0.5) ** 2 <= (min(w, h) / 2) ** 2).astype(np.uint8) * 255
+    return turned, circle
+
+
+def read_stars(a, band_h, title_box):
+    """Stars: the bank's best star icon right of the title, then that very star cut from the card (a circle, turned
+    in 10 degree steps: cards turn their stars) matched over the band; its copies' scores and colour differences
+    are kept, the count is decided in calibrate (count_stars)."""
+    import cv2
+    import numpy as np
+    H, W = a.shape[:2]
+    x_from = int(W * 0.45)
+    if title_box:
+        x_from = max(int(W * 0.3), min(x_from, int(title_box[2] * W) - int(0.03 * W)))
+    region = a[:max(8, int(band_h * H)), x_from:].astype(np.float32)
+    if region.shape[1] < 16:
+        return {"icon": None}
+    cands = detect(region, "stars", STAR_SIZES, W, 0.0, NMS_STAR)
+    if not cands:
+        return {"icon": None}
+    v, name, x, y, tw, th, ncc, mad = cands[0][:8]
+    g = gray(region)
+    side = min(tw, th)
+    cx, cy = x + tw // 2, y + th // 2
+    x0, y0 = max(0, cx - side // 2), max(0, cy - side // 2)
+    templ = g[y0:y0 + side, x0:x0 + side]
+    colour = region[y0:y0 + side, x0:x0 + side]
+    if templ.shape[0] < 6 or templ.shape[1] < 6 or templ.shape[0] >= g.shape[0] or templ.shape[1] >= g.shape[1]:
+        return {"icon": None}
+    best = None
+    for angle in range(0, 90, 10):
+        t, m = rotated(templ, angle)
+        if t.std() < 1:
+            continue
+        r = np.nan_to_num(cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED, mask=m), nan=0.0, posinf=0.0, neginf=0.0)
+        best = r if best is None else np.maximum(best, r)
+    if best is None:
+        return {"icon": None}
+    _, circle = rotated(templ, 0)
+    inside = circle > 0
+    ref = colour[inside].mean(0)
+    copies = []
+    for c, px, py in peaks(best, side, 0.4, 0.2, 12):
+        patch = region[py:py + side, px:px + side]
+        diff = float(np.abs(patch[inside].mean(0) - ref).mean()) if patch.shape[:2] == inside.shape else 255.0
+        copies.append([round(c, 3), round(diff, 1), px, py])
+    return {"icon": name, "bank": round(v, 3), "ncc": round(ncc, 3), "mad": round(mad, 1),
+            "size": round(side / W, 3), "copies": copies}
+
+
+def read_star_blobs(a, title_box, band=0.11):
+    """Yellow and gold stars (eras A and B: suns in a row, an overlapped cluster) as colour blobs right of the title:
+    {blobs: [[area, x, y, w, h]] largest first, cluster: [w, h] of the largest} (fractions of the card's width)."""
+    import cv2
+    import numpy as np
+    H, W = a.shape[:2]
+    x_from = int(W * 0.55)
+    if title_box:
+        x_from = max(int(W * 0.35), min(x_from, int(title_box[2] * W)))
+    region = np.ascontiguousarray(a[:max(8, int(band * H)), x_from:])
+    hsv = cv2.cvtColor(region, cv2.COLOR_RGB2HSV)
+    mask = ((hsv[..., 0] >= 10) & (hsv[..., 0] <= 40) & (hsv[..., 1] >= 90) & (hsv[..., 2] >= 140)).astype(np.uint8)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    blobs = sorted(([int(st[4]), round(st[0] / W, 4), round(st[1] / W, 4), round(st[2] / W, 4), round(st[3] / W, 4)]
+                    for st in stats[1:] if st[4] >= 6), reverse=True)[:12]
+    return {"blobs": blobs, "cluster": blobs[0][3:5] if blobs else None}
+
+
+def count_blobs(sb, rule):
+    """(n, conf) from read_star_blobs. 'row': the largest group of like blobs (area within rule['tol'], squarish,
+    one row); sure when no other sizeable blob shares the row. 'cluster': an overlapped cluster's width over its
+    height, each star after the first adding rule['step'] (the cluster must fill its box like stars do)."""
+    if not sb or not sb.get("blobs"):
+        return None, 0.0
+    blobs = [b for b in sb["blobs"] if b[0] >= 12]
+    if rule["kind"] == "row":
+        best = []
+        for b in blobs:
+            cy = b[2] + b[4] / 2
+            group = [c for c in blobs if 1 / rule["tol"] <= c[0] / b[0] <= rule["tol"]
+                     and 0.6 <= c[3] / max(c[4], 1e-4) <= 1.6 and abs(c[2] + c[4] / 2 - cy) < rule.get("rows", 0.6) * b[4]]
+            if len(group) > len(best):
+                best = group
+        if not best:
+            return None, 0.0
+        mean = sum(c[0] for c in best) / len(best)
+        cy = sum(c[2] + c[4] / 2 for c in best) / len(best)
+        h = max(c[4] for c in best)
+        others = [c for c in blobs if c not in best and c[0] >= 0.4 * mean and abs(c[2] + c[4] / 2 - cy) < h]
+        return len(best), (1.0 if not others else 0.3)
+    big = blobs[0] if blobs else None
+    if not big or big[4] <= 0:
+        return None, 0.0
+    fill = big[0] / max(1.0, big[3] * WORK_W * big[4] * WORK_W)
+    x = (big[3] / big[4] - rule.get("base", 1.05)) / rule["step"] + 1
+    n = int(round(x))
+    if n < 1 or not 0.3 <= fill <= 0.8:
+        return None, 0.0
+    return n, round(max(0.0, 1 - 2 * abs(x - n)), 4)
+
+
+def count_stars(st, rule):
+    """(n, conf) from read_stars' copies under a rule {ncc, mad}: copies at least that alike (correlation, mean
+    colour difference) are stars; the confidence is the margin between the weakest star and the strongest
+    non-star. A star under MIN_STAR of the card's width is no read."""
+    if not st or not st.get("icon") or st.get("bank", 0) < rule.get("bank", 0.0) or st.get("size", 0) < MIN_STAR:
+        return None, 0.0
+    good, bad = [], []
+    for c, mad, x, y in st["copies"]:
+        (good if c >= rule["ncc"] and mad <= rule["mad"] else bad).append(c - mad / 160.0)
+    if not good:
+        return None, 0.0
+    margin = min(good) - (max(bad) if bad else 0.0)
+    return len(good), round(min(1.0, st["bank"] + 0.2) * max(0.0, min(1.0, 0.5 + margin)), 4)
+
+
+_KNOWN_TYPES = None
+_SAME = None
+
+
+def same_icons():
+    """{name: canonical name} for type icons whose files are byte-identical (undread = undead, ...)."""
+    global _SAME
+    if _SAME is None:
+        _SAME = {o: k for k, v in (read_json(join(OUT, "icons", "same.json"), {}) or {}).items() for o in v}
+    return _SAME
+
+
+def canon_types(types):
+    m = same_icons()
+    return sorted(m.get(type_name(t), type_name(t)) for t in types or [])
+
+
+def known_types():
+    """{loose name: [[types, [sources]]]}: each card's type sets in today's data and the old repo's PSD reads."""
+    global _KNOWN_TYPES
+    if _KNOWN_TYPES is None:
+        found = read_json(join(OUT, "known_types.json"))
+        if found is None:
+            acc = defaultdict(dict)
+            stats = json.loads(git(join(TC, ".git"), "show", "origin/data:db/stats.json") or b"{}").get("cards") or {}
+            from commands.discord_match import load_cards
+            for cid, card in load_cards(TC).items():
+                st = stats.get(card.get("key")) or {}
+                if st.get("types") is None:
+                    continue
+                key = json.dumps(canon_types(st["types"]))
+                for n in {card.get("name"), card.get("key")} - {None}:
+                    acc[loose(n)].setdefault(key, []).append("t:" + cid)
+            for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
+                rd = r.get("read") or {}
+                if r.get("kind") == "psd" and rd.get("title") and rd.get("types") is not None:
+                    acc[loose(rd["title"])].setdefault(json.dumps(canon_types(rd["types"])), []).append(
+                        "psd:" + r["blob"])
+            found = {k: [[json.loads(t), sorted(set(src))] for t, src in v.items()] for k, v in acc.items()}
+            write_json(join(OUT, "known_types.json"), found)
+        _KNOWN_TYPES = found
+    return _KNOWN_TYPES
+
+
+_KNOWN_STARS = None
+
+
+def known_stars():
+    """{loose name: [[stars, [sources]]]}: each card's star counts in today's data and the old repo's PSD reads."""
+    global _KNOWN_STARS
+    if _KNOWN_STARS is None:
+        found = read_json(join(OUT, "known_stars.json"))
+        if found is None:
+            acc = defaultdict(dict)
+            stats = json.loads(git(join(TC, ".git"), "show", "origin/data:db/stats.json") or b"{}").get("cards") or {}
+            from commands.discord_match import load_cards
+            for cid, card in load_cards(TC).items():
+                st = stats.get(card.get("key")) or {}
+                if isinstance(st.get("stars"), int):
+                    for n in {card.get("name"), card.get("key")} - {None}:
+                        acc[loose(n)].setdefault(str(st["stars"]), []).append("t:" + cid)
+            for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
+                rd = r.get("read") or {}
+                if r.get("kind") == "psd" and rd.get("title") and isinstance(rd.get("stars"), int):
+                    acc[loose(rd["title"])].setdefault(str(rd["stars"]), []).append("psd:" + r["blob"])
+            found = {k: [[int(n), sorted(set(src))] for n, src in v.items()] for k, v in acc.items()}
+            write_json(join(OUT, "known_stars.json"), found)
+        _KNOWN_STARS = found
+    return _KNOWN_STARS
+
+
+def stars_known(name, n, exclude=()):
+    """True when a known version of the named card has n stars (sources in exclude left out)."""
+    return any(c == n and not set(src) <= set(exclude) for c, src in known_stars().get(loose(name or ""), []))
+
+
+def type_presence(a, band_h, names):
+    """Each named type's best place in the icon band (left 60%): {name: [gray ncc, colour mix, x, y, w]}."""
+    H, W = a.shape[:2]
+    A = a[:max(8, int(band_h * H))].astype("float32")[:, :int(0.6 * W)]
+    G = gray(A)
+    canon = same_icons()
+    out = {}
+    for name in names:
+        icons = [i for i in bank("types") if canon.get(i[0], i[0]) == name]
+        cands = []
+        for icon in icons:
+            for size in TYPE_SIZES:
+                t, m, coarse = scaled_icon(icon, size * W)
+                s = match(G, coarse)
+                if s is None:
+                    continue
+                for v, x, y in peaks(s, min(t.shape[:2]), NMS_TYPE, 0.0, 3):
+                    ncc, mad = verify(G, x, y, t, m)
+                    cands.append((ncc, icon, x, y, t.shape[1]))
+        cands.sort(key=lambda c: -c[0])
+        best = None
+        for ncc, icon, x, y, w in cands[:6]:
+            r = refine(G, icon, x, y, w)
+            cn, cm = colour_fit(A, r[2], r[3], icon, r[4])
+            row = [round(r[0], 3), round(0.5 * r[0] + 0.5 * cn - cm / 255.0, 3), r[2], r[3], r[4]]
+            if best is None or row[0] > best[0]:
+                best = row
+        out[name] = best or [0.0, 0.0, 0, 0, 0]
+    return out
+
+
+def verified_types(rd, rule, exclude=()):
+    """(types, conf) from the card's known type sets checked on the picture (types_known): the one set whose icons
+    are all present (gray ncc >= rule['on']) while the other known icons are absent (< rule['off'])."""
+    tk = rd.get("types_known")
+    if not tk or not tk.get("sets"):
+        return None, 0.0
+    card = rd.get("kind") == "card"
+    pres = {}
+    for t, v in tk["presence"].items():
+        c = canon_types([t])[0]
+        if c not in pres or v[0] > pres[c][0]:
+            pres[c] = v
+    sets = [sorted(t for t in canon_types(ts) if not (card and t == "equip")) for ts, src in tk["sets"]
+            if not set(src) <= set(exclude)]
+    sets = [json.loads(x) for x in dict.fromkeys(json.dumps(s) for s in sets)]
+    if not sets:
+        return None, 0.0
+    union = sorted({t for s in sets for t in s})
+    fits = []
+    for ts in sets:
+        on = [pres[t][0] for t in ts if t in pres]
+        off = [pres[t][0] for t in union if t not in ts and t in pres]
+        if len(on) == len(ts) and all(v >= rule["on"] for v in on) and all(v < rule["off"] for v in off):
+            fits.append((min([v - rule["on"] for v in on] + [rule["off"] - v for v in off] + [0.3]), ts))
+    if len(fits) != 1:
+        return None, 0.0
+    return fits[0][1], round(fits[0][0], 4)
+
+
+def title_box(rec, title, band):
+    """The title's box in the band (x0, 0, x1, band) from the band OCR's lines that make the title, or None."""
+    big = [l for l in rec.get("band") or [] if title["text"] and l[0].strip() and l[0].strip() in title["text"]]
+    return (min(l[2] for l in big), 0, max(l[2] + l[4] for l in big), band) if big else None
+
+
+def star_task(args):
+    """Stars only (a second pass with a better star reader)."""
+    import cv2
+    import numpy as np
+    item, rec = args
+    try:
+        img = load(item)
+        a = np.asarray(img.convert("RGB"))
+        W0, H0 = img.size
+        work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
+        shp = rec.get("shape") or shape(W0, H0)
+        tb = title_box(rec, read_title(rec.get("band")), BAND[shp])
+        return {"id": item["id"], "stars": read_stars(work, STAR_BAND[shp], tb), "star_blobs": read_star_blobs(work, tb)}
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+def read_one(item, rec):
+    """Every text field of one input from its OCR record and its picture."""
+    import numpy as np
+    import cv2
+    img = load(item)
+    a = np.asarray(img.convert("RGB"))
+    W0, H0 = img.size
+    work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
+    labels = stat_labels(rec.get("fix"))
+    look = look_of(a)
+    era, how = era_of(item, W0, H0, labels, look)
+    shp = rec.get("shape") or shape(W0, H0)
+    band = BAND[shp]
+    title = read_title(rec.get("band"))
+    tb = title_box(rec, title, band)
+    kind = "card" if (len(labels) >= 2 or era in ("A", "B", "C", "D1", "D2", "R", "bars-other")) else "other"
+    out = {"id": item["id"], "src": item["src"], "era": era, "era_how": how, "w": W0, "h": H0, "kind": kind,
+           "title": title}
+    for which in ("fix", "raw"):
+        rows, cls = ability_block(rec.get(which), era, labels, band, kind)
+        out["ability_" + which] = {"text": ability_text(rows), "rows": len(rows),
+                                   "class": " ".join(l[0] for l in cls) if cls else None,
+                                   "minconf": min((l[1] for r in rows for l in r), default=0.0)}
+        if which == "fix":
+            fix_rows = rows
+    out["ability_fix"].update(ability_scores(out["ability_fix"]["text"], out["ability_raw"]["text"], title))
+    out["ability_raw"].update(ability_scores(out["ability_raw"]["text"], out["ability_fix"]["text"], title))
+    icons = inline_icons(work, fix_rows, WORK_W) if fix_rows else []
+    if icons:
+        out["ability_icons"] = {"text": place_icons(fix_rows, icons), "icons": [[r, round(x, 3), n, s] for r, x, n, s
+                                                                               in icons]}
+        out["ability_icons"].update(ability_scores(out["ability_icons"]["text"], None, title))
+    out["stars"] = read_stars(work, STAR_BAND[shp], tb)
+    out["star_blobs"] = read_star_blobs(work, tb)
+    sets = known_types().get(loose(title["name"])) if title.get("name") else None
+    if sets:
+        names = sorted({t for ts, src in sets for t in ts})
+        out["types_known"] = {"sets": sets, "presence": type_presence(work, ICON_BAND[shp], names)}
+    return out
+
+
+def read_task(args):
+    item, rec = args
+    if rec.get("error"):
+        return {"id": item["id"], "error": rec["error"]}
+    try:
+        return read_one(item, rec)
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+def run_reads(which, workers, path=None, ids=None, task=None):
+    """raw.jsonl (task read_task), or stars.jsonl (task star_task: the stars read again; calibrate takes them)."""
+    task = task or read_task
+    path = path or join(OUT, "raw.jsonl")
+    ocr = {r["id"]: r for r in jsonl(join(OUT, "ocr.jsonl"))}
+    names_index()
+    known_abilities()
+    known_types()
+    items = [i for i in all_inputs(which) if i["id"] in ocr and (ids is None or i["id"] in ids)]
+    done = {r["id"] for r in jsonl(path)}
+    todo = [(i, ocr[i["id"]]) for i in items if i["id"] not in done]
+    print(f"read: {len(done)} done, {len(todo)} to go", flush=True)
+    start, n = time.time(), 0
+    with open(path, "a") as f, ProcessPoolExecutor(workers) as ex:
+        for res in ex.map(task, todo, chunksize=4):
+            f.write(json.dumps(res) + "\n")
+            f.flush()
+            n += 1
+            if n % 200 == 0:
+                print(f"read: {n}/{len(todo)} {time.time() - start:.0f}s", flush=True)
+
+
+# ========================
+# Truth
+# ========================
+PAIR_BITS = 3.0                                  # an old PNG and a PSD of its card this near (hash bits): one look
+
+
+def build_truth():
+    """truth.jsonl: {id, src, era?, fields: {title, stars, types, ability}, how}: the old repo's PNGs with the PSD of
+    the same look (its read), today's cards with today's data, and the eye files (eye/*.json, {id: {field: value}})."""
+    from commands.discord_match import hash_distance, load_cards
+    rows = []
+    reads = {}
+    for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
+        reads.setdefault((r["kind"], r["blob"]), r)
+    by_card = defaultdict(list)
+    for v in jsonl(join(ROOT, "derived/oldgit/versions.jsonl")):
+        by_card[v.get("old_id")].append(v)
+    for v in old_inputs():
+        png = reads.get(("png", v["blob"]))
+        if not png or not png.get("look"):
+            continue
+        best, near = None, set()
+        for p in by_card.get(v["old_id"], []):
+            if p["ext"] != "psd":
+                continue
+            psd = reads.get(("psd", p["blob"]))
+            if not psd or not psd.get("ok") or not psd.get("composite") or not psd.get("read"):
+                continue
+            d = hash_distance(png["look"]["whole"], psd["composite"]["whole"])
+            if d <= 2 * PAIR_BITS:
+                near.add("psd:" + p["blob"])
+            if best is None or d < best[0]:
+                best = (d, psd)
+        if not best or best[0] > PAIR_BITS:
+            continue
+        rd = best[1]["read"]
+        problems = " ".join(rd.get("problems") or []) + " " + " ".join(rd.get("validator") or [])
+        fields = {}
+        if rd.get("title"):
+            fields["title"] = rd.get("printed_title") or rd["title"]
+        if isinstance(rd.get("stars"), int) and "STARS" not in problems:
+            fields["stars"] = rd["stars"]
+        if rd.get("types") is not None and rd.get("type") in ("creature", "minion", "item", "field", "aux item"):
+            fields["types"] = rd["types"]
+        if rd.get("ability") and "ABILITY" not in problems:
+            fields["ability"] = rd["ability"]
+        rows.append({"id": v["id"], "src": "old", "fields": fields, "how": "psd", "bits": round(best[0], 2),
+                     "kind": rd.get("type"), "own": sorted(near)})
+    stats = json.loads(git(join(TC, ".git"), "show", "origin/data:db/stats.json") or b"{}").get("cards") or {}
+    for cid, card in load_cards(TC).items():
+        st = stats.get(card.get("key")) or {}
+        if not card.get("png") or not st:
+            continue
+        fields = {"title": (st.get("parsed_values") or {}).get("name") or st.get("display_name") or card["key"],
+                  "stars": st.get("stars")}
+        if st.get("types") is not None:
+            fields["types"] = st["types"]
+        if st.get("ability"):
+            fields["ability"] = st["ability"]
+        rows.append({"id": "t:" + cid, "src": "today", "fields": fields, "how": "today", "kind": st.get("card_type"),
+                     "own": ["t:" + cid]})
+    eye_dir = join(OUT, "eye")
+    for f in sorted(os.listdir(eye_dir)) if os.path.isdir(eye_dir) else []:
+        for k, fields in (read_json(join(eye_dir, f), {}) or {}).items():
+            if not k.startswith("_"):
+                rows.append({"id": k, "src": "discord" if k.startswith("d:") else k.split(":")[0], "fields": fields,
+                             "how": "eye:" + f})
+    write_jsonl(join(OUT, "truth.jsonl"), rows)
+    print(Counter(r["how"] for r in rows), Counter(f for r in rows for f in r["fields"]))
+
+
+# ========================
+# Calibration
+# ========================
+STAR_RULES = ([{"ncc": n, "mad": m} for n in (0.6, 0.65, 0.7, 0.75, 0.8, 0.85) for m in (20, 30, 45, 60, 255)]
+              + [{"kind": "row", "tol": t, "rows": r} for t in (1.25, 1.43, 1.7) for r in (0.6, 1.6)]
+              + [{"kind": "cluster", "step": s, "base": b} for s in (0.33, 0.37, 0.41, 0.45) for b in (1.0, 1.05, 1.1)])
+TYPE_RULES = [{"on": a, "off": b} for a in (0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9) for b in (0.6, 0.7, 0.8, 0.9)
+              if b <= a + 0.05]
+VARIANTS = ("fix", "raw", "icons")
+TRUTH_OF = {"discord": "eye", "old": "psd", "today": "today"}
+
+
+def titles_of(t):
+    return {norm(x) for x in (t if isinstance(t, list) else [t]) if x}
+
+
+def ability_conf(ab):
+    """An ability read's confidence: a known text of the card read exactly is 1; else the two OCR passes agreeing,
+    Vision's line confidence and the share of known words."""
+    if not ab or not ab.get("text"):
+        return 0.0
+    if ab.get("known"):
+        return 1.0
+    base = 0.55 + 0.35 * bool(ab.get("agree")) + 0.1 * min(1.0, ab.get("minconf") or 0.0)
+    return round(base * (ab.get("vocab") or 0.0) ** 3, 4)
+
+
+def ability_variant(rd, variant):
+    """The ability read of one variant (fix / raw / icons: the fix text with the type icons placed), or None."""
+    if variant == "icons":
+        return rd.get("ability_icons") or rd.get("ability_fix")
+    return rd.get("ability_" + variant)
+
+
+def field_read(rd, field, how, exclude=()):
+    """(value, method, conf) of one field of a raw read under how (the era's calibrated choices)."""
+    if field == "title":
+        t = rd.get("title") or {}
+        if t.get("name"):
+            return t["name"], "ocr+name", t.get("conf", 0.0)
+        return t.get("text"), "ocr", 0.0
+    if field == "ability":
+        ab = ability_variant(rd, how.get("variant", "fix")) or {}
+        text = ab.get("text") or None
+        method = "ocr+icons" if how.get("variant") == "icons" and rd.get("ability_icons") else "ocr"
+        return text, method + ("+known" if ab.get("known") else ""), ability_conf(ab)
+    if field == "stars":
+        rule = how.get("rule") or STAR_RULES[0]
+        n, conf = (count_blobs(rd.get("star_blobs"), rule) if rule.get("kind") else
+                   count_stars(rd.get("stars"), rule))
+        if n is not None and stars_known((rd.get("title") or {}).get("name"), n, exclude):
+            return n, "icon+known", round(0.5 + 0.5 * conf, 4)
+        return n, "icon", round(0.5 * conf, 4)
+    if field == "types":
+        ts, conf = verified_types(rd, how.get("rule") or TYPE_RULES[0], exclude)
+        return ts, "icon+known", conf
+    return None, None, 0.0
+
+
+def is_right(field, value, truth, card=False):
+    if value is None:
+        return False
+    if field == "title":
+        return norm(value) in titles_of(truth)
+    if field == "ability":
+        canon = same_icons()
+        fix = lambda ws: [("<%s>" % canon.get(w[1:-1], w[1:-1])) if w.startswith("<") else w for w in ws]
+        return fix(ability_words(value)) == fix(ability_words(truth))
+    if field == "stars":
+        return int(value) == int(truth)
+    if field == "types":
+        return sorted(value) == sorted(t for t in canon_types(truth) if not (card and t == "equip"))
+    return False
+
+
+def pick_bar(rows, target=BAR_TARGET):
+    """rows [(conf, right)]: the lowest bar whose reads at or above it are >= target right (errors allowed:
+    floor((1 - target) * k)); (bar, k, right). No such bar: (None, 0, 0)."""
+    rows = sorted(rows, key=lambda r: -r[0])
+    best = (None, 0, 0)
+    ok = 0
+    for k, (conf, right) in enumerate(rows, 1):
+        ok += bool(right)
+        if conf <= 0:
+            break
+        if k - ok <= int((1 - target) * k) and (k == len(rows) or rows[k][0] < conf):
+            best = (conf, k, ok)
+    return best
+
+
+def truth_rows():
+    out = defaultdict(list)
+    for t in jsonl(join(OUT, "truth.jsonl")):
+        out[t["id"]].append(t)
+    return out
+
+
+def usable_truth(field, t):
+    """A truth row's field, when it is trusted: the old repo's PSD reads give no empty type lists (the 2023 parser
+    missed item icons) and no abilities of cards whose text sits in a layer named after it."""
+    v = t["fields"].get(field)
+    if v is None:
+        return None
+    if field == "types" and t["how"] == "psd" and not v:
+        return None
+    return v
+
+
+def calibrate():
+    """Per era and field: the rule/variant with the most right reads on the era's truth, then the bar (BAR_TARGET),
+    2-fold cross-checked; reads.jsonl (Discord, old repo) and today.jsonl with each field's value, method,
+    confidence and sure."""
+    raw = {r["id"]: r for r in jsonl(join(OUT, "raw.jsonl")) if not r.get("error")}
+    for r in jsonl(join(OUT, "stars.jsonl")):
+        if r["id"] in raw and not r.get("error"):
+            raw[r["id"]].update(stars=r["stars"], star_blobs=r.get("star_blobs"))
+    truth = truth_rows()
+    by_era = defaultdict(list)
+    for rid, rd in raw.items():
+        by_era[(rd["era"], rd["src"])].append(rd)
+    cal = {"made": time.strftime("%Y-%m-%d %H:%M"), "target": BAR_TARGET, "eras": {}}
+    choices = {}
+    for (era, src), rds in sorted(by_era.items()):
+        key = f"{era}/{src}"
+        cal["eras"][key] = {"population": len(rds)}
+        for field in FIELDS:
+            labelled = []
+            for rd in rds:
+                for t in truth.get(rd["id"], []):
+                    v = usable_truth(field, t)
+                    if v is not None:
+                        labelled.append((rd, v, t.get("own") or []))
+            options = [{}]
+            if field == "stars":
+                options = [{"rule": r} for r in STAR_RULES]
+            elif field == "types":
+                options = [{"rule": r} for r in TYPE_RULES]
+            elif field == "ability":
+                options = [{"variant": v} for v in VARIANTS]
+
+            def score(how, rows):
+                res = []
+                for rd, v, own in rows:
+                    val, method, conf = field_read(rd, field, how, own)
+                    res.append((conf, is_right(field, val, v, rd.get("kind") == "card")))
+                return res
+            best = None
+            for how in options:
+                res = score(how, labelled)
+                bar, k, ok = pick_bar(res)
+                rank = (k, sum(r[1] for r in res), -len(json.dumps(how)))
+                if best is None or rank > best[0]:
+                    best = (rank, how, res, bar, k, ok)
+            _, how, res, bar, k, ok = best
+            cv = None
+            if len(labelled) >= 40:
+                half = [labelled[0::2], labelled[1::2]]
+                hits = n_above = 0
+                for a, b in ((0, 1), (1, 0)):
+                    ba, _, _ = pick_bar(score(how, half[a]))
+                    if ba is not None:
+                        sb = score(how, half[b])
+                        hits += sum(r[1] for r in sb if r[0] >= ba)
+                        n_above += sum(1 for r in sb if r[0] >= ba)
+                cv = {"right": hits, "above": n_above, "accuracy": round(hits / n_above, 4) if n_above else None}
+            above_all = sum(1 for rd in rds if bar is not None and field_read(rd, field, how)[2] >= bar)
+            cal["eras"][key][field] = {
+                "truth": TRUTH_OF.get(src), "n": len(labelled), "how": how, "bar": bar,
+                "above": k, "right_above": ok, "accuracy_at_bar": round(ok / k, 4) if k else None,
+                "share_above_truth": round(k / len(labelled), 4) if labelled else None,
+                "share_above_all": round(above_all / len(rds), 4) if rds else None,
+                "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None, "cv": cv}
+            choices[(era, src, field)] = (how, bar)
+    # eras with too little truth borrow: Discord template eras take the old repo's bar for the same era
+    for (era, src, field), (how, bar) in list(choices.items()):
+        n = cal["eras"][f"{era}/{src}"][field]["n"]
+        if n >= MIN_N:
+            continue
+        donor = next((choices[(era, s, field)] for s in ("old", "discord", "today") if s != src and (era, s, field)
+                      in choices and cal["eras"][f"{era}/{s}"][field]["n"] >= MIN_N), None)
+        cal["eras"][f"{era}/{src}"][field]["borrowed"] = bool(donor)
+        choices[(era, src, field)] = donor if donor else (how, None)
+    write_json(join(OUT, "calibration.json"), cal)
+    outs = {"reads": [], "today": []}
+    for rid, rd in raw.items():
+        row = {"id": rid, "src": rd["src"], "era": rd["era"], "era_how": rd.get("era_how"), "w": rd["w"], "h": rd["h"]}
+        for field in FIELDS:
+            how, bar = choices.get((rd["era"], rd["src"], field), ({}, None))
+            val, method, conf = field_read(rd, field, how)
+            row[field] = {"value": val, "method": method, "conf": conf,
+                          "sure": bool(bar is not None and val is not None and conf >= bar)}
+            if field == "title" and rd.get("title", {}).get("text"):
+                row[field]["ocr"] = rd["title"]["text"]
+        outs["today" if rd["src"] == "today" else "reads"].append(row)
+    write_jsonl(join(OUT, "reads.jsonl"), sorted(outs["reads"], key=lambda r: r["id"]))
+    write_jsonl(join(OUT, "today.jsonl"), sorted(outs["today"], key=lambda r: r["id"]))
+    for key, v in sorted(cal["eras"].items()):
+        print(key, v["population"], "  ".join(
+            f"{f}: n={v[f]['n']} bar={v[f]['bar']} acc={v[f]['accuracy_at_bar']} above={v[f]['share_above_truth']}"
+            f"/{v[f]['share_above_all']}" for f in FIELDS if f in v))
+
+
+# ========================
+# CLI
+# ========================
+def main(argv):
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "truth", "calibrate"))
+    ap.add_argument("-j", "--workers", type=int, default=2)
+    ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
+    a = ap.parse_args(argv)
+    os.makedirs(join(OUT, "tmp"), exist_ok=True)
+    which = tuple(a.only or ("discord", "old", "today"))
+    if a.step == "icons":
+        build_icons()
+    elif a.step == "ocr":
+        ocr_bin()
+        run_pool(ocr_task, all_inputs(which), a.workers, join(OUT, "ocr.jsonl"), "ocr")
+    elif a.step == "read":
+        run_reads(which, a.workers)
+    elif a.step == "stars":
+        run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
+    elif a.step == "truth":
+        build_truth()
+    elif a.step == "calibrate":
+        calibrate()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
