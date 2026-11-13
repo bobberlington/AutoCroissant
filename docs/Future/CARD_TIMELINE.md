@@ -51,6 +51,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    first picture evidence sets Created only through review. A joke picture that is a live card's (named so by its posts
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
    Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
+   Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
+   cards really played: owner Q1=C, Q2=A), ideas never ported (review only) and the rest (already in MDW/The Morgue
+   or MDW/Unfinished, an old name of a live card, a split, no card), each checked by eye (`derived/morgue/eye.json`);
+   outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. Candidates go only to the website's Morgue
+   list (cards.json morgue), never cards[], decks, Unused, the default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types

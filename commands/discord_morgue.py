@@ -1,0 +1,419 @@
+"""
+The Morgue candidates and the ideas never ported, from the card timelines' lost cards (docs/Future/CARD_TIMELINE.md,
+stage 2, STAGE1 S7; owner Q1=C and Q2=A, provisional until the owner's OK). Run after `discord_verdicts build`:
+
+    python -m commands.discord_morgue build  [--root <dir>] [--cards-repo <dir>]
+    python -m commands.discord_morgue sheets [--root <dir>]
+
+build   Each lost card (derived/match/lost_groups.json) and each lost card of the old repo (derived/oldgit/lost.json)
+        is a Morgue candidate (a joke card, or a card really played: a port or update picture, a classification
+        channel's, an update changelog line, the old repo's file), an idea never ported (review only), or neither:
+        already in MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card. The check by eye
+        (derived/morgue/eye.json) decides: name, status, the card it is, nearest live card, splits, merges, pictures
+        added or dropped. A lost card with no eye entry keeps the automatic status (MDW names, archived renames,
+        the lost group's) and is marked unchecked. Outputs under the archive's derived/morgue/ (never a repo):
+        candidates.json (candidates, then the lost cards that are not, with why), ideas.json, thumbs/ (webp, every
+        entry's pictures).
+        Candidates go only to the website's Morgue list (cards.json morgue): never cards[], decks, Unused, the
+        default search or Mentioned by. No message text, posters or authors.
+sheets  Contact sheets for the check by eye: each candidate's and idea's thumbs beside its nearest live card.
+"""
+from argparse import ArgumentParser
+from collections import Counter
+from datetime import datetime, timezone
+from json import loads
+from os import environ, makedirs
+from os.path import exists, join
+from shutil import copyfile
+from sys import stderr
+from typing import Callable, Optional
+
+from commands import discord_match as dm
+from commands import discord_verdicts as dv
+
+# ========================
+# Configuration
+# ========================
+OUT = ("derived", "morgue")
+LOST = ("derived", "match", "lost_groups.json")
+VERDICTS = ("derived", "match", "verdicts.jsonl")
+OLD_LOST = ("derived", "oldgit", "lost.json")
+OLD_DIR = ("derived", "oldgit")                 # old lost cards' thumbs are relative to it
+PAIRS = ("derived", "matcher", "match", "pairs.json")
+MORGUE_DIR = dv.MORGUE_DIR
+UNFINISHED_DIR = "MDW/Unfinished/"
+OLD_STATS = "db/old_stats.json"                 # the data branch's archived cards (renamed_to: a rename)
+SAME_NAME = 0.9                                 # a title this near an MDW card's or an archived old name: that card
+NAME_NEAR = 0.75                                # nearest live card by name at least this, else by look
+FAR_BITS = 12.0                                 # a nearest look farther than this: far (discord_verdicts' far bits)
+THUMB_W = 320
+CANDIDATE, IDEA = "candidate", "idea"
+NOT = {"morgue": "already in MDW/The Morgue", "unfinished": "in MDW/Unfinished (kept, not retired)",
+       "renamed": "an old name or draft of a live card (review: its timeline)", "live": "a live card's own "
+       "picture (review: its timeline)", "split": "an old card that became "
+       "two (owner Q3=A, review)", "not a card": "not a card of ours", "backup": "a backup copy of another card",
+       "merged": "the same card as another lost card", "review": "no card evidence (review)"}
+ABOUT = ("Morgue candidates (owner Q1=C, Q2=A; provisional): joke cards (meme-cards, joke-ideas, cursed, "
+         "idea-graveyard, or the same picture) and lost cards really played (a port or update picture, a "
+         "classification channel's, an update changelog line, the old repo's file). Only for the website's Morgue "
+         "list (cards.json morgue): never cards[], decks, Unused, the default search or Mentioned by. Each checked by "
+         "eye (eye.json). not_candidates: lost cards that are not, with why. why and eye notes: the review page's, never "
+         "published. No message text, posters or authors.")
+IDEAS_ABOUT = ("Ideas never ported (owner Q2=A): card drafts never played, for the review page only (never "
+               "published). Each checked by eye (eye.json). No message text, posters or authors.")
+
+
+# ========================
+# Helpers
+# ========================
+def plain(text: str) -> str:
+    """A name squashed, a leading 'the' dropped."""
+    form = dm.squash(text or "")
+    return form[3:] if form.startswith("the") and len(form) > 6 else form
+
+
+def near(a: str, b: str) -> float:
+    return dm.ratio(plain(a), plain(b))
+
+
+def utc(stamp: Optional[str]) -> Optional[str]:
+    """An ISO time in UTC (old repo dates carry their offset)."""
+    if not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp).astimezone(timezone.utc).isoformat()
+    except ValueError:
+        return stamp
+
+
+def repo_known(cards_repo: str) -> dict:
+    """{'morgue': {name: path}, 'unfinished': {name: path}, 'renamed': {archived name: today's name}}: the card repo's
+    MDW/The Morgue (a PSD with its PNG, as build_site), MDW/Unfinished and the data branch's archived renames
+    (renamed_to followed to the end)."""
+    git_dir = dm.git_dir_of(cards_repo) if cards_repo else None
+    if not git_dir:
+        return {"morgue": {}, "unfinished": {}, "renamed": {}}
+    tree = dm.repo_tree(git_dir, f"origin/{dm.CARD_BRANCH}")
+    morgue = {dm.file_name(p): p for p in tree if p.startswith(MORGUE_DIR) and "/" not in p[len(MORGUE_DIR):]
+              and p.lower().endswith(".psd") and p[:-4] + ".png" in tree}
+    unfinished = {dm.file_name(p): p for p in sorted(tree) if p.startswith(UNFINISHED_DIR)
+                  and p.lower().endswith((".png", ".psd"))}
+    raw = dm.git_out(git_dir, "show", f"origin/{dm.DATA_BRANCH}:{OLD_STATS}")
+    old = ((loads(raw) or {}).get("cards") or {}) if raw else {}
+    step = {}
+    for name, versions in old.items():
+        tag = (versions[len(versions) - 1] or {}).get("archived") if versions else None
+        if isinstance(tag, dict) and tag.get("renamed_to"):
+            step[name] = tag["renamed_to"]
+
+    def last(name: str) -> str:
+        seen = {name}
+        while name in step and step[name] not in seen:
+            name = step[name]
+            seen.add(name)
+        return name
+    return {"morgue": morgue, "unfinished": unfinished, "renamed": {n: last(n) for n in step}}
+
+
+def auto_status(group: dict, known: dict, live: dict) -> tuple:
+    """(status, card) from the lost group and the repo's names; (None, None) when it is lost indeed."""
+    titles = [t for t in [group.get("title")] if t]
+    for place in ("morgue", "unfinished"):
+        hit = next((n for n in known.get(place) or {} for t in titles if near(t, n) >= SAME_NAME), None)
+        if hit:
+            return place, hit
+    if group.get("morgue_card"):
+        return "morgue", group["morgue_card"]
+    if group.get("split_of"):
+        return "split", ",".join(group["split_of"].get("into") or [])
+    if group.get("old_name_of"):
+        return "renamed", group["old_name_of"]
+    for old, new in (known.get("renamed") or {}).items():
+        if any(near(t, old) >= SAME_NAME for t in titles) and not any(near(old, n) >= 1.0 for n in live.values()):
+            return "renamed", live_id(new, live) or new
+    return None, None
+
+
+def live_id(name: str, live: dict) -> Optional[str]:
+    """A live card's id by its name or key."""
+    return next((cid for cid, n in live.items() if plain(n) == plain(name)), None)
+
+
+def played_posts(posts: list, kinds: dict) -> list:
+    """[(channel, day)]: the posts in port, update or classification channels (owner Q2=A), people's only."""
+    found = set()
+    for p in posts:
+        thread = (p.get("thread") or "").lower()
+        if not p.get("bot") and (kinds.get(p.get("channel_id")) in dv.PLAYED_KINDS or
+                                 p.get("channel") in dv.PLAYED_NAMES or thread in dv.PLAYED_NAMES):
+            found.add((p.get("thread") or p.get("channel"), (p.get("date") or "")[:10]))
+    return sorted(found, key=lambda x: x[1])
+
+
+def first_post(posts: list) -> Optional[dict]:
+    """The earliest post a person made (no bot's, embed's or paper photo's), else any."""
+    people = [p for p in posts if not (p.get("bot") or p.get("embed") or p.get("paper"))]
+    return min(people or posts, key=lambda p: int(p["message"])) if posts else None
+
+
+def picture_of(row: dict) -> dict:
+    post = first_post(row.get("posts") or []) or {}
+    return {"id": row["id"], "date": post.get("date"), "channel": post.get("channel"), "thread": post.get("thread"),
+            "cell": row.get("cell"), "w": row.get("w"), "h": row.get("h"), "thumb": f"thumbs/{row['id']}.webp",
+            "source": "discord"}
+
+
+def unique_slug(name: str, used: set) -> str:
+    """build_site's slug of the name, never one a live card, a Morgue card or another candidate has."""
+    base = found = dm.slugify(name)
+    if found in used:
+        base = found = f"{base}-morgue"
+    n = 2
+    while found in used:
+        found, n = f"{base}-{n}", n + 1
+    used.add(found)
+    return found
+
+
+# ========================
+# Build
+# ========================
+class Paths:
+    def __init__(self, root: str):
+        self.root = dm.check_root(root)
+        self.out = join(self.root, *OUT)
+        self.eye = join(self.out, "eye.json")
+        self.thumbs = join(self.out, "thumbs")
+        self.sheets = join(self.out, "sheets")
+
+
+def build(root: str, log: Callable = print, cards_repo: str = dm.LOCAL_DIR_LOC) -> dict:
+    return _build(Paths(root), repo_known(cards_repo), log)
+
+
+def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
+    root = paths.root
+    groups = (dm.read_json(join(root, *LOST), {}) or {}).get("groups") or []
+    if not groups:
+        raise SystemExit(f"no {join(root, *LOST)}: run python -m commands.discord_verdicts build first")
+    rows = {r["id"]: r for r in dm.read_jsonl(join(root, *VERDICTS))}
+    old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
+    pairs = dm.read_json(join(root, *PAIRS), {}) or {}
+    cards = pairs.get("cards") or {}
+    live = {cid: c.get("name") or c.get("key") or cid for cid, c in cards.items()}
+    eye = dm.read_json(paths.eye, {}) or {}
+    kinds = dv.channel_kinds(root)
+    used = set(cards) | {dm.slugify(n) for n in known.get("morgue") or {}}
+    entries = {}
+    for g in groups:
+        e = dict(eye.get(g["id"]) or {})
+        status, card = auto_status(g, known, live)
+        if not status:
+            status = CANDIDATE if g["morgue_candidate"] else IDEA if g["ideas_never_ported"] else "review"
+        entries[g["id"]] = {"group": g, "eye": e, "status": e.get("status") or status,
+                            "card": e.get("card") or card, "pictures": list(g["pictures"]), "old": None}
+    for old in old_lost:                        # the old repo's lost cards: on their Discord group, else their own
+        joined = next((x for x in entries.values() if (x["group"] or {}).get("old_lost") == old["id"] or
+                       (x["eye"].get("old") == old["id"])), None)
+        if joined:
+            joined["old"] = old
+            continue
+        e = dict(eye.get(old["id"]) or {})
+        entries[old["id"]] = {"group": None, "eye": e, "status": e.get("status") or CANDIDATE, "card": e.get("card"),
+                              "pictures": [], "old": old}
+    for gid, x in list(entries.items()):         # splits (by eye): one lost card each
+        for n, part in enumerate(x["eye"].get("split") or []):
+            if n == 0:
+                x["pictures"] = list(part["pictures"])
+                x["eye"] = {**x["eye"], **{k: v for k, v in part.items() if k != "pictures"}}
+                continue
+            row = rows[part["pictures"][0]]
+            pid = dv.group_id(row["sha256"], row.get("cell"))
+            entries[pid] = {"group": {**x["group"], "id": pid}, "eye": {**x["eye"], **part, "split": None},
+                            "status": part.get("status") or x["status"], "card": part.get("card"),
+                            "pictures": list(part["pictures"]), "old": None}
+    for gid, x in entries.items():              # merges (by eye) and pictures added or dropped
+        into = x["eye"].get("merge")
+        if into in entries:
+            entries[into]["pictures"] += x["pictures"]
+            x.update(status="merged", card=into)
+    for x in entries.values():
+        drop = set(x["eye"].get("drop") or [])
+        x["pictures"] = [p for p in dict.fromkeys(x["pictures"] + list(x["eye"].get("add") or [])) if p not in drop]
+    candidates, ideas, others = [], [], []
+    for gid, x in entries.items():
+        entry = describe(gid, x, rows, kinds, live, used if x["status"] == CANDIDATE else None)
+        (candidates if x["status"] == CANDIDATE else ideas if x["status"] == IDEA else others).append(entry)
+    for found in (candidates, ideas, others):
+        found.sort(key=lambda e: (e["first"]["date"] or "9", e["id"]))
+    thumbs(paths, candidates + ideas + others, rows)
+    unchecked = [e["id"] for e in candidates + ideas + others if not e["eye"]["checked"]]
+    counts = {"candidates": len(candidates), "jokes": sum(e["kind"] == "joke" for e in candidates),
+              "played": sum(e["kind"] == "played" for e in candidates), "ideas": len(ideas),
+              "not_candidates": dict(Counter(e["status"] for e in others)),
+              "pictures": sum(len(e["pictures"]) for e in candidates), "unchecked": unchecked}
+    stamp = dm.now_iso()
+    dm.write_json(join(paths.out, "candidates.json"), {"generated": stamp, "about": ABOUT, "counts": counts,
+                                                       "candidates": candidates, "not_candidates": others})
+    dm.write_json(join(paths.out, "ideas.json"), {"generated": stamp, "about": IDEAS_ABOUT, "ideas": ideas})
+    log(dm.dumps(counts, indent=1))
+    return counts
+
+
+def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optional[set]) -> dict:
+    """One lost card's entry: name, kind, first date and channel, pictures, nearest live card, why."""
+    g, e, old = x["group"] or {}, x["eye"], x["old"]
+    pics = [picture_of(rows[p]) for p in x["pictures"] if p in rows]
+    posts = [p for pid in x["pictures"] if pid in rows for p in rows[pid].get("posts") or []]
+    if old:
+        pics.append({"id": old["id"], "date": utc(old["first"]["date"]), "commit": old["first"]["commit"],
+                     "thumb": f"thumbs/{old['id']}.webp", "source": "old repo"})
+    dated = sorted((p for p in pics if p.get("date")), key=lambda p: utc(p["date"]))
+    first = dated[0] if dated else {}
+    played = played_posts(posts, kinds)
+    joke = "joke" in (g.get("kinds") or [])
+    kind = e.get("kind") or ("joke" if joke else "played")
+    why = []
+    if x["status"] == CANDIDATE:
+        if kind == "joke":
+            meme = sorted({p["channel"] for p in posts if p.get("morgue")})
+            why.append(f"a joke card: posted in {', '.join(meme)}" if meme else
+                       "a joke card: the same picture as one posted in a meme channel")
+        why += [f"a {c} picture ({d})" for c, d in played] if kind == "played" else []
+        if kind == "played" and g.get("changelog_days"):
+            why.append(f"named in update changelogs on {', '.join(g['changelog_days'][:6])}")
+        if old:
+            end = (old.get("deleted") or {}).get("date") or (old.get("last") or {}).get("date")
+            why.append(f"the old repo's file {old['paths'][0]} ({old['first']['date'][:10]} .. {(end or '')[:10]}"
+                       f"{', deleted' if old.get('deleted') else ', at its end'})")
+    else:
+        why.append(NOT.get(x["status"], x["status"]) + (f": {x['card']}" if x.get("card") else ""))
+    if e.get("note"):
+        why.append(e["note"])
+    near_name = (g.get("nearest") or {}).get("name") or []
+    near_look = (g.get("nearest") or {}).get("look") or []
+    if e.get("nearest") or x["status"] in ("renamed", "live") and x.get("card") in live:
+        cid = e.get("nearest") or x["card"]
+        nearest = {"card": cid, "name": live.get(cid), "by": "eye"}
+    elif near_name and near_name[0]["ratio"] >= NAME_NEAR:
+        nearest = {**near_name[0], "by": "name"}
+    elif near_look:
+        nearest = {**near_look[0], "by": "look"}
+    elif old and old.get("nearest"):
+        n = old["nearest"][0]
+        nearest = {"card": live_id(n["key"], live), "name": n["key"], "bits": n["d"], "by": "look"}
+    else:
+        nearest = None
+    if nearest and nearest.get("bits", 0) > FAR_BITS:
+        nearest["far"] = True                   # no look alike: a hint only
+    name = e.get("name") or g.get("title") or (old or {}).get("old_id") or gid
+    entry = {"id": gid, "name": name, "title_read": g.get("title") or None, "status": x["status"],
+             "kind": kind if x["status"] == CANDIDATE else None,
+             "card": x.get("card") if x["status"] != CANDIDATE else None,
+             "first": {"date": utc(first.get("date")), "channel": first.get("channel") or (
+                 "old repo" if first.get("source") == "old repo" else None), "thread": first.get("thread"),
+                 "source": first.get("source")},
+             "last": max((utc(p["date"]) for p in dated), default=None),
+             "channels": dict(Counter(p["channel"] for p in posts if p.get("channel"))),
+             "pictures": pics, "thumb": pics[0]["thumb"] if pics else None,
+             "nearest": nearest, "nearest_look": near_look, "nearest_name": near_name,
+             "played": [{"channel": c, "date": d} for c, d in played], "changelog_days": g.get("changelog_days") or [],
+             "card_evidence": g.get("card_evidence") or ("the old repo's file" if old else None),
+             "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
+             if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
+             "why": why, "eye": {"checked": bool(e), "note": e.get("note")}}
+    if used is not None:
+        entry["slug"] = unique_slug(name, used)
+    return {k: v for k, v in entry.items() if v not in (None, [], {}, "")} | {"eye": entry["eye"],
+                                                                              "first": entry["first"]}
+
+
+def thumbs(paths: Paths, entries: list, rows: dict):
+    """thumbs/<picture id>.webp, THUMB_W wide at most: a Discord picture (its cell cut out), an old repo card's own."""
+    makedirs(paths.thumbs, exist_ok=True)
+    old_dir = join(paths.root, *OLD_DIR)
+    olds = {o["id"]: o for o in (dm.read_json(join(paths.root, *OLD_LOST), {}) or {}).get("cards") or []}
+    for e in entries:
+        for p in e["pictures"]:
+            path = join(paths.out, p["thumb"])
+            if exists(path):
+                continue
+            if p["source"] == "old repo":
+                src = join(old_dir, olds[p["id"]]["thumb"])
+                if exists(src):
+                    copyfile(src, path)
+                continue
+            row = rows[p["id"]]
+            img = dm.trim(dm.load_image(join(paths.root, row["file"])))
+            if row.get("box"):
+                w, h = img.size
+                x0, y0, x1, y1 = row["box"]
+                img = dm.trim(img.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h))))
+            dm.save_thumb(img, path, THUMB_W)
+
+
+# ========================
+# Sheets (the check by eye)
+# ========================
+def sheets(root: str, log: Callable = print, per_sheet: int = 4) -> int:
+    from PIL import Image, ImageDraw
+    paths = Paths(root)
+    pairs = dm.read_json(join(paths.root, *PAIRS), {}) or {}
+    versions = {v["key"]: v for v in pairs.get("versions") or []}
+    data = dm.read_json(join(paths.out, "candidates.json"), {}) or {}
+    entries = (data.get("candidates") or []) + ((dm.read_json(join(paths.out, "ideas.json"), {}) or {}).get("ideas")
+                                                or [])
+    makedirs(paths.sheets, exist_ok=True)
+    side, n = 200, 0
+    blocks = []
+    for e in entries:
+        tiles = [join(paths.out, p["thumb"]) for p in e["pictures"]]
+        ref = dm.card_thumb(versions, (e.get("nearest") or {}).get("card")) if e.get("nearest") else None
+        tiles += [join(paths.root, *dm.OUT, ref)] if ref else []
+        block = Image.new("RGB", (side * 8, 24 + ((len(tiles) + 7) // 8) * (side * 2 + 4)), (235, 235, 235))
+        draw = ImageDraw.Draw(block)
+        draw.text((4, 4), f"{e['id']}  {e['name']}  {e.get('kind') or e['status']}  {(e['first']['date'] or '')[:10]}"
+                  f"  {e['first']['channel'] or ''}  | ref: {(e.get('nearest') or {}).get('card')}",
+                  fill=(160, 0, 0), font=dv._font(15))
+        for i, t in enumerate(tiles):
+            try:
+                img = Image.open(t).convert("RGB")
+            except OSError:
+                continue
+            img.thumbnail((side - 4, side * 2))
+            block.paste(img, ((i % 8) * side, 24 + (i // 8) * (side * 2 + 4)))
+        blocks.append(block)
+    for start in range(0, len(blocks), per_sheet):
+        part = blocks[start:start + per_sheet]
+        sheet = Image.new("RGB", (side * 8, sum(b.height for b in part)), "white")
+        y = 0
+        for b in part:
+            sheet.paste(b, (0, y))
+            y += b.height
+        n += 1
+        sheet.save(join(paths.sheets, f"sheet-{n:02d}.jpg"), quality=80)
+    log(f"{n} sheets, {len(entries)} entries: {paths.sheets}")
+    return n
+
+
+def main(argv: Optional[list] = None) -> int:
+    parser = ArgumentParser(prog="python -m commands.discord_morgue", description="Morgue candidates, ideas.")
+    subs = parser.add_subparsers(dest="command", required=True)
+    for name in ("build", "sheets"):
+        p = subs.add_parser(name)
+        p.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
+        if name == "build":
+            p.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC)
+    args = parser.parse_args(argv)
+
+    def log(text):
+        print(text, file=stderr, flush=True)
+    if args.command == "build":
+        build(args.root, log, args.cards_repo)
+    else:
+        sheets(args.root, log)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
