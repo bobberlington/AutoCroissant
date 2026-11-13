@@ -36,6 +36,7 @@ from typing import Optional
 
 import commands.card_standards as standards
 import commands.png_export as png_export
+from commands.card_bake import exit_with_parent
 from commands.card_edits import CardAuthors
 from commands.card_guards import Source, build_context, earlier_fonts, tree_dups, whole_tree_jobs
 from commands.card_models import card_name
@@ -55,6 +56,7 @@ _worker: dict = {}
 # ========================
 def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None, earlier: tuple = (),
           cores: int = 0) -> None:
+    exit_with_parent()                          # gone with the sweep that made it (killed)
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
     source = Source(clone)

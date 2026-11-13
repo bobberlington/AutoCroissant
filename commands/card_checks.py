@@ -984,6 +984,7 @@ _worker: list = []
 
 def _start(repository: str, clone: str, head: str) -> None:
     token_from_env()                            # a blob the clone lacks comes by REST
+    card_bake.exit_with_parent()
     _worker[:] = [context(repository, clone, head)]
 
 

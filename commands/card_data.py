@@ -89,8 +89,10 @@ def _forks() -> bool:
 
 
 def _fork_init() -> None:
-    """A forked worker's own requests Sessions: never the parent's sockets."""
+    """A forked worker's own requests Sessions: never the parent's sockets. It exits once the build is gone (killed)."""
+    from commands.card_bake import exit_with_parent     # lazy: the bake's modules (the data job checks it out)
     github_api._local = local()
+    exit_with_parent()
 
 
 def _fork_read(path: str, name: str, sha: str, given: dict) -> tuple:
