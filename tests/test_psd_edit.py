@@ -2725,16 +2725,18 @@ PROBE = "Auxiliary/Minions/Electro_Probe.psd"                     # a visible em
 
 
 def test_an_empty_ability_layer_is_none(clone, parser, chart, tmp_path):
-    """An empty Ability layer is no part and no ability_layer(): +ability lays its text out as on a card with none, the
-    empty layer removed."""
+    """An empty Ability layer is no part and no ability_layer() (Electro Probe's two): +ability lays its text out as on
+    a card with none, the empty layer removed (Anubisath's; Electro Probe has no room under its bars: NO_ROOM)."""
     path, png = _card(clone, PROBE)
     psd = PSDImage.open(path)
-    parsed = pe.parse_card(parser, path, PROBE, psd)
     assert pe.card_parts(psd, PROBE, "Electro Probe", parser)["ability"] == []
     with pytest.raises(pe.Refused, match="0 visible Ability layers"):
         pe.ability_layer(psd)
+    path, png = _card(clone, ANUBISATH)
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, ANUBISATH, psd)
     edits = {"parts": {"+ability": {"field": "ability", "text": "Attacks inflict 1T Afraid."}}}
-    baked = pe.apply_jobs(path, png, PROBE, pe.classify(parsed, edits, psd, parser).jobs, parsed, parser, str(tmp_path),
+    baked = pe.apply_jobs(path, png, ANUBISATH, pe.classify(parsed, edits, psd, parser).jobs, parsed, parser, str(tmp_path),
                           str(clone / pe.FONTS_DIR), chart, psd=psd,
                           ability_from=(PSDImage.open(clone / pe.TEMPLATE_DIR / "Creature_Template.psd"), "Creature_Template"))
     saved = PSDImage.open(baked.psd_path)
@@ -2801,6 +2803,25 @@ def test_plus_ability_skips_art_and_other_text(clone, parser):
         assert got.box[3] - got.box[1] > 3 * got.size and got.ink[3] <= got.box[3]
         for b in el["stats"] + el["text"]:
             assert min(got.ink[3], b[3]) <= max(got.ink[1], b[1]) or min(got.ink[2], b[2]) <= max(got.ink[0], b[0])
+
+
+def test_plus_ability_needs_room_under_the_stats(clone, parser):
+    """Owner 2026-11-13: "+ability" on a card with stats and no room for two lines under them is refused (NO_ROOM),
+    never laid over the art above them (Whelp) nor squeezed at the card's bottom edge (Paint Warrior); Mini Bee fits."""
+    for rel, room in (("Auxiliary/Minions/Whelp.psd", False), ("Auxiliary/Minions/Paint_Warrior.psd", False),
+                      ("Auxiliary/Minions/Mini_Bee.psd", True)):
+        psd = PSDImage.open(str(clone / rel))
+        for layer in [l for l in psd.descendants() if pe._is_text_layer(l) and l.name == "Ability"]:   # empty at the pin
+            pe.remove_layer(psd, layer)
+        t = pe.template_for(pe.parse_card(parser, str(clone / rel), rel, psd)["card"]["type"], rel)
+        plan = lambda: ability_place.plan(psd, rel, PSDImage.open(str(clone / t)), t, "Deal 3 damage to an enemy "
+                                          "creature and inflict 2T Burn.", str(clone / pe.FONTS_DIR), parser)
+        if room:
+            stats = ability_place.elements(psd, parser.all_types)["stats"]
+            assert plan().ink[1] > max(b[3] for b in stats), rel
+        else:
+            with pytest.raises(pe.Refused, match=ability_place.NO_ROOM):
+                plan()
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '

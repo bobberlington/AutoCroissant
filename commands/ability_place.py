@@ -8,7 +8,9 @@ STATS_TOL px, else the text panel within PANEL_TOL px, else a shared distinctive
 No sibling: just below the stats, else the template's medians. Never over the stats, title, stars, type icons or the
 card's other text layers, never off the canvas, inside a panel (a mostly opaque pixel layer; on a card with stats, one
 under them) above its bottom border as the siblings' text: shrink-to-fit (FIT_STEP) down to RAISE_AT, then raised
-towards the siblings' highest first line (review 2026-10-25: long texts at the bottom), then smaller to FIT_MIN.
+towards the siblings' highest first line (review 2026-10-25: long texts at the bottom), then smaller to FIT_MIN. On a
+card with stats never above them, nor squeezed under them: less free height there than two lines at the card's size
+is refused, NO_ROOM (owner 2026-11-13: Whelp).
 
 Font (owner 2026-10-25 "we should use a card's own font when it exists"): the commonest real ability font of the
 cards sharing this card's title font in its folder, else its series, else anywhere, else of its series, else its own
@@ -61,6 +63,8 @@ SKIP_STYLE = re_compile(r"star|^(def|hp|atk|spd|dark|header|page number|offensiv
                         r"vibrance|exposure|color fill|solid color)|^\d+$", IGNORECASE)
 DEFAULT_NAME = re_compile(r"^(layer|rectangle|ellipse|group|shape|polygon|path)\s*\d+(\s+copy(\s+\d+)?)?$", IGNORECASE)
 TALL = 100000.0                     # pt: a box no text reaches the bottom of (measuring)
+NO_ROOM = "ability: no room for an ability on this card"
+TWO_LINES = "H\rH"                  # the least a card with stats must hold under them
 
 
 @dataclass
@@ -460,7 +464,7 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
         parser: offline_parser() (its icon names); None: none
 
     Returns:
-        Plan; raises psd_edit.Refused when no free area is left or no font can be laid out legibly
+        Plan; raises psd_edit.Refused when no free area is left (NO_ROOM) or no font can be laid out legibly
     """
     from commands.psd_edit import Refused, _is_text_layer, font_map
     from psd_tools.composite.text.model import TextModel
@@ -557,12 +561,20 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
     top, bottom = _clear(first, floor, x0, x1, obstacles)
     line = size * FIT_MIN * max(ratio * lead, 1.0)
     if bottom - top < line:                     # no room for a line under what it landed on: the biggest free band
-        bands = _bands(H, x0, x1, obstacles, pan)
+        bands = [b for b in _bands(H, x0, x1, obstacles, pan) if mode != "stats" or b[0] >= anchor]    # not on the art
         if not bands:
-            raise Refused("unsupported-card", "ability: no free area for it on the card")
+            raise Refused("unsupported-card", NO_ROOM)
         top, bottom = max(bands, key=lambda b: b[1] - b[0])
         ceiling = min(ceiling, top)
         notes.append(f"ability: moved to the free band {top:.0f}-{bottom:.0f}")
+    if mode == "stats":                         # room for two lines at the card's size, else none (Whelp, Paint Warrior)
+        try:
+            two = measure(model, TWO_LINES, font, size / scale, size * ratio * lead / scale,
+                          width / model.transform[0], fonts)[4]
+        except Exception:                       # fit() refuses the font
+            two = 0
+        if bottom - top < two:
+            raise Refused("unsupported-card", NO_ROOM)
     start = top
     s, m = fit(top, bottom, RAISE_AT)
     if top + m[4] > bottom:                     # too long at RAISE_AT: up towards the ceiling first, then smaller
