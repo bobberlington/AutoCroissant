@@ -13,6 +13,8 @@ makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (mac
     python timeline_text.py calibrate      calibration.json (per era per field: bar, n, accuracy at the bar, share
                                            above it) and reads.jsonl (each read with method, confidence, sure)
     python timeline_text.py stars [-j N]   the stars read again (stars.jsonl; calibrate takes them over raw.jsonl's)
+    python timeline_text.py types [-j N]   the title and the types read again, every bank type's places kept
+                                           (types.jsonl; calibrate takes them over raw.jsonl's)
 
 Inputs (shared with the bars readers): every card-shaped picture of the catalogue (pictures.jsonl, size classes
 CARD_CLASSES) and every PNG version of the old repo (oldgit/versions.jsonl, read only, up to the cut); today's card
@@ -54,11 +56,15 @@ LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|
 STAR_SIZES = [0.045 * 1.14 ** k for k in range(11)]    # star icon width / card width
 TYPE_SIZES = [0.05 * 1.13 ** k for k in range(12)]     # type icon width / card width
 MIN_STAR = 0.04                                  # a star at least this share of the card's width
+COPY_FLOOR, MAX_COPIES = 0.2, 12                 # star copies kept: correlation at least this, at most this many
+KNOWN_STARS_ONLY = ("A", "C")                    # eras whose star counts are sure only when a known count agrees
 NMS_STAR, NMS_TYPE = 0.45, 0.6                   # peaks nearer than this share of the icon are one
 INLINE_FLOOR = 0.6                               # an icon inside the ability's lines
 CLASS_Y = 0.96                                   # a creature's class line sits under this (share of height)
 NAME_MIN = 0.6                                   # a title this like a name takes the name
 BAR_TARGET = 0.985                               # bars are picked at this share right ("sure" >= 98%, with margin)
+BAR_TARGETS = (BAR_TARGET, 0.99, 0.995, 0.999)  # stricter fits while the 2-fold cross-check is under SURE_MIN
+SURE_MIN = 0.98
 EYE_POOL = 50                                    # eye-truth eras with fewer reads also meet the pooled eye bar
 UNSORTED = ("other", "bars-other")                # pictures no era fits (not all cards): no borrowed bars
 MIN_N = 8                                        # an era with less truth borrows its group's bar
@@ -624,36 +630,55 @@ def era_of(item, w, h, labels, look):
 STAR_GLYPHS = re.compile(r"[*★☆✦✧✩✪✫✬✭✮✯✰⭐☀]+")
 
 
-def read_title(band):
-    """The title off the title band's lines: the tallest lines (two-line titles joined), then the nearest name.
-    {text, name, s1, s2, conf}."""
+def name_ranks(text, drop=()):
+    """Names near a text, best first: [(ratio, name)]; ties go to the longer name. drop: names (norm) left out."""
+    lt = loose(text)
+    best = {}
+    for name, ln in names_index():
+        if drop and norm(name) in drop:
+            continue
+        if abs(len(ln) - len(lt)) > max(len(ln), len(lt)) * 0.6:
+            continue
+        sm = SequenceMatcher(None, lt, ln, autojunk=False)
+        if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
+            continue
+        r = sm.ratio()
+        key = norm(name)
+        if r > best.get(key, (0, None))[0]:
+            best[key] = (r, name)
+    return sorted(best.values(), key=lambda v: (v[0], len(loose(v[1])), v[1]), reverse=True)
+
+
+def read_title(band, drop=()):
+    """The title off the title band's lines: the tallest lines joined (two-line titles), then the nearest name.
+    A single line naming another card makes the read unsure, unless its name sits inside the joined text's name
+    (Blooper / Tentacle). {text, name, s1, s2, conf, clash?}."""
     cands = [l for l in band or [] if len(norm(STAR_GLYPHS.sub("", l[0]))) >= 2]
     if not cands:
         return {"text": None, "name": None, "s1": 0.0, "s2": 0.0, "conf": 0.0}
     hmax = max(l[5] for l in cands)
     big = [l for l in cands if l[5] >= 0.6 * hmax]
     big.sort(key=lambda l: (round((l[3] + l[5] / 2) / max(hmax, 1e-3)), l[2]))
-    texts = [" ".join(STAR_GLYPHS.sub(" ", l[0]).strip() for l in big)]
-    texts += [STAR_GLYPHS.sub(" ", l[0]).strip() for l in big if len(big) > 1]
-    best = {}
-    for t in texts:
-        lt = loose(t)
-        for name, ln in names_index():
-            if abs(len(ln) - len(lt)) > max(len(ln), len(lt)) * 0.6:
-                continue
-            sm = SequenceMatcher(None, lt, ln, autojunk=False)
-            if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
-                continue
-            r = sm.ratio()
-            key = norm(name)
-            if r > best.get(key, (0, None))[0]:
-                best[key] = (r, name)
-    ranked = sorted(best.values(), reverse=True)
+    joined = " ".join(STAR_GLYPHS.sub(" ", l[0]).strip() for l in big)
+    ranked = name_ranks(joined, drop)
     s1, name = ranked[0] if ranked else (0.0, None)
     s2 = ranked[1][0] if len(ranked) > 1 else 0.0
     conf = s1 - 0.5 * max(0.0, s2 - (s1 - 0.15))
-    return {"text": re.sub(r"\s+", " ", texts[0]).strip(), "name": name if s1 >= NAME_MIN else None,
-            "s1": round(s1, 4), "s2": round(s2, 4), "conf": round(conf, 4)}
+    clash = None
+    for l in big if len(big) > 1 else []:
+        lr = name_ranks(STAR_GLYPHS.sub(" ", l[0]).strip(), drop)
+        if lr and lr[0][0] >= max(NAME_MIN, s1 - 0.05) and norm(lr[0][1]) != norm(name or "") \
+                and not (s1 >= NAME_MIN and norm(lr[0][1]) in norm(name)):
+            if lr[0][0] > s1 + 0.1:        # the joined text is noise around a name: that name, unsure
+                s1, name = lr[0]
+            clash = lr[0][1]
+            conf = min(conf, 0.5)
+            break
+    out = {"text": re.sub(r"\s+", " ", joined).strip(), "name": name if s1 >= NAME_MIN else None,
+           "s1": round(s1, 4), "s2": round(s2, 4), "conf": round(conf, 4)}
+    if clash:
+        out["clash"] = clash
+    return out
 
 
 def visual_lines(lines):
@@ -760,6 +785,22 @@ def ability_known(name, text, exclude=()):
 
 
 ODD = re.compile(r"[^A-Za-z0-9\s.,:;'\"()/+\-%!?&*#\[\]’‘“”—–]")
+TAG = re.compile(r"\(([A-Z0-9/]{2,6})\)")
+_TAGS = None
+
+
+def known_tags():
+    """Timing tags printed in known abilities ((OYT), (1CD), ...): an OCR'd tag outside them is a slip."""
+    global _TAGS
+    if _TAGS is None:
+        _TAGS = {m.upper() for v in known_abilities().values() for t, src in v
+                 for m in re.findall(r"\(([A-Za-z0-9/]{1,6})\)", t)}
+    return _TAGS
+
+
+def odd_marks(text):
+    """Odd characters (accents, OCR's brackets) plus timing tags no known text prints."""
+    return len(ODD.findall(text)) + sum(1 for m in TAG.findall(text) if not m.isdigit() and m not in known_tags())
 
 
 def ability_scores(text, other, title):
@@ -867,7 +908,7 @@ def read_stars(a, band_h, title_box):
     inside = circle > 0
     ref = colour[inside].mean(0)
     copies = []
-    for c, px, py in peaks(best, side, 0.4, 0.2, 12):
+    for c, px, py in peaks(best, side, 0.4, COPY_FLOOR, MAX_COPIES):
         patch = region[py:py + side, px:px + side]
         diff = float(np.abs(patch[inside].mean(0) - ref).mean()) if patch.shape[:2] == inside.shape else 255.0
         copies.append([round(c, 3), round(diff, 1), px, py])
@@ -935,9 +976,9 @@ def count_stars(st, rule):
     good, bad = [], []
     for c, mad, x, y in st["copies"]:
         (good if c >= rule["ncc"] and mad <= rule["mad"] else bad).append(c - mad / 160.0)
-    if not good:
+    if not good or (not bad and len(good) >= MAX_COPIES):      # every copy kept is a star: can't count
         return None, 0.0
-    margin = min(good) - (max(bad) if bad else 0.0)
+    margin = min(good) - (max(bad) if bad else COPY_FLOOR)     # no copy kept but stars: the next is under the floor
     return len(good), round(min(1.0, st["bank"] + 0.2) * max(0.0, min(1.0, 0.5 + margin)), 4)
 
 
@@ -1017,8 +1058,9 @@ def stars_known(name, n, exclude=()):
     return any(c == n and not set(src) <= set(exclude) for c, src in known_stars().get(loose(name or ""), []))
 
 
-def type_presence(a, band_h, names):
-    """Each named type's best place in the icon band (left 60%): {name: [gray ncc, colour mix, x, y, w]}."""
+def type_presence(a, band_h, names, top=3):
+    """Each named type's best places in the icon band (left 60%), apart from each other: {name: [[gray ncc, colour
+    mix, x, y, w], ...]} best first, at most top."""
     H, W = a.shape[:2]
     A = a[:max(8, int(band_h * H))].astype("float32")[:, :int(0.6 * W)]
     G = gray(A)
@@ -1037,21 +1079,36 @@ def type_presence(a, band_h, names):
                     ncc, mad = verify(G, x, y, t, m)
                     cands.append((ncc, icon, x, y, t.shape[1]))
         cands.sort(key=lambda c: -c[0])
-        best = None
-        for ncc, icon, x, y, w in cands[:6]:
+        places = []
+        for ncc, icon, x, y, w in cands[:6 + 2 * top]:
             r = refine(G, icon, x, y, w)
             cn, cm = colour_fit(A, r[2], r[3], icon, r[4])
-            row = [round(r[0], 3), round(0.5 * r[0] + 0.5 * cn - cm / 255.0, 3), r[2], r[3], r[4]]
-            if best is None or row[0] > best[0]:
-                best = row
-        out[name] = best or [0.0, 0.0, 0, 0, 0]
+            places.append([round(r[0], 3), round(0.5 * r[0] + 0.5 * cn - cm / 255.0, 3), r[2], r[3], r[4]])
+        places.sort(key=lambda p: -p[0])
+        kept = []
+        for p in places:
+            if all(place_overlap(p, k) < 0.3 for k in kept):
+                kept.append(p)
+        out[name] = kept[:top] or [[0.0, 0.0, 0, 0, 0]]
     return out
 
 
-def verified_types(rd, rule, exclude=()):
+def place_overlap(p, q):
+    """Overlap of two icon places [score, mix, x, y, w] (square boxes), as a share of the smaller."""
+    return overlap((0, 0, p[2], p[3], p[4], p[4]), (0, 0, q[2], q[3], q[4], q[4]))
+
+
+def places_of(v):
+    """A presence entry as a list of places (old reads kept one flat place)."""
+    return v if v and isinstance(v[0], list) else [v]
+
+
+def verified_types(rd, rule, exclude=(), alarms=None):
     """(types, conf) from the card's known type sets checked on the picture (types_known): the one set whose icons
     are all present (gray ncc >= rule['on']) while the other known icons are absent (< rule['off']). An empty set
-    is never offered (absence proves nothing)."""
+    is never offered (absence proves nothing). alarms {type: level}: any other bank icon at or over its level (and
+    rule['on']) away from the set's icons makes the read unsure (conf 0): a Discord version with an icon git never
+    had."""
     tk = rd.get("types_known")
     if not tk or not tk.get("sets"):
         return None, 0.0
@@ -1059,7 +1116,8 @@ def verified_types(rd, rule, exclude=()):
     pres = {}
     for t, v in tk["presence"].items():
         c = canon_types([t])[0]
-        if c not in pres or v[0] > pres[c][0]:
+        v = places_of(v)
+        if c not in pres or v[0][0] > pres[c][0][0]:
             pres[c] = v
     sets = [sorted(t for t in canon_types(ts) if not (card and t == "equip")) for ts, src in tk["sets"]
             if not set(src) <= set(exclude)]
@@ -1069,13 +1127,29 @@ def verified_types(rd, rule, exclude=()):
     union = sorted({t for s in sets for t in s})
     fits = []
     for ts in sets:
-        on = [pres[t][0] for t in ts if t in pres]
-        off = [pres[t][0] for t in union if t not in ts and t in pres]
+        on = [pres[t][0][0] for t in ts if t in pres]
+        off = [pres[t][0][0] for t in union if t not in ts and t in pres]
         if len(on) == len(ts) and all(v >= rule["on"] for v in on) and all(v < rule["off"] for v in off):
             fits.append((min([v - rule["on"] for v in on] + [rule["off"] - v for v in off] + [0.3]), ts))
     if len(fits) != 1:
         return None, 0.0
-    return fits[0][1], round(fits[0][0], 4)
+    conf, ts = fits[0]
+    if alarms is not None and extra_icons(pres, ts, rule, alarms, card):
+        return ts, 0.0
+    return ts, round(conf, 4)
+
+
+def extra_icons(pres, ts, rule, alarms, card):
+    """Bank types other than the set's at or over their alarm level away from the set's icons."""
+    mine = [pres[t][0] for t in ts if t in pres]
+    out = []
+    for t, places in pres.items():
+        if t in ts or (card and t == "equip") or t not in alarms:
+            continue
+        level = max(alarms[t], rule["on"])
+        if any(p[0] >= level and all(place_overlap(p, m) < 0.3 for m in mine) for p in places):
+            out.append(t)
+    return out
 
 
 def title_box(rec, title, band):
@@ -1135,11 +1209,39 @@ def read_one(item, rec):
         out["ability_icons"].update(ability_scores(out["ability_icons"]["text"], None, title))
     out["stars"] = read_stars(work, STAR_BAND[shp], tb)
     out["star_blobs"] = read_star_blobs(work, tb)
-    sets = known_types().get(loose(title["name"])) if title.get("name") else None
-    if sets:
-        names = sorted({t for ts, src in sets for t in ts})
-        out["types_known"] = {"sets": sets, "presence": type_presence(work, ICON_BAND[shp], names)}
+    tk = types_known_of(work, shp, title)
+    if tk:
+        out["types_known"] = tk
     return out
+
+
+def types_known_of(work, shp, title):
+    """The read card's known type sets and every bank type's places on the picture (other icons raise alarms)."""
+    sets = known_types().get(loose(title["name"])) if title.get("name") else None
+    if not sets:
+        return None
+    canon = same_icons()
+    names = sorted({t for ts, src in sets for t in ts} | {canon.get(i[0], i[0]) for i in bank("types")})
+    return {"sets": sets, "presence": type_presence(work, ICON_BAND[shp], names)}
+
+
+def types_task(args):
+    """The title and the types read again (types.jsonl; calibrate takes them over raw.jsonl's)."""
+    import cv2
+    import numpy as np
+    item, rec = args
+    try:
+        title = read_title(rec.get("band"))
+        out = {"id": item["id"], "title": title}
+        if known_types().get(loose(title["name"])) if title.get("name") else None:
+            img = load(item)
+            a = np.asarray(img.convert("RGB"))
+            W0, H0 = img.size
+            work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
+            out["types_known"] = types_known_of(work, rec.get("shape") or shape(W0, H0), title)
+        return out
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
 
 def read_task(args):
@@ -1258,6 +1360,12 @@ TYPE_RULES = [{"on": a, "off": b} for a in (0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9
               if b <= a + 0.05]
 VARIANTS = ("fix", "raw", "icons")
 TRUTH_OF = {"discord": "eye", "old": "psd", "today": "today"}
+TITLE_FLOOR = 0.9286          # names no list has: with its own name left out, 2.3% of truth titles still reach this
+EYE_ABILITY_BAR = 0.81        # eye eras' plain OCR: both passes agree, Vision sure, every word a game word
+KNOWN_STARS_BAR = 0.55        # A/C star counts: a known count, with some margin of their own
+NOT_CARD_LOOKS = ("S",)       # squares by look alone (screenshots too): never sure
+ALARM_Q = 0.995               # an other type icon at its 99.5th percentile on pictures without it: an extra icon
+_ALARMS = None
 
 
 def titles_of(t):
@@ -1276,7 +1384,7 @@ def ability_conf(text, agree, minconf, known):
     voc = vocab()
     share = sum(w in voc and (len(w) > 1 or w == "a") for w in ws) / len(ws) if ws else 0.0
     base = 0.5 + 0.3 * bool(agree) + 0.1 * (minconf >= 0.99)
-    return round(0.9 * base * share ** 4 * 0.5 ** len(ODD.findall(text)), 4)
+    return round(0.9 * base * share ** 4 * 0.5 ** odd_marks(text), 4)
 
 
 def ability_variant(rd, variant):
@@ -1306,11 +1414,15 @@ def field_read(rd, field, how, exclude=()):
         rule = how.get("rule") or STAR_RULES[0]
         n, conf = (count_blobs(rd.get("star_blobs"), rule) if rule.get("kind") else
                    count_stars(rd.get("stars"), rule))
+        if n == 1 and not rule.get("kind") and rd.get("era") in KNOWN_STARS_ONLY:
+            return n, "icon", 0.0              # the cut star alone: overlapped stars read 1 too
         if n is not None and stars_known((rd.get("title") or {}).get("name"), n, exclude):
             return n, "icon+known", round(0.5 + 0.5 * conf, 4)
+        if rd.get("era") in KNOWN_STARS_ONLY:      # loose stars, clusters and stacks: a count alone is never sure
+            return n, "icon", 0.0
         return n, "icon", round(0.5 * conf, 4)
     if field == "types":
-        ts, conf = verified_types(rd, how.get("rule") or TYPE_RULES[0], exclude)
+        ts, conf = verified_types(rd, how.get("rule") or TYPE_RULES[0], exclude, _ALARMS)
         return ts, "icon+known", conf
     return None, None, 0.0
 
@@ -1364,21 +1476,124 @@ def usable_truth(field, t):
     return v
 
 
+def alarm_levels(raw, truth, q=None):
+    """{type: level}: each bank type's best score on truth pictures known not to print it (away from their own
+    icons), at quantile q. Types that score that high on look-alike shapes (light, equip) get a level they never
+    reach on a card that lacks them only rarely; a type with too few such pictures gets none."""
+    q = ALARM_Q if q is None else q
+    scores = defaultdict(list)
+    for rid, rd in raw.items():
+        tk = rd.get("types_known")
+        if not tk or "light" not in tk.get("presence", {}):        # every bank type's places (the types step)
+            continue
+        for t in truth.get(rid, []):
+            v = usable_truth("types", t)
+            if v is None or t["how"].startswith("eye:val_"):
+                continue
+            card = rd.get("kind") == "card"
+            ts = {x for x in canon_types(v) if not (card and x == "equip")}
+            pres = {}
+            for name, p in tk["presence"].items():
+                c = canon_types([name])[0]
+                p = places_of(p)
+                if c not in pres or p[0][0] > pres[c][0][0]:
+                    pres[c] = p
+            mine = [pres[x][0] for x in ts if x in pres]
+            for name, places in pres.items():
+                if name in ts or (card and name == "equip"):
+                    continue
+                scores[name].append(max((p[0] for p in places if all(place_overlap(p, m) < 0.3 for m in mine)),
+                                        default=0.0))
+            break
+    out = {}
+    for name, v in scores.items():
+        v.sort()
+        if len(v) >= 50:
+            out[name] = round(v[min(len(v) - 1, int(q * len(v)))] + 0.001, 3)
+    return out
+
+
+def sheet_ids():
+    """Pictures of several cards (no sure read until cut into cells): the match's checked sheets and the
+    catalogue's multi-card sheets and before/after pairs."""
+    out = set()
+    for v in jsonl(join(ROOT, "derived/match/verdicts.jsonl")):
+        if v.get("sheet") and v.get("sha256"):
+            out.add("d:" + v["sha256"])
+    for r in jsonl(join(ROOT, "derived/catalogue/pictures.jsonl")):
+        if r.get("sheet") in ("multi", "pair"):
+            out.add("d:" + splitext(basename(r["file"]))[0])
+    return out
+
+
+def no_sure(rd, sheets):
+    """Why a picture gets no sure read: a sheet of cards, or a square classed by look alone (screenshots too)."""
+    if rd["id"] in sheets:
+        return "sheet"
+    if rd.get("era_how") == "look" and rd["era"] in NOT_CARD_LOOKS:
+        return "look"
+    return None
+
+
+def confirmed(rd):
+    """A card by stage 1's era, its stat labels or its file (not by look alone): its OCR text is a card's."""
+    return rd.get("era_how") in ("stage1", "labels", "size") and rd["era"] not in UNSORTED
+
+
+def floored(era, src, field, n, bar):
+    """The bar after the floors: every title bar >= TITLE_FLOOR; small eye eras' abilities >= EYE_ABILITY_BAR;
+    eras whose star counts need a known count > 0.5; no Discord types (a pre-git icon outside every Types/ tree,
+    or stacked under another, goes unseen: 4 of 48 sure reads wrong by eye)."""
+    if bar is None or (field == "types" and src == "discord"):
+        return None
+    if field == "title":
+        return max(bar, TITLE_FLOOR)
+    if field == "ability" and src == "discord" and 0 < n < EYE_POOL:
+        return max(bar, EYE_ABILITY_BAR)
+    if field == "stars" and era in KNOWN_STARS_ONLY:
+        return max(bar, KNOWN_STARS_BAR)
+    return bar
+
+
 def calibrate():
     """Per era and field: the rule/variant with the most right reads on the era's truth, then the bar (BAR_TARGET),
-    2-fold cross-checked; reads.jsonl (Discord, old repo) and today.jsonl with each field's value, method,
-    confidence and sure."""
+    2-fold cross-checked, then the floors; reads.jsonl (Discord, old repo) and today.jsonl with each field's value,
+    method, confidence and sure."""
+    global _ALARMS
     raw = {r["id"]: r for r in jsonl(join(OUT, "raw.jsonl")) if not r.get("error")}
     for r in jsonl(join(OUT, "stars.jsonl")):
         if r["id"] in raw and not r.get("error"):
             raw[r["id"]].update(stars=r["stars"], star_blobs=r.get("star_blobs"))
+    for r in jsonl(join(OUT, "types.jsonl")):
+        if r["id"] in raw and not r.get("error"):
+            raw[r["id"]]["title"] = r["title"]
+            raw[r["id"]].pop("types_known", None)
+            if r.get("types_known"):
+                raw[r["id"]]["types_known"] = r["types_known"]
     truth = truth_rows()
+    sheets = sheet_ids()
+    _ALARMS = alarm_levels(raw, truth)
     by_era = defaultdict(list)
     for rid, rd in raw.items():
         by_era[(rd["era"], rd["src"])].append(rd)
-    cal = {"made": time.strftime("%Y-%m-%d %H:%M"), "target": BAR_TARGET, "eras": {}}
-    choices = {}
+    cal = {"made": time.strftime("%Y-%m-%d %H:%M"), "target": BAR_TARGET, "eras": {},
+           "type_alarms": {"q": ALARM_Q, "levels": _ALARMS}, "title_floor": TITLE_FLOOR,
+           "eye_ability_bar": EYE_ABILITY_BAR, "known_stars_bar": KNOWN_STARS_BAR,
+           "no_sure": dict(Counter(no_sure(rd, sheets) for rd in raw.values() if no_sure(rd, sheets)))}
+    choices, labelled_of = {}, {}
     eye_rows = defaultdict(list)
+
+    def score(field, how, rows):
+        res = []
+        for rd, v, own in rows:
+            val, method, conf = field_read(rd, field, how, own)
+            res.append((conf if not no_sure(rd, sheets) else 0.0,
+                        is_right(field, val, v, rd.get("kind") == "card")))
+        return res
+
+    def n_sure(rds, field, how, bar):
+        return sum(1 for rd in rds if bar is not None and not no_sure(rd, sheets)
+                   and field_read(rd, field, how)[0] is not None and field_read(rd, field, how)[2] >= bar)
     for (era, src), rds in sorted(by_era.items()):
         key = f"{era}/{src}"
         cal["eras"][key] = {"population": len(rds)}
@@ -1390,6 +1605,7 @@ def calibrate():
                     if v is not None and not t["how"].startswith("eye:val_"):
                         labelled.append((rd, v, t.get("own") or []))
                         break
+            labelled_of[(era, src, field)] = labelled
             options = [{}]
             if field == "stars":
                 options = [{"rule": r} for r in STAR_RULES]
@@ -1397,39 +1613,41 @@ def calibrate():
                 options = [{"rule": r} for r in TYPE_RULES]
             elif field == "ability":
                 options = [{"variant": v} for v in VARIANTS]
-
-            def score(how, rows):
-                res = []
-                for rd, v, own in rows:
-                    val, method, conf = field_read(rd, field, how, own)
-                    res.append((conf, is_right(field, val, v, rd.get("kind") == "card")))
-                return res
             best = None
             for how in options:
-                res = score(how, labelled)
+                res = score(field, how, labelled)
                 bar, k, ok = pick_bar(res)
                 rank = (k, sum(r[1] for r in res), -len(json.dumps(how)))
                 if best is None or rank > best[0]:
                     best = (rank, how, res, bar, k, ok)
             _, how, res, bar, k, ok = best
-            cv = None
-            if len(labelled) >= 40:
+
+            def crosscheck(target):
+                """Bars fitted on one half, measured on the other (n >= 40)."""
+                if len(labelled) < 40:
+                    return None
                 half = [labelled[0::2], labelled[1::2]]
                 hits = n_above = 0
                 for a, b in ((0, 1), (1, 0)):
-                    ba, _, _ = pick_bar(score(how, half[a]))
+                    ba, _, _ = pick_bar(score(field, how, half[a]), target)
                     if ba is not None:
-                        sb = score(how, half[b])
+                        ba = floored(era, src, field, len(labelled), ba)
+                        sb = score(field, how, half[b])
                         hits += sum(r[1] for r in sb if r[0] >= ba)
                         n_above += sum(1 for r in sb if r[0] >= ba)
-                cv = {"right": hits, "above": n_above, "accuracy": round(hits / n_above, 4) if n_above else None}
-            above_all = sum(1 for rd in rds if bar is not None and field_read(rd, field, how)[2] >= bar)
-            cal["eras"][key][field] = {
-                "truth": TRUTH_OF.get(src), "n": len(labelled), "how": how, "bar": bar,
-                "above": k, "right_above": ok, "accuracy_at_bar": round(ok / k, 4) if k else None,
-                "share_above_truth": round(k / len(labelled), 4) if labelled else None,
-                "share_above_all": round(above_all / len(rds), 4) if rds else None,
-                "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None, "cv": cv}
+                return {"right": hits, "above": n_above, "accuracy": round(hits / n_above, 4) if n_above else None,
+                        "target": target}
+            for target in BAR_TARGETS:      # a stricter fit while the cross-check falls under SURE_MIN
+                bar = pick_bar(res, target)[0]
+                cv = crosscheck(target)
+                if not cv or cv["accuracy"] is None or cv["accuracy"] >= SURE_MIN:
+                    break
+            else:
+                bar = None
+            cal["eras"][key][field] = {"truth": TRUTH_OF.get(src), "n": len(labelled), "how": how, "fitted_bar": bar,
+                                       "target": target,
+                                       "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None,
+                                       "cv": cv}
             choices[(era, src, field)] = (how, bar)
             eye_rows[field] += [(r[0], r[1], key) for r in res] if src == "discord" else []
     # small eye samples: a bar under the pooled eye bar (every eye era's reads, each under its era's choice) is
@@ -1441,9 +1659,7 @@ def calibrate():
             entry = cal["eras"][f"{era}/{src}"][f]
             if f == field and src == "discord" and 0 < entry["n"] < EYE_POOL and bar is not None and pbar is not None \
                     and pbar > bar:
-                rds = by_era[(era, src)]
-                entry.update(bar=pbar, raised_from=bar, share_above_all=round(sum(
-                    1 for rd in rds if field_read(rd, f, how)[2] >= pbar) / len(rds), 4))
+                entry["raised_from"] = bar
                 choices[(era, src, f)] = (how, pbar)
     # pooled bars (every era's truth): a title's name likeness and an ability read equal to a known text mean
     # the same in every era; eras with no truth of their own take these
@@ -1454,8 +1670,7 @@ def calibrate():
             for t in truth.get(rd["id"], []):
                 v = usable_truth(field, t)
                 if v is not None and not t["how"].startswith("eye:val_"):
-                    val, method, conf = field_read(rd, field, how, t.get("own") or [])
-                    rows.append((conf, is_right(field, val, v, rd.get("kind") == "card")))
+                    rows += score(field, how, [(rd, v, t.get("own") or [])])
                     break
         bar, k, ok = pick_bar(rows)
         pooled[field] = (how, bar, "pooled")
@@ -1468,13 +1683,23 @@ def calibrate():
         donor = next((choices[(era, s, field)] + (f"{era}/{s}",) for s in ("old", "discord", "today")
                       if s != src and (era, s, field) in choices and cal["eras"][f"{era}/{s}"][field]["n"] >= MIN_N),
                      None) or (pooled.get(field) if era not in UNSORTED else None)
-        entry = cal["eras"][f"{era}/{src}"][field]
         if donor:
-            entry.update(borrowed=donor[2], how=donor[0], bar=donor[1])
-            rds = by_era[(era, src)]
-            entry["share_above_all"] = round(sum(1 for rd in rds if donor[1] is not None and field_read(
-                rd, field, donor[0])[2] >= donor[1]) / len(rds), 4) if rds else None
+            cal["eras"][f"{era}/{src}"][field].update(borrowed=donor[2], how=donor[0])
         choices[(era, src, field)] = donor[:2] if donor else (how, None)
+    # the floors, then each era's numbers at its final bar
+    for (era, src, field), (how, bar) in list(choices.items()):
+        entry = cal["eras"][f"{era}/{src}"][field]
+        fbar = floored(era, src, field, entry["n"], bar)
+        if fbar != bar:
+            entry["floored_from"] = bar
+        choices[(era, src, field)] = (how, fbar)
+        res = score(field, how, labelled_of[(era, src, field)])
+        above = [r for r in res if fbar is not None and r[0] >= fbar]
+        rds = by_era[(era, src)]
+        entry.update(bar=fbar, above=len(above), right_above=sum(r[1] for r in above),
+                     accuracy_at_bar=round(sum(r[1] for r in above) / len(above), 4) if above else None,
+                     share_above_truth=round(len(above) / len(res), 4) if res else None,
+                     share_above_all=round(n_sure(rds, field, how, fbar) / len(rds), 4) if rds else None)
     for (era, src), rds in by_era.items():          # held-out eye checks (eye/val_*.json) of the final bars
         for field in FIELDS:
             how, bar = choices.get((era, src, field), ({}, None))
@@ -1484,7 +1709,7 @@ def calibrate():
                     v = usable_truth(field, t)
                     if v is not None and t["how"].startswith("eye:val_"):
                         val, method, conf = field_read(rd, field, how)
-                        rows.append((bar is not None and val is not None and conf >= bar,
+                        rows.append((bar is not None and val is not None and conf >= bar and not no_sure(rd, sheets),
                                      is_right(field, val, v, rd.get("kind") == "card")))
             if rows:
                 cal["eras"][f"{era}/{src}"][field]["validation"] = {
@@ -1496,13 +1721,26 @@ def calibrate():
     for rid, rd in raw.items():
         row = {"id": rid, "src": rd["src"], "era": rd["era"], "era_how": rd.get("era_how"), "w": rd["w"], "h": rd["h"],
                **where.get(rid, {})}
+        why = no_sure(rd, sheets)
+        if why:
+            row["no_sure"] = why
+        card = confirmed(rd)
         for field in FIELDS:
             how, bar = choices.get((rd["era"], rd["src"], field), ({}, None))
             val, method, conf = field_read(rd, field, how)
-            row[field] = {"value": val, "method": method, "conf": conf,
-                          "sure": bool(bar is not None and val is not None and conf >= bar)}
-            if field == "title" and rd.get("title", {}).get("text"):
+            sure = bool(bar is not None and val is not None and conf >= bar and not why)
+            if not card and not sure and field in ("title", "ability") and method in ("ocr", "ocr+icons"):
+                val = None              # OCR of a picture no era confirms (screenshots): never kept
+            row[field] = {"value": val, "method": method, "conf": conf, "sure": sure}
+            if field == "title" and card and rd.get("title", {}).get("text"):
                 row[field]["ocr"] = rd["title"]["text"]
+            if field == "title" and rd.get("title", {}).get("clash"):
+                row[field]["clash"] = rd["title"]["clash"]
+            if field == "types" and val is not None and _ALARMS and rd.get("types_known"):
+                extra = extra_icons({canon_types([t])[0]: places_of(p) for t, p in rd["types_known"]["presence"].items()},
+                                    val, how.get("rule") or TYPE_RULES[0], _ALARMS, rd.get("kind") == "card")
+                if extra:
+                    row[field]["extra"] = extra
         outs["today" if rd["src"] == "today" else "reads"].append(row)
     write_jsonl(join(OUT, "reads.jsonl"), sorted(outs["reads"], key=lambda r: r["id"]))
     write_jsonl(join(OUT, "today.jsonl"), sorted(outs["today"], key=lambda r: r["id"]))
@@ -1518,7 +1756,7 @@ def calibrate():
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "truth", "calibrate"))
+    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "types", "truth", "calibrate"))
     ap.add_argument("-j", "--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
     a = ap.parse_args(argv)
@@ -1533,6 +1771,8 @@ def main(argv):
         run_reads(which, a.workers)
     elif a.step == "stars":
         run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
+    elif a.step == "types":
+        run_reads(which, a.workers, join(OUT, "types.jsonl"), task=types_task)
     elif a.step == "truth":
         build_truth()
     elif a.step == "calibrate":

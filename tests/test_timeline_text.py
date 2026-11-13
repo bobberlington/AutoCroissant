@@ -33,15 +33,26 @@ def test_the_ability_under_the_bars_without_the_class_line(tt):
     assert " ".join(l[0] for l in cls) == "X Naut/Panda"
     assert tt.ability_words("[fire]: +1 ATK.") == ["<fire>", "1", "atk"]
     assert tt.is_right("ability", "Deal 2 damage, then (OPT) heal", "deal 2 damage then (opt) heal.")
+    tt._TAGS = {"OYT", "1CD"}
+    assert tt.odd_marks("(QYT) Heal 2") == 1 and tt.odd_marks("(OYT) Heal 2 (1CD)") == 0
 
 
 def test_a_title_takes_the_nearest_name_with_its_margin(tt, monkeypatch):
-    """The tallest band lines (two-line titles joined) against every name: a misread takes its name, a near tie
-    costs confidence, no name under NAME_MIN."""
-    monkeypatch.setattr(tt, "_NAMES", [(n, tt.loose(n)) for n in ("Old Chica", "Old Freddy", "Toy Chica")])
+    """The tallest band lines joined against every name: a misread takes its name, a near tie costs confidence,
+    no name under NAME_MIN; a two-line title keeps the longer name a line's name sits in; a line naming another
+    card makes the read unsure."""
+    names = ("Old Chica", "Old Freddy", "Toy Chica", "Tentacle", "Blooper Tentacle", "Metronome", "Golden Metronome",
+             "Dark Mind", "Final Dark Mind Eye", "Pie")
+    monkeypatch.setattr(tt, "_NAMES", [(n, tt.loose(n)) for n in names])
     got = tt.read_title([line("OLD GHICA", 0.3, 0.02, 0.4, 0.05), line("★★", 0.8, 0.02, 0.1, 0.05)])
     assert got["name"] == "Old Chica" and got["s1"] > got["s2"] and got["conf"] <= got["s1"]
     assert tt.read_title([line("Zzyzx Qwv", 0.3, 0.02, 0.4, 0.05)])["name"] is None
+    two = lambda *ts: tt.read_title([line(t, 0.3, 0.02 + 0.06 * i, 0.4, 0.05) for i, t in enumerate(ts)])
+    assert two("BLOOPER", "TENTACLE")["name"] == "Blooper Tentacle" and two("BLOOPER", "TENTACLE")["conf"] == 1.0
+    assert two("GOLDEN", "METRONOME")["name"] == "Golden Metronome"
+    assert two("Final", "Dark Mind", "Eve")["name"] == "Final Dark Mind Eye"
+    clash = two("Pie", "OLD FREDDY")
+    assert clash.get("clash") and clash["conf"] <= 0.5
 
 
 def test_star_blobs_rows_and_clusters(tt):
@@ -58,6 +69,20 @@ def test_star_blobs_rows_and_clusters(tt):
     assert tt.count_blobs(cluster, {"kind": "cluster", "step": 0.37, "base": 1.0})[0] == 4
 
 
+def test_stars_never_count_a_full_copy_list(tt):
+    """Every copy kept a star (the copy list full): no count; no non-star copy: the margin is taken from the floor;
+    A/C plain counts are never sure."""
+    full = {"icon": "star", "bank": 0.9, "size": 0.05, "copies": [[1.0, 0.0, i, 0] for i in range(tt.MAX_COPIES)]}
+    assert tt.count_stars(full, {"ncc": 0.85, "mad": 30}) == (None, 0.0)
+    two = dict(full, copies=[[1.0, 0.0, 0, 0], [0.9, 2.0, 9, 0]])
+    n, conf = tt.count_stars(two, {"ncc": 0.85, "mad": 30})
+    assert n == 2 and conf == round(1.0 * min(1.0, 0.5 + 0.9 - 2 / 160 - tt.COPY_FLOOR), 4)
+    rd = {"era": "C", "title": {"name": None}, "stars": two}
+    assert tt.field_read(rd, "stars", {"rule": {"ncc": 0.85, "mad": 30}}) == (2, "icon", 0.0)
+    one = dict(rd, stars=dict(two, copies=[[1.0, 0.0, 0, 0], [0.3, 60.0, 9, 0]]))
+    assert tt.field_read(one, "stars", {"rule": {"ncc": 0.85, "mad": 30}})[2] == 0.0
+
+
 def test_types_are_the_one_known_set_the_picture_shows(tt, monkeypatch):
     """A known set whose icons are all there while the others' are not; equip on a creature is the minion mark;
     a set known only from the version itself (exclude) is never offered."""
@@ -68,6 +93,11 @@ def test_types_are_the_one_known_set_the_picture_shows(tt, monkeypatch):
     assert tt.verified_types(rd, {"on": 0.8, "off": 0.7}) == (["fire"], 0.13)
     assert tt.verified_types(rd, {"on": 0.8, "off": 0.7}, exclude=["psd:a"]) == (None, 0.0)
     assert tt.is_right("types", ["undead"], ["undread", "equip"], card=True)
+    # an icon no known set has, over its alarm level beside the set's icon: unsure; on the set's icon: no alarm
+    rd["types_known"]["presence"]["skull"] = [[0.95, 0.9, 20, 0, 9], [0.5, 0.1, 40, 0, 9]]
+    assert tt.verified_types(rd, {"on": 0.8, "off": 0.7}, alarms={"skull": 0.9}) == (["fire"], 0.0)
+    rd["types_known"]["presence"]["skull"] = [[0.95, 0.9, 0, 0, 9]]
+    assert tt.verified_types(rd, {"on": 0.8, "off": 0.7}, alarms={"skull": 0.9}) == (["fire"], 0.13)
 
 
 def test_the_bar_keeps_the_target_share_right(tt):
