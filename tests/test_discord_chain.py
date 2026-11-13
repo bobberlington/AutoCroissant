@@ -201,20 +201,33 @@ def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
     row = lambda n: {"file": f"attachments/{n}.png"}
     assert dc.edited_cells(str(tmp_path), row(1), row(3))
     assert not dc.edited_cells(str(tmp_path), row(1), row(2)) and not dc.edited_cells(str(tmp_path), row(1), row(4))
-    ocr = lambda n, text: dc.dumps({"id": f"d:{n:064d}", "fix": [["Bolt", 1, 0.3, 0.02, 0.4, 0.05, []],
-                                                                 [text, 1, 0.2, 0.49, 0.6, 0.04, []]]})
+    ocr = lambda n, text, *more: dc.dumps({"id": f"d:{n:064d}", "fix": [["Bolt", 1, 0.3, 0.02, 0.4, 0.05, []],
+                                                                        [text, 1, 0.2, 0.49, 0.6, 0.04, []], *more]})
+    cls = lambda text: [text, 1, 0.35, 0.965, 0.3, 0.03, []]                          # a class line
     (tmp_path / "derived" / "readers" / "text").mkdir(parents=True)
-    (tmp_path / "derived" / "readers" / "text" / "ocr.jsonl").write_text(
-        "\n".join(ocr(n, "deal two damage.") for n in (1, 2, 3)) + "\n" + ocr(5, "Deal two damage!") + "\n")
+    (tmp_path / "derived" / "readers" / "text" / "ocr.jsonl").write_text("\n".join(
+        [ocr(n, "deal two damage.") for n in (1, 2, 3)] + [ocr(5, "Deal two damage!"),
+         ocr(6, "deal two damage.", cls("Demonic/God")), ocr(7, "deal two damage.", cls("DEMONIC / god")),
+         ocr(8, "deal two damage.", cls("Demon/God"))]) + "\n")
+    for n in (6, 7, 8):
+        Image.fromarray(base.astype(np.uint8)).save(tmp_path / f"attachments/{n}.png")
     lines = ["Bolt", "Deal two damage to a creature."]
-    images = {f"{n:064d}": {"lines": lines} for n in (1, 2, 3, 5)}
-    chain = dc.Chain(inputs([picture(1, T), picture(2, T + DAY), picture(3, T + 2 * DAY), picture(5, T + 3 * DAY)],
-                            images=images, root=tmp_path))
-    found, _ = chain.discord_rows()
-    entries = [e for e in chain.card("bolt", found["bolt"], [])["entries"] if e["kind"] == "discord"]
-    assert [[p["id"] for p in e["pictures"]] for e in entries] == [["P-000000000001", "P-000000000002",
-                                                                    "P-000000000005"], ["P-000000000003"]]
+    images = {f"{n:064d}": {"lines": lines} for n in (1, 2, 3, 5, 6, 7, 8)}
+
+    def looks(*ns):
+        chain = dc.Chain(inputs([picture(n, T + i * DAY) for i, n in enumerate(ns)], images=images, root=tmp_path))
+        found, _ = chain.discord_rows()
+        return chain, [[p["id"][-1] for p in e["pictures"]] for e in chain.card("bolt", found["bolt"], [])["entries"]
+                       if e["kind"] == "discord"]
+    chain, got = looks(1, 2, 3, 5)
+    assert got == [["1", "2", "5"], ["3"]]
     assert chain.tally["discord: a near look kept apart (a local edit)"] == 1          # formatting alone: one look
+    chain, got = looks(1, 6, 7, 8)              # a class line read on one only tells nothing; its case and spacing
+    assert got == [["1", "6", "7"], ["8"]]      # neither; 'Demonic/God' -> 'Demon/God' is its own look
+    assert chain.tally["discord: a near look kept apart (its words differ)"] == 1
+    assert dc.lone_words({"demonic", "dancer"}, {"demon", "dance"}) == ["dancer", "demonic"]    # letters added
+    assert dc.lone_words({"defence"}, {"health"}, {"defence"}) == []   # a stat label misread on its own line
+    assert dc.lone_words({"defender"}, {"health"}) == ["defender"]     # ... in the text, a word
 
     def version(n, when, stars, how="icon+known", kind="discord", era="D2"):
         return {"id": f"E{n}", "kind": kind, "date": iso(T + when * DAY), "era": era,

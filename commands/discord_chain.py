@@ -13,8 +13,8 @@ build   Under derived/chain/:
                                       derived/readers/paper/eye.json): owner Q6, dated "Before 2020" (no day), first
                           discord     one look posted before the card's first git record: a git look (version_sure) or
                                       a look not in git (draft); its reposts merged (looks: hash, counted numbers,
-                                      words, no local edit; the earliest post dates it); a
-                                      split card's (owner Q3) "as <old name>" on both halves
+                                      words, class line, no local edit; the earliest post dates
+                                      it); a split card's (owner Q3) "as <old name>" on both halves
                           text        a sure changelog fact before the stop (owner Q4: a field change as data, or
                                       "ability changed" with no text); item kinds never (hand-crafted metadata)
                           first repo  a first-repo push notice naming the card alone (owner Q5, switch
@@ -52,7 +52,7 @@ from json import dumps, loads
 from os import makedirs, remove
 from os.path import exists, join
 from random import Random
-from re import findall, sub
+from re import findall, fullmatch, search, sub
 from typing import Callable, Optional
 
 from commands import discord_match as dm
@@ -86,6 +86,8 @@ SAME_WORDS, ABILITY_WORDS = 0.92, 4                           # ... ability word
 NEAR_WORD, LABEL_WORD = 0.75, 0.6                             # an OCR'd word's near twin; a stat label misread
 STAT_LABELS = ("health", "defense", "defence", "attack", "speed", "armor")
 WORDS = "/usr/share/dict/words"                               # real words: OCR noise aside
+CLASS_Y, CLASS_MID, CLASS_WORDS = 0.96, 0.13, 5               # a class line: middle under this, centred, words
+                                                              # (timeline_text.class_like)
 LOCAL_W, LOCAL_CELL = 240, 12                                 # drafts compared in grey at this width, by these cells
 LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a cell this far apart (grey levels) and
                                                               # this many times the pair's 90th percentile cell (floored)
@@ -531,35 +533,67 @@ def real_words() -> frozenset:
         return frozenset()
 
 
-def ocr_words(lines) -> set:
-    """A picture's OCR'd words (3+ letters; lines read with confidence 0.3 or more, as dm.read_text)."""
-    text = " ".join(line if isinstance(line, str) else line[0] for line in lines or []
-                    if isinstance(line, str) or line[1] >= 0.3)
-    return {w for w in findall(r"[a-z]+", text.lower()) if len(w) >= 3}
+def ocr_words(lines, labels: bool = False) -> set:
+    """A picture's OCR'd words (3+ letters; lines read with confidence 0.3 or more, as dm.read_text); labels: only
+    those on one-word lines (where a stat label prints)."""
+    out = set()
+    for line in lines or []:
+        if isinstance(line, str) or line[1] >= 0.3:
+            words = {w for w in findall(r"[a-z]+", (line if isinstance(line, str) else line[0]).lower()) if len(w) >= 3}
+            if not labels or len(words) == 1:
+                out |= words
+    return out
 
 
-def solid(words: set) -> set:
-    """Words OCR noise can't make: 4+ letters, a dictionary word, not a stat label (misread)."""
+def class_line(lines) -> Optional[str]:
+    """A creature's class line ('Royalty/Mage/Higher Being') as text_key: the bottom printed row of OCR'd lines
+    (boxes: x, y, w, h shares), its middle under CLASS_Y, centred, short, no digit, bracket or final period, under
+    2 lower-case words (timeline_text.class_like); None when none is read."""
+    def mid(line):
+        return line[3] + line[5] / 2
+    lines = [l for l in lines or [] if not isinstance(l, str) and len(l) >= 6 and str(l[0]).strip()]
+    if not lines:
+        return None
+    low = max(lines, key=mid)
+    row = sorted((l for l in lines if abs(mid(l) - mid(low)) < 0.5 * min(l[5], low[5])), key=lambda l: l[2])
+    text = " ".join(l[0] for l in row)
+    x0, x1 = min(l[2] for l in row), max(l[2] + l[4] for l in row)
+    lower = sum(1 for w in text.split() if fullmatch(r"[^A-Za-z]*[a-z][a-z'’\-]*[^A-Za-z]*", w))
+    if mid(low) < CLASS_Y or abs((x0 + x1) / 2 - 0.5) >= CLASS_MID or len(text.split()) > CLASS_WORDS or lower >= 2 \
+            or search(r"[0-9()]|\.\s*$", text) or (search(r"[,;]\s*$", text) and search(r"[a-z]", text)):
+        return None
+    return text_key(text) or None
+
+
+def solid(words: set, labels: set = frozenset()) -> set:
+    """Words OCR noise can't make: 4+ letters, a dictionary word, not a stat label misread (on a label's line)."""
     vocabulary = real_words()
-    return {w for w in words if len(w) >= 4 and w in vocabulary and
-            not any(SequenceMatcher(None, w, label).ratio() >= LABEL_WORD for label in STAT_LABELS)}
+    return {w for w in words if len(w) >= 4 and w in vocabulary and not (
+            w in labels and any(SequenceMatcher(None, w, label).ratio() >= LABEL_WORD for label in STAT_LABELS))}
 
 
-def lone_words(mine: set, theirs: set) -> list:
+def misread(w: str, x: str) -> bool:
+    """x may be w misread: alike (NEAR_WORD), not w with letters added at one end (demon/demonic, mage/damage)."""
+    return SequenceMatcher(None, w, x).ratio() >= NEAR_WORD and not (
+        x.startswith(w) or w.startswith(x) or x.endswith(w) or w.endswith(x))
+
+
+def lone_words(mine: set, theirs: set, labels: set = frozenset()) -> list:
     """My solid words with no near twin in their words (a misread aside): a word changed, added or dropped."""
-    return sorted(w for w in solid(mine) - theirs
-                  if not any(SequenceMatcher(None, w, x).ratio() >= NEAR_WORD for x in theirs))
+    return sorted(w for w in solid(mine, labels) - theirs if not any(misread(w, x) for x in theirs))
 
 
 def same_words(a: dict, b: dict) -> bool:
-    """Two pictures print the same text, as far as read: their abilities' words (sure or not) alike (Jaccard
-    SAME_WORDS, ABILITY_WORDS each), and no real word on one with no near twin on the other (a reworded ability, a
-    class line renamed: what the hash and the marks can't see)."""
+    """Two pictures print the same text, as far as read: the same class line when both read one, their abilities'
+    words (sure or not) alike (Jaccard SAME_WORDS, ABILITY_WORDS each), and no real word on one with no near twin on
+    the other (a reworded ability, a class line renamed: what the hash and the marks can't see)."""
+    if a.get("class") and b.get("class") and a["class"] != b["class"]:
+        return False
     x, y = a.get("ability_words") or set(), b.get("ability_words") or set()
     if len(x) >= ABILITY_WORDS and len(y) >= ABILITY_WORDS and len(x & y) / len(x | y) < SAME_WORDS:
         return False
-    return not (lone_words(a.get("words") or set(), b.get("words") or set()) or
-                lone_words(b.get("words") or set(), a.get("words") or set()))
+    return not (lone_words(a.get("words") or set(), b.get("words") or set(), a.get("labels") or set()) or
+                lone_words(b.get("words") or set(), a.get("words") or set(), b.get("labels") or set()))
 
 
 # ========================
@@ -717,7 +751,8 @@ class Chain:
         if row.get("paper"):                   # owner Q6: its name only (as named), nothing read
             how = "eye (its hand-written title)" if row.get("paper_how") == "eye" else "matcher"
             return {"row": row, "fields": {"name": sure(card.get("name") or card["key"], how)}, "git": None,
-                    "when": None, "marks": None, "words": set(), "ability_words": set()}
+                    "when": None, "marks": None, "words": set(), "labels": set(), "class": None,
+                    "ability_words": set()}
         fields = picture_fields(self.inputs, row, card.get("type"))
         git = None
         if row["verdict"] == "version_sure" and not row.get("as"):     # a split's look is the old card's
@@ -733,13 +768,14 @@ class Chain:
         lines = picture_lines(self.inputs, row)
         ability = (self.inputs.text.get(row["file"]) or {}).get("ability") or {} if not row.get("cell") else {}
         return {"row": row, "fields": fields, "git": git, "when": dm.epoch((row.get("first") or {}).get("date")),
-                "marks": mark_counts(lines), "words": ocr_words(lines),
+                "marks": mark_counts(lines), "words": ocr_words(lines), "labels": ocr_words(lines, labels=True),
+                "class": None if row.get("cell") else class_line(self.ocr_lines(row["sha256"])),
                 "ability_words": set(findall(r"[a-z]+", str(ability.get("value") or "").lower()))}
 
     def looks(self, cid: str, rows: list) -> list:
         """Pictures grouped into looks, oldest first: one git look each, a card's paper photos one; a draft into its
         nearest group (the hash to its first picture) near_look and without a conflict, whose every picture prints the
-        same words (same_words) with no local edit (Chain.local_edit)."""
+        same words and class line (same_words) with no local edit (Chain.local_edit)."""
         groups = []
         pictures = sorted((self.picture(cid, r) for r in rows),
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))

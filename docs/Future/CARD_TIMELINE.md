@@ -60,9 +60,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    per live card, the Discord looks posted before its first git record (a git look, or a draft; a later git look posted
    early is the git part's; an older template posted after a newer one goes to review). Reposts of one look merge, the
    earliest post dating it: a draft joins the nearest look (whole-card hash) with the same numbers and timing tags
-   (counted: a swapped digit is a new version) whose every picture prints the same words (the abilities' OCR words
-   alike, no real word on one picture missing from the other: a reworded ability or a renamed class line is a new
-   version) and isn't alike but for one area (an icon, stars, a bar or a word edited: a grid cell far apart); a field a
+   (counted: a swapped digit is a new version) whose every picture prints the same words (the same class line where
+   both read one, the abilities' OCR words alike, no real word on one picture missing from the other, a word with
+   letters added at one end counting as missing: a reworded ability or a renamed class line is a new version) and
+   isn't alike but for one area (an icon, stars, a bar or a word edited: a grid cell far apart); a field a
    picture didn't read (a sheet's cell, unread bars) is never filled from its repost, only proposed, and a repost's own
    contrary star or stat read takes a reader's sure value to review. An icon-read star count that changes with nothing
    to back it (no eye or PSD read, no second read apart, no changelog fact, the versions around it say otherwise) goes
