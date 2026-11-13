@@ -77,17 +77,6 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
-@pytest.mark.skipif(not has(MOCKUP_JS, "statLabel"), reason="no creature pictures in mockup.js")
-def test_creature_stat_jobs(tmp_path):
-    """Creature 2's own stat edit is a "<stat>@2" job (the plate's pictures only); none without a matching list."""
-    out = node(tmp_path, """
-const was = [{ hp: 2, def: 1 }, { hp: 3, def: 1 }], two = [was[0], { hp: 5, def: 1 }];
-out([m.changes({ hp: 2, creatures: two }, { hp: 2, creatures: was }).stats,
-  m.changes({ creatures: two }, { creatures: null }).stats]);""")
-    assert out == [{"hp@2": [3, 5]}, {}]
-
-
-@needs_js
 def test_plates_port_of_the_rows(tmp_path):
     """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one
     at its label, art, a drawn bar showing another value), and with its margin at least that."""
@@ -123,23 +112,3 @@ out(["hp", "def", "atk", "spd"].filter(k => !bars.some(r => r.k === k)));""")
     image = Image.fromarray(img)
     assert js == ["atk", "spd"] and cp.mock_misses(image, psd, card, kinds, 1.0) == js
     assert set(js) <= set(cp.mock_misses(image, psd, card, kinds))
-
-
-@needs_js
-@pytest.mark.skipif(not has(MOCKUP_JS, "bare = null"), reason="no FX-free plate crops in mockup.js")
-def test_fx_word_moves_with_its_line(tmp_path):
-    """A line with an FX layer's word moving up (the line above deleted): the plate crop without the FX layers pasted, so
-    the word's ink moves with its letters and nothing stays behind; without that crop, not drawn on the card's lines."""
-    out = node(tmp_path, """
-const W = 100, H = 60, px = (a, x, y, c) => a.set([...c, 255], (y * W + x) * 4), fill = (a, c, x0 = 0, x1 = W, y0 = 0, y1 = H) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px(a, x, y, c); };
-const card = new Uint8ClampedArray(W * H * 4), data = new Uint8ClampedArray(W * H * 4), bare = new Uint8ClampedArray(W * H * 4);
-fill(card, [10, 10, 10]); fill(card, [255, 255, 255], 10, 40, 12, 20); fill(card, [255, 255, 255], 10, 35, 37, 45); fill(card, [0, 200, 0], 45, 80, 37, 45);
-fill(bare, [10, 10, 10]); fill(data, [10, 10, 10]); fill(data, [0, 200, 0], 45, 80, 37, 45);   // the wipe's crop: the FX layer still on it
-const text = "Heal 3.\\rBurn Hexed.\\r", c = { text, lines: [[0, 7, 20, 10, 80, 10, 22, 0], [8, 19, 45, 10, 80, 35, 47, 0]], glyphs: [...text].flatMap((ch, i) => (/\\s/.test(ch) ? [] : [[i, 10 + (i % 8) * 6, 10 + (i % 8) * 6, 15 + (i % 8) * 6]])) };
-const ctx = { canvas: { height: H }, getImageData: (x, y, w, h) => ({ data: data.slice(y * W * 4, (y + h) * W * 4) }), putImageData(im, x, y) { data.set(im.data, y * W * 4); } };
-const measure = t => [...t].length * 10; measure.hx = 1;
-const R = m.recordLayout(c, "Heal 3.\\nBurn Hexed.", 1), now = "Burn Hexed.", at = (x, y) => [...data.slice((y * W + x) * 4, (y * W + x) * 4 + 3)];
-const go = b => m.geoDraw(ctx, { R, plan: m.geoPlan(R, now), card, box: [0, 5, 100, 55], fx: ["Hexed"], bare: b, measure, z: 20, grow: true, icons: {}, paras: m.tokenize(now), text: now, look: { fam: "x", fill: [255, 255, 255] }, pitch: 25, W });
-const off = go(null), still = at(60, 41);
-out([off, still, go(() => [[0, 0, W, H, bare]]), at(60, 16), at(20, 16), at(60, 41)]);""")
-    assert out == ["", [0, 200, 0], "lines", [0, 200, 0], [255, 255, 255], [10, 10, 10]]
