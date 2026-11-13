@@ -386,15 +386,15 @@ class CardRatings:
     """
     TTSCardMaker's site/Card Ratings.json: dated ratings per card, whole numbers 1-10 (owner, 2026-10-26), oldest first.
     {"about": ..., "cards": {"Card Name": [{"date", "scale", "value", "by", "source"}]}}; names match like the authors
-    file. by: "group" (a TTS session) or a GitHub login. Data only since 2026-11-12 (owner: the TTS-session import
-    deleted): a card rename moves its entries in this order (card_bake); nothing else reads it.
+    file. by: "group" (a TTS session). Data only since 2026-11-12 (owner: the TTS-session import deleted): a card
+    rename moves its entries in this order (card_bake); nothing else reads it.
     """
     SCALES = ("favorability", "power")
-    SOURCES = ("TTS session", "website")
+    SOURCES = ("TTS session",)
 
     @classmethod
     def order(cls, entries: list) -> list:
-        """Oldest first: date, then source (TTS sessions first), then by, then scale."""
+        """Oldest first: date, then source, then by, then scale."""
         rank = lambda seq, v: seq.index(v) if v in seq else len(seq)
         return sorted(entries, key=lambda e: (str(e.get("date", "")), rank(cls.SOURCES, e.get("source")),
                                               str(e.get("by", "")).lower(), rank(cls.SCALES, e.get("scale"))))

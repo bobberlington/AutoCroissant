@@ -36,12 +36,12 @@ def node(tmp_path, body: str):
 
 @needs_js
 def test_the_panel_for_each_state(tmp_path):
-    """Baked: current and preview side by side with Diff and Full size, each field's outcome, notes escaped; refused: the
+    """Baked: current and preview side by side with Diff, each field's outcome, notes escaped; refused: the
     reason (with the bake's render when it made one); an input error is the website's bug; a transient one says try
     again; running: how long; no edit: the button disabled. Baked with no image file: said so, not an error; an error
     for an edit since changed: out of date, Preview again instead of Try again."""
     out = node(tmp_path, """
-const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.avif", diff: false };
+const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.avif", diff: false };
 const e = state => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state });
 const res = (state, extra = {}) => ({ ...e(state), result: { fields: { hp: state }, notes: ["<script>x</script>"], base: {}, files: {}, ...extra } });
 const html = (x, w) => { const r = p.renderedParts(x, w); return r.stage + r.caption; };
@@ -51,7 +51,7 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
   html(res("baked"), { ...v, hash: "other" }), html(res("baked"), { ...v, images: [] }),
   html(res("error", { reason: "error: timeout", transient: true }), { ...v, hash: "other" })]);""")
     baked, refused_img, refused, bug, transient, running, none, stale, no_file, err_stale = out
-    assert 'data-pv-img="current"' in baked and 'src="https://r/p.webp"' in baked and 'href="https://r/p.png"' in baked and 'data-pv="diff"' in baked
+    assert 'data-pv-img="current"' in baked and 'src="https://r/p.webp"' in baked and 'href="https://r/p.webp"' in baked and 'data-pv="diff"' in baked
     assert "HP baked" in baked and "&lt;script&gt;" in baked and "<script>" not in baked and "Mini &lt;Doomer&gt;" in baked and "3 min ago" in baked
     assert "stat&gt;10: hp 25" in refused_img and "before refusing" in refused_img and "data-pv-img" not in refused
     assert "website bug" in bug and "try again" in transient.lower()

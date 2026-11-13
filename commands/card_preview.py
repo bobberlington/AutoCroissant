@@ -8,7 +8,7 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-pixels the bake would commit, saved at PNG_LEVEL and recompressed losslessly where oxipng is installed), preview.avif
+pixels the bake would commit, saved at PNG_LEVEL; never published), preview.avif
 (SMALL_WIDTH wide, the card view's width and codec) and before.avif (the card's
 official PNG made the same way, beside the bake: the site's Diff compares like with like). The bake is lean: no
 duplicate PNGs or artifact crops.
@@ -39,7 +39,6 @@ from psd_tools import PSDImage
 from requests import RequestException
 
 import commands.card_bake as card_bake
-import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, vocabulary
 from commands.card_edits import CardAuthors, CardEdits, color_text
@@ -329,9 +328,8 @@ def _beside(made: dict):
 
 def write_images(png_path: str, out: str, before: str = "", early=None, small=None) -> dict:
     """
-    preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
-    SMALL (SMALL_WIDTH wide as SMALL_AS: the card view's) and, from the official PNG `before`,
-    BEFORE made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
+    preview.png (never published), SMALL (SMALL_WIDTH wide as SMALL_AS: the card view's) and, from the official PNG
+    `before`, BEFORE made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
     _before()'s and `small` _beside()'s, taken when they made one.
 
     Returns:
@@ -339,12 +337,11 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
     """
     with open(png_path, "rb") as fh:
         data = fh.read()
-    smaller = png_export.recompress(data, committed=False)
     with open(join(out, PNG), "wb") as fh:
-        fh.write(smaller or data)
+        fh.write(data)
     with Image.open(BytesIO(data)) as image:
         size = list(image.size)
-    files = {"png": PNG, "webp": SMALL}         # "webp": the site's key for SMALL
+    files = {"webp": SMALL}                     # "webp": the site's key for SMALL
     try:
         small_size = small.result() if small is not None else None
     except Exception:                           # noqa: BLE001 - made here instead

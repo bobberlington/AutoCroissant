@@ -121,12 +121,12 @@ def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="o
 # The preview
 # ========================
 def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
-    """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px AVIF; the
+    """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), a 720 px AVIF; the
     base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp. The
     preview skips what only a commit uses (duplicates, crops, banding) and makes before.avif beside the bake."""
     from PIL import Image
     seen, bands = [], []
-    monkeypatch.setattr(cp.png_export, "band", lambda data: bands.append(len(data)))  # None: kept as baked
+    monkeypatch.setattr(cb.png_export, "band", lambda data: bands.append(len(data)))  # None: kept as baked
     monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
     monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
     monkeypatch.setattr(cp, "_small_of", lambda image, path, _f=cp._small_of: seen.append(path) or _f(image, path))
@@ -145,7 +145,7 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     assert result["base"] == {"repo": cb.CARD_REPO, "commit": cards.head, "psd_blob": _sha(cards.files[DOOMER]),
                               "png_blob": _sha(cards.files[DOOMER_PNG])}
     assert result["edit"] == {"hp": 8, "note": "checked"} and result["changes"] == [{"field": "hp", "old": 5, "new": 8}]
-    assert result["image"] == "baked" and result["files"] == {"png": cp.PNG, "webp": cp.SMALL, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
+    assert result["image"] == "baked" and result["files"] == {"webp": cp.SMALL, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
     assert len(result["region"]) == 4 and result["runner"]["psd_tools"] and result["at"].endswith("Z")
     webp = Image.open(out / cp.SMALL)
     assert webp.format == "AVIF" and webp.width == cp.SMALL_WIDTH

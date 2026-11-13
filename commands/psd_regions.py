@@ -1,5 +1,5 @@
 """
-Where things sit on a card PSD: the stat rows, name, ability, stars and type icons as canvas bboxes
+Where things sit on a card PSD: the stat rows, name, stars and type icons as canvas bboxes
 (x0, y0, x1, y1; x1/y1 exclusive). Port of psd-research score/regions.py (its owner masks stayed there); the edit
 pipeline uses stat_rows, badge_layers, fx_pad and union_box to find the pixels an edit can reach. No Discord, network
 or config.
@@ -350,10 +350,10 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
         pad: Pad boxes by their effects' reach (False: the layers' own boxes)
 
     Returns:
-        {region key: [bbox, ...]}: name, ability, stat_labels, stat_<hp/def/atk/spd>, stars, types
+        {region key: [bbox, ...]}: name, stat_labels, stat_<hp/def/atk/spd>, stars, types
     """
     width, height = psd.width, psd.height
-    found = {key: [] for key in ("name", "ability", "stat_labels", *("stat_" + k for k in STATS), "stars", "types")}
+    found = {key: [] for key in ("name", "stat_labels", *("stat_" + k for k in STATS), "stars", "types")}
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and layer.is_visible()]
 
     # name: visible layer(s) named "Name" near the top, else top text layers that aren't labels or the ability
@@ -363,8 +363,6 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
         named = [layer for layer in texts if layer.bbox[1] < NAME_MAX_TOP * height
                  and layer.name.strip().lower() not in STAT_LABELS | {"ability"}]
     found["name"] += [_box(layer, width, height, pad) for layer in named]
-    abilities = [layer for layer in texts if layer.name.strip().lower() == "ability"]
-    found["ability"] += [_box(layer, width, height, pad) for layer in abilities]
     found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                              if layer.name.strip().lower() in STAT_LABELS]
 

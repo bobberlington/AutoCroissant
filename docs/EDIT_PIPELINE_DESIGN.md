@@ -1250,9 +1250,8 @@ clipped to `MAX_CARD` (200). The repo is public, so a preview is too: the dispat
 result on the branch; the site says so before an editor's first press.
 
 **Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the pixels the bake would
-commit, saved at zlib level 1 (`card_preview.PNG_LEVEL`) and losslessly recompressed by `png_export.recompress` where
-oxipng is installed; the workflow leaves the oxipng CLI out (~4 s a preview for nothing) and the PNG is never published
-(`--png` went 2026-11-12); the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
+commit, saved at zlib level 1 (`card_preview.PNG_LEVEL`), never published (`--png`, its own recompress and `files.png`
+went 2026-11-12; the workflow leaves the oxipng CLI out); the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
 and `preview.avif` (720 px wide, the card view's AVIF: quality 50, 4:4:4, speed 6, no ICC profile, 8x4 tiles; an
 opaque alpha dropped) when an image was rendered, with `before.avif`: the card's official PNG made the same way, for the
 site's Diff (one codec on both sides, so unchanged pixels match). WebP q75 until 2026-11-10 (4:2:0 shifted coloured
@@ -1273,7 +1272,7 @@ result.json (`v` 1):
 | `changes` | `[{field, old, new}]` of a bake |
 | `notes` | the bake's notes but the soft ones (`psd_edit.real_notes`): FX notes, icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
 | `parity`, `region` | `{field: {bad_pct, mean, max}}`; the edited box `[x0, y0, x1, y1]` on the full-size card |
-| `image`, `files`, `size` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir; the keys kept, the files AVIF); the card's pixel size (`webp_size`, `bytes`, `recompressed` and `traceback` until 2026-11-12) |
+| `image`, `files`, `size` | `baked` / `refused` / null; `{webp, before}` (the keys kept, the files AVIF; `png` until 2026-11-12); the card's pixel size (`webp_size`, `bytes`, `recompressed` and `traceback` until 2026-11-12) |
 | `runner`, `run`, `took_s`, `at` | psd-tools version, text engine, story sync, fonts present; the Actions run URL; seconds; UTC time |
 
 Exit 0 for a verdict (baked, redundant, refused), 2 for an input error, 1 for any other error (all write result.json).

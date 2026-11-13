@@ -585,7 +585,7 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     with pytest.raises(ValueError):
         pe.set_stat(psd, parsed, "hp", -1)
     assert found["stat_hp"] == [(359, 1199, 1174, 1285)] and found["stat_spd"] == [(359, 1577, 1174, 1663)]
-    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2343)]   # 2343 since 19db3675's "Destroy"
+    assert found["name"] == [(300, 23, 899, 114)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
     row, = pe.template_rows(psd, "hp")

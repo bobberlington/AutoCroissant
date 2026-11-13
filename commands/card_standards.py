@@ -1553,8 +1553,6 @@ def _view_steps(layer) -> dict:
         story = text_edit._nth_story(stories, psd_edit.story_index(layer), keys)
     except (TypeError, ValueError, KeyError):
         return {}
-    if not keys.numbered:
-        return {}
     out, pending = {}, [(story[keys.view].get(keys.strikes), 0)]
     while pending:
         node, start = pending.pop()

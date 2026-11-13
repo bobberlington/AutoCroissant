@@ -43,16 +43,15 @@ def test_field_rules_and_file():
     assert entry == {"colors": good[2:], "_by": "web"} and rewrite_entry({"colors": good[:1]}, colors_done=good[:1]) is None
     assert color_text(BURNING) == "Ability: 'Burning' coloured #ff7a1a" and color_text(good[1]) == "Name coloured #ffffff"
     spec = importlib.util.spec_from_file_location("site_build_colors", SITE / "build" / "build_site.py")
-    if spec and Path(spec.origin).is_file():
-        bs = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bs)
-        lists = (good, [], [dict(BURNING), dict(BURNING)], note)
-        assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in lists)
-        assert "colors" in bs.PSD_FIELDS
-        aco = CLONE / bs.SWATCHES[0]
-        if aco.is_file():
-            names = dict(bs.parse_aco(aco.read_bytes()))
-            assert names.get("HP") == "#00ff00" and len(names) > 50
+    bs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bs)
+    lists = (good, [], [dict(BURNING), dict(BURNING)], note)
+    assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in lists)
+    assert "colors" in bs.PSD_FIELDS
+    aco = CLONE / bs.SWATCHES[0]
+    if aco.is_file():
+        names = dict(bs.parse_aco(aco.read_bytes()))
+        assert names.get("HP") == "#00ff00" and len(names) > 50
 
 
 @site
@@ -283,11 +282,10 @@ def test_status_colours_record(clone, tmp_path):
     assert colors["Thickened"] == pe._hex(chart["thickened"].fill) and colors["Burning"] == pe._hex(chart["burning"].fill)
     assert card_data.status_colors(run_build, record) is record and len(reads) == 1
     spec = importlib.util.spec_from_file_location("site_build_status", SITE / "build" / "build_site.py")
-    if spec and Path(spec.origin).is_file():
-        bs = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bs)
-        (tmp_path / card_data.STATUS_COLORS).write_text(card_data.records_text({**record, "colors": {**colors, "X": "red"}}))
-        assert bs.status_colors(str(tmp_path)) == colors and bs.status_colors(str(tmp_path / "none")) == {}
+    bs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bs)
+    (tmp_path / card_data.STATUS_COLORS).write_text(card_data.records_text({**record, "colors": {**colors, "X": "red"}}))
+    assert bs.status_colors(str(tmp_path)) == colors and bs.status_colors(str(tmp_path / "none")) == {}
 
 
 def test_title_overlay_goes_off(clone, tmp_path):
