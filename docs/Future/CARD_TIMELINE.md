@@ -1,7 +1,7 @@
 # Card timelines from Discord
 
-**Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post; reads, chains,
-review page and a local preview next. Nothing published (preview first, owner 11-13).
+**Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post, fields read, chains
+and Created built; review page and a local preview next. Nothing published (preview first, owner 11-13).
 
 ## Goal
 
@@ -54,8 +54,18 @@ the card's Image versions on the website before the git versions. Cards that nev
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match. Every field keeps its method (psd, picture, ocr, text) and a confidence.
-4. **Chain:** reposts of one look merged (first appearance dates it); versions ordered by date and diffed with the one before
-   (buff/nerf counting as the 10-23 rule); text-only entries attached; the chain ends at the card's first git commit.
+4. **Chain** (`commands/discord_chain.py build`, outputs under `derived/chain/`): per live card, the Discord looks posted
+   before its first git record (a git look, or a draft; reposts of one look merged, the earliest post dating it; a later
+   git look posted early is the git part's; an older template posted after a newer one goes to review), the sure
+   changelog facts before it (Q4=B; item kinds never), the old repo's rows, a paper photo first and undated (Q6=A), a
+   split card's versions "as <old name>" on both halves (Q3=A). Only card- and look-sure pictures enter; each field keeps
+   its method and confidence and only sure values stay (a git look's own fields first, the readers' eye truth, then
+   their sure reads), the rest name a review item. Each version is diffed with the one before on fields sure on both
+   sides (the website's buff/nerf rule: the stat total, a total over 40 not judged; formatting-only text is no change);
+   a fact a later picture contradicts goes to review. **Created:** the earliest confident appearance (a card-sure
+   picture, the old repo, the card repo) against `site/Card Creation Dates.json`: same, earlier (proposed), later
+   (review only, never moved later), new, hand (untouched); named-only pictures and changelog lines before it are
+   review only. `discord_chain checks` draws random cards' whole timelines for the by-eye check.
 5. **Review page:** the unsure matches, readings and dates, with stable ids and the owner's answers applied by a rerun (as
    10-22's `apply_rulings.py`).
 6. **Publish:** the `history` branch holds per card `history/<card id>/timeline.json` (versions: date, fields, method and
