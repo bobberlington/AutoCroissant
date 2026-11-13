@@ -250,9 +250,10 @@ def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
 
 
 def test_the_owner_s_answers():
-    """The review page's answers (rulings.json): a named-only picture confirmed enters and dates Created, a look told,
-    'not this card', a card named, a paper photo named, a field given, an unsure fact right, Created picked with its
-    source, earlier hints only before the Created date in use, a map to a card that isn't live, the ids acted on."""
+    """The review page's answers (rulings.json): a named-only picture confirmed enters and dates Created, a look told
+    (by its version's key: the same look after the numbers shift; gone, not applied), 'not this card', a card named,
+    a paper photo named, a field given, an unsure fact right, Created picked with its source, earlier hints only
+    before the Created date in use, a map to a card that isn't live, the ids acted on."""
     rid = dc.review_id
     text = {"attachments/1.png": {"title": {"value": "Bolt", "sure": False, "conf": 0.5, "method": "ocr+name"}}}
     verdicts = [picture(1, T, created_review="named only, before its first picture evidence (x)"),
@@ -262,7 +263,7 @@ def test_the_owner_s_answers():
     facts = [{"id": "f9", "card": "Bolt", "source": "changelog", "confidence": "unsure", "date": iso(T + 4 * DAY),
               "field": "hp", "by": -2, "unit": "unknown", "channel": "update-01"}]
     rulings = {rid("named only", "P-000000000001"): {"choice": "yes"},
-               rid("look not told", "P-000000000002"): {"choice": "look", "value": 1},
+               rid("look not told", "P-000000000002"): {"choice": "look", "value": "b" + "a" * 20},
                rid("look not told", "P-000000000003"): {"choice": "no"},
                "match:P-000000000004": {"choice": "card", "value": "bolt"},
                rid("paper photo", "P-000000000005"): {"choice": "card", "value": "bolt"},
@@ -313,3 +314,22 @@ def test_the_owner_s_answers():
         assert (made["status"], (made.get("changelog_earlier") or {}).get("day")) == (status, hint)
     assert made["date"] == dc.day(T + 3 * DAY) and made["proposed"] and made["owner"]["source"]["picture"] == \
         "P-000000000021" and made["owner"]["source"]["from"] == "ours"
+    # a look told by its first version's key: a new version shifts the numbers, the same look; its version gone, or an
+    # older page's number: not applied (the picture stays to review)
+    told = rid("look not told", "P-000000000002")
+    new = {"key": "b" + "c" * 20, "card": "bolt", "ts": T + 200 * DAY, "look": 0, "commit": "c3", "path": "x.png"}
+    shift = lambda vs: [new] + [{**v, "look": v["look"] + 1} for v in vs]
+    for value, change, commit in (("b" + "a" * 20, shift, "c1"), ("b" + "a" * 20, lambda vs: vs[1:], None),
+                                  (1, shift, None)):
+        moved = inputs([picture(2, T + DAY, "version_unsure")])
+        moved.versions["bolt"] = change(moved.versions["bolt"])
+        moved.rulings = {told: {"choice": "look", "value": value}}
+        done = dc.owner_rows(moved)
+        chain = dc.Chain(moved)
+        found, split = chain.discord_rows()
+        if commit:
+            t = chain.card("bolt", found["bolt"], split.get("bolt", []))
+            assert t["entries"][0]["look"]["git"]["commit"] == commit and moved.used == {told}
+        else:
+            assert not moved.used and done["owner: a git look told, its version gone (not applied)"] == 1 and \
+                [i["picture"] for i in chain.review.values() if i["kind"] == "look not told"] == ["P-000000000002"]

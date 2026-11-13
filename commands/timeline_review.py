@@ -12,9 +12,11 @@ Sections: the owner's answers (Q1-Q6, read only; Q5's first-repo rows listed), t
 versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, paper
 photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
 earlier than the Created date in use), the Morgue list (candidates, ideas never ported, the rest) and splits. A name
-two cards share shows its id. Answers already applied (derived/review/rulings.json) show checked; one whose item left
-the page says whether the rerun took it in (derived/chain/ruled.json) or the item changed. No message text or posters:
-pictures, dates, channels, read fields, and a Discord link for a changelog line (the page stays local).
+two cards share shows its id; a git look is answered by its first version's key (look numbers shift when a version is
+added). Answers already applied (derived/review/rulings.json) show checked; one whose item left the page says whether
+the rerun took it in (derived/chain/ruled.json) or the item changed, and one no radio takes any more is not applied.
+No message text or posters: pictures, dates, channels, read fields, and a Discord link for a changelog line (the page
+stays local).
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
@@ -298,10 +300,10 @@ def chain_items(inputs: Inputs) -> list:
             it["meta"] = [r.get("why") or ""]
             it["pics"] = [row_pic(row, "the picture")]
             looks = inputs.looks.get(cid) or {}
-            for look, v in sorted(looks.items(), key=lambda kv: kv[1]["ts"]):
+            for look, v in sorted(looks.items(), key=lambda kv: kv[1]["ts"]):     # its first version's key: stable
                 near = " (nearest)" if r.get("near") == look else ""
                 it["choices"].append(choice("look", f"look {look}{near}: in git {when(dm.iso(v['ts']))}"
-                                            f"{' (old repo)' if v.get('old') else ''}", look,
+                                            f"{' (old repo)' if v.get('old') else ''}", v["key"],
                                             pic("../matcher/" + v["thumb"], f"look {look}")))
             it["choices"] += [choice("draft", "a look not in git (a draft)"), choice("no", "not this card")]
         elif kind == "named only":
@@ -568,15 +570,26 @@ def morgue_items(inputs: Inputs) -> list:
     return out
 
 
+def offered(it: dict, r: dict) -> bool:
+    """An answer one of the item's radios takes: a choice with its value, or the typed one."""
+    return any(x["c"] == r.get("choice") and x.get("value") == r.get("value") for x in it.get("choices") or []) or \
+        r.get("choice") == (it.get("other") or {}).get("c")
+
+
 def gather(inputs: Inputs) -> list:
     items = owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]
     have = {i["id"] for i in items}
+    for it in items:                                 # answered, but no radio here takes that answer any more (a
+        r = inputs.rulings.get(it["id"])             # look's version gone): not applied
+        if r and not it.get("read_only") and not offered(it, r):
+            it["stale"] = True
     for rid, r in inputs.rulings.items():            # answered, its item gone: taken in (the chain acted on it) or
         if rid not in have and r.get("item"):        # changed (a regrouped look, a Created status that moved)
-            items.append({**r["item"], "gone": "taken" if rid in inputs.used else "changed"})
+            items.append({**{k: v for k, v in r["item"].items() if k != "stale"},
+                          "gone": "taken" if rid in inputs.used else "changed"})
     order = {s[0]: n for n, s in enumerate(SECTIONS)}
     subs = {s: {p[0]: n for n, p in enumerate(parts)} for s, parts in SUBS.items()}
     return sorted(items, key=lambda i: (order[i["section"]], subs.get(i["section"], {}).get(i.get("sub"), 0),
@@ -685,8 +698,12 @@ function forget() {
 document.addEventListener("DOMContentLoaded", () => {
   for (const [id, s] of Object.entries(saved))                  // applied since: the page has them now
     if (RULED[id] && s.choice === RULED[id].choice && same(s.value, RULED[id].value)) delete saved[id];
-  localStorage.setItem(STORE, JSON.stringify(saved));
-  document.querySelectorAll(".item").forEach(b => show(b.id)); counts();
+  document.querySelectorAll(".item").forEach(b => show(b.id));
+  for (const [id, s] of Object.entries(saved)) {                // picked on an older page, no radio takes it now
+    const box = document.getElementById(id);
+    if (box && s.choice !== "clear" && !box.classList.contains("done")) { delete saved[id]; show(id); }
+  }
+  localStorage.setItem(STORE, JSON.stringify(saved)); counts();
   document.getElementById("openonly").addEventListener("change", e =>
     document.body.classList.toggle("open-only", e.target.checked));
 });
@@ -711,7 +728,7 @@ def pic_html(p: dict) -> str:
 
 def item_html(it: dict) -> str:
     cls = ["item"] + (["ro"] if it.get("read_only") else []) + (["gone"] if it.get("gone") else []) + \
-        (["changed"] if it.get("gone") == "changed" else [])
+        (["changed"] if it.get("gone") == "changed" or it.get("stale") else [])
     head = (f"<div class='{' '.join(cls)}' id='{escape(it['id'], quote=True)}' data-sec='{it['section']}'"
             + (f" data-sub='{it['section']}-{it['sub']}'" if it.get("sub") else "") + ">"
             + f"<span class=id>{escape(it['id'])}</span><div class=t>{escape(it['title'])}</div>")
@@ -721,6 +738,9 @@ def item_html(it: dict) -> str:
                  "Created date that moved). Answer it again where it is now, or clear this one.</b></div>")
     elif it.get("gone"):
         meta += "<div><b>Answered and taken in by the rerun.</b></div>"
+    elif it.get("stale"):
+        meta += ("<div><b>Not applied: your answer is no longer one this item offers (a look's version left the "
+                 "card's history, a card no longer live). Answer it again, or clear it.</b></div>")
     if it.get("link"):
         meta += f"<div><a href='{escape(it['link'], quote=True)}' target=_blank>open the line in Discord</a></div>"
     body = [head, f"<div class=meta>{meta}</div>"]
@@ -762,7 +782,7 @@ def page(items: list, inputs: Inputs, built: str) -> str:
         if (c.get("name") or cid).casefold() in inputs.shared else
         f"<option value='{escape(c.get('name') or cid, quote=True)}'>" for cid, c in sorted(inputs.cards.items())) + \
         "</datalist>"
-    open_n = sum(1 for i in items if not i.get("read_only") and i["id"] not in ruled)
+    open_n = sum(1 for i in items if not i.get("read_only") and (i["id"] not in ruled or i.get("stale")))
     out = ["<!doctype html><meta charset='utf-8'><title>Card timelines: review</title>",
            f"<style>{STYLE}</style>",
            f"<script>const PAGE = {dumps(data)}; const RULED = {dumps(ruled, ensure_ascii=False)};{SCRIPT}</script>",
@@ -815,7 +835,7 @@ def build(root: str = dm.DEFAULT_ROOT, log: Callable = print) -> dict:
     dm.write_text(join(out, "index.html"), page(items, inputs, built))
     tally = Counter((i["section"], i.get("sub") or "") for i in items)
     counts = {f"{s}/{p}" if p else s: n for (s, p), n in sorted(tally.items())}
-    open_n = sum(1 for i in items if not i.get("read_only") and i["id"] not in inputs.rulings)
+    open_n = sum(1 for i in items if not i.get("read_only") and (i["id"] not in inputs.rulings or i.get("stale")))
     log(f"review page: {len(items)} items ({open_n} open, {len(inputs.rulings)} answered) -> {join(out, 'index.html')}")
     log("  " + ", ".join(f"{k} {n}" for k, n in counts.items()))
     return {"items": len(items), "counts": counts, "built": built}

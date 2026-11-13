@@ -87,7 +87,8 @@ def test_the_page_offers_the_answers_and_the_morgue_list(tmp_path):
 def test_the_page_s_items_from_the_parts(tmp_path):
     """Built from the parts' outputs: a shared name needs the id (typed and listed), stats typed as hp/def or two
     creatures, a map to a card that isn't live takes no 'yes', the rival card a reason names is a radio, Morgue hints
-    only before the Created date in use (no meme ones), and an answer whose item left the page: taken in or changed."""
+    only before the Created date in use (no meme ones), an answer whose item left the page: taken in or changed, and a
+    look answered by its version's key (a stored number no radio takes: not applied, kept as stored)."""
     ar = load()
     derived = tmp_path / "derived"
     put = lambda parts, data: ((derived.joinpath(*parts)).parent.mkdir(parents=True, exist_ok=True),
@@ -96,7 +97,10 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     cards = {"bolt": {"key": "Bolt", "name": "Bolt"}, "kit": {"key": "Kit", "name": "Kit"},
              "kit2": {"key": "Kit 2", "name": "Kit"}, "tentacle": {"key": "Tentacle", "name": "Tentacle"},
              "blooper-tentacle": {"key": "Blooper Tentacle", "name": "Blooper Tentacle"}}
-    put(("matcher", "match", "pairs.json"), {"cards": cards, "versions": []})
+    key = lambda c: "b" + c * 20
+    put(("matcher", "match", "pairs.json"), {"cards": cards, "versions": [
+        {"key": key("a"), "card": "bolt", "ts": 1.6e9, "look": 1, "thumb": "t/a.webp"},
+        {"key": key("b"), "card": "bolt", "ts": 1.7e9, "look": 0, "thumb": "t/b.webp"}]})
     put(("match", "verdicts.jsonl"), lines([{"id": "P-1", "verdict": "unsure", "maybe": ["tentacle"], "first": {
         "date": "2020-07-18T10:31:57+00:00", "channel": "ideas"}, "reason": "named only, its text reads "
         "blooper-tentacle's better (0.79 vs 0.18)"}]))
@@ -108,7 +112,9 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                            "field": "stats", "proposed": {"hp": 6, "def": 1}},
                                           {"id": "chain-f2", "kind": "field", "card": "kit", "entry": "D-y",
                                            "field": "stats", "proposed": {"creatures": [{"hp": 7, "def": 4, "atk": 6,
-                                                                                        "spd": 6}] * 2}}]))
+                                                                                        "spd": 6}] * 2}},
+                                          {"id": "chain-l1", "kind": "look not told", "card": "bolt", "picture": "P-1",
+                                           "near": 1}]))
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
         "Kit": {"card": "kit", "status": "owner", "date": "2020-01-01", "sort": "2020-01-01",
@@ -119,8 +125,12 @@ def test_the_page_s_items_from_the_parts(tmp_path):
         for n in range(4)], "created_hints": [
         hint(0, "bolt", "2020-06-01T00:00:00+00:00"), hint(1, "bolt", "2020-04-01T00:00:00+00:00"),
         hint(2, "bolt", "2019-01-01T00:00:00+00:00", meme=True), hint(3, "kit", "2020-08-01T00:00:00+00:00")]})
-    stale = lambda rid: {"kind": "field", "choice": "yes", "item": tr.item("field", rid, "matches", "fields", rid)}
-    put(("review", "rulings.json"), {"rulings": {"chain-old1": stale("chain-old1"), "chain-old2": stale("chain-old2")}})
+    stale = lambda rid, **x: {"kind": "field", "choice": "yes", "item": tr.item("field", rid, "matches", "fields", rid,
+                                                                              **x)}
+    number = {"kind": "look not told", "choice": "look", "value": 1}         # an older page's look number
+    put(("review", "rulings.json"), {"rulings": {"chain-old1": stale("chain-old1", stale=True),
+                                                 "chain-old2": stale("chain-old2"),
+                                                 "chain-l1": number}})
     put(("chain", "ruled.json"), {"used": ["chain-old1"]})
     inputs = tr.Inputs(str(tmp_path))
     got = {i["id"]: i for i in tr.gather(inputs)}
@@ -132,6 +142,7 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert (got["chain-old1"]["gone"], got["chain-old2"]["gone"]) == ("taken", "changed")
     assert "taken in by the rerun" in tr.item_html(got["chain-old1"]) and \
         "Not applied" in tr.item_html(got["chain-old2"])
+    assert "changed" not in tr.item_html(got["chain-old1"]).split(">")[0]        # taken: its stored copy's mark gone
     page = tr.page(list(got.values()), inputs, "now")
     assert "<option value='kit2' label='Kit (kit2)'>" in page and "<option value='Bolt'>" in page
     names = {cid: c["name"] for cid, c in cards.items()}
@@ -147,3 +158,11 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert not errors and good["chain-f1"]["value"] == {"hp": 6, "def": 2} and \
         good["chain-f2"]["value"]["creatures"][1] == {"hp": 7, "def": 0, "atk": 4, "spd": 4}
     assert ar.check({"chain-f2": {"choice": "value", "value": "6/2"}}, got, {}, names)[2]       # one creature, 2 stats
+    # a look's radio is its first version's key; a stored number no radio takes is not applied, kept as stored
+    assert [c.get("value") for c in got["chain-l1"]["choices"]] == [key("a"), key("b"), None, None]
+    assert got["chain-l1"]["stale"] and "Not applied" in tr.item_html(got["chain-l1"])
+    assert not any(i.get("stale") for i in got.values() if i["id"] != "chain-l1")
+    answer = {"chain-l1": {"choice": "look", "value": 1}}
+    assert ar.check(answer, got, {"chain-l1": number}, names)[0]["chain-l1"] == number and ar.check(answer, got, {},
+                                                                                                    names)[2]
+    assert not ar.check({"chain-l1": {"choice": "look", "value": key("a")}}, got, {"chain-l1": number}, names)[2]

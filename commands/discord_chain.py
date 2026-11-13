@@ -40,9 +40,9 @@ build   Under derived/chain/:
                         (Q1-Q6, read only).
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
-        scripts/apply_rulings.py) are honoured: pictures named, told or refused, fields given (method 'owner'), unsure
-        changelog facts and old maps, older templates shown, facts against pictures, Created picked (status 'owner',
-        owner.source shaped like ours: where the date came from).
+        scripts/apply_rulings.py) are honoured: pictures named, told (a git look by its first version's key) or
+        refused, fields given (method 'owner'), unsure changelog facts and old maps, older templates shown, facts
+        against pictures, Created picked (status 'owner', owner.source shaped like ours: where the date came from).
         ruled.json      the answers this build acted on (only while rulings.json has answers).
 checks  Contact sheets of n random cards' whole timelines (each version's picture beside its fields) for the by-eye
         check, under derived/chain/checks/.
@@ -605,12 +605,20 @@ def same_words(a: dict, b: dict) -> bool:
                 lone_words(b.get("words") or set(), a.get("words") or set(), b.get("labels") or set()))
 
 
+def told_look(inputs, cid: Optional[str], key) -> Optional[int]:
+    """The card's look today holding the version a 'look' answer names (its key: look numbers shift when a version
+    is added); None when that version is gone."""
+    return next((v.get("look", 0) for v in inputs.versions.get(cid) or [] if v["key"] == key), None) \
+        if isinstance(key, str) else None
+
+
 def owner_rows(inputs) -> Counter:
     """The owner's answers that change what enters, applied to the inputs in place: a picture's card named, its look
-    told (a git look or a draft), a named-only picture confirmed, 'not this card', a joke picture that is the live
-    card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's rows given to a card.
-    Fields, older templates, facts against pictures and Created are answered where the chain makes them. The ids
-    acted on go into inputs.used (ruled.json: the review page tells an answer taken in from one whose item changed)."""
+    told (a git look by its first version's key, or a draft), a named-only picture confirmed, 'not this card', a joke
+    picture that is the live card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's
+    rows given to a card. Fields, older templates, facts against pictures and Created are answered where the chain
+    makes them. The ids acted on go into inputs.used (ruled.json: the review page tells an answer taken in from one
+    whose item changed)."""
     rulings, done = getattr(inputs, "rulings", None) or {}, Counter()
     used = inputs.used = getattr(inputs, "used", None) or set()
     if not rulings:
@@ -646,10 +654,14 @@ def owner_rows(inputs) -> Counter:
             used.add(ids["look not told"])
             done["owner: a look not in git"] += 1
         elif told and told.get("choice") == "look" and told.get("value") is not None:
-            row.update(verdict="version_sure", version={**(row.get("version") or {}), "look": told["value"]},
-                       owner="a git look")
-            used.add(ids["look not told"])
-            done["owner: a git look told"] += 1
+            look = told_look(inputs, row.get("card"), told["value"])
+            if look is None:                   # its version left the card's history: not applied
+                done["owner: a git look told, its version gone (not applied)"] += 1
+            else:
+                row.update(verdict="version_sure", version={**(row.get("version") or {}), "look": look},
+                           owner="a git look")
+                used.add(ids["look not told"])
+                done["owner: a git look told"] += 1
         if joke and joke.get("choice") == "live":
             row.pop("joke_draft", None)
             row.update(joke=False, owner="the live card's picture")
