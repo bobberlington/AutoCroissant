@@ -577,8 +577,8 @@ ZEMER = ("a2d3064be84eebb4b9dc4cbf6cf5090ea1d5a48f", "Creatures/Hollow Knight/5 
 
 def test_comps_move_layers_and_set_opacity(clone):
     """comp_document applies a comp's moves and opacity as Photoshop 2023 does (its layer states after each comp,
-    allbars 2026-11-12): Ze'mer's flowers move (alpha as stored at every shown comp); Puzzled Cat's Speed comp 10
-    lists no opacity for 'Group 1 copy' (100%), comp 9 lists 33%."""
+    allbars 2026-11-12): Ze'mer's flowers move (alpha as stored at every shown comp; its group bevel passes the check
+    from fork cards-20261112d); Puzzled Cat's Speed comp 10 lists no opacity for 'Group 1 copy' (100%), comp 9 33%."""
     from psd_tools.constants import Resource
 
     def alpha(rgba, where, box):
@@ -586,7 +586,7 @@ def test_comps_move_layers_and_set_opacity(clone):
         out[where[1] - box[1]:where[3] - box[1], where[0] - box[0]:where[2] - box[0]] = rgba[..., 3]
         return out * 255
     for layer, value, box in (bars[0] for bars in comp_bars(PSDImage.open(BytesIO(at_rev(clone, *ZEMER)))).values()):
-        drawn = alpha(*pe.comp_render(layer, value, check=False), box)
+        drawn = alpha(*pe.comp_render(layer, value), box)
         assert np.abs(drawn - alpha(layer.numpy(), layer.bbox, box)).max() <= 2, layer.name
     psd = PSDImage.open(BytesIO(at_rev(clone, NO_COMP_APPLIED, "Creatures/Other/3 Stars/Puzzled_Cat.psd")))
     layer = comp_bars(psd)["spd"][0][0]
