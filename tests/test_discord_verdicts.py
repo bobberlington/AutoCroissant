@@ -63,8 +63,8 @@ def rows_of(root: Path) -> dict:
 
 def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_path):
     cards = {"fang": {"id": "fang", "name": "Fang", "key": "Fang", "fs": T + 400 * 86400}}
-    versions = [{"key": "now", "card": "fang", "commit": "c2", "ts": T + 400 * 86400, "current": True, "look": 0,
-                 "whole": H}, {"key": "old", "card": "fang", "commit": "c1", "ts": T + 400 * 86400, "current": False,
+    versions = [{"key": "now", "card": "fang", "commit": "c2", "ts": T + 86400, "current": True, "look": 0,
+                 "whole": H}, {"key": "old", "card": "fang", "commit": "c1", "ts": T + 86400, "current": False,
                                "look": 1, "whole": H}]
     joke_title = {"title": ["Fang But Funny"], "title_block": "Fang But Funny",
                   "lines": ["Fang But Funny", "Deal 5 damage to every creature on the field and laugh about it"]}
@@ -73,10 +73,12 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
              (T, PORT, 1, seen("fang", ["old"]), {}, None),
              (T + 86400, IDEAS, 2, [], dict(joke_title), None),             # 2: a joke first posted in ideas
              (T + 2 * 86400, MEME, 2, [], dict(joke_title), None),
-             (T + 3 * 86400, PORT, 3, seen("fang", ["now"], by="hash"), {}, None),   # 3: a port picture, a meme too
+             (T + 3 * 86400, PORT, 3, seen("fang", ["now"], by="hash"),          # 3: a port picture, a meme too;
+              {"twins": [[f"{snowflake(T)}:1", 1.0, 1.0]]}, None),              # another look: no repost
              (T + 4 * 86400, MEME, 3, seen("fang", ["now"], by="hash"), {}, None),
              (T - 86400, MEME, 4, seen("fang", [], by="draft"), {}, None),  # 4: a meme of Fang, no git look
-             (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff)]     # 5: a paper card's photo
+             (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff),     # 5: a paper card's photo
+             (T + 7 * 86400, MEME, 6, [], {"lines": ["when the"]}, None)]        # 6: a meme, not a card
     root = tmp_path / "archive"
     archive(root, posts, cards, versions, {PORT[0]: "port", MEME[0]: "meme/joke"})
     dv.build(str(root), log=lambda *a: None, cards_repo="")
@@ -89,6 +91,7 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
     assert three["verdict"] == "version_sure" and three["meme_repost"] and three["first"]["channel"] == "port"
     assert four["verdict"] == "morgue" and four["looks_like"] == ["fang"] and four.get("first") is None
     assert five["verdict"] == "version_sure" and five["paper"] and five.get("first") is None    # never dates
+    assert "repost_of" not in three and rows[dv.picture_id(sha(6))]["verdict"] == "none"
     groups = json.loads((root / "derived/match/lost_groups.json").read_text())["groups"]
     joke = next(g for g in groups if g["title"])
     assert joke["id"] == dv.group_id(sha(2)) and joke["kinds"] == ["idea", "joke"] and joke["morgue_candidate"]
@@ -105,6 +108,9 @@ def test_lost_cards_group_by_title_and_lookalikes_need_their_title(tmp_path):
     def lost(title):
         return {"title": [title], "title_block": title, "lines": [title, text]}
     posts = [(T, IDEAS, 1, [], lost("Blankett"), None),
+             (T, IDEAS, 8, [], lost("DAMAGE TYPES"), None),                     # rules pages and app screens
+             (T, IDEAS, 9, [], {"title": ["Sign up"], "lines": ["Sign up", "Pull requests", text]}, None),
+             (T + 7 * 86400, NEW, 10, [], lost("TWIN PRINCES"), None),         # the old split card
              (T + 86400, PORT, 2, [], lost("Blanket"), None),
              (T + 2 * 86400, IDEAS, 3, [], lost("Wind Dancer"), None),
              (T + 5 * 86400, IDEAS, 6, [], lost("Old Dull Blade"), None),
@@ -122,6 +128,10 @@ def test_lost_cards_group_by_title_and_lookalikes_need_their_title(tmp_path):
     assert blanket["old_lost"] == "OL-ddd1c85bc7"
     assert blanket["morgue_candidate"] and "played" in blanket["kinds"]
     assert wind["ideas_never_ported"] and wind["kinds"] == ["idea", "lost"]
+    assert "DAMAGE TYPES" not in groups and "Sign up" not in groups
+    twin = groups["TWIN PRINCES"]
+    assert "split" in twin["kinds"] and not twin["morgue_candidate"] and twin["split_of"]["into"] == ["lothric",
+                                                                                                    "lorian"]
     blade = groups["Old Dull Blade"]                                           # renamed? a hint, no Morgue
     assert blade["old_name_of"] == "dull-knife" and not blade["morgue_candidate"] and "White Duston" not in groups
     rows = rows_of(root)
@@ -170,3 +180,33 @@ def test_a_git_look_needs_the_whole_card_and_its_text():
     assert kind == "draft" and note["far"] >= dv.FAR_BITS
     later = {"shape": "2:3", "whole": H, "posted": T + 10, "unstored": [T + 5]}
     assert dv.decide(same, later, versions, members)[0] is None              # an unstored version came first
+
+
+def test_a_look_before_git_needs_its_bars_and_numbers():
+    day, bars, tags = 86400, {"hp": 7, "def": 6, "atk": 5, "spd": 5}, dv.marks(["(2CD) summon it for 2 turns"])
+    v = {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T + 100 * day, "bars": bars, "marks": (tags, tags)}
+    pick = {"by": "text", "keys": ["a"], "fit": 1.0, "novel": 0}
+
+    def kind(members=(v,), **image):
+        return dv.decide(pick, {"shape": "1:2", "whole": H, **image}, {m["key"]: m for m in members},
+                         list(members))[0]
+    assert tags == {"t:2cd", "n:2:c", "n:2:t"} and dv.marks(["(OPT)(OYT) for 3 turns"]) == {"t:opt", "t:oyt", "n:3:t"}
+    assert kind(made=T, marks=tags, bars=bars) == "git"                        # 100 days early, read the same
+    assert kind(made=T, marks=tags, bars={**bars, "def": 5}) is None          # another stat (Kalecgos)
+    assert kind(made=T, marks={"t:e2t", "n:2:t"}, bars=bars) is None          # another timing tag (Gates)
+    assert kind(made=T, marks={"t:2cd", "n:2:c", "n:3:t"}, bars=bars) is None  # another number
+    assert kind(made=T, marks=tags) is None and kind(made=T + 98 * day, marks=tags) == "git"   # bars unread: grace
+    assert dv.decide({**pick, "missing": 3}, {"shape": "1:2", "whole": H, "made": T + 98 * day, "marks": tags},
+                     {"a": v}, [v])[0] is None                                 # a word fixed before the commit
+    assert kind(made=T, marks=tags, no_bars=True) == "git" and kind(made=T, no_bars=True) is None
+    later = {**v, "key": "b", "ts": T + 200 * day, "bars": {**bars, "atk": 6}}    # one look, two stat sets
+    assert kind((v, later), made=T + 300 * day, marks=tags) is None
+    assert kind((v, later), made=T + 300 * day, marks=tags, bars=later["bars"]) == "git"
+
+
+def test_changelog_days_name_a_card_and_lost_ids_are_unique():
+    log = [{"timestamp": "2020-08-01T00:00:00", "content": "Buffed Retro Kirby"},
+           {"timestamp": "2020-08-02T00:00:00", "content": "Kirby nerfed, actions added"}]
+    assert dv.changelog_dates("KIRBY", log, ("retro kirby",)) == ["2020-08-02"]
+    assert dv.changelog_dates("Actions", log, (), frozenset({"actions"})) == []
+    assert dv.group_id(sha(3)) != dv.group_id(sha(3), 1) != dv.group_id(sha(3), 2)

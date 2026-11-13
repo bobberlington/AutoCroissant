@@ -39,8 +39,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    feed lost-card candidates (`lost.json`), never live cards, as do card-shaped posts naming no card. Outputs under the
    archive's `derived/matcher/`. Then `commands/discord_verdicts.py` gives each picture (a sheet's cells each) one
    verdict: version sure, version unsure, draft (a look not in git), lost or morgue (else unsure, art, none), its
-   earliest post dating it; lost pictures grouped into lost cards; contact sheets for the checks by eye. Outputs under
-   `derived/match/`.
+   earliest post dating it (never an embed's: embeds were fetched when archived, so they may show a later picture); lost
+   pictures grouped into lost cards; contact sheets for the checks by eye. A git look is claimed only when the picture's
+   timing tags and numbers are that version's; made before the look's first git version, its text exactly that look's;
+   more than 3 days before, its bars read (`derived/readers/bars`) the same too (the hash can't see a bar or a typo).
+   Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
