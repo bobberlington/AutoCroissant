@@ -536,8 +536,8 @@ not land.**
 - **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
   card sync's data commit starts the site build). **One main lane per guarded push (2026-10-25, plan P-2):** a push run
   in `on` mode with writes marks its check job (step "Fixes to land", output `fixes`); that push's Card sync run skips
-  its main lane at its window's end (its "Guards' fixes" step: it looks every 3 s until the check job's `Decided` step
-  or the job itself is done, since 2026-11-07), and Follow up starts Card sync once Land is done,
+  its main lane at its window's end (its "Guards' fixes" step: it looks until the check job's `Decided` step or the
+  job itself is done, since 2026-11-07; since 2026-11-12 that job alone by conditional reads 1 s apart, a 304 free), and Follow up starts Card sync once Land is done,
   landed, landed nothing or broke (`always()`), tried 3 times, so one main commit pins the fixed PNG. Card sync's
   schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
   post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
