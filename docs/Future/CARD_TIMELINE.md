@@ -57,9 +57,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    (`derived/morgue/eye.json`); outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. A candidate's
    picture that is the same picture (whole and art within 3 bits) as a row given to a live card or the unsure review
    stays only when the eye takes that row (listed in `taken`: the review page drops it there) or rules it another
-   picture; else the candidate goes to review. Renamed and live entries' first dates are `created_hints` for Created
-   (weak links only by the owner). Candidates go only to the website's Morgue list (cards.json morgue), never cards[],
-   decks, Unused, the default search or Mentioned by.
+   picture; else the candidate goes to review. A kin pass lists the rows no entry holds that may still be a lost card's
+   (a none, art or unsure row titled like a candidate or idea, nearer than any live card's name; a none row that is a
+   joke picture, or a played channel's with card evidence) until the eye adds each to an entry, makes an entry of it
+   (keyed by its picture id: Wickerbottom's five books, Warcraftian Kel) or rules it not a lost card's; `kin_open`
+   must be empty. Renamed and live entries' first dates are `created_hints` for Created (weak links only by the
+   owner; `meme`: dated only by meme channels, so never a live card's Created). A paper card's photo never dates an
+   entry. Candidates go only to the website's Morgue list (cards.json morgue), never cards[], decks, Unused, the
+   default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types

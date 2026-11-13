@@ -1,6 +1,7 @@
 """discord_morgue on a made-up archive: candidates (jokes, played, the old repo's), ideas, cards already in MDW or
 renamed, the check by eye (names, splits, merges, weak links), twins of rows a live card or the unsure review lists
-(taken by eye, ruled another picture, else review), unique slugs, thumbs, no message text."""
+(taken by eye, ruled another picture, else review), the kin pass (made by eye, ruled not kin, else open), paper photos,
+created hints' meme flag, unique slugs, thumbs, no message text."""
 import json
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import commands.discord_verdicts as dv
 
 PORT, IDEAS, MEME = ("735328279619436666", "port"), ("664256411907391509", "ideas-discussion"), \
     ("835450716947873823", "meme-cards")
+PAPER = ("1", "record-book")
 
 
 def sha(n: int) -> str:
@@ -20,7 +22,7 @@ def sha(n: int) -> str:
 def post(n: int, channel: tuple, day: int, meme: bool = False) -> dict:
     return {"message": str(1000 + n), "channel_id": channel[0], "channel": channel[1], "thread": None,
             "date": f"2020-08-{day:02d}T00:00:00+00:00", "bot": False, "morgue": meme, "embed": False,
-            "paper": False}
+            "paper": channel == PAPER}
 
 
 def look(n: int) -> dict:
@@ -47,12 +49,24 @@ def archive(root: Path) -> None:
               11: (IDEAS, False), 12: (MEME, True), 13: (IDEAS, False)}
     listed = {9: ("version_unsure", {"card": "zero-two"}, 6), 11: ("unsure", {"maybe": ["fang"]}, 10),
               13: ("draft", {"card": "fang"}, 12)}      # n: (verdict, card, the lost picture it is the same as)
+    kin = {14: ("none", PORT, False, 14), 15: ("none", MEME, True, 15), 16: ("unsure", IDEAS, False, 0),
+           17: ("unsure", IDEAS, False, 9), 18: ("none", PAPER, False, 11), 19: ("none", PORT, False, 13),
+           20: ("none", PORT, False, 13)}       # n: (verdict, channel, joke, look)
+    images = {f"{1000 + n}:{n}": {"message": str(1000 + n), "sha256": sha(n), "title": [], "lines": lines, **more}
+              for n, lines, more in ((14, ["Book One", "Health", "Defense", "Attack", "Speed"],
+                                      {"title_block": "Book One"}), (16, ["Old Brick"], {"title_block": "Old Brick"}),
+                                     (17, ["Zero Two"], {"title_block": "Zero Two"}),
+                                     (19, ["Health", "Speed"], {}), (20, ["a chat"], {}))}
+    for n, (verdict, channel, joke, same) in kin.items():
+        places[n] = (channel, joke)
+        listed[n] = (verdict, {"maybe": ["fang"]} if verdict == "unsure" else {}, same)
     for n, (channel, meme) in places.items():
-        Image.new("RGB", (400, 800), (n * 20, 40, 90)).save(root / f"attachments/{sha(n)}.png")
+        Image.new("RGB", (400, 800), (n * 12, 40, 90)).save(root / f"attachments/{sha(n)}.png")
         verdict, card, same = listed.get(n, ("morgue" if meme else "lost", {}, n))
         rows.append({"id": dv.picture_id(sha(n)), "sha256": sha(n), "file": f"attachments/{sha(n)}.png",
                      "verdict": verdict, **card, "w": 400, "h": 800, "posts": [post(n, channel, n, meme)],
-                     "whole": look(same), "art": look(same), "title_read": "Fang Gets Funnier" if n == 7 else ""})
+                     "whole": look(same), "art": look(same), "title_read": "Fang Gets Funnier" if n == 7 else "",
+                     "joke": meme})
     (root / "derived/match/verdicts.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     p = dv.picture_id
     groups = [group(1, "Fang But Funny", ["idea", "joke"], [p(sha(1)), p(sha(7))]),
@@ -75,16 +89,19 @@ def archive(root: Path) -> None:
         Image.new("RGB", (320, 480), (200, 10, 10)).save(root / f"derived/oldgit/thumbs/{c}.webp")
     (root / "derived/oldgit/lost.json").write_text(json.dumps({"cards": old}))
     cards = {"fang": {"name": "Fang"}, "zero-two": {"name": "Zero Two"}, "electro-probe": {"name": "Electro Probe"}}
-    (root / "derived/matcher/match/pairs.json").write_text(json.dumps({"cards": cards, "versions": []}))
+    (root / "derived/matcher/match/pairs.json").write_text(json.dumps({"cards": cards, "versions": [],
+                                                                        "images": images}))
     (root / "derived/catalogue/channels.json").write_text(json.dumps({"channels": [{"id": PORT[0], "kind": "port"}]}))
     eye = {dv.group_id(sha(1)): {"status": "candidate", "kind": "joke", "name": "Fang But Funny", "split": [
         {"name": "Fang But Funny", "pictures": [p(sha(1))], "status": "idea"},
         {"name": "Fang Gets Funnier", "pictures": [p(sha(7))]}]},
         dv.group_id(sha(5)): {"weak": "no shared picture"},
         dv.group_id(sha(6)): {"status": "candidate", "kind": "joke", "name": "Zero Two", "nearest": "zero-two",
-                              "add": [p(sha(9))]},
+                              "add": [p(sha(9)), p(sha(18))]},
         dv.group_id(sha(8)): {"status": "idea", "merge": dv.group_id(sha(3))},
-        dv.group_id(sha(12)): {"status": "candidate", "kind": "joke", "name": "Fang Prank", "not_twin": [p(sha(13))]}}
+        dv.group_id(sha(12)): {"status": "candidate", "kind": "joke", "name": "Fang Prank", "not_twin": [p(sha(13))]},
+        p(sha(14)): {"status": "candidate", "kind": "played", "name": "Book One"},     # a lost card found by kin
+        "not_kin": {p(sha(15)): "a meme"}}
     (root / "derived/morgue/eye.json").write_text(json.dumps(eye))
 
 
@@ -99,7 +116,13 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
     ideas = json.loads((root / "derived/morgue/ideas.json").read_text())["ideas"]
     found = {e["id"]: e for e in data["candidates"]}
     split = dv.group_id(sha(7))
-    assert set(found) == {split, dv.group_id(sha(2)), dv.group_id(sha(6)), dv.group_id(sha(12)), "OL-bbbbbbbbbb"}
+    book = dv.group_id(sha(14))
+    assert set(found) == {split, dv.group_id(sha(2)), dv.group_id(sha(6)), dv.group_id(sha(12)), "OL-bbbbbbbbbb", book}
+    assert found[book]["made"] and found[book]["kind"] == "played" and found[book]["title_read"] == "Book One" and \
+        found[book]["played"] == [{"channel": "port", "date": "2020-08-14"}] and found[book]["card_evidence"] == \
+        "stat labels"
+    assert counts["kin"] == 3 and counts["kin_open"] == [dv.picture_id(sha(16)), dv.picture_id(sha(19))]
+    # 15 ruled not kin; 17 titled as a live card; 20 a played channel's with no card evidence
     assert found[split]["name"] == found[split]["title_read"] == "Fang Gets Funnier" and found[split]["kind"] == \
         "joke" and found[split]["group"] == dv.group_id(sha(1))         # a split part: its title, its parent group
     brick = found[dv.group_id(sha(2))]
@@ -110,6 +133,8 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
     zero = found[dv.group_id(sha(6))]
     assert zero["slug"] == "zero-two-morgue" and zero["nearest"]["card"] == "zero-two"   # never a live card's id
     assert zero["first"]["channel"] == "meme-cards" and zero["played"] == [{"channel": "port", "date": "2020-08-09"}]
+    paper = next(x for x in zero["pictures"] if x["id"] == dv.picture_id(sha(18)))
+    assert paper["paper"] and paper["date"] is None and zero["last"] == "2020-08-09T00:00:00+00:00"   # never dates
     assert data["taken"] == [{"picture": p9, "entry": dv.group_id(sha(6)), "verdict": "version_unsure",
                               "card": "zero-two"}] and counts["taken"] == 1     # its twin taken by eye
     assert counts["twins_open"] == [dv.group_id(sha(10))]                       # a twin not ruled on: review
@@ -122,12 +147,13 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
     assert twin["status"] == "twin" and twin["card"] == "fang" and twin["twins"] == [dv.picture_id(sha(11))]
     assert data["created_hints"] == [{"entry": dv.group_id(sha(5)), "name": "Probe", "card": "electro-probe",
                                       "date": "2020-08-05T00:00:00+00:00", "channel": "ideas-discussion",
-                                      "weak": True}, {"entry": dv.group_id(sha(10)), "name": "Fang Joke",
-                                                      "card": "fang", "date": "2020-08-10T00:00:00+00:00",
-                                                      "channel": "meme-cards", "weak": False}]
+                                      "weak": True, "meme": False},
+                                     {"entry": dv.group_id(sha(10)), "name": "Fang Joke", "card": "fang",
+                                      "date": "2020-08-10T00:00:00+00:00", "channel": "meme-cards", "weak": False,
+                                      "meme": True}]
     assert [i["id"] for i in ideas] == [dv.group_id(sha(1)), dv.group_id(sha(3))] and \
         len(ideas[1]["pictures"]) == 2              # a split part's own status; a merge
-    assert counts["candidates"] == 5 and dv.group_id(sha(2)) in counts["unchecked"]
+    assert counts["candidates"] == 6 and counts["made"] == 1 and dv.group_id(sha(2)) in counts["unchecked"]
     for e in data["candidates"] + ideas:
         for pic in e["pictures"]:
             with Image.open(root / "derived/morgue" / pic["thumb"]) as im:

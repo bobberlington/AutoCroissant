@@ -14,10 +14,13 @@ build   Each lost card (derived/match/lost_groups.json) and each lost card of th
         the lost group's) and is marked unchecked. A candidate or idea whose picture is the same picture as a row
         given to a live card or the unsure review (whole and art within TWIN bits) keeps that row only when the eye
         adds it (then listed in taken: the review page drops it there) or rules it another picture (not_twin);
-        else it goes to review (status twin), so no picture is both a live card's and the Morgue's. Outputs under
-        the archive's derived/morgue/ (never a repo): candidates.json (candidates, then the lost cards that are not,
-        with why; taken; created_hints: the renamed and live ones' first dates for S6), ideas.json, thumbs/ (webp,
-        every entry's pictures).
+        else it goes to review (status twin), so no picture is both a live card's and the Morgue's. The kin pass
+        lists rows no entry holds that may be a lost card's (a none, art or unsure row whose title fits a candidate's
+        or idea's name better than any live card's; a none row that is a joke picture, or a played channel's with
+        card evidence) until the eye adds each to an entry, makes an entry of it (eye.json keyed by its picture id)
+        or rules it not a lost card's (not_kin). Outputs under the archive's derived/morgue/ (never a repo):
+        candidates.json (candidates, then the lost cards that are not, with why; taken; created_hints: the renamed
+        and live ones' first dates for S6), ideas.json, thumbs/ (webp, every entry's pictures).
         Candidates go only to the website's Morgue list (cards.json morgue): never cards[], decks, Unused, the
         default search or Mentioned by. No message text, posters or authors.
 sheets  Contact sheets for the check by eye: each candidate's and idea's thumbs beside its nearest live card.
@@ -53,6 +56,8 @@ FAR_BITS = 12.0                                 # a nearest look farther than th
 THUMB_W = 320
 TWIN = dm.TWIN_BITS                             # whole and art this near: the same picture
 LISTED = ("version_sure", "version_unsure", "draft", "unsure")     # rows a live card or the unsure review lists
+KIN_NAME = dv.GROUP_TITLE                       # a row's title this near a candidate's or idea's name: kin (eye)
+KIN_VERDICTS = ("none", "art", "unsure")        # rows no live card holds for sure
 CANDIDATE, IDEA, TWIN_STATUS = "candidate", "idea", "twin"
 NOT = {"morgue": "already in MDW/The Morgue", "unfinished": "in MDW/Unfinished (kept, not retired)",
        "renamed": "an old name or draft of a live card (review: its timeline)", "live": "a live card's own "
@@ -68,7 +73,9 @@ ABOUT = ("Morgue candidates (owner's answers Q1, Q2, confirmed 11-13): joke card
          "eye (eye.json). not_candidates: lost cards that are not, with why. taken: rows listed for a live card or "
          "the unsure review that the eye gave to a candidate or idea (the review page drops them there). "
          "created_hints: renamed and live entries' first dates (S6: the live card's Created; weak ones only by the "
-         "owner). why and eye notes: the review page's, never published. No message text, posters or authors.")
+         "owner; meme: only meme channels date it, so never a live card's Created). counts.kin_open: rows that may be "
+         "a lost card's, not yet ruled by eye. why and eye notes: the review page's, never published. No message "
+         "text, posters or authors.")
 IDEAS_ABOUT = ("Ideas never ported (owner's answer Q2): card drafts never played, for the review page only (never "
                "published). Each checked by eye (eye.json). No message text, posters or authors.")
 
@@ -168,12 +175,57 @@ def first_post(posts: list) -> Optional[dict]:
 
 def picture_of(row: dict, takes: bool = False) -> dict:
     """One picture; taken (a candidate's or idea's): the list it leaves (a row a live card or the unsure review lists,
-    added by eye)."""
-    post = first_post(row.get("posts") or []) or {}
+    added by eye). A paper card's photo only (owner Q6): undated (paper)."""
+    posts = row.get("posts") or []
+    post = first_post(posts) or {}
+    paper = bool(posts) and all(p.get("paper") for p in posts)
     taken = {"verdict": row["verdict"], "card": row_card(row)} if takes and row.get("verdict") in LISTED else None
-    return {"id": row["id"], "date": post.get("date"), "channel": post.get("channel"), "thread": post.get("thread"),
-            "cell": row.get("cell"), "w": row.get("w"), "h": row.get("h"), "thumb": f"thumbs/{row['id']}.webp",
-            "source": "discord", **({"taken": taken} if taken else {})}
+    return {"id": row["id"], "date": None if paper else post.get("date"), "channel": post.get("channel"),
+            "thread": post.get("thread"), "cell": row.get("cell"), "w": row.get("w"), "h": row.get("h"),
+            "thumb": f"thumbs/{row['id']}.webp", "source": "discord", **({"paper": True} if paper else {}),
+            **({"taken": taken} if taken else {})}
+
+
+def image_of(row: dict, images: dict, by_sha: dict) -> dict:
+    """A verdict row's matcher image (pairs.json images), a sheet cell's own."""
+    keys = by_sha.get(row["sha256"]) or []
+    image = (images.get(keys[0]) or {}) if keys else {}
+    cells = image.get("cells") or []
+    return cells[row["cell"] - 1] if row.get("cell") and len(cells) >= row["cell"] else image
+
+
+def ocr_titles(image: dict) -> list:
+    """An image's OCR'd titles that read as words (discord_verdicts' lost title rule)."""
+    return [t for t in [image.get("title_block"), *(image.get("title") or [])]
+            if t and dm.wordy(t) and len(dm.alnum(t)) >= dv.LOST_TITLE]
+
+
+def kin_rows(rows: dict, held: set, names: list, live: dict, images: dict, by_sha: dict, eras: dict,
+             kinds: dict) -> dict:
+    """{picture id: why}: rows no entry holds that may be a lost card's, for the check by eye. (a) A none, art or
+    unsure row whose title fits a candidate's or idea's name (names: [(entry id, name)]) at KIN_NAME, better than any
+    live card's name; (b) a none row that is a joke picture (Q1: the flag follows the picture), or a played channel's
+    (Q2) with card evidence (stat labels, a template's size, a card era, a card shape)."""
+    found = {}
+    for pid, row in rows.items():
+        if pid in held or row.get("verdict") not in KIN_VERDICTS:
+            continue
+        image = image_of(row, images, by_sha)
+        for title in ocr_titles(image) if names else []:
+            fit, gid = max((near(title, n), gid) for gid, n in names)
+            if fit >= KIN_NAME and fit > max((near(title, n) for n in live.values()), default=0.0):
+                found[pid] = f"titled like {gid}"
+                break
+        if pid in found or row["verdict"] != "none":
+            continue
+        if row.get("joke"):
+            found[pid] = "a joke picture"
+        elif played_posts(row.get("posts") or [], kinds):
+            evidence = dv.card_evidence(image, row.get("size_class"), eras.get(row["sha256"])) or (
+                "a card shape" if image.get("shape") else None)
+            if evidence:
+                found[pid] = f"a played channel's picture ({evidence})"
+    return found
 
 
 def twin_finder(rows: dict) -> Callable:
@@ -246,14 +298,21 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     rows = {r["id"]: r for r in dm.read_jsonl(join(root, *VERDICTS))}
     old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
     pairs = dm.read_json(join(root, *PAIRS), {}) or {}
-    cards = pairs.get("cards") or {}
+    cards, images = pairs.get("cards") or {}, pairs.get("images") or {}
+    by_sha = {}
+    for key in sorted(images, key=lambda k: (int(images[k].get("message") or 0), k)):
+        by_sha.setdefault(images[key].get("sha256"), []).append(key)
     live = {cid: c.get("name") or c.get("key") or cid for cid, c in cards.items()}
     eye = dm.read_json(paths.eye, {}) or {}
+    made = {k: dict(v) for k, v in eye.items() if k.startswith("P-") and isinstance(v, dict)}   # keyed by a picture
     kinds = dv.channel_kinds(root)
+    eras = dv.bar_reads(root)[2]
     used = set(cards) | {dm.slugify(n) for n in known.get("morgue") or {}}
     entries = {}
     for g in groups:
         e = dict(eye.get(g["id"]) or {})
+        mine = next((p for p in g["pictures"] if p in made), None) if not e else None
+        e = made.pop(mine) if mine else e       # a picture's ruling, once its row joined a lost group
         status, card = auto_status(g, known, live)
         if not status:
             status = CANDIDATE if g["morgue_candidate"] else IDEA if g["ideas_never_ported"] else "review"
@@ -268,6 +327,24 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         e = dict(eye.get(old["id"]) or {})
         entries[old["id"]] = {"group": None, "eye": e, "status": e.get("status") or CANDIDATE, "card": e.get("card"),
                               "pictures": [], "old": old}
+    held = {p for x in entries.values() for p in x["pictures"] + list(x["eye"].get("add") or [])}
+    mades = [rows[p] for p in made if p in rows and p not in held]
+    looks = dv.nearest_looks(mades, pairs.get("versions") or [], cards) if mades else {}
+    names = dm.Names(cards) if mades else None
+    for p in sorted(set(made) - {r["id"] for r in mades}):
+        log(f"eye {p}: {'no such row' if p not in rows else 'held by another entry'}, skipped")
+    for row in mades:                           # lost cards the eye found among other rows (kin): keyed by a picture
+        e, image = made[row["id"]], image_of(row, images, by_sha)
+        title = next(iter(ocr_titles(image)), None)
+        evidence = dv.card_evidence(image, row.get("size_class"), eras.get(row["sha256"])) or "by eye"
+        by_name = [{"card": c, "name": (cards.get(c) or {}).get("name"), "ratio": round(r, 3)}
+                   for c, (r, _) in names.fuzzy(title, 0.6, limit=3).items()] if title else []
+        gid = dv.group_id(row["sha256"], row.get("cell"))
+        assert gid not in entries, f"{gid} made twice"
+        entries[gid] = {"group": None, "eye": e, "status": e.get("status") or "review", "card": e.get("card"),
+                        "pictures": [row["id"]], "old": None, "title": title,
+                        "made": {"title": title, "card_evidence": evidence,
+                                 "nearest": {"look": looks.get(row["id"]) or [], "name": by_name}}}
     for gid, x in list(entries.items()):         # splits (by eye): one lost card each, its own title, the group kept
         parts = x["eye"].get("split") or []
         base = {k: v for k, v in x["eye"].items() if k != "split"}     # the first part keeps the group's rulings
@@ -299,6 +376,13 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         x["twins"] = sorted({t for p in x["pictures"] for t in twins(p)} - set(x["pictures"]) - unlike)
         if x["twins"]:
             x.update(status=TWIN_STATUS, card=row_card(rows[x["twins"][0]]))
+    held = {p for x in entries.values() for p in x["pictures"] + (x.get("twins") or [])}
+    named = [(gid, n) for gid, x in entries.items() if x["status"] in (CANDIDATE, IDEA)
+             for n in sorted({x["eye"].get("name"), x.get("title"), (x["group"] or {}).get("title")} - {None, ""})]
+    kin = kin_rows(rows, held, named, live, images, by_sha, eras, kinds)
+    kin_open = sorted(set(kin) - set(eye.get("not_kin") or {}))     # each ruled by eye: added, made, or not_kin
+    for p in kin_open:
+        log(f"kin open {p}: {kin[p]}")
     candidates, ideas, others = [], [], []
     for gid, x in entries.items():
         entry = describe(gid, x, rows, kinds, live, used if x["status"] == CANDIDATE else None)
@@ -309,15 +393,16 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     taken = [{"picture": p["id"], "entry": e["id"], **p["taken"]} for e in candidates + ideas for p in e["pictures"]
              if p.get("taken")]
     assert len({t["picture"] for t in taken}) == len(taken), "a picture taken twice"
-    hints = [{"entry": e["id"], "name": e["name"], "card": e["card"], "date": e["first"]["date"],
-              "channel": e["first"]["channel"], "weak": bool(e.get("weak"))}
-             for e in others if e["status"] in ("renamed", "live", TWIN_STATUS) and e.get("card") in live]
+    hints = [created_hint(e, rows) for e in others
+             if e["status"] in ("renamed", "live", TWIN_STATUS) and e.get("card") in live]
     unchecked = [e["id"] for e in candidates + ideas + others if not e["eye"]["checked"]]
     counts = {"candidates": len(candidates), "jokes": sum(e["kind"] == "joke" for e in candidates),
               "played": sum(e["kind"] == "played" for e in candidates), "ideas": len(ideas),
               "not_candidates": dict(Counter(e["status"] for e in others)),
               "pictures": sum(len(e["pictures"]) for e in candidates), "taken": len(taken),
-              "twins_open": [e["id"] for e in others if e["status"] == TWIN_STATUS], "unchecked": unchecked}
+              "made": sum(bool(x.get("made")) for x in entries.values()), "kin": len(kin),
+              "twins_open": [e["id"] for e in others if e["status"] == TWIN_STATUS], "kin_open": kin_open,
+              "unchecked": unchecked}
     stamp = dm.now_iso()
     dm.write_json(join(paths.out, "candidates.json"), {"generated": stamp, "about": ABOUT, "counts": counts,
                                                        "candidates": candidates, "not_candidates": others,
@@ -327,9 +412,21 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     return counts
 
 
+def created_hint(e: dict, rows: dict) -> dict:
+    """A renamed or live entry's first date for S6: its earliest post that may date a live card (discord_verdicts
+    dating: no meme channel's, bot's, paper photo's or embed's) or old repo file; meme: none, its date is a meme
+    channel's (never a live card's Created)."""
+    posts = [p for pic in e["pictures"] for p in (rows.get(pic["id"]) or {}).get("posts") or [] if dv.dating(p)]
+    found = [(utc(p["date"]), p.get("channel")) for p in posts] + [
+        (pic["date"], "old repo") for pic in e["pictures"] if pic.get("source") == "old repo" and pic.get("date")]
+    date, channel = min(found) if found else (e["first"]["date"], e["first"]["channel"])
+    return {"entry": e["id"], "name": e["name"], "card": e["card"], "date": date, "channel": channel,
+            "weak": bool(e.get("weak")), "meme": not found}
+
+
 def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optional[set]) -> dict:
     """One lost card's entry: name, kind, first date and channel, pictures, nearest live card, why."""
-    g, e, old = x["group"] or {}, x["eye"], x["old"]
+    g, e, old = x["group"] or x.get("made") or {}, x["eye"], x["old"]
     pics = [picture_of(rows[p], x["status"] in (CANDIDATE, IDEA)) for p in x["pictures"] if p in rows]
     posts = [p for pid in x["pictures"] if pid in rows for p in rows[pid].get("posts") or []]
     if old:
@@ -398,7 +495,7 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "card_evidence": g.get("card_evidence") or ("the old repo's file" if old else None),
              "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
              if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
-             "weak": True if e.get("weak") else None, "twins": x.get("twins"),
+             "weak": True if e.get("weak") else None, "twins": x.get("twins"), "made": bool(x.get("made")) or None,
              "why": why, "eye": {"checked": bool(e), "note": e.get("note")}}
     if used is not None:
         entry["slug"] = unique_slug(name, used)
