@@ -26,6 +26,7 @@ TEMPLATES = {"creature": "Creature_Template", "minion": "Creature_Template", "cr
              "item": "Item_Template", "aux item": "Item_Template", "nme": "Item_Template", "field": "Item_Template",
              "buff": "Status_Effect_Template", "debuff": "Status_Effect_Template"}
 ACTIVE_TEMPLATE = "ActiveItem_Template"     # Items/Active
+BLANK = " \t\r\n\x03\ufeff"                # what a layer printing nothing holds (psd_edit.PAD)
 
 
 # ========================
@@ -127,6 +128,15 @@ class Templates:
 # ========================
 # The record
 # ========================
+def blank(layer) -> bool:
+    """A text layer printing nothing (the 18 minions' empty Ability layers, 11-13): no part; an ability added to its card
+    is laid out as on a card with none (psd_edit.add_ability removes it)."""
+    try:
+        return not (layer.text or "").strip(BLANK)
+    except Exception:                           # noqa: BLE001 - text psd-tools can't read: not blank
+        return False
+
+
 def _part(parser: PSDParser, layer, named: Optional[bool] = None) -> dict:
     out = {"id": layer.layer_id, "layer": layer_path(layer)}
     if named is not None:
@@ -144,7 +154,7 @@ def _select(psd, name: str, parser: PSDParser) -> tuple:
     """One picture's ([title layers], [ability layers], [(follower, [of], how)])."""
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
     titles, copies = parser.title_parts(psd, texts, name)
-    abilities = parser.ability_parts(texts)
+    abilities = [layer for layer in parser.ability_parts(texts) if not blank(layer)]
     follow = [(layer, [twin], "copy") for layer, twin in copies]
     parts = titles + abilities
     title = name_key(" ".join(title_text(layer.text) for layer in titles))

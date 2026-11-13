@@ -1235,14 +1235,15 @@ def test_gate_bytes_refuses_a_renamed_title(monkeypatch):
 def test_a_title_or_ability_printed_twice_refuses(clone):
     """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
     two offset copies of its ability): a bake would change one and leave the copies (a plain ability edit there goes
-    through set_parts, which edits them too). An empty layer has no copies (Anubisath's empty Ability beside an empty 'Layer 1')."""
+    through set_parts, which edits them too). An empty Ability is none (11-13: Anubisath's, beside an empty 'Layer 1')."""
     with pytest.raises(pe.Refused, match="the title is printed again by 'Name copy'") as refused:
         pe.name_layer(PSDImage.open(_card(clone, EDEN)[0]), card_name(EDEN))
     assert refused.value.code == "unsupported-card"
     with pytest.raises(pe.Refused, match="the ability is printed again by 'Attacks are piercing") as refused:
         pe.ability_layer(PSDImage.open(_card(clone, SOMETHING)[0]))
     assert refused.value.code == "unsupported-card"
-    assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
+    with pytest.raises(pe.Refused, match="0 visible Ability layers"):
+        pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0]))
 
 
 def test_split_title_keeps_its_printed_letter_case(clone, parser):
@@ -2718,6 +2719,27 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path):
     (_, _, w0, h0), (_, _, w1, h1) = was[0], now[0]
     assert now[1] == pytest.approx([v * (w1 / w0 if k % 2 == 0 else h1 / h0) for k, v in enumerate(was[1])], abs=0.01)
     assert len(was[2]) >= 2 and now[2] == []    # the redraw dropped its strikes: Photoshop composes the story at open
+
+
+PROBE = "Auxiliary/Minions/Electro_Probe.psd"                     # a visible empty Ability layer (cardissues 11-13)
+
+
+def test_an_empty_ability_layer_is_none(clone, parser, chart, tmp_path):
+    """An empty Ability layer is no part and no ability_layer(): +ability lays its text out as on a card with none, the
+    empty layer removed."""
+    path, png = _card(clone, PROBE)
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, PROBE, psd)
+    assert pe.card_parts(psd, PROBE, "Electro Probe", parser)["ability"] == []
+    with pytest.raises(pe.Refused, match="0 visible Ability layers"):
+        pe.ability_layer(psd)
+    edits = {"parts": {"+ability": {"field": "ability", "text": "Attacks inflict 1T Afraid."}}}
+    baked = pe.apply_jobs(path, png, PROBE, pe.classify(parsed, edits, psd, parser).jobs, parsed, parser, str(tmp_path),
+                          str(clone / pe.FONTS_DIR), chart, psd=psd,
+                          ability_from=(PSDImage.open(clone / pe.TEMPLATE_DIR / "Creature_Template.psd"), "Creature_Template"))
+    saved = PSDImage.open(baked.psd_path)
+    assert [layer.text for layer in saved.descendants() if pe._is_text_layer(layer) and layer.name == "Ability"] == \
+        ["Attacks inflict 1T Afraid."] and "ability: its empty Ability layer removed" in baked.fx_notes
 
 
 def _frame(psd, layer) -> tuple:

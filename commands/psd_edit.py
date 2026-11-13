@@ -1112,8 +1112,8 @@ def ability_layer(psd: PSDImage):
         The layer; raises Refused("unsupported-card") for none or several, or another layer printing its words where
         they show
     """
-    visible = [layer for layer in psd.descendants()
-               if _is_text_layer(layer) and layer.is_visible() and layer.name.strip().lower() == "ability"]
+    visible = [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+               and layer.name.strip().lower() == "ability" and not psd_parts.blank(layer)]   # an empty one: none
     if len(visible) != 1:
         raise Refused("unsupported-card", f"{len(visible)} visible Ability layers")
     copy = _copy(psd, visible[0])
@@ -11658,6 +11658,15 @@ def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_d
     from commands import ability_place
     faces = lambda: [_story_font_name(entry) for entry in _story_fonts(_txt2(psd)) or []] if _txt2(psd) is not None else []
     before = faces()
+    was, removed, stories, moved = lyid_index(original if original is not None else psd), [], [], []
+    for blank in [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+                  and base_name(layer).strip().lower() == "ability" and psd_parts.blank(layer)]:
+        old = was.get(blank.layer_id)           # an empty Ability layer: gone first, as on a card with none (11-13)
+        if old is None:
+            raise Refused("bytes", f"{blank.name!r}: an empty Ability layer is not in the card as opened")
+        removed.append(_record_index(old))
+        stories += [story_index(old)] if story_index(old) is not None else []
+        moved += remove_layer(psd, blank)
     raw = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n").replace("\n", "\r")
     planned = ability_place.plan(psd, rel or f"{card}.psd", template, f"{TEMPLATE_DIR}/{name}.psd", raw, fonts_dir, parser)
     layer = insert_ability(psd, template)
@@ -11671,7 +11680,9 @@ def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_d
     x0, y0, x1, y1 = planned.box
     design = on_panel_design(psd, layer, planned.panel) if planned.panel else None
     out = _combine("ability", [(layer, edit, False)], [_record_ids(psd)], psd, {}, {ADD_ABILITY: text},
-                   notes=[f"ability: ability layer created from {name}: check its place",
+                   removed, stories, moved,
+                   notes=[*(["ability: its empty Ability layer removed"] if removed else []),
+                          f"ability: ability layer created from {name}: check its place",
                           f"ability: box {x0},{y0} to {x1},{y1}", *planned.notes]
                    + ([f"ability: {design}; check the card"] if design else []))
     out.added, out.added_stories = [_record_index(layer)], [story]
