@@ -675,7 +675,8 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
   - `data/changelog.json` (the Changes page's Changelog tab: the card sync's events), `data/archive.json` (the Archive
     tab: `archived` rows with their tag: Renamed, Retired, Deleted) and `data/edits.json` (Database edits: the edited
     and authors events, edit batches); each tab loads only its own (since 2026-11-11; before, all three were in
-    changelog.json, 3.3 MB).
+    changelog.json, 3.3 MB). Since 2026-11-13 a push's minor events are a stub in changelog.json (`minor_split`: seq,
+    at, build, push, counts by kind) and load from `data/changelog-minor.json` when a "minor changes" fold first opens.
   - `data/rules.json`, `data/history.json`, `data/versions.json` (loaded only when the rulebook, a card or the
     changes feed needs them). `versions.json` holds a commits table plus per-card `[[commit index, path then if
     different], …]`, newest first; ~27 KB gzipped, 3,211 versions of 725 cards from 356 commits since 2023-11-05.
