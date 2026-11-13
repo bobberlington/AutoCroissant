@@ -574,8 +574,9 @@ def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
     """
     Whether with_bars pictures the card: custom or item bars (card_checks.bar_style "custom", "few"), layer-comp bars of
     its own (psd_edit.comp_custom: the Isaac bars), a stat past 10 (the cells draw 0-10), a layer-comp bar at 0 (its lit
-    look is hidden under the darks: the cells can only borrow another row's), else a stat mock_misses finds; never a
-    tagged PSD's (one picture only: the cells') or a card without stats.
+    look is hidden under the darks: the cells can only borrow another row's) or printing its value (Baba's digit: the
+    cells draw none), else a stat mock_misses finds; never a tagged PSD's (one picture only: the cells') or a card
+    without stats.
     """
     if not any(isinstance(card.get(stat), int) for stat in psd_edit.STAT_FIELDS) or png.size != psd.size \
             or len(variants_of(psd)) > 1:
@@ -587,6 +588,8 @@ def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
     if any(_own(layer) for bars in comps.values() for layer, _, _ in bars):
         return True
     if any(card.get(stat) == 0 and comps.get(stat) for stat in psd_edit.STAT_FIELDS):
+        return True
+    if any(psd_edit.bar_digits(psd, box, value) for bars in comps.values() for _, value, box in bars if value is not None):
         return True
     return bool(mock_misses(view(png), psd, card, _stats(psd)))
 

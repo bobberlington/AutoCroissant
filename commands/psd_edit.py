@@ -346,6 +346,8 @@ class Edit:
     added_stories: list = field(default_factory=list)  # its Txt2 story's TextIndex in the new card (gate_stories)
     bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
     comps: list = field(default_factory=list)   # record indices of the layer-comp bars it set (set_comp)
+    digits: list = field(default_factory=list)  # record indices of the bars' printed digits it set (set_comp: Baba's '6'),
+    #   their TextIndex in stories
     scaled: dict = field(default_factory=dict)  # old record index -> new rect (top, left, bottom, right): a shrunk star's
     #   layer (IconPlan.scaled), with its copies and moves in shifted and copied
     files: dict = field(default_factory=dict)   # repo path -> bytes: a placed title's file set again (set_placed_title)
@@ -3726,15 +3728,21 @@ def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: int) -> tu
     return np.ascontiguousarray(rgba[..., :3]), np.ascontiguousarray(rgba[..., 3])
 
 
-def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1) -> Edit:
+def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1,
+             fonts_dir: Optional[str] = None) -> Edit:
     """
     A stat on a creature's layer-comp bar (comp_row): its chosen comp (SoLd "comp") set to the comp named str(value) and
     its pixels drawn again (comp_render), as Photoshop's Properties panel does (it also gives the instance a new "placed"
-    ID); nothing else changes (gate_bytes, _comp_record).
+    ID); a digit the bar prints (bar_digits: Baba's 'IS 6') set to the value (set_text_layer, in its own font, size and
+    place; owner 2026-11-13: "even if it looks wrong", the bar's other words kept); nothing else changes (gate_bytes,
+    _comp_record).
+
+    Args:
+        fonts_dir: MDW/Fonts, for a printed digit (None: the environment's, font_check.local_fonts)
 
     Returns:
-        Edit over the bar (Edit.comps); raises Refused for no one bar, a hidden or comp-less one, a value it has no
-        comp for (stat>10) and a bar comp_render cannot draw
+        Edit over the bar (Edit.comps, Edit.digits); raises Refused for no one bar, a hidden or comp-less one, a value
+        it has no comp for (stat>10) and a bar comp_render cannot draw
     """
     bars = comp_row(psd, stat, creature)
     if len(bars) != 1:
@@ -3747,10 +3755,6 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
         raise Refused("unsupported-card", f"{stat}: the parser reads {read.get(stat)}, the bar shows {old}")
     if value < 0:
         raise ValueError(f"{stat} {value}: not a stat")
-    printed = bar_text(psd, box)
-    if printed is not None:
-        raise Refused("unsupported-card", f"{stat} {value}: its bar prints {printed!r} as text, which no stat edit "
-                                          "changes: edit it in Photoshop")
     placed = placed_data(layer)
     ids = {int(name): cid for cid, name in comp_names(placed).items()}
     if value not in ids:
@@ -3763,20 +3767,30 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     from psd_tools.api.layers import TypeLayer     # the fork's raster writer: channels and rect, the record kept
     TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
     layer._invalidate_bbox()
-    return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+    edit = Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+    for digit in bar_digits(psd, box, old):
+        if fonts_dir is None:
+            from commands.font_check import local_fonts
+            fonts_dir = local_fonts()
+        done = set_text_layer(psd, "name", str(value), fonts_dir, layer=digit)
+        edit.layers.append(digit)
+        edit.digits += done.records
+        edit.stories.append(done.story)
+        edit.region = union_box([edit.region, done.region])
+        edit.notes += [note.replace("name: ", f"{stat}: ", 1) for note in done.notes]
+    return edit
 
 
-def bar_text(psd: PSDImage, box: tuple) -> Optional[str]:
-    """The text of a visible type layer inside a layer-comp bar's box (Baba's bars spell 'IS 6'), else None."""
+def bar_digits(psd: PSDImage, box: tuple, value: int) -> list:
+    """The visible type layers centred in a layer-comp bar's box that print its value (Baba's '6' in 'IS 6')."""
+    out = []
     for layer in psd.descendants():
         if layer.kind == "type" and layer.is_visible():
             x0, y0, x1, y1 = layer.bbox
-            if box[0] <= (x0 + x1) / 2 <= box[2] and box[1] <= (y0 + y1) / 2 <= box[3]:
-                try:
-                    return (layer.text or "").strip() or layer.name
-                except Exception:               # noqa: BLE001 - text psd-tools can't read: its name
-                    return layer.name
-    return None
+            if box[0] <= (x0 + x1) / 2 <= box[2] and box[1] <= (y0 + y1) / 2 <= box[3] \
+                    and (layer.text or "").strip() == str(value):
+                out.append(layer)
+    return out
 
 
 def _comp_placed(layer, placed, stat: str, value: int) -> str:
@@ -3790,7 +3804,7 @@ def _comp_placed(layer, placed, stat: str, value: int) -> str:
     return made
 
 
-def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:
+def set_creatures(psd: PSDImage, parsed: dict, changes: list, fonts_dir: Optional[str] = None) -> list:
     """
     A `creatures` job (_classify_creatures): each creature's changed stats on its bar (creature_bar, found before any
     is set), a shared bar set once: layer-comp bars by set_comp, digit rows by set_stat on the creature's rows.
@@ -3799,6 +3813,7 @@ def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:
         psd: The open card (edited in place)
         parsed: parse_card() of the card before the edit
         changes: [{stat: value} per creature]
+        fonts_dir: set_comp's
 
     Returns:
         [Edit]: one over the layer-comp bars, one per digit-row bar; each old as changes with the printed values, field
@@ -3813,7 +3828,7 @@ def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:
                 continue
             done.add(key)
             if comp_bars(psd)[stat]:
-                comps.append(set_comp(psd, parsed, stat, value, n))
+                comps.append(set_comp(psd, parsed, stat, value, n, fonts_dir))
                 continue
             try:
                 rows.append(set_stat(psd, parsed, stat, value, n))
@@ -3824,13 +3839,16 @@ def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:
     old = [{stat: one.get(stat) for stat in stats} for one, stats in zip(parsed["card"]["creatures"], changes)]
     records = [index for edit in comps for index in edit.comps]
     out = [Edit("creatures", old, changes, [layer for edit in comps for layer in edit.layers], records,
-                union_box([edit.region for edit in comps]), comps=records)] if comps else []
+                union_box([edit.region for edit in comps]), comps=records,
+                digits=[i for edit in comps for i in edit.digits], stories=[i for edit in comps for i in edit.stories],
+                notes=[note for edit in comps for note in edit.notes])] if comps else []
     for edit in rows:
         edit.field, edit.old, edit.new = "creatures", old, changes
     return out + rows
 
 
-def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1) -> Edit:
+def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1,
+             fonts_dir: Optional[str] = None) -> Edit:
     """
     Toggle a stat: the digit str(value) visible in "<Stat> Dark", the other nine hidden, 10 = none.
 
@@ -3848,13 +3866,14 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
         stat: hp, def, atk or spd
         value: 0-10
         creature: Whose bar on a card of several creatures (set_creatures): its own rows, or the ones it shares
+        fonts_dir: set_comp's
 
     Returns:
         Edit over the toggled digits; raises Refused for other row shapes and a missing digit (unsupported-card) and
         values the row cannot show (stat>10)
     """
     if comp_bars(psd)[stat]:                    # one smart object, its layer comp the value
-        return set_comp(psd, parsed, stat, value, creature)
+        return set_comp(psd, parsed, stat, value, creature, fonts_dir)
     try:
         rows = template_rows(psd, stat, creature)
     except Refused as refused:                  # the card maker's own bar (layout support)
@@ -9863,6 +9882,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     for edit in edits:
         for index in edit.comps:                # a layer-comp bar: its rect, pixels and SoLd block (_comp_record)
             allowed[index] = ("comp", ALLOWED_RECORD_FIELDS["comp"])
+        for index in edit.digits:               # its printed digit: as a text edit
+            allowed[index] = ("text", ALLOWED_RECORD_FIELDS["text"])
     rebuilt = {index: spec for edit in edits for index, *spec in edit.rebuilt}
     restyled = {index: blocks for edit in edits for index, blocks in edit.restyled}
     toggles = {index for edit in edits for index in edit.toggled}
@@ -11054,9 +11075,9 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 raise Refused("error", f"{name}: {type(error).__name__}: {error}", name) from error
             edits.append(edit)
         elif name in STAT_FIELDS:
-            edits.append(set_stat(new, parsed, name, value))
+            edits.append(set_stat(new, parsed, name, value, fonts_dir=fonts_dir))
         elif name == "creatures":
-            edits += set_creatures(new, parsed, value)
+            edits += set_creatures(new, parsed, value, fonts_dir)
         elif name == "ability" and _lone_part(new) is None:     # copies: as its one box (§3)
             record = card_parts(old, rel, _card_name(parsed), parser)
             found = record.get("ability") or []
@@ -11151,7 +11172,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     hold.enter_context(variant_view(reopened, view))    # the read-back and re-render as picture `view`
 
     start = perf_counter()
-    stories = {story for edit in edits if edit.field in (*TEXT_FIELDS, "colors") for story in [edit.story, *edit.stories]}
+    stories = {story for edit in edits if edit.field in (*TEXT_FIELDS, "colors") or edit.digits
+               for story in [edit.story, *edit.stories]}
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],

@@ -588,15 +588,20 @@ def test_bars_with_no_comp_applied_last(clone, parser, tmp_path):
 BABA = ("2746abaa00679647b385787c4bb4e384b135ad87", "Creatures/Other/5 Stars/Baba.psd")
 
 
-def test_bars_printing_their_value_refuse(clone, parser, tmp_path):
-    """Baba's bars spell 'HEALTH IS GREEN AND IS 6' (a '6' text layer in each row): a stat edit refuses (owner 11-13;
-    Card checks' bars info: test_card_checks)."""
-    path = tmp_path / "Baba.psd"
-    path.write_bytes(card_blob(clone, BABA[0]))
-    psd = PSDImage.open(str(path))
-    parsed = pe.parse_card(parser, str(path), BABA[1], psd)
-    with pytest.raises(pe.Refused, match=r"hp 8: its bar prints '6' as text"):
-        pe.set_comp(psd, parsed, "hp", 8)
+def test_bars_printing_their_value_bake(clone, parser, tmp_path):
+    """Baba's bars spell 'HEALTH IS GREEN AND IS 6' (a '6' text layer in each row): a stat edit sets the comp and the
+    row's digit, centred in its cell as it was, two digits too; nothing else changes (owner 11-13)."""
+    path, saved = str(tmp_path / "Baba.psd"), str(tmp_path / "new.psd")
+    Path(path).write_bytes(card_blob(clone, BABA[0]))
+    for value in (8, 20):
+        psd = PSDImage.open(path)
+        edit = pe.set_comp(psd, pe.parse_card(parser, path, BABA[1], psd), "hp", value, fonts_dir=str(clone / pe.FONTS_DIR))
+        digit = edit.layers[1]
+        assert digit.text == str(value) and abs(sum(digit.bbox[0::2]) / 2 - 808.5) <= 3 and digit.bbox[2] < 847
+        psd.save(saved, update_preview=False)
+        assert [name for _, name, _ in pe.gate_bytes(path, saved, [edit])[0]] == ["6", "Health"]
+        assert pe.gate_stories(PSDImage.open(path), PSDImage.open(saved), edit.stories) == edit.stories
+        assert pe.parse_card(parser, saved, BABA[1], PSDImage.open(saved))["card"]["hp"] == value
 
 
 ZEMER = ("a2d3064be84eebb4b9dc4cbf6cf5090ea1d5a48f", "Creatures/Hollow Knight/5 Stars/Ze'mer.psd")

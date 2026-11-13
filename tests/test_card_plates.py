@@ -138,7 +138,7 @@ def test_creature_pictures_are_the_bakes(clone, tmp_path):
 def test_a_comp_bar_at_zero_is_pictured(monkeypatch):
     """A layer-comp stat at 0 is pictured: its lit look is under the darks (the 4 own-look rows, 11-12), the cells could
     only borrow another row's."""
-    psd = type("P", (), {"size": (10, 20)})()
+    psd = type("P", (), {"size": (10, 20), "descendants": lambda self: []})()
     monkeypatch.setattr(cp, "variants_of", lambda psd: [None])
     monkeypatch.setattr(cp, "comp_bars", lambda psd: {"hp": [], "def": [("bar", 0, (0, 0, 1, 1))], "atk": [], "spd": []})
     monkeypatch.setattr(cp, "_own", lambda layer: False)
