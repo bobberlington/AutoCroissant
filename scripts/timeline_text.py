@@ -138,14 +138,14 @@ def type_name(stem):
 # Inputs
 # ========================
 def discord_inputs():
-    """The catalogue's card-shaped pictures: one row per stored picture (first post)."""
-    rows = []
-    for r in jsonl(join(ROOT, "derived/catalogue/pictures.jsonl")):
+    """The catalogue's card-shaped pictures: one row per stored picture (its first post; reposts share the file)."""
+    rows = {}
+    for r in sorted(jsonl(join(ROOT, "derived/catalogue/pictures.jsonl")), key=lambda r: r["at"]):
         if r.get("size_class") in CARD_CLASSES:
             sha = splitext(basename(r["file"]))[0]
-            rows.append({"id": "d:" + sha, "src": "discord", "file": r["file"], "at": r["at"], "channel": r["channel"],
-                         "w": r["w"], "h": r["h"]})
-    return rows
+            rows.setdefault("d:" + sha, {"id": "d:" + sha, "src": "discord", "file": r["file"], "at": r["at"],
+                                         "channel": r["channel"], "w": r["w"], "h": r["h"]})
+    return list(rows.values())
 
 
 def old_inputs():
@@ -1384,7 +1384,7 @@ def calibrate():
             for rd in rds:
                 for t in truth.get(rd["id"], []):
                     v = usable_truth(field, t)
-                    if v is not None:
+                    if v is not None and not t["how"].startswith("eye:val_"):
                         labelled.append((rd, v, t.get("own") or []))
                         break
             options = [{}]
@@ -1433,14 +1433,37 @@ def calibrate():
         n = cal["eras"][f"{era}/{src}"][field]["n"]
         if n >= MIN_N:
             continue
-        donor = next((choices[(era, s, field)] for s in ("old", "discord", "today") if s != src and (era, s, field)
-                      in choices and cal["eras"][f"{era}/{s}"][field]["n"] >= MIN_N), None)
-        cal["eras"][f"{era}/{src}"][field]["borrowed"] = bool(donor)
-        choices[(era, src, field)] = donor if donor else (how, None)
+        donor = next((choices[(era, s, field)] + (f"{era}/{s}",) for s in ("old", "discord", "today")
+                      if s != src and (era, s, field) in choices and cal["eras"][f"{era}/{s}"][field]["n"] >= MIN_N),
+                     None)
+        entry = cal["eras"][f"{era}/{src}"][field]
+        if donor:
+            entry.update(borrowed=donor[2], how=donor[0], bar=donor[1])
+            rds = by_era[(era, src)]
+            entry["share_above_all"] = round(sum(1 for rd in rds if donor[1] is not None and field_read(
+                rd, field, donor[0])[2] >= donor[1]) / len(rds), 4) if rds else None
+        choices[(era, src, field)] = donor[:2] if donor else (how, None)
+    for (era, src), rds in by_era.items():          # held-out eye checks (eye/val_*.json) of the final bars
+        for field in FIELDS:
+            how, bar = choices.get((era, src, field), ({}, None))
+            rows = []
+            for rd in rds:
+                for t in truth.get(rd["id"], []):
+                    v = usable_truth(field, t)
+                    if v is not None and t["how"].startswith("eye:val_"):
+                        val, method, conf = field_read(rd, field, how)
+                        rows.append((bar is not None and val is not None and conf >= bar,
+                                     is_right(field, val, v, rd.get("kind") == "card")))
+            if rows:
+                cal["eras"][f"{era}/{src}"][field]["validation"] = {
+                    "n": len(rows), "sure": sum(r[0] for r in rows), "right_sure": sum(r[0] and r[1] for r in rows),
+                    "right_all": sum(r[1] for r in rows)}
     write_json(join(OUT, "calibration.json"), cal)
     outs = {"reads": [], "today": []}
+    where = {i["id"]: {k: i[k] for k in ("file", "blob", "path") if k in i} for i in all_inputs(("discord", "old"))}
     for rid, rd in raw.items():
-        row = {"id": rid, "src": rd["src"], "era": rd["era"], "era_how": rd.get("era_how"), "w": rd["w"], "h": rd["h"]}
+        row = {"id": rid, "src": rd["src"], "era": rd["era"], "era_how": rd.get("era_how"), "w": rd["w"], "h": rd["h"],
+               **where.get(rid, {})}
         for field in FIELDS:
             how, bar = choices.get((rd["era"], rd["src"], field), ({}, None))
             val, method, conf = field_read(rd, field, how)
