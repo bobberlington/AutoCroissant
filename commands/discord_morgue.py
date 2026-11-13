@@ -1,6 +1,6 @@
 """
 The Morgue candidates and the ideas never ported, from the card timelines' lost cards (docs/Future/CARD_TIMELINE.md,
-stage 2, STAGE1 S7; owner Q1=C and Q2=A, provisional until the owner's OK). Run after `discord_verdicts build`:
+stage 2, STAGE1 S7; the owner's answers Q1 and Q2, confirmed 11-13). Run after `discord_verdicts build`:
 
     python -m commands.discord_morgue build  [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_morgue sheets [--root <dir>]
@@ -11,9 +11,13 @@ build   Each lost card (derived/match/lost_groups.json) and each lost card of th
         already in MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card. The check by eye
         (derived/morgue/eye.json) decides: name, status, the card it is, nearest live card, splits, merges, pictures
         added or dropped. A lost card with no eye entry keeps the automatic status (MDW names, archived renames,
-        the lost group's) and is marked unchecked. Outputs under the archive's derived/morgue/ (never a repo):
-        candidates.json (candidates, then the lost cards that are not, with why), ideas.json, thumbs/ (webp, every
-        entry's pictures).
+        the lost group's) and is marked unchecked. A candidate or idea whose picture is the same picture as a row
+        given to a live card or the unsure review (whole and art within TWIN bits) keeps that row only when the eye
+        adds it (then listed in taken: the review page drops it there) or rules it another picture (not_twin);
+        else it goes to review (status twin), so no picture is both a live card's and the Morgue's. Outputs under
+        the archive's derived/morgue/ (never a repo): candidates.json (candidates, then the lost cards that are not,
+        with why; taken; created_hints: the renamed and live ones' first dates for S6), ideas.json, thumbs/ (webp,
+        every entry's pictures).
         Candidates go only to the website's Morgue list (cards.json morgue): never cards[], decks, Unused, the
         default search or Mentioned by. No message text, posters or authors.
 sheets  Contact sheets for the check by eye: each candidate's and idea's thumbs beside its nearest live card.
@@ -47,19 +51,25 @@ SAME_NAME = 0.9                                 # a title this near an MDW card'
 NAME_NEAR = 0.75                                # nearest live card by name at least this, else by look
 FAR_BITS = 12.0                                 # a nearest look farther than this: far (discord_verdicts' far bits)
 THUMB_W = 320
-CANDIDATE, IDEA = "candidate", "idea"
+TWIN = dm.TWIN_BITS                             # whole and art this near: the same picture
+LISTED = ("version_sure", "version_unsure", "draft", "unsure")     # rows a live card or the unsure review lists
+CANDIDATE, IDEA, TWIN_STATUS = "candidate", "idea", "twin"
 NOT = {"morgue": "already in MDW/The Morgue", "unfinished": "in MDW/Unfinished (kept, not retired)",
        "renamed": "an old name or draft of a live card (review: its timeline)", "live": "a live card's own "
        "picture (review: its timeline)", "split": "an old card that became "
        "two (owner Q3=A, review)", "not a card": "not a card of ours", "backup": "a backup copy of another card",
-       "merged": "the same card as another lost card", "review": "no card evidence (review)"}
-ABOUT = ("Morgue candidates (owner Q1=C, Q2=A; provisional): joke cards (meme-cards, joke-ideas, cursed, "
+       "merged": "the same card as another lost card", "review": "no card evidence (review)",
+       TWIN_STATUS: "the same picture as a live card's or an unsure row (review, never the Morgue unless the eye "
+       "takes it)"}
+ABOUT = ("Morgue candidates (owner's answers Q1, Q2, confirmed 11-13): joke cards (meme-cards, joke-ideas, cursed, "
          "idea-graveyard, or the same picture) and lost cards really played (a port or update picture, a "
          "classification channel's, an update changelog line, the old repo's file). Only for the website's Morgue "
          "list (cards.json morgue): never cards[], decks, Unused, the default search or Mentioned by. Each checked by "
-         "eye (eye.json). not_candidates: lost cards that are not, with why. why and eye notes: the review page's, never "
-         "published. No message text, posters or authors.")
-IDEAS_ABOUT = ("Ideas never ported (owner Q2=A): card drafts never played, for the review page only (never "
+         "eye (eye.json). not_candidates: lost cards that are not, with why. taken: rows listed for a live card or "
+         "the unsure review that the eye gave to a candidate or idea (the review page drops them there). "
+         "created_hints: renamed and live entries' first dates (S6: the live card's Created; weak ones only by the "
+         "owner). why and eye notes: the review page's, never published. No message text, posters or authors.")
+IDEAS_ABOUT = ("Ideas never ported (owner's answer Q2): card drafts never played, for the review page only (never "
                "published). Each checked by eye (eye.json). No message text, posters or authors.")
 
 
@@ -147,7 +157,7 @@ def played_posts(posts: list, kinds: dict) -> list:
         if not p.get("bot") and (kinds.get(p.get("channel_id")) in dv.PLAYED_KINDS or
                                  p.get("channel") in dv.PLAYED_NAMES or thread in dv.PLAYED_NAMES):
             found.add((p.get("thread") or p.get("channel"), (p.get("date") or "")[:10]))
-    return sorted(found, key=lambda x: x[1])
+    return sorted(found, key=lambda x: (x[1], x[0]))
 
 
 def first_post(posts: list) -> Optional[dict]:
@@ -156,11 +166,48 @@ def first_post(posts: list) -> Optional[dict]:
     return min(people or posts, key=lambda p: int(p["message"])) if posts else None
 
 
-def picture_of(row: dict) -> dict:
+def picture_of(row: dict, takes: bool = False) -> dict:
+    """One picture; taken (a candidate's or idea's): the list it leaves (a row a live card or the unsure review lists,
+    added by eye)."""
     post = first_post(row.get("posts") or []) or {}
+    taken = {"verdict": row["verdict"], "card": row_card(row)} if takes and row.get("verdict") in LISTED else None
     return {"id": row["id"], "date": post.get("date"), "channel": post.get("channel"), "thread": post.get("thread"),
             "cell": row.get("cell"), "w": row.get("w"), "h": row.get("h"), "thumb": f"thumbs/{row['id']}.webp",
-            "source": "discord"}
+            "source": "discord", **({"taken": taken} if taken else {})}
+
+
+def twin_finder(rows: dict) -> Callable:
+    """picture id -> the LISTED rows that are the same picture (whole and art within TWIN bits; the whole alone when
+    either has no art)."""
+    listed = [r for r in rows.values() if r.get("verdict") in LISTED and r.get("whole")]
+    if not listed:
+        return lambda pid: []
+    np = dm._np()
+
+    def table(part):
+        return {k: np.frombuffer(b"".join(bytes.fromhex(r[part][k]) if r.get(part) else bytes(n) for r in listed),
+                                 dtype=np.uint8).reshape(len(listed), n) for k, n in (("p", 8), ("d", 8), ("q", 32))}
+    whole, art = table("whole"), table("art")
+    has_art = np.array([bool(r.get("art")) for r in listed])
+
+    def dist(arrays, h):
+        return sum(np.bitwise_count(arrays[k] ^ np.frombuffer(bytes.fromhex(h[k]), dtype=np.uint8)).sum(axis=1) /
+                   (4 if k == "q" else 1) for k in ("p", "d", "q")) / 3
+
+    def find(pid: str) -> list:
+        row = rows.get(pid) or {}
+        if not row.get("whole"):
+            return []
+        near = dist(whole, row["whole"]) <= TWIN
+        if row.get("art"):
+            near &= ~has_art | (dist(art, row["art"]) <= TWIN)
+        return [listed[i]["id"] for i in np.flatnonzero(near) if listed[i]["id"] != pid]
+    return find
+
+
+def row_card(row: dict) -> Optional[str]:
+    """The live card a listed row gives, or its first maybe."""
+    return row.get("card") or next(iter(row.get("maybe") or []), None)
 
 
 def unique_slug(name: str, used: set) -> str:
@@ -221,17 +268,21 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         e = dict(eye.get(old["id"]) or {})
         entries[old["id"]] = {"group": None, "eye": e, "status": e.get("status") or CANDIDATE, "card": e.get("card"),
                               "pictures": [], "old": old}
-    for gid, x in list(entries.items()):         # splits (by eye): one lost card each
-        for n, part in enumerate(x["eye"].get("split") or []):
-            if n == 0:
-                x["pictures"] = list(part["pictures"])
-                x["eye"] = {**x["eye"], **{k: v for k, v in part.items() if k != "pictures"}}
-                continue
+    for gid, x in list(entries.items()):         # splits (by eye): one lost card each, its own title, the group kept
+        parts = x["eye"].get("split") or []
+        base = {k: v for k, v in x["eye"].items() if k != "split"}     # the first part keeps the group's rulings
+        shared = {k: base[k] for k in ("status", "kind") if k in base}  # the others only its status and kind
+        status, card = x["status"], x["card"]
+        for n, part in enumerate(parts):
+            own = {k: v for k, v in part.items() if k != "pictures"}
             row = rows[part["pictures"][0]]
-            pid = dv.group_id(row["sha256"], row.get("cell"))
-            entries[pid] = {"group": {**x["group"], "id": pid}, "eye": {**x["eye"], **part, "split": None},
-                            "status": part.get("status") or x["status"], "card": part.get("card"),
-                            "pictures": list(part["pictures"]), "old": None}
+            split = {"eye": {**(shared if n else base), **own}, "status": part.get("status") or status,
+                     "card": part.get("card") or card, "pictures": list(part["pictures"]),
+                     "title": row.get("title_read") or part.get("name")}
+            if n == 0:
+                x.update(split)
+            else:
+                entries[dv.group_id(row["sha256"], row.get("cell"))] = {"group": x["group"], "old": None, **split}
     for gid, x in entries.items():              # merges (by eye) and pictures added or dropped
         into = x["eye"].get("merge")
         if into in entries:
@@ -240,6 +291,14 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     for x in entries.values():
         drop = set(x["eye"].get("drop") or [])
         x["pictures"] = [p for p in dict.fromkeys(x["pictures"] + list(x["eye"].get("add") or [])) if p not in drop]
+    twins = twin_finder(rows)
+    for x in entries.values():                  # twins of listed rows: taken by eye, else review
+        if x["status"] not in (CANDIDATE, IDEA):
+            continue
+        unlike = set(x["eye"].get("not_twin") or [])
+        x["twins"] = sorted({t for p in x["pictures"] for t in twins(p)} - set(x["pictures"]) - unlike)
+        if x["twins"]:
+            x.update(status=TWIN_STATUS, card=row_card(rows[x["twins"][0]]))
     candidates, ideas, others = [], [], []
     for gid, x in entries.items():
         entry = describe(gid, x, rows, kinds, live, used if x["status"] == CANDIDATE else None)
@@ -247,14 +306,22 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     for found in (candidates, ideas, others):
         found.sort(key=lambda e: (e["first"]["date"] or "9", e["id"]))
     thumbs(paths, candidates + ideas + others, rows)
+    taken = [{"picture": p["id"], "entry": e["id"], **p["taken"]} for e in candidates + ideas for p in e["pictures"]
+             if p.get("taken")]
+    assert len({t["picture"] for t in taken}) == len(taken), "a picture taken twice"
+    hints = [{"entry": e["id"], "name": e["name"], "card": e["card"], "date": e["first"]["date"],
+              "channel": e["first"]["channel"], "weak": bool(e.get("weak"))}
+             for e in others if e["status"] in ("renamed", "live", TWIN_STATUS) and e.get("card") in live]
     unchecked = [e["id"] for e in candidates + ideas + others if not e["eye"]["checked"]]
     counts = {"candidates": len(candidates), "jokes": sum(e["kind"] == "joke" for e in candidates),
               "played": sum(e["kind"] == "played" for e in candidates), "ideas": len(ideas),
               "not_candidates": dict(Counter(e["status"] for e in others)),
-              "pictures": sum(len(e["pictures"]) for e in candidates), "unchecked": unchecked}
+              "pictures": sum(len(e["pictures"]) for e in candidates), "taken": len(taken),
+              "twins_open": [e["id"] for e in others if e["status"] == TWIN_STATUS], "unchecked": unchecked}
     stamp = dm.now_iso()
     dm.write_json(join(paths.out, "candidates.json"), {"generated": stamp, "about": ABOUT, "counts": counts,
-                                                       "candidates": candidates, "not_candidates": others})
+                                                       "candidates": candidates, "not_candidates": others,
+                                                       "taken": taken, "created_hints": hints})
     dm.write_json(join(paths.out, "ideas.json"), {"generated": stamp, "about": IDEAS_ABOUT, "ideas": ideas})
     log(dm.dumps(counts, indent=1))
     return counts
@@ -263,7 +330,7 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
 def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optional[set]) -> dict:
     """One lost card's entry: name, kind, first date and channel, pictures, nearest live card, why."""
     g, e, old = x["group"] or {}, x["eye"], x["old"]
-    pics = [picture_of(rows[p]) for p in x["pictures"] if p in rows]
+    pics = [picture_of(rows[p], x["status"] in (CANDIDATE, IDEA)) for p in x["pictures"] if p in rows]
     posts = [p for pid in x["pictures"] if pid in rows for p in rows[pid].get("posts") or []]
     if old:
         pics.append({"id": old["id"], "date": utc(old["first"]["date"]), "commit": old["first"]["commit"],
@@ -279,7 +346,9 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
             meme = sorted({p["channel"] for p in posts if p.get("morgue")})
             why.append(f"a joke card: posted in {', '.join(meme)}" if meme else
                        "a joke card: the same picture as one posted in a meme channel")
-        why += [f"a {c} picture ({d})" for c, d in played] if kind == "played" else []
+        why += [f"{'an' if c[:1] in 'aeiou' else 'a'} {c} picture ({d})" for c, d in played]
+        why += [f"{p['id']}: by eye this card's; taken from {p['taken']['card'] or 'no card'} ({p['taken']['verdict']})"
+                for p in pics if p.get("taken")]
         if kind == "played" and g.get("changelog_days"):
             why.append(f"named in update changelogs on {', '.join(g['changelog_days'][:6])}")
         if old:
@@ -288,13 +357,20 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
                        f"{', deleted' if old.get('deleted') else ', at its end'})")
     else:
         why.append(NOT.get(x["status"], x["status"]) + (f": {x['card']}" if x.get("card") else ""))
+    for t in x.get("twins") or []:
+        twin, post = rows[t], first_post(rows[t].get("posts") or []) or {}
+        why.append(f"the same picture as {t} ({twin['verdict']} {row_card(twin)}, {post.get('channel')} "
+                   f"{(post.get('date') or '')[:10]})")
+    if e.get("weak"):
+        why.append(f"a weak link, not picture-backed: {e['weak']}")
     if e.get("note"):
         why.append(e["note"])
     near_name = (g.get("nearest") or {}).get("name") or []
     near_look = (g.get("nearest") or {}).get("look") or []
-    if e.get("nearest") or x["status"] in ("renamed", "live") and x.get("card") in live:
+    if e.get("nearest") or x["status"] in ("renamed", "live", TWIN_STATUS) and x.get("card") in live:
         cid = e.get("nearest") or x["card"]
-        nearest = {"card": cid, "name": live.get(cid), "by": "eye"}
+        nearest = {"card": cid, "name": live.get(cid), "by": "eye" if e.get("nearest") or x["status"] !=
+                   TWIN_STATUS else "twin"}
     elif near_name and near_name[0]["ratio"] >= NAME_NEAR:
         nearest = {**near_name[0], "by": "name"}
     elif near_look:
@@ -307,7 +383,8 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
     if nearest and nearest.get("bits", 0) > FAR_BITS:
         nearest["far"] = True                   # no look alike: a hint only
     name = e.get("name") or g.get("title") or (old or {}).get("old_id") or gid
-    entry = {"id": gid, "name": name, "title_read": g.get("title") or None, "status": x["status"],
+    entry = {"id": gid, "name": name, "title_read": x.get("title") or g.get("title") or None,
+             "status": x["status"],
              "kind": kind if x["status"] == CANDIDATE else None,
              "card": x.get("card") if x["status"] != CANDIDATE else None,
              "first": {"date": utc(first.get("date")), "channel": first.get("channel") or (
@@ -321,6 +398,7 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "card_evidence": g.get("card_evidence") or ("the old repo's file" if old else None),
              "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
              if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
+             "weak": True if e.get("weak") else None, "twins": x.get("twins"),
              "why": why, "eye": {"checked": bool(e), "note": e.get("note")}}
     if used is not None:
         entry["slug"] = unique_slug(name, used)

@@ -52,10 +52,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
    Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
    Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
-   cards really played: owner Q1=C, Q2=A), ideas never ported (review only) and the rest (already in MDW/The Morgue
-   or MDW/Unfinished, an old name of a live card, a split, no card), each checked by eye (`derived/morgue/eye.json`);
-   outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. Candidates go only to the website's Morgue
-   list (cards.json morgue), never cards[], decks, Unused, the default search or Mentioned by.
+   cards really played: the owner's answers Q1, Q2), ideas never ported (review only) and the rest (already in
+   MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card), each checked by eye
+   (`derived/morgue/eye.json`); outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. A candidate's
+   picture that is the same picture (whole and art within 3 bits) as a row given to a live card or the unsure review
+   stays only when the eye takes that row (listed in `taken`: the review page drops it there) or rules it another
+   picture; else the candidate goes to review. Renamed and live entries' first dates are `created_hints` for Created
+   (weak links only by the owner). Candidates go only to the website's Morgue list (cards.json morgue), never cards[],
+   decks, Unused, the default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
