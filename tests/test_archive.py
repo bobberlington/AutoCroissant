@@ -53,6 +53,7 @@ def test_prune_archives_behind_the_history():
 def test_duplicates_are_archived_at_their_png():
     """An alt-art duplicate not seen (its PNG or original left) is a card under the archive rule: tagged at its PNG."""
     dup = _card("A Snack2", duplicate_of="A Snack")
+    dup.path = "Items/A_Snack.psd"                      # a picture-only copy: its original's path
     db = _db([_card("A Snack"), dup], seen=["A Snack"])
     assert db.prune_clean_cards(AT) == ["A Snack2"] and "A Snack2" not in db.stats
     record = db.old_stats["A Snack2"][0]
