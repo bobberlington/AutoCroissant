@@ -158,6 +158,42 @@ def test_a_variant_picture_printing_its_files_name():
     assert [p.parse(psd, rel, variant=n).display_name for n in (1, 2)] == [None, "All-Purpose Medical Kit"]
 
 
+def test_a_drawn_duplicate_is_its_psds_picture(clone):
+    """Owner 11-13 (a full picture 2): a picture-only duplicate a tagged PSD draws (Morning_Meal.png, dup_of A Snack, its
+    art tagged 'Morning Meal #2') is that picture in the data, named after its PNG, matched by its tag before the printed
+    title ('Breakfast'); its PSD stored before (no variants) is read again once; Card Edits.json unread, it stays drawn."""
+    import sys
+    from pathlib import Path
+    from psd_tools import PSDImage
+    from commands.psd_details import VERSION
+    from commands.psd_parser import PARSER_VERSION
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = {**tags, 1022: "Morning Meal #2"}[layer.layer_id]
+    folder = rel.rsplit("/", 1)[0] + "/"
+    dup = folder + "Morning_Meal.png"
+    tr = _traverser({})
+    tr.parser, tr.dup_pngs = parser(), {rel: [dup]}
+    tr.shas = {p: "0" * 40 for p in (rel, folder + "A_Snack.png", dup, folder + "A_Snack3.png")}
+    card, variants = tr._parse_psd(psd, rel, "A Snack", None)
+    assert [(v.name, v.variant, v.variant_of, v.display_name) for v in variants] == [
+        ("Morning Meal", 2, "A Snack", "Breakfast"), ("A Snack3", 3, "A Snack", "Supper")]
+    assert card.variants == ["Morning Meal", "A Snack3"] and not [p for c in (card, *variants) for p in c.problems if "VARIANT" in p]
+    tr.db.stats = {c.name: c for c in (card, *variants)}
+    assert tr._variant_duplicates() == 2 and tr._sync_duplicates() == 0 and "Morning Meal" in tr.db.stats
+    tr.edits_unread = True
+    assert tr._dup_pngs() == {rel: [dup]}                                     # A_Snack3.png: its own number
+    card.blob_sha, card.parser_version, card.variants, sha = "1" * 40, PARSER_VERSION, None, "1" * 40
+    tr.details = {sha: {"version": VERSION, "tree": [["images", "group", True, [["Morning Meal #2", "pixel", False]]]]}}
+    assert tr._psd_changed("A Snack", rel, sha)                               # stored apart: read again once
+    card.variants = ["Morning Meal", "A Snack3"]
+    assert not tr._psd_changed("A Snack", rel, sha)
+
+
 def test_duplicate_name_order():
     """A duplicate's own Card Edits.json aliases name it (the longest); with none it is titled by its own name (None)."""
     assert cd.CardBuild._duplicate_name(["late_supper", "ls"]) == "Late Supper"

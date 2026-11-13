@@ -36,7 +36,8 @@ from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, picture_only, straight, straighten_card
 from commands.github_api import HEADERS, api_url, blob_text, fetch_blob, get_with_retry
-from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
+from commands.psd_parser import (PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, layer_tag, picture_numbers,
+                                 variants_of)
 from commands.psd_remote import RangeError, RemotePSD
 
 # ========================
@@ -202,6 +203,8 @@ class CardBuild:
         record = self.details.get(sha)
         if not isinstance(record, dict):
             return False
+        if not getattr(card, "variants", None) and self.dup_pngs.get(path) and _tagged(record.get("tree")):
+            return True                           # its drawn duplicates still copies: read again once as its pictures
         from commands.psd_details import VERSION  # lazy: traverse_remote loaded it
         return record.get("version") != VERSION   # gathered before a VERSION bump: read again once, like a parser bump
 
@@ -634,13 +637,16 @@ class CardBuild:
             self.db.seen_cards.append(variant.name)
 
     def _dup_pngs(self) -> dict:
-        """card_edits.dup_pictures of the tree; Card Edits.json unread: the stats' duplicates whose PNG is in the tree."""
+        """card_edits.dup_pictures of the tree; Card Edits.json unread: the stats' duplicates whose PNG is in the tree (a
+        drawn picture's too: Gust of Trees)."""
         if not self.edits_unread:
             return dup_pictures(list(self.shas), self.edits.cards if self.edits is not None else None)
         out: dict = {}
         for card in self.db.stats.values():
             original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
-            if original is not None and original.path and picture_only(card) and duplicate_png(card) in self.shas:
+            drawn = card.name != f"{getattr(card, 'variant_of', None)}{getattr(card, 'variant', None)}"   # not NameN.png
+            if original is not None and original.path and drawn and (picture_only(card) or getattr(card, "variant_of", None)) \
+                    and duplicate_png(card) in self.shas:
                 out.setdefault(original.path, []).append(duplicate_png(card))
         return out
 
@@ -648,32 +654,27 @@ class CardBuild:
         """
         (the card, its variants or None); a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture:
         variant 1 is the card, variants 2..N wait in variant_cards once kept (named after their PNG: "A Snack2"). A
-        picture without its PNG in the tree is a problem on its card. A picture a picture-only duplicate's PNG is
-        (picture_numbers: Gust_of_Trees.png, owner 11-09) is no variant: the duplicate stays _sync_duplicates' copy.
+        picture a picture-only duplicate's PNG is (picture_numbers: Gust_of_Trees.png) is that variant, named after its
+        PNG (owner 11-13: a full picture N). A picture without its PNG in the tree is a problem on its card.
         """
         pictures = variants_of(psd)
         if len(pictures) < 2:
             return (self.parser.parse(psd, path, existing), None)
+        folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
         dups = self.dup_pngs.get(path, [])
-        if dups:
-            folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
-            drawn = picture_numbers(psd, [f"{folder}{stem}{n}.png" for n in pictures[1:]
-                                          if f"{folder}{stem}{n}.png" in self.shas] + dups)
-            apart = {n for png, n in drawn.items() if png in dups}
-            pictures = [n for n in pictures if n not in apart]
+        drawn = {n: png for png, n in picture_numbers(psd, [f"{folder}{stem}{n}.png" for n in pictures[1:]
+                                                            if f"{folder}{stem}{n}.png" in self.shas] + dups).items()
+                 if png in dups} if dups else {}
         card = self.parser.parse(psd, path, existing, variant=1)
-        if len(pictures) < 2:
-            return (card, None)
         cards = [card]
         for n in pictures[1:]:
-            own = f"{name}{n}"
+            own = card_name(drawn[n]) if n in drawn else f"{name}{n}"
             variant = self.parser.parse(psd, path, self.db.stats.get(own) or existing, variant=n)
             variant.name, variant.variant, variant.variant_of = own, n, name
             cards.append(variant)
         card.variant, card.variants = 1, [c.name for c in cards[1:]]
-        folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
         for n, each in zip(pictures, cards):
-            if self.shas and f"{folder}{stem}{'' if n == 1 else n}.png" not in self.shas:
+            if self.shas and drawn.get(n, f"{folder}{stem}{'' if n == 1 else n}.png") not in self.shas:
                 each.problems.append(f"VARIANT {n} HAS NO PNG")
         return (card, cards[1:])
 
@@ -1122,6 +1123,16 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
                 pixels[sha] = None
                 print(f"{path}: pixels not read ({e})")
     return {**psds, "files": files, "pixels": pixels}
+
+
+def _tagged(tree) -> bool:
+    """Whether a details record's layer tree has a layer tagged for a picture past 1 (' #2')."""
+    for node in tree if isinstance(tree, list) else ():
+        if isinstance(node, list) and node and isinstance(node[0], str):
+            tags = layer_tag(node[0])[1]
+            if (tags and max(tags) > 1) or (len(node) > 3 and _tagged(node[3])):
+                return True
+    return False
 
 
 def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict:
