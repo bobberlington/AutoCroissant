@@ -14,6 +14,7 @@ stars at every count, pasted in place of the mock-up's erased and redrawn ones.
 """
 from argparse import ArgumentParser
 from base64 import b64encode
+from fractions import Fraction
 from io import BytesIO
 from json import dumps, loads
 from math import ceil, floor, gcd
@@ -236,13 +237,24 @@ BAR_MOVED = 2                               # view levels: a bar pixel moved les
 BAR_BYTES = 192_000                         # a lossless bar sheet past this goes lossy (BAR_AVIF)
 BAR_AVIF = 55                               # AVIF quality (screen tuning): under the site's 720 px image's noise (q50)
 BAR_SIDE = 16383                            # WebP's largest side: the sheet's cuts stack in columns of this height
+REACH = 3                                   # LANCZOS's reach in view rows
+EDGE = REACH + 1                            # view rows at a crop's cut whose clipped reach isn't view()'s
+
+
+def _view_mode(image: Image.Image) -> str:
+    return "RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB"
 
 
 def view(image: Image.Image) -> Image.Image:
     """image as the site's VIEW_W card image before its encode (build_site.make_images: its mode, thumbnail, LANCZOS)."""
-    image = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
+    image = image.convert(_view_mode(image))
     image.thumbnail((VIEW_W, VIEW_W * 3), Image.LANCZOS)
     return image
+
+
+def _base(png: Image.Image) -> np.ndarray:
+    """png's array in view()'s mode (_band's)."""
+    return np.asarray(png.convert(_view_mode(png)))
 
 
 # The mock-up's own stat rows (TTSCardMaker site/assets/mockup.js TEMPLATES bars, barRows, isBar, labelRow, rowShows),
@@ -443,14 +455,39 @@ def star_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser
     return merged
 
 
-def _moved(was: np.ndarray, merged: Image.Image) -> Optional[tuple]:
-    """(x, y, the view's pixels there after the edit, before it) over the view pixels merged moves, None for none."""
-    now = np.asarray(view(merged).convert("RGBA"))
-    ys, xs = np.nonzero((now != was).any(-1))
+def _band(was: np.ndarray, merged: Image.Image, base: np.ndarray) -> Optional[tuple]:
+    """(first row, rows) of view(merged) where merged differs from base (_base of the PNG): a full-width crop at whole
+    periods of view()'s scale, resized alike, EDGE rows dropped at each cut; the same pixels as view(). None where that
+    can't hold (another scale, thumbnail's reduce step, another size or mode)."""
+    (w, h), (vh, vw) = merged.size, was.shape[:2]
+    scale = Fraction(h, vh)
+    p, q = scale.numerator, scale.denominator
+    if Fraction(w, vw) != scale or not 1 < scale < 4 or p > 40:
+        return None
+    mode = _view_mode(merged)
+    now = np.asarray(merged if merged.mode == mode else merged.convert(mode))
+    if now.shape != base.shape:
+        return None
+    rows = np.flatnonzero((now != base).reshape(h, -1).any(1))
+    if not len(rows):
+        return 0, was[:0]
+    pad = -(-(EDGE + REACH + 1) // q) * p       # input rows, whole periods
+    y0, y1 = max(0, (int(rows[0]) - pad) // p * p), min(h, (int(rows[-1]) + pad) // p * p + p)
+    band = np.asarray(Image.fromarray(now[y0:y1]).resize((vw, (y1 - y0) * q // p), Image.LANCZOS).convert("RGBA"))
+    cut0, cut1 = EDGE if y0 else 0, EDGE if y1 < h else 0
+    return y0 * q // p + cut0, band[cut0:len(band) - cut1]
+
+
+def _moved(was: np.ndarray, merged: Image.Image, base: Optional[np.ndarray] = None) -> Optional[tuple]:
+    """(x, y, the view's pixels there after the edit, before it) over the view pixels merged moves, None for none.
+    base: _base of the PNG, to view only the rows merged moves (_band)."""
+    got = _band(was, merged, base) if base is not None else None
+    top, now = got or (0, np.asarray(view(merged).convert("RGBA")))
+    ys, xs = np.nonzero((now != was[top:top + len(now)]).any(-1))
     if not len(xs):
         return None
     x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
-    return x0, y0, now[y0:y1, x0:x1].copy(), was[y0:y1, x0:x1].copy()
+    return x0, top + y0, now[y0:y1, x0:x1].copy(), was[top + y0:top + y1, x0:x1].copy()
 
 
 def _creature_stats(card: dict) -> dict:
@@ -470,7 +507,7 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
         return {}                               # the bake refuses every edit of a card whose stories drift
     psd_edit.use_record(psd, rel)
     icc = psd_edit.export_icc(psd, png)
-    was = np.asarray(view(png).convert("RGBA"))
+    was, base = np.asarray(view(png).convert("RGBA")), _base(png)
     out, at = {}, {**{stat: card[stat] for stat in stats}, **_creature_stats(card)}
     with psd_edit.render_cache(shared=True):
         caps = psd_edit.stat_caps(psd)          # once: each value edits its own copy
@@ -482,7 +519,7 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
                     bar_value(psd, raw, png, parsed, parser, rel, stat, value, icc, int(n or 1), caps, seen)
                 if seen:
                     votes.setdefault(key, {})[value] = seen[0]
-                moved = _moved(was, merged) if merged is not None else None
+                moved = _moved(was, merged, base) if merged is not None else None
                 if moved:
                     out.setdefault(key, {})[value] = moved
     return out
@@ -497,12 +534,12 @@ def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, pars
         return {}
     psd_edit.use_record(psd, rel)
     icc = psd_edit.export_icc(psd, png)
-    was = np.asarray(view(png).convert("RGBA"))
+    was, base = np.asarray(view(png).convert("RGBA")), _base(png)
     out = {}
     with psd_edit.render_cache(shared=True):
         for value in range(1, top + 1):
             merged = None if value == count else star_value(psd, raw, png, parsed, parser, rel, value, icc)
-            moved = _moved(was, merged) if merged is not None else None
+            moved = _moved(was, merged, base) if merged is not None else None
             if moved:
                 out[value] = moved
     return out

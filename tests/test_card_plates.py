@@ -165,6 +165,23 @@ def test_bar_changes_read_caps_once(clone, monkeypatch):
     assert len(calls) == 2 and all(np.array_equal(a, b) for a, b in zip(changes["def"][0], alone))
 
 
+def test_moved_views_only_the_moved_rows():
+    """_moved with the PNG's array (_band: a crop of the moved rows) equals view() of the whole card, the card's edges too;
+    a scale view() can't match that way takes the whole view."""
+    rng = np.random.default_rng(5)
+    for channels, h in ((3, 2400), (4, 1800)):
+        png = Image.fromarray(rng.integers(0, 256, (h, 1200, channels), np.uint8))
+        was, base = np.asarray(cp.view(png).convert("RGBA")), cp._base(png)
+        assert cp._moved(was, png, base) is None
+        for y0, y1 in ((0, 3), (h - 2, h), (700, 701), (1000, 1290)):
+            arr = base.copy()
+            arr[y0:y1, 100:900] = rng.integers(0, 256, (y1 - y0, 800, channels), np.uint8)
+            merged = Image.fromarray(arr)
+            got, want = cp._moved(was, merged, base), cp._moved(was, merged)
+            assert got[:2] == want[:2] and all(np.array_equal(a, b) for a, b in zip(got[2:], want[2:]))
+    assert cp._band(was[:, :719], merged, base) is None
+
+
 def _moved(png, merged):
     """bar_changes' entry of one value."""
     was, now = (np.asarray(cp.view(image).convert("RGBA")) for image in (png, merged))
