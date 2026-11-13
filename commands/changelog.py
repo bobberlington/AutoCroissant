@@ -647,10 +647,10 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
 
 def silent(event: dict) -> bool:
     """An event no Discord post shows: a guard event, any event of a guards commit's push (owner, 2026-10-25), a
-    re-read (owner, 2026-11-11), a sweep's own art or text change or rename (its "sweep", card_data.mark_sweeps), or a
-    minor one (card_data.mark_minor)."""
+    re-read (owner, 2026-11-11), a sweep's own art or text change, rename or move (its "sweep", card_data.mark_sweeps),
+    or a minor one (card_data.mark_minor)."""
     return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS \
-        or (event["kind"] in (*SWEPT, "renamed") and bool(event.get("sweep"))) or bool(event.get(MINOR))
+        or (event["kind"] in (*SWEPT, "renamed", "moved") and bool(event.get("sweep"))) or bool(event.get(MINOR))
 
 
 def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, repository: str = "",

@@ -1809,14 +1809,14 @@ def mark_sweeps(checkout: str, new_events: list) -> None:
     """
     Gives "sweep" (the trailer's value) to each art or changed event (changelog.SWEPT) whose own commit carries a
     Card-sweep trailer (card_sweep's passes, committed by hand; owner: the guards' fixes are silent) and is the card's
-    only change since its stored blob (the blob before that commit is the event's old one), and to each renamed event
-    of such a commit (owner 2026-11-11: a rename batch). Any push, any build: a card held for a later run still finds its
-    commit; new, archived and moved cards always post.
+    only change since its stored blob (the blob before that commit is the event's old one), and to each renamed or
+    moved event of such a commit (owner 2026-11-11: a rename batch; 11-13: one keeping the names). Any push, any build:
+    a card held for a later run still finds its commit; new and archived cards always post.
     """
     from commands.changelog import SWEEP_TRAILER, SWEPT
     candidates = [e for e in new_events if e["kind"] in SWEPT and e.get("commit") and e.get("path")
                   and len(e.get("blob") or ()) == 2 and all(e["blob"])]
-    renames = [e for e in new_events if e["kind"] == "renamed" and e.get("commit")]
+    renames = [e for e in new_events if e["kind"] in ("renamed", "moved") and e.get("commit")]
     if not candidates and not renames:
         return
     try:
