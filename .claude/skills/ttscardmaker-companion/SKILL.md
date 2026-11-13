@@ -704,9 +704,12 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
   a daily cron `0 12 * * *` (the fallback), and `workflow_dispatch`. A push that also changes a Card sync data input
   (not TTS/Global.*, the save) stops at its first step (Early build) once Card sync's early build for it is found in
   30 s: that one builds the push's site code with the new data (since 2026-11-12).
-- **Checkout:** `actions/checkout@v7`, `fetch-depth: 0` + `filter: blob:none` (every commit and tree, about 25 MB, no
-  contents), plus a non-cone sparse checkout of `/site/` (which holds the four hand-kept website files since
-  2026-10-20), `/Types/` and the font manifest.
+- **Checkout:** `actions/checkout@v7`, depth 1 + `filter: blob:none`, a non-cone sparse checkout of `/site/` (which
+  holds the four hand-kept website files since 2026-10-20), the font manifest and `.github/actions/history/`. Main's
+  every commit and tree (no contents, ~2.6 MB) come into a bare `history.git` beside it and join it in the background
+  (History start, History join: `join.sh`); History wait (that action, Card data's too) races a fetch still out by
+  then (0.4-33 s on the runner) with the newest cached copy `main-history-<UTC date>` (Card data saves one a day),
+  which fetches only the commits since; whichever comes first is joined (since 2026-11-16).
 - **Steps:**
   - `setup-python@v7` (3.12, pip cache; 3.14 since 2026-10-24, branch work/py314) → `pip install -r site/build/requirements.txt` (pillow) → `configure-pages@v6`
   - a cache-key step hashing the PNG and MDW/Fonts blobs, then `actions/cache/restore@v6` on `site/.cache` with key
