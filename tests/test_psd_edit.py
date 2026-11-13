@@ -1343,6 +1343,22 @@ def test_a_toggles_region_stays_on_the_canvas(clone):
     assert [layer.name for layer in edit.layers] == ["3", "7"] and 0 <= x0 < x1 <= pure.width and 0 <= y0 < y1 <= pure.height
 
 
+def test_untouched_lets_a_level_or_two_go(monkeypatch):
+    """Outside the regions a pixel 1-2 levels off looks the same (owner 11-13: PoD12BAD's stars with its ability); 3
+    refuses."""
+    before = np.zeros((4, 4, 4), np.uint8)
+    edit = SimpleNamespace(field="ability", region=(0, 0, 1, 1))
+    for off, refused in ((2, False), (3, True)):
+        after = before.copy()
+        after[0, 0], after[3, 3, 1] = 200, off  # inside the region: anything
+        monkeypatch.setattr(pe, "render_all", lambda psd: after)
+        if refused:
+            with pytest.raises(pe.Refused, match="1 pixels outside"):
+                pe.gate_untouched(before, None, [edit])
+        else:
+            pe.gate_untouched(before, None, [edit])
+
+
 # ========================
 # Stats (the fork: viewport renders)
 # ========================

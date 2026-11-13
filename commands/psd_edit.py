@@ -95,6 +95,7 @@ ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of s
 OLD_BESIDE = False          # a preview's: gate_dirty draws old's box in a thread beside new's (Card sync's pool: serial)
 FONTS_WAIT = None           # a preview's: returns once MDW/Fonts is in (it restores beside the bake); called before any FontMap
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
+UNTOUCHED_LEVELS = 2        # gate_untouched: a pixel this close outside the regions looks the same (owner 11-13: PoD12BAD)
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
@@ -8907,7 +8908,7 @@ def gate_untouched(before: np.ndarray, psd: PSDImage, edits: list) -> None:
         edits: Them, the stat edits too
 
     Returns:
-        None; raises Refused("region") for any pixel outside every region
+        None; raises Refused("region") for any pixel outside every region more than UNTOUCHED_LEVELS off
     """
     after = render_all(psd)
     diff = _px_differ(before, after)
@@ -8915,7 +8916,9 @@ def gate_untouched(before: np.ndarray, psd: PSDImage, edits: list) -> None:
         if edit.region:
             x0, y0, x1, y1 = edit.region
             diff[max(y0, 0):max(y1, 0), max(x0, 0):max(x1, 0)] = False
-    outside = int(diff.sum())
+    ys, xs = np.nonzero(diff)
+    near = np.abs(before[ys, xs].astype(np.int16) - after[ys, xs]).max(axis=1) <= UNTOUCHED_LEVELS
+    outside = int((~near).sum())
     if outside:
         raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
                       % (", ".join(edit.field for edit in edits), outside))
