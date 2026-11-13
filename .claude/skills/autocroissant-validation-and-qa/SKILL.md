@@ -63,6 +63,7 @@ of the card data; edge cases go into the survivor's asserts. It brings no tests 
 build_site.py, its fonts), workflow YAML text, the psd-tools fork's behaviour (its own suite covers it), finished
 migrations or transitions, real-card replays beyond the goldens, or more than 3 parametrize cases (a table of cases is
 one test looping over it). Shared helpers live in `tests/helpers.py`, never imported from another `test_*.py`.
+Website tests (owner, 2026-11-12): one smoke test per site piece, plus the tests that check the bot against the site.
 
 **Card images (the edit pipeline's bake, 2026-10-23).** Pixel parity against the official PNG (bad <= 0.5% past 24,
 mean <= 2.0) is evidence about the psd-tools fork, not a gate on a card: a miss bakes, and the report and commit note
@@ -530,3 +531,5 @@ c69f7c24 -> 0640adac). Only the ability text changed; types, stars, stats, alt_n
 2026-10-25 (wrap-up): `PARSER_VERSION` 4 (§4 rule, its provenance row; 4's re-parse changed two cards).
 
 2026-11-05 (ring badges): row 1c names the font pin `conftest.RING` (0ade8c3d) and test_badge_parity.py; 689 tests collected at 3641756 (not a pass count).
+
+2026-11-12 (asks-1112, owner G7): §1c's lean rule: the website tests cut to one smoke test per site piece plus the checks of the bot against the site.

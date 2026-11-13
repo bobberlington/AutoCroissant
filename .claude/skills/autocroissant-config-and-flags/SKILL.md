@@ -181,7 +181,7 @@ went with the pickle seed on 2026-10-25. Modules also read a few environment var
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
 | `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (kept by hand); read on every /update_stats (`CardDates`) |
-| `RATINGS_PATH` (2026-10-24) | `"site/Card Ratings.json"` | dated card ratings, whole numbers 1-10 (`python -m commands.tts_ratings`; `CardRatings`): only TTS sessions add them; the website shows none since 2026-11-11 (the data is kept); never read by the bot, the card sync or the checks |
+| `RATINGS_PATH` (2026-10-24) | `"site/Card Ratings.json"` | dated card ratings, whole numbers 1-10, from the TTS sessions (`CardRatings`): data only since 2026-11-12 (the import `tts_ratings` deleted; a card rename moves its entries, `CardRatings.order`); the website shows none since 2026-11-11; never read by the bot, the card sync or the checks |
 | `DATA_BRANCH`, `CARD_DATA_DIR` (2026-10-22) | `"data"`, `"card_data"` | the card repo's branch holding `db/` (written by Card sync only) and the bot's gitignored copy of it |
 | `CARD_TREE_JSON` (2026-10-25) | `"card_tree.json"` | the card repo's last tree, its ETag and Card Edits.json's text (query_card `load_saved`/`_save_tree`): the card list at startup before any request; gitignored, per machine; a corrupt one is ignored and rewritten |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
@@ -813,3 +813,5 @@ reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone
 2026-11-11 (ratings off the site): `RATINGS_PATH`: only TTS sessions add ratings, the website shows none.
 
 2026-11-12 (asks-1112, owner G4): `/set_ratio` and `/set_repo` deleted (no runtime setters on main; 15 lacks_admin call sites), query_card's `DEFAULT_REPOSITORY` folded into `CARD_REPO`, analytics' `ON_LOAD_ERROR` deleted, card_sync's `READERS` 7 names (/frankenstein and /view_old_metadata deleted).
+
+2026-11-12 (asks-1112, owner G5/G6): `RATINGS_PATH`: the TTS-session import `tts_ratings` deleted (the file is data only; a card rename moves its entries); `ability_art` gone from card_edits.

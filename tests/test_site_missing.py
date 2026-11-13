@@ -18,10 +18,10 @@ def test_missing_options_and_sorts_last(tmp_path):
     script = tmp_path / "probe.mjs"
     script.write_text(f"""const G = await import({json.dumps(GRID_JS.as_uri())});
 const cards = [
-  {{ name: "Bob", type: "creature", series: "Kirby", subseries: "Dream", types: ["fire"], ability: "Hit.", author: "Ann", stars: 3, hp: 5, def: 1, atk: 2, spd: 3, art: "https://x.com/1", ability_art: "Ann" }},
-  {{ name: "Al", type: "creature", series: "", types: [], ability: " ", author: "", hp: 4, def: 1, atk: 2, art: " ", ability_art: null }},
+  {{ name: "Bob", type: "creature", series: "Kirby", subseries: "Dream", types: ["fire"], ability: "Hit.", author: "Ann", stars: 3, hp: 5, def: 1, atk: 2, spd: 3, art: ["https://x.com/1"] }},
+  {{ name: "Al", type: "creature", series: "", types: [], ability: " ", author: "", hp: 4, def: 1, atk: 2, art: [" "] }},
   {{ name: "Cy", type: "minion", series: null, subseries: null, types: null, ability: null, stars: 0, hp: 9, def: 1, atk: 2, spd: 3 }},
-  {{ name: "Di", type: "item", series: "Kirby", types: ["support"], ability: "Heal.", author: "Ann", stars: 2, art: "Kirby Super Star" }},
+  {{ name: "Di", type: "item", series: "Kirby", types: ["support"], ability: "Heal.", author: "Ann", stars: 2, art: ["Kirby Super Star"] }},
   {{ name: "Ed", type: "item", series: "Kirby", subseries: "Air", subtype: "heal", ability: "Heal.", author: "Ann", stars: 1, hp: 3 }},
 ];
 const missing = Object.fromEntries(G.MISSING.map(([k, , , test]) => [k, cards.filter(test).map(c => c.name)]));

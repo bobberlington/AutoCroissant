@@ -73,7 +73,7 @@ BOT_FIELDS = "_bot"                                      # an entry's fields tha
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 OWN_FIELDS = ("art",)                                    # a duplicate's own fields (the rest is its original's)
-FIELD_WORD = {"name": "title", "art": "artwork sources", "ability_art": "ability artwork source"}   # changes.js FIELD
+FIELD_WORD = {"name": "title", "art": "artwork sources", "ability_art": "ability artwork source"}   # changes.js FIELD (ability_art: October's lines)
 TEXT_SHORT = 60                                          # an ability side this short shows whole; longer ones are cut
 TEXT_HUNKS = 2                                           # changed spots shown per ability; the rest "(+N more)"
 
@@ -105,7 +105,7 @@ def fields_of(card: CardInfo) -> dict:
     out["ability"] = getattr(card, "ability", None) or None
     out["tags"] = tags_of(out["ability"])
     out["author"], out["note"], out["hidden"] = getattr(card, "author", None), getattr(card, "note", None), bool(getattr(card, "hidden", False))
-    out["art"] = art_list(getattr(card, "art", None), getattr(card, "ability_art", None)) or None   # older records: a string, and ability_art
+    out["art"] = art_list(getattr(card, "art", None)) or None   # older records: a string
     return out
 
 

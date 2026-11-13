@@ -1,13 +1,11 @@
 """
-The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline, from the card sync's
-db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json, builds nothing): the current text dated
-from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
-author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
-pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json), a profile's
-subseries, PSD sizes, the Changes tabs' own files. Loads
-build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it.
+The website build (TTSCardMaker site/build/build_site.py): one smoke test per piece (owner 2026-11-12) and the checks of
+the bot against the site. The build on a small card repo made here, offline, from the card sync's db/ (CARD_DATA_DIR,
+load_card_data): the current text dated from its start; the bundle's lazy chunks; website-only fields (edit.js and
+CardEdits); the parser notes an edit answers; a real card's inks (psd_details); R14's names (card_standards); web-only
+rulebook chapters (rulebook.js); site.yml's steps. Loads build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or
+the clone; skips without it.
 """
-import copy
 import importlib.util
 import io
 import json
@@ -18,7 +16,6 @@ import tarfile
 import time
 import zipfile
 from collections import defaultdict
-from datetime import datetime
 from html import unescape as html_unescape
 from os import environ
 from pathlib import Path
@@ -101,11 +98,6 @@ def repo(tmp_path):
     (root / "MDW/The Morgue").mkdir(parents=True)
     (root / PALACE).rename(root / "MDW/The Morgue/White_Palace.psd")
     c3, t3 = _commit(root, "Standardize", start + 2 * DAY)
-    (root / "site").mkdir()                       # ratings: a commit of no card file (no image version, no edit batch)
-    (root / "site" / "Card Ratings.json").write_text(json.dumps({"cards": {
-        "alpha": [{"date": "2023-04-28", "scale": "power", "value": 6, "by": "group", "source": "TTS session"}],
-        "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7, "by": "group", "source": "TTS session"}]}}))
-    _commit(root, "Ratings", start + 3 * DAY)
 
     stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),
              "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
@@ -164,332 +156,6 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
 
 
-def test_minor_picture_changes_fold_and_updated_follows_real_changes(bs, repo, tmp_path, monkeypatch):
-    """Owner 11-09. Alpha's c3 picture changed under the share that shows (db/png_changes.json) with no data change: its
-    row folds (versions.json minor), and its "updated" goes back to its text change at c2 (since goes with it). An older
-    text that differs only in formatting is one text with the one before it (history.json); the data keeps both."""
-    if not hasattr(bs, "load_png_changes"):
-        pytest.skip("the site has no picture changes yet")
-    (c1, c2, c3), (t1, t2, t3) = repo["commits"], repo["t"]
-    blob = lambda c: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{ALPHA}.png"], capture_output=True,
-                                    text=True, check=True).stdout.strip()
-    stats, old, details, _ = cdb.read_db(str(repo["db"]))
-    old["Alpha"].append(_card("Alpha", f"{ALPHA}.psd", "old  text", t1 + DAY // 2))       # spacing, case, a full stop
-    old["Alpha"][1].parser_version = 2
-    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": c3})
-    (repo["db"] / "png_changes.json").write_text(json.dumps({"rule": bs.PNG_RULE, "pairs": {
-        f"{blob(c2)}..{blob(c3)}": [bs.PNG_VISIBLE / 4, bs.PNG_RULE]}}), encoding="utf-8")
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
-    assert out["versions.json"]["minor"] == {alpha["id"]: [0]} and (alpha["iv"], alpha["ivm"]) == (3, 1)
-    assert alpha["ts"] == t2 and "since" not in alpha
-    assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "old  text"}]
-
-
-def test_psd_sizes_come_by_blob_and_a_duplicate_has_its_psds(bs, repo, tmp_path, monkeypatch):
-    """PSD_TREE (site.yml's trees API reply) sizes each card by its PSD's blob at HEAD: Watermelon2 (a numbered PNG of
-    Watermelon's PSD) gets Watermelon's; a blob the reply doesn't list gets none."""
-    if not hasattr(bs, "psd_sizes"):
-        pytest.skip("the site has no PSD sizes yet")
-    blob = lambda path: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"HEAD:{path}"], capture_output=True,
-                                       text=True, check=True).stdout.strip()
-    tree = tmp_path / "tree.json"
-    tree.write_text(json.dumps({"truncated": False, "tree": [
-        {"path": f"{MELON}.psd", "type": "blob", "sha": blob(f"{MELON}.psd"), "size": 34_712_345},
-        {"path": f"{ALPHA}.psd", "type": "blob", "sha": "0" * 40, "size": 9}]}))      # another blob than HEAD's
-    monkeypatch.setattr(bs, "PSD_TREE", str(tree))
-    cards = _by_name(_build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["cards"])
-    assert cards["Watermelon"]["psdSize"] == cards["Watermelon2"]["psdSize"] == 34_712_345
-    assert "psdSize" not in cards["Alpha"]
-
-
-def test_a_picture_only_duplicate_is_its_originals_card(bs, repo, tmp_path, monkeypatch):
-    """Gamma.png has no PSD and its Card Edits.json entry names Alpha in dup_of; the card data copies Alpha as Gamma
-    (duplicate_of): the site lists it parsed, with Alpha's data, its own name and picture (owner 10-26)."""
-    root = repo["root"]
-    _png(root / "Creatures/Other/2 Stars/Gamma.png", 70)
-    stats, old, details, _ = cdb.read_db(str(repo["db"]))
-    hp = stats["Alpha"].stats.hp + 1                         # a PSD edit on Alpha: pending on Alpha, never on Gamma
-    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Gamma": {"dup_of": "Alpha"}, "Alpha": {"hp": hp}}}), encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(root), "-c", "user.name=M", "-c", "user.email=m@x", "commit", "-q", "-m", "Gamma"], check=True)
-    gamma = copy.deepcopy(stats["Alpha"])
-    gamma.name, gamma.duplicate_of = "Gamma", "Alpha"
-    stats["Gamma"] = gamma
-    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": repo["commits"][2]})
-    cards = _by_name(_build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["cards"])
-    alpha, g = cards["Alpha"], cards["Gamma"]
-    assert "parsed" not in g and g["dup"] == alpha["id"] and alpha["dups"] == [g["id"]]
-    assert g["png"] == "Creatures/Other/2 Stars/Gamma.png" and g["img"] != alpha["img"]
-    assert all(g.get(k) == alpha.get(k) for k in ("type", "series", "stars", "types", "hp", "def", "atk", "spd", "ability", "author"))
-    assert alpha["pending"] == ["hp"] and "pending" not in g          # the bake never redraws Gamma.png
-    game = (tmp_path / "a" / "dist" / "game.txt").read_text(encoding="utf-8")
-    assert "duplicate of Alpha" in next(line for line in game.splitlines() if line.startswith("Gamma |"))
-
-
-def test_each_version_links_the_commit_that_made_its_psd(bs, repo, tmp_path, monkeypatch):
-    """A text's or change's commit is the one that gave its PSD the bytes it was read from (blob_sha): history.json
-    texts carry c (an index into _shas), the newest older one n (the current text's), analytics.json change rows c (into
-    commits). An edit version gets none (no card commit made it)."""
-    (c1, c2, c3), (t1, t2, t3) = repo["commits"], repo["t"]
-    blob = lambda c, p: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{p}"], capture_output=True, text=True, check=True).stdout.strip()
-    stats, old, details, _ = cdb.read_db(str(repo["db"]))
-    old["Alpha"][0].blob_sha, old["Alpha"][0].version = blob(c1, f"{ALPHA}.psd"), {"from": float(t1), "cause": "legacy"}
-    stats["Alpha"].blob_sha, stats["Alpha"].version = blob(c3, f"{ALPHA}.psd"), {"from": float(t3), "from_commit": c3, "cause": "psd"}
-    old["Watermelon"][0].blob_sha = blob(c1, f"{MELON}.psd")
-    stats["Watermelon"].blob_sha, stats["Watermelon"].version = blob(c2, f"{MELON}.psd"), {"from": float(t3), "from_commit": c3, "cause": "edit"}
-    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": c3})
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    cards, h, an = _by_name(out["cards.json"]["cards"]), out["history.json"], out["analytics.json"]
-    sha = lambda i: h["_shas"][i]
-    alpha, melon = cards["Alpha"]["id"], cards["Watermelon"]["id"]
-    assert h[alpha] == [{"ts": t1, "ability": "Old text.", "c": 0, "n": 1}] and h["_shas"][:2] == [c1[:12], c3[:12]]
-    assert [sha(v["c"]) for v in h[melon]] == [c1[:12]] and "n" not in h[melon][0]     # an edit: no link
-    assert [an["commits"][r["c"]] for r in an["cards"][alpha]["changes"]] == [c3[:12]]
-
-
-def test_a_commit_of_many_card_psds_is_heavy(bs, repo, tmp_path, monkeypatch):
-    """cards.json heavy: the 12-char shas of commits changing HEAVY_PSDS card PSDs or more, whose GitHub page fails
-    (text.js commitLink links the card's history instead). c1 added 3; c2 and c3 changed 2 (the Morgue's is no card)."""
-    monkeypatch.setattr(bs, "HEAVY_PSDS", 3)
-    assert _build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["heavy"] == [repo["commits"][0][:12]]
-
-
-def test_editor_fields_load_with_the_editor(bs, repo, tmp_path, monkeypatch):
-    """cards.json leaves the fields only edit mode reads (EDITOR_FIELDS: blob, ink, ratings...) to editing.json by id."""
-    if not hasattr(bs, "EDITOR_FIELDS"):
-        pytest.skip("before TC's editing.json")
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    assert not set(bs.EDITOR_FIELDS) & {k for c in out["cards.json"]["cards"] for k in c}
-    alpha = out["editing.json"][_by_name(out["cards.json"]["cards"])["Alpha"]["id"]]
-    assert len(alpha["blob"]) == 8 and [r["value"] for r in alpha["ratings"]] == [6]
-
-
-def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
-    """version_commit on parse_history rows: the commit that made the bytes the PSD held at the version's start, pure
-    renames followed back (also a later one: a record's path is its newest); none for an edit, the previous version's
-    bytes (a move only for a folder change), bytes from after a blobless previous version's start, or another path's."""
-    a = bs.analytics
-    c = lambda n: n * 40
-    commits = [(c("6"), 60, "", "", "", [("M", "y", "z", "New/C.psd")], []),            # newer bytes: a later reading
-               (c("5"), 50, "", "", "", [("D", "y", "0", "Old/C.psd"), ("A", "0", "y", "New/C.psd")], []),   # a move
-               (c("4"), 40, "", "", "", [("M", "x", "y", "Old/C.psd")], []),
-               (c("3"), 30, "", "", "", [("D", "x", "0", "Typo/C.psd"), ("A", "0", "x", "Old/C.psd")], []),  # a rename
-               (c("1"), 10, "", "", "", [("A", "0", "x", "Typo/C.psd"), ("A", "0", "q", "Other.psd")], [])]
-    lin = a.psd_lineage(commits)
-    v = lambda ts, blob, cause="psd", path="New/C.psd", **info: bs.stand_in(bs.CardInfo, {
-        "timestamp": float(ts), "blob_sha": blob, "path": path, "version": {"from": float(ts), "cause": cause, **info}})
-    first, second = v(30, "x", "legacy"), v(40, "z")
-    assert a.version_commit(first, None, lin) == c("1")[:12]                 # the rename at 30 made no bytes
-    assert a.version_commit(second, first, lin) == c("4")[:12]               # read later (z), started at 4's bytes
-    assert a.version_commit(v(50, "z"), second, lin) is None                 # the move: same bytes as before
-    assert a.version_commit(v(50, "z", "moved", from_commit=c("5")), second, lin, moved=True) == c("5")[:12]
-    assert a.version_commit(v(40, "z", "edit"), first, lin) is None
-    assert a.version_commit(second, v(45, None), lin) is None                # 4's bytes may be the blobless one's
-    assert a.version_commit(v(40, "q"), None, lin) is None                   # Other.psd's bytes, not this path's
-    assert [a.version_commit(x, None, lin) for x in (v(40, None), v(5, "x"), None)] == [None] * 3
-
-
-def test_balance_follows_renames_and_folds_a_rename_alone(bs):
-    """analytics.renames_followed: an old name's versions go on under the name it became; a rename alone (the same PSD
-    bytes) starts no version (the new reading takes the old one's start, date and path), a redraw does."""
-    a = bs.analytics
-    if not hasattr(a, "renames_followed"):
-        pytest.skip("the site's Balance follows no renames yet")
-    v = lambda ts, blob, path, **kw: bs.stand_in(bs.CardInfo, {"timestamp": float(ts), "blob_sha": blob, "path": path,
-                                                               "version": {"from": float(ts)}, **kw})
-    first, last, current = v(10, "x", "Old.psd"), v(20, "y", "Old.psd", archived={"renamed_to": "New"}), v(30, "y", "New.psd")
-    old_stats = {"Old": [first, last], "Other": [v(5, "q", "Other.psd")]}
-    old, stats = a.renames_followed(old_stats, {"New": current}, {"New": ["Old"]})
-    assert set(old) == {"New", "Other"} and old["New"] == [first] and current.timestamp == 30.0
-    assert (stats["New"].timestamp, stats["New"].path, stats["New"].version) == (20.0, "Old.psd", {"from": 20.0})
-    assert a.chain_of("New", stats, old) == [first, stats["New"]]
-    redrawn = v(30, "z", "New.psd")
-    old, stats = a.renames_followed(old_stats, {"New": redrawn}, {"New": ["Old"]})
-    assert old["New"] == [first, last] and stats["New"] is redrawn
-
-
-def test_types_before_parser_2_are_no_change(bs):
-    """Parser 1 missed and mistook type icons (Dumplings' tomato read as panda): a type swap from such a reading is no
-    change row (analytics.change) and no real change (real_change); the shown card (no parser_version) is parsed."""
-    a = bs.analytics
-    v = lambda types, pv: bs.stand_in(bs.CardInfo, {"types": types, "parser_version": pv, "ability": "Heal 2.", "timestamp": 1.0})
-    legacy, parsed = v(["panda"], None), v(["food"], 7)
-    assert a.change(legacy, parsed, []) == {} and not bs.real_change(legacy, parsed)
-    assert bs.real_change(parsed, v(["fire"], 7))
-    shown = a.shown({"types": ["fire"], "ability": "Heal 2."}, parsed)
-    assert a.change(parsed, shown, []) == {"types": {"add": ["fire"], "drop": ["food"]}}
-
-
-def test_values_a_reading_never_recorded_are_no_change(bs):
-    """Older readings recorded no item type, stars or series (aux items before parser 7, a first series fill), and a
-    reading whose stats failed (NO STATS FOUND, or from parser 2 a stat over 20 not allowed) read none: such a side is
-    unknown, no change row; two values still are."""
-    a = bs.analytics
-    v = lambda **f: bs.stand_in(bs.CardInfo, {"ability": "Heal 2.", "timestamp": 1.0, "parser_version": 7, **f})
-    assert a.change(v(subtype=None, stars=None, series=None), v(subtype="active", stars=5, series="X"), []) == {}
-    assert a.change(v(series="Mother 2"), v(series="MOTHER"), []) == {"series": ["Mother 2", "MOTHER"]}
-    line = lambda *s: bs.stand_in(bs.CardStats, dict(zip(("hp", "defense", "attack", "speed"), s)))
-    read, failed = v(stats=line(5, 5, 6, 7)), v(stats=line(-1, -1, -1, -1), problems=["NO STATS FOUND: no HP, DEF, ATK or SPD bars"])
-    assert a.change(read, failed, []) == {} == a.change(failed, read, [])
-    assert a.change(read, a.shown({"ability": "Heal 2."}, failed), []) == {}         # the current reading failed
-    edited = a.shown({"hp": 5, "def": 5, "atk": 6, "spd": 8, "ability": "Heal 2."}, failed)      # Card Edits' stats
-    assert a.change(read, edited, [])["stats"] == [[5, 5, 6, 7], [5, 5, 6, 8]]
-    tyler = v(stats=line(23, -1, -1, -1), stars=5)               # four bars named Health: 7+6+4+6, no problem stored
-    assert a.change(read, tyler, []) == {} == a.change(tyler, read, [])
-    assert a.change(read, v(stats=line(23, 5, 6, 7), allow_high_stats=True), [])["stats"] == [[5, 5, 6, 7], [23, 5, 6, 7]]
-
-
-def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
-    """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions,
-    text history and Balance changes go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's
-    pick, a published hand and the app's old id (cards.json "moved") follow it."""
-    root, t3 = repo["root"], repo["t"][2]
-    new = "Creatures/Other/2 Stars/New_Alpha"
-    (root / f"{ALPHA}.psd").rename(root / f"{new}.psd")
-    (root / f"{ALPHA}.png").unlink()
-    _png(root / f"{new}.png", 40)                 # redrawn: no exact rename
-    for path, doc in (("site/profiles/Someone.json", {"login": "Someone", "favourite": "alpha"}),
-                      ("site/decks/Someone/hand.json", {"v": 1, "owner": "Someone", "name": "Hand", "cards": ["alpha"]})):
-        (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_text(json.dumps(doc), encoding="utf-8")
-    git = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True,
-                                    env={**environ, "GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "a@x",
-                                         "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "a@x"}).stdout
-    git("add", "-A")
-    git("commit", "-q", "-m", f"Card edits: 1 baked\n\n- Alpha: renamed: Alpha -> New Alpha\n\nRenamed: {ALPHA}.psd -> {new}.psd\n"
-                              f"Renamed: {ALPHA}.png -> {new}.png")
-    stats, old, details, _ = cdb.read_db(str(repo["db"]))
-    card = stats.pop("Alpha")
-    gone = copy.deepcopy(card)
-    gone.archived = {"at": float(t3 + DAY), "path": f"{ALPHA}.psd", "renamed_to": "New Alpha"}
-    old["Alpha"].append(gone)
-    card.name, card.path = "New Alpha", f"{new}.psd"
-    card.version = {"from": float(t3 + DAY), "to": None, "cause": "psd"}
-    stats["New Alpha"] = card
-    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}),
-                 {"card_commit": git("rev-parse", "HEAD").strip()})
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    page = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
-    assert 'http-equiv="refresh" content="0; url=../new-alpha/"' in page and (tmp_path / "a" / "dist" / "c" / "new-alpha" / "index.html").exists()
-    alpha = _by_name(out["cards.json"]["cards"])["New Alpha"]
-    assert alpha["was"] == ["Alpha"]                                              # its old name finds it
-    assert out["history.json"][alpha["id"]] == [{"ts": repo["t"][0], "ability": "Old text."}]
-    assert len(out["versions.json"]["cards"][alpha["id"]]) == 4                      # c1, c2, c3 and the rename
-    if hasattr(bs.analytics, "renames_followed"):                                 # TC 11-11
-        (row,) = out["analytics.json"]["cards"][alpha["id"]]["changes"]               # Old text. -> New text.
-        assert row["ts"] == repo["t"][1] and "text" in row
-    assert out["cards.json"]["moved"] == {"alpha": alpha["id"]} == {"alpha": "new-alpha"}
-    assert out["users.json"]["users"][0]["favourite"] == out["decks.json"]["decks"][0]["cards"][0] == "new-alpha"
-
-
-def test_the_morgue_is_its_own_list(bs, repo, tmp_path, monkeypatch):
-    """Owner 11-08: MDW/The Morgue's cards (a PSD with its PNG; the card back is none) are cards.json morgue, picture
-    only, kind and stars from the archive row that moved them there, with a share page; never a live card, the game
-    text or the TTS details."""
-    if not hasattr(bs, "morgue_cards"):
-        pytest.skip("the site has no Morgue yet")
-    root = repo["root"]
-    _png(root / "MDW/The Morgue/White_Palace.png", 90)
-    _png(root / "MDW/The Morgue/cardback.png", 95)
-    _commit(root, "Morgue pictures", 1_780_000_000 + 4 * DAY)
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    data, dist = out["cards.json"], tmp_path / "a" / "dist"
-    (palace,) = data["morgue"]
-    assert {k: palace[k] for k in ("id", "name", "type", "stars", "png", "morgue")} == {
-        "id": "white-palace", "name": "White Palace", "type": "field", "stars": 2, "png": "MDW/The Morgue/White_Palace.png",
-        "morgue": True} and palace["img"] and palace["retired"] == repo["t"][2]
-    assert "White Palace" not in _by_name(data["cards"]) and (dist / "c" / "white-palace" / "index.html").exists()
-    assert "White Palace" not in (dist / "game.txt").read_text(encoding="utf-8") + json.dumps(out["tts.json"])
-
-
-def test_archived_author_and_created_precedence(bs):
-    """author: Card Authors.txt's credit > the tag's (backfill) > the last version's, shown through [people]; created:
-    the last version's created date, else the Pacific day of its oldest version (its version record's start)."""
-
-    def v(ts, **kw):
-        card = bs.CardInfo()
-        card.__dict__.update(timestamp=float(ts), card_type="creature", stars=2, author="Last", **kw)
-        return card
-    start = 1_700_000_000
-    old = {"Gone": [v(start + 9 * DAY, version={"from": float(start)}), v(start + 20 * DAY, archived={"at": start + 30 * DAY, "author": "Tagged"})]}
-    rows = lambda **kw: bs.archived_cards(old, lambda name: None, (), **kw)[0]
-    day = datetime.fromtimestamp(start, bs.analytics.ZONE).strftime("%Y-%m-%d")
-    assert (rows()["author"], rows()["created"]) == ("Tagged", day)
-    assert rows(credited={"gone": "Listed"}, people={"listed": "Shown"})["author"] == "Shown"
-    del old["Gone"][1].archived["author"]
-    old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
-    assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
-
-
-def test_a_profile_subseries_is_checked_like_its_series(bs):
-    """A profile's subseries must be one cards use (any series, or the profile's series when it has one); a bad one is
-    dropped with a warning, like the series."""
-    if "subseries" not in getattr(bs, "PROFILE_FIELDS", ()):
-        pytest.skip(f"{BUILD_SITE} has no profile subseries")
-    cards = {"grapes": {"id": "grapes", "type": "item", "series": "Don't Starve", "subseries": "Gourmet Expansion"},
-             "kirby": {"id": "kirby", "type": "creature", "series": "Kirby", "subseries": "Kirby Star Allies"}}
-    clean = lambda **kw: bs.clean_profile({"login": "Me", **kw}, "Me", cards, [])
-    assert clean(series="Don't Starve", subseries="Gourmet Expansion") == (
-        {"login": "Me", "series": "Don't Starve", "subseries": "Gourmet Expansion"}, [])
-    assert clean(subseries="Gourmet Expansion") == ({"login": "Me", "subseries": "Gourmet Expansion"}, [])
-    p, notes = clean(series="Kirby", subseries="Gourmet Expansion")
-    assert p == {"login": "Me", "series": "Kirby"} and notes == ["subseries 'Gourmet Expansion' has no cards in series 'Kirby', dropped"]
-    p, notes = clean(series="Don't Starve Gourmet Expansion", subseries="Gourmet")
-    assert p == {"login": "Me"} and notes == ["series \"Don't Starve Gourmet Expansion\" isn't a known series, dropped",
-                                              "subseries 'Gourmet' isn't a known subseries, dropped"]
-
-
-def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
-    """Maker's row: Alpha's PNG changed in c2 and c3 (self 2), White Palace archived (Retired, without path or commit),
-    Alpha's strength."""
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
-    assert (maker["revisions"]["self"], maker["revisions"]["others"]) == (2, 0)
-    assert [(r["card"], r["moved_to"]) for r in maker["archived"]] == [("White Palace", "MDW/The Morgue/White_Palace.psd")]
-    assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
-    assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
-
-
-def test_each_changes_tab_has_its_own_file(bs, repo, tmp_path, monkeypatch):
-    """11-11: changelog.json has every event (no archived rows or batches), archive.json the archived rows, edits.json
-    the edited and authors events and the batches."""
-    if not hasattr(bs, "changelog_files"):
-        pytest.skip("the site has one changelog file")
-    log = repo["db"] / "changelog" / "2026-10.jsonl"
-    edit = {"seq": 2, "at": time.time(), "kind": "edited", "card": "Alpha", "title": "Alpha"}
-    log.write_text(log.read_text(encoding="utf-8") + json.dumps(edit) + "\n", encoding="utf-8")
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    kinds = lambda name: [e["kind"] for e in out[name]["events"]]
-    assert kinds("changelog.json") == ["archived", "edited"] and kinds("edits.json") == ["edited"]
-    assert not {"archived", "edits"} & set(out["changelog.json"]) and "batches" in out["edits.json"]["edits"]
-    assert [r["card"] for r in out["archive.json"]["archived"]] == ["White Palace"]
-
-def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
-    """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
-    a difference fails the build; its grid has grid.js's M size. A card's page carries its dialog's picture, the one it
-    preloads, openCard's close button (card_frame) and style.css inline, as index.html; other share pages link it."""
-    out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    page = (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
-    ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
-    assert re.findall(r'<a class="tile" href="c/([^/"]+)/"', page) == ids
-    assert page.count('fetchpriority="high"') == min(len(ids), bs.FIRST_EAGER)
-    m = re.search(r'TILE_SIZES = \{[^}]*\bm: \["([^"]+)"', (BUILD_SITE.parents[1] / "assets" / "grid.js").read_text(encoding="utf-8"))[1]
-    assert f'<div class="grid" style="--tile:{m};' in page
-    card = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
-    assert re.search(r'<img id="detail-img" src="([^"]+)"', card)[1] == re.search(r'<link rel="preload" as="image" href="([^"]+)"', card)[1]
-    app = (BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
-    close = re.search(r'aria-label="\$\{esc\(c\.name\)\}">\s*(<button [^>]*>✕</button>)\s*<div class="detail">', app)[1]
-    assert f'{close}<div class="detail">' in card                # a phone's close row: the picture stays put
-    assert (f'href="{bs.BADGE_FONT}"' in card) == bs.has_badges(next(c for c in out["cards.json"]["cards"] if c["id"] == "alpha").get("ability") or "")
-    css = lambda p: re.findall(r'<style>.*?</style>|<link rel="stylesheet"[^>]*>', p, re.S)
-    assert css(card) == css(page) and css(page)[0].startswith("<style>")
-    assert css((tmp_path / "a" / "dist" / "d" / "index.html").read_text(encoding="utf-8"))[0].startswith("<link")
-    monkeypatch.setattr(bs, "tile_html", lambda c, eager, icons: f'<a class="tile" href="c/{c["id"]}/">')
-    with pytest.raises(SystemExit, match="differs from grid.js"):
-        _build(bs, monkeypatch, repo, tmp_path / "b")
-
-
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
     """The editor (editing.js), Stats (charts.js), People (profile.js), the font box (tokens.js) and the rulebook (rulebook.js, its
     editor rulebook-edit.js) are imported by app.js with import(): without
@@ -533,13 +199,6 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
                          "rulebook.js", "rulebook-edit.js"}
     assert {"edit.js", "mockup.js"} <= set().union(*(sources[f] for f in chunks["editing.js"]))
     assert {"stats.js", "balance.js"} <= set().union(*(sources[f] for f in chunks["charts.js"]))
-
-
-def test_inlined_css_urls(bs):
-    """index.html and card pages inline style.css: its relative url()s, relative to assets/, now to the page (../rulebook/... left the site)."""
-    page = bs.inline_css('<link rel="stylesheet" href="assets/style.css?v=1">',
-                         'a{src:url("../rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(i.png)}')
-    assert page == '<style>a{src:url("rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(assets/i.png)}</style>'
 
 
 def test_website_only_fields(bs, tmp_path, monkeypatch):
@@ -591,28 +250,6 @@ def test_parser_notes_answered_as_the_bot_does(bs):
         assert card["problems"] == left, fields
 
 
-def test_card_inks_line_the_psds_colours_up(bs):
-    """cards.json `ink` (owner 11-07/08): the title's and Ability's accents on the card's text as the parser made it (line
-    breaks, a type token injected); each layer's main ink and colours near it left out, so a one-colour title or black
-    text gains none; a word edited away leaves no stray letters; badges and icons unpainted."""
-    if not hasattr(bs, "card_inks"):
-        pytest.skip("before TC's card colours land")
-    layer = lambda i, text, colors, runs=None: {"layer": "Text/L", "id": i, "text": text, "color": colors[0], "visible": True,
-                                                "colors": colors, **({"runs": runs} if runs else {})}
-    rec = lambda path, title, ability: {"path": path, "at": "1", "text": [title, ability], "parts": {"title": [{"id": 1}], "ability": [{"id": 2}]}}
-    pain = rec("A.psd", layer(1, "Double\nPain", ["#ffffff", "#cf0000"], [[0, 7, 0], [7, 11, 1]]),
-               layer(2, "(1CD) Inflict 2T Burning.\nGain [fire] +1 ATK.", ["#ffffff", "#ff7a1a", "#eeeeee", "#00ff00"],
-                     [[0, 17, 0], [17, 24, 1], [24, 26, 0], [26, 31, 2], [31, 37, 0], [37, 45, 3]]))
-    shown = "(1CD) Inflict 2T Burning. Gain [fire] +1 ATK. [undead]"
-    assert bs.card_inks({"name": "Double Pain", "ability": shown}, pain) == {"name": [[7, 11, "#cf0000"]], "ability": [[17, 24, "#ff7a1a"], [38, 45, "#00ff00"]]}
-    assert bs.card_inks({"name": "Double Pain", "ability": shown.replace("Burning", "Freezing")}, pain)["ability"] == [[39, 46, "#00ff00"]]
-    cards = [{"id": "a", "key": "A", "name": "Double Pain", "ability": shown, "psd": "A.psd"},
-             {"id": "s", "key": "S", "name": "Springtrap", "ability": "Draw a card.", "psd": "S.psd"}]
-    plain = rec("S.psd", layer(1, "Springtrap", ["#d4a416"]), layer(2, "Draw a card.", ["#000000"]))
-    bs.join_details(cards, {"b1": pain, "b2": plain}, {"A.psd": "b1", "S.psd": "b2"})
-    assert cards[0]["ink"]["ability"][0] == [17, 24, "#ff7a1a"] and "ink" not in cards[1]
-
-
 def test_card_inks_on_a_real_card(bs, clone):
     """Tainted Lazarus: its two Ability layers' runs on the parsed ability (joined; no [undead] since 11-09, its creature 2
     header icon): the status words in their colours, the white title none."""
@@ -632,110 +269,6 @@ def test_card_inks_on_a_real_card(bs, clone):
     assert ability.endswith("1T Afraid.") and max(b for _, b, _ in ink["ability"]) <= len(ability)
 
 
-def test_font_filter_data_is_the_details_fonts(bs):
-    """data/cardfonts.json (owner 10-25, the grid's Font filter): a card's fonts are its Details record's, a variant picture
-    its PSD's, a PNG-only duplicate (no record) and an unreadable fonts section none; names by use, then name."""
-    rec = lambda path, fonts: {"path": path, "at": "2026-10-25", "fonts": fonts}
-    records = {"b1": rec("A.psd", {"Perpetua": {"layers": ["Text/Name"], "supplied": True}, "stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),
-               "b2": rec("B.psd", {"stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),
-               "b3": rec("C.psd", "unreadable")}
-    cards = [{"id": "a", "key": "A", "name": "A", "psd": "A.psd"}, {"id": "a2", "key": "A2", "name": "A2", "psd": "A.psd", "dup": "a", "variantOf": "a"},
-             {"id": "b", "key": "B", "name": "B", "psd": "B.psd"}, {"id": "b2", "key": "B2", "name": "B2", "dup": "b"},
-             {"id": "c", "key": "C", "name": "C", "psd": "C.psd"}]
-    files = bs.join_details(cards, records, {"A.psd": "b1", "B.psd": "b2", "C.psd": "b3"})
-    got = bs.card_fonts(cards, files)
-    assert got == {"fonts": ["stoogedings-Regular", "Perpetua"], "cards": {"a": [1, 0], "a2": [1, 0], "b": [0]}}
-    for cid, ix in got["cards"].items():                  # the Details panel's list, in its order
-        assert [got["fonts"][i] for i in ix] == list(files[cid]["fonts"])
-
-
-def test_rulebook_picture_outline(bs):
-    """A transparent rulebook picture's outline (owner 10-30: text wraps to a ball's edges): its opaque extent per band
-    as polygon points in %, right side down, left side up; none for an opaque picture."""
-    from PIL import Image, ImageDraw
-    ball = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
-    ImageDraw.Draw(ball).ellipse((20, 0, 80, 100), fill=(255, 0, 0, 255))
-    points = [tuple(float(v.rstrip("%")) for v in q.split()) for q in bs.picture_outline(ball).split(", ")]
-    xs = [x for x, _ in points]
-    assert min(xs) >= 19 and max(xs) <= 81 and points[0][1] == 0 and max(y for _, y in points) == 100
-    assert min(xs) <= 21 and max(xs) >= 79 and points[0][0] < 70      # widest at the middle, narrow at the top
-    assert bs.picture_outline(Image.new("RGB", (40, 40))) == ""
-    assert bs.picture_outline(Image.new("RGBA", (40, 40), (1, 2, 3, 255))) == ""
-
-
-def test_overhang_card_body(bs, tmp_path):
-    """An OVERHANG card's own box (owner 10-31, Sumo Panda): the solid card inside see-through edges, art spilling out
-    the left; none for an opaque picture."""
-    from PIL import Image, ImageDraw
-    pic = Image.new("RGBA", (120, 240), (0, 0, 0, 0))
-    ImageDraw.Draw(pic).rectangle((18, 0, 116, 239), fill=(200, 180, 150, 255))
-    ImageDraw.Draw(pic).ellipse((0, 60, 60, 100), fill=(255, 255, 255, 255))
-    pic.save(tmp_path / "hang.png")
-    Image.new("RGBA", (120, 240), (1, 2, 3, 255)).save(tmp_path / "solid.png")
-    assert bs.card_body(tmp_path / "hang.png") == [0.15, 0.0, 0.975, 1.0]
-    assert bs.card_body(tmp_path / "solid.png") is None
-
-
-def test_early_images_are_the_builds(bs, repo, tmp_path, monkeypatch, capsys):
-    """An early build's Images start (build_site.py --images <commit> <stop>): the card PNGs' images at that commit with
-    their meta, not MDW's or Types'; none once stop exists. The build then makes no new file."""
-    root, out, stop = repo["root"], tmp_path / "out", tmp_path / "stop"
-    for other in ("MDW/Assets/back.png", "Types/fire.png"):
-        _png(root / other, 99)
-    at, _ = _commit(root, "Assets", 1_790_000_000)
-    monkeypatch.setattr(bs, "REPO", str(root))
-    monkeypatch.setattr(bs, "CACHE", str(out / ".cache"))
-    stop.touch()
-    bs.early_images(at, str(stop))
-    assert not list((out / ".cache/img").iterdir())
-    stop.unlink()
-    bs.early_images(at, str(stop))
-    pngs = {p: s for p, s in bs.repo_tree(at).items() if p.endswith(".png")}
-    cards = {s for p, s in pngs.items() if p.startswith(("Creatures/", "Items/"))}
-    assert len(pngs) == 5 and len(cards) == 3 and set(bs.load_image_meta()) == cards
-    assert {n for s in cards for n in bs.image_names(s).values()} == {p.name for p in (out / ".cache/img").iterdir()}
-    capsys.readouterr()
-    _build(bs, monkeypatch, repo, out)
-    assert "images: 3 cards, 0 new files" in capsys.readouterr().out
-
-
-def test_small_image_from_the_720(bs, tmp_path, monkeypatch):
-    """The 96 px image (SMALL_SIZES: table rows, 64 px lists) of a cached blob is made from its 720 px AVIF, no PNG
-    download; its name follows the 720's settings too."""
-    from PIL import Image
-    monkeypatch.setattr(bs, "CACHE", str(tmp_path))
-    (tmp_path / "img").mkdir()
-    sha, known = "ab" * 20, [720, 1008, "#c8285a"]
-    names = bs.image_names(sha)
-    Image.new("RGB", (240, 336), (200, 40, 90)).save(tmp_path / "img" / names[720], "AVIF")
-    for w in (240, 360):
-        (tmp_path / "img" / names[w]).write_bytes(b"x")
-    monkeypatch.setattr(bs, "image_bytes", lambda *a: pytest.fail("PNG downloaded"))
-    assert bs.make_images("Creatures/A.png", sha, known) == (sha[:16], *known)
-    with Image.open(tmp_path / "img" / names[96]) as im:
-        assert im.size == (96, 134)
-    tag = bs.thumb_tag(96)
-    monkeypatch.setitem(bs.IMAGE_SIZES, 720, 49)
-    assert bs.thumb_tag(96) != tag
-
-
-def test_card_page_preview_is_the_pinned_png(bs, repo, tmp_path, monkeypatch):
-    """A card page's og:image: its PNG on raw GitHub at the commit that last changed it (no -og.jpg made); without
-    history, at the build's commit (card_raw)."""
-    monkeypatch.setattr(bs, "SITE_URL", "https://site")
-    og = lambda d, i: re.search(r'og:image" content="([^"]+)"', (d / "dist" / "c" / i / "index.html").read_text(encoding="utf-8"))[1]
-    _build(bs, monkeypatch, repo, tmp_path / "a")
-    c1, _, c3 = repo["commits"]
-    raw = f"https://raw.githubusercontent.com/{bs.CARD_REPO}/"
-    assert og(tmp_path / "a", "alpha") == f"{raw}{c3}/{ALPHA.replace(' ', '%20')}.png"
-    assert og(tmp_path / "a", "watermelon") == f"{raw}{c1}/{MELON.replace(' ', '%20')}.png"
-    assert not list((tmp_path / "a" / "dist" / "thumbs").glob("*.jpg"))
-    monkeypatch.setattr(bs, "git_history", lambda *a: None)
-    monkeypatch.setattr(bs, "_card_raw", f"{raw}{'f' * 40}/")
-    _build(bs, monkeypatch, repo, tmp_path / "b")
-    assert og(tmp_path / "b", "alpha") == f"{raw}{'f' * 40}/{ALPHA.replace(' ', '%20')}.png"
-
-
 def test_guards_name_rule_matches_the_site(bs):
     """AutoCroissant's R14 (card_standards.miscased_names) and build_site.name_links share text.js's rule of which words
     name a card: on the same text, R14's names are the links typed in another case."""
@@ -752,20 +285,6 @@ def test_guards_name_rule_matches_the_site(bs):
     assert {right for _, right in miscased} <= typed
 
 
-def test_a_card_naming_itself_mentions_itself(tmp_path):
-    """Owner 2026-10-30: a card whose text names it is in its own Mentions and Mentioned by (text.js mentions)."""
-    text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
-    if not text_js.is_file():
-        pytest.skip("no text.js")
-    probe = tmp_path / "probe.mjs"
-    probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
-                     "const r = t.makeRenderer({ cards: [{ id: 'mk', name: 'Mirror Knight', key: 'Mirror Knight', type: 'creature' }], icons: {} });\n"
-                     "process.stdout.write(JSON.stringify([...r.mentions('(OD) Summon another Mirror Knight.')]));\n", encoding="utf-8")
-    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout) == ["mk"]
-
-
 def test_a_web_chapter_is_not_printed(bs, tmp_path):
     """Owner 2026-11-07: a chapter titled {.web} is on the website only (rulebook.js printed, build_site printed_chapters)."""
     book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
@@ -779,111 +298,6 @@ def test_a_web_chapter_is_not_printed(bs, tmp_path):
     done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == ["stats"]
-
-
-def test_rulebook_pictures_sized_before_they_load(tmp_path):
-    """rulebook.js: a mascot (rules.json's size) and a card picture (tw/th) carry width/height, so nothing above a contents
-    link's chapter grows while the jump runs; a picture of unknown size none."""
-    book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
-    if "rb-mascot" not in book_js.read_text(encoding="utf-8"):
-        pytest.skip("a rulebook without mascots")
-    probe = tmp_path / "probe.mjs"
-    probe.write_text(f"const rb = await import({json.dumps(book_js.as_uri())});\n"
-                     "const ctx = { render: s => s, size: f => (f === 'kirby' ? [120, 96] : null), card: n => (n === 'Alpha' ? { id: 'a1', name: 'Alpha', tw: 360, th: 504 } : null),\n"
-                     "  cardImg: () => 't.avif', imgUrl: f => f + '.webp' };\n"
-                     "const html = rb.chapterHtml({ id: 'x', source: '# X\\n\\n> [!kirby] Hi.\\n\\n![[Alpha]]\\n\\n> [!sonic] Who?\\n' }, ctx);\n"
-                     "process.stdout.write(JSON.stringify([...html.matchAll(/<img [^>]*>/g)].map(m => [m[0].match(/width=\"(\\d+)\" height=\"(\\d+)\"/)?.slice(1)])));\n",
-                     encoding="utf-8")
-    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout) == [[["120", "96"]], [["360", "504"]], [None]]
-
-
-def test_a_heavy_commit_links_the_cards_history(tmp_path):
-    """text.js commitLink: a heavy commit (cards.json heavy) links GitHub's history of the card's PNG from it, its path
-    encoded, and nothing without a path; any other commit its commit page."""
-    text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
-    if not text_js.is_file():
-        pytest.skip("no text.js")
-    probe = tmp_path / "probe.mjs"
-    probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
-                     "t.setHeavy(['aaaaaaaaaaaa']); const a = 'a'.repeat(40), b = 'b'.repeat(40), p = \"Items/2 Stars/Ahn'Qiraj #1.png\";\n"
-                     "process.stdout.write(JSON.stringify([t.commitLink('o/r', b, 'x', p), t.commitLink('o/r', a, 'x'), t.commitLink('o/r', a, 'x', p)]));\n",
-                     encoding="utf-8")
-    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
-    assert done.returncode == 0, done.stderr
-    hrefs = [html_unescape(m[1]) if m else None for m in (re.search(r'href="([^"]*)"', h) for h in json.loads(done.stdout))]
-    assert hrefs == [f"https://github.com/o/r/commit/{'b' * 40}", None,
-                     f"https://github.com/o/r/commits/{'a' * 40}/Items/2%20Stars/Ahn'Qiraj%20%231.png"]
-
-
-def test_tts_details_for_the_save(bs):
-    """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
-    section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
-    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out, only the stats
-    a card has (an active item: HP and DEF); a [field] card's Field Cards first in r; aliases not part of the name (al); the
-    ability's words in the site's palette (ac, owner 2026-11-11: never the card's own colours or Card Edits colors)."""
-    chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
-                 "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
-                {"id": "item-types", "num": "14", "title": "Item Types", "source":
-                 "## [support] SUPPORT\nGeneral use. [joke]{.secret}\n=== page ===\nNot this.\n"},
-                {"id": "minions", "num": "15", "title": "Minions", "source": "[offensive_minion]:Same field as the [fire] summoner.\n"},
-                {"id": "status-effects", "num": "19", "title": "Status Effects", "source": "One instance only. [debuff] [nothere]\n"},
-                {"id": "timing-tags", "num": "23", "title": "Timing Tags", "source": "| Tag | Meaning |\n|---|---|\n| (XCD) | Wait X turn(s) |\n"},
-                {"id": "damage-types", "num": "21", "title": "Damage Types", "source": "## PIERCING\nIgnores DEF.\n"},
-                {"id": "negation", "num": "22", "title": "Negation", "source": "## NEGATION\nTaken out of play.\n"},
-                {"id": "field-cards", "num": "18", "title": "Field Cards", "source": "## PLAYING\nOne at a time.\n"}]
-    icons = {k: {} for k in ("fire", "wind", "support", "offensiveminion", "debuff")}
-    cards = [{"name": "Hot Guy", "type": "creature", "types": ["fire", "offensive_minion"], "png": "Creatures/Hot_Guy.png", "stars": 3,
-              "hp": 5, "def": 1, "atk": 2, "spd": 3, "ability": "(1cd) Inflict 2T burning. (3CD) [fire] again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals 2 CDMG; negates.", "author": "Bob"},
-             {"name": "Burning", "type": "debuff", "types": ["debuff"], "png": "Aux/Burning.png", "ability": "3 DMG, can't affect [fire]"},
-             {"name": "Secret", "type": "item", "png": "Items/Secret.png", "hidden": True, "ability": "Burning"},
-             {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
-             {"name": "Gate", "type": "field", "types": ["field"], "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay. Can't be negated."},
-             {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""},
-             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight.",
-              "aliases": ["MK", "Knight"], "webAliases": ["mk"]},
-             {"name": "Totem", "type": "item", "subtype": "active", "png": "Items/Totem.png", "hp": 2, "def": 0, "ability": ""}]
-    got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
-    assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
-                            "wind": {"n": "Wind", "x": "Swap.", "c": "creature-types"},
-                            "support": {"n": "Support", "x": "General use.", "c": "item-types"},
-                            "offensiveminion": {"n": "Offensive Minion", "x": "Same field as the fire summoner.", "c": "minions"},
-                            "debuff": {"n": "Debuff", "x": "One instance only.", "c": "status-effects"}}
-    assert got["tags"] == {"1CD": {"g": "turn", "m": "Wait 1 turn"}, "3CD": {"g": "turn", "m": "Wait 3 turns"},
-                           "OD": {"g": "trigger", "m": "On death"}}
-    assert got["statuses"] == {"Burning": {"x": "3 DMG, can't affect fire", "k": "debuff", "p": "Aux/Burning.png"}}
-    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png", "Field/Gate.png", "Creatures/Stay.png",
-                                 "Creatures/Mirror_Knight.png", "Items/Totem.png"}
-    assert got["cards"]["Items/Totem.png"]["s"] == "HP 2 DEF 0"
-    assert got["cards"]["Creatures/Mirror_Knight.png"]["m"] == ["Creatures/Mirror_Knight.png"]   # a card naming itself spawns itself (owner 10-30)
-    assert got["cards"]["Creatures/Mirror_Knight.png"]["al"] == ["mk"]   # "Knight" is in the name
-    assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
-    assert got["cards"]["Field/Gate.png"]["r"] == ["field-cards", "negation"]   # [field] has no meaning: its chapter by hand
-    assert got["cards"]["Creatures/Hot_Guy.png"] == {
-        "n": "Hot Guy", "k": "Creature", "st": 3, "s": "HP 5 DEF 1 ATK 2 SPD 3",
-        "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals 2 CDMG; negates.",
-        "t": ["fire", "offensiveminion"], "g": ["1CD", "3CD", "OD"], "x": ["Burning"], "m": ["Aux/Dark_Tentacle.png"], "r": ["damage-types", "negation"], "by": "Bob"}
-    assert "x" not in got["cards"]["Aux/Burning.png"] and got["chapters"]["minions"] == {"num": "15", "title": "Minions"}
-    if not hasattr(bs, "tts_words"):                    # before TC's site palette lands
-        return
-    hot = cards[0]                                     # its own colours and an edit's: the card image's, never drawn here
-    hot["ink"] = {"name": [[4, 7, "#ffd21f"]], "ability": [[0, 5, "#00ff00"]]}
-    hot["colors"] = [{"field": "ability", "phrase": "again", "color": "#ff0000"}]
-    palette = bs.text_palette(cards, {"Burning": "#db923d"})
-    got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters), palette)
-    assert got["cards"]["Creatures/Hot_Guy.png"]["ac"] == [["Burning", "#db923d"]] and "nc" not in got["cards"]["Creatures/Hot_Guy.png"]
-    assert got["statuses"]["Burning"]["c"] == "#db923d"                       # its STATUS EFFECTS line's colour
-    words = bs.tts_words("Pay (2 points): +2 ATK, 3 SP, [fire] HPs HP (1CD) Burning, Dark; HP and HP.", {**palette, "statuses": {"Burning": "#db923d", "Dark": "#101010"}}, icons)
-    dark = [["Dark", "#646464"]] if hasattr(bs, "tts_seen") else []   # too dark: a lighter shade (TC 11-11), plain before
-    assert words == [["2 points", "#00ffae"], ["+2 ATK", "#ff3b3b"], ["3 SP", "#ffff00"], ["HP", "#2fbf3a", 2], ["Burning", "#db923d"],
-                     *dark, ["HP", "#2fbf3a"], ["HP", "#2fbf3a"]]   # a cost's words too (no badge in TTS), not a tag; HPs first
-
-
-def test_badge_font_preloaded_where_badges_show(bs):
-    """A card page preloads the badge font when its text draws a badge (text.js's tags and costs, any case), not otherwise."""
-    assert all(map(bs.has_badges, ["(1cd) Hit.", "(-1/1GCD) Wait.", "Pay (2 points).", "(Action) Swap.", "(0.5 SP)"]))
-    assert not any(map(bs.has_badges, ["Deal 2 (x) damage.", "(Actions) twice", "x(2 points)", "Plain text."]))
 
 
 def test_site_workflow_sets_up_in_the_background(tmp_path):

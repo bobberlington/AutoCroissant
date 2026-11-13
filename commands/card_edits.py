@@ -1,13 +1,12 @@
 """
 TTSCardMaker's hand-kept card files: site/Card Authors.txt (CardAuthors), site/Card Edits.json (CardEdits),
 site/Card Creation Dates.json (CardDates) and site/Card Ratings.json (CardRatings), and their layout (dump_edits: the
-edit.js editsFile port; dump_ratings). No Discord, network or psd-tools.
+edit.js editsFile port). No Discord, network or psd-tools.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date
 from json import dumps as json_dumps, loads as json_loads
-from math import floor
 from re import compile as re_compile, fullmatch, sub
 from typing import Optional
 from unicodedata import combining, normalize
@@ -19,7 +18,7 @@ from commands.card_models import CardInfo, CardStats, card_name
 # ========================
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "parts", "colors", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
+         "parts", "colors", "note", "art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
          "flags", "names_ok")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
@@ -30,7 +29,6 @@ HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
 RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
-ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (one string in older entries), ability_art retired (10-31)
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
 FLAGS = ("hand", "bars", "name")                # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
 FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
@@ -73,17 +71,17 @@ def color_text(one: dict) -> str:
     return one["field"].capitalize() + (f": '{phrase}'{nth}" if phrase else "") + f" coloured {one['color']}"
 
 
-def art_list(art, ability_art=None) -> list:
-    """The artwork sources, in order: art (a list, or one string) then a legacy ability_art; whitespace collapsed, empty
-    ones left out (build_site.art_list, art.js artList)."""
-    items = (art if isinstance(art, list) else [art]) + [ability_art]
+def art_list(art) -> list:
+    """The artwork sources, in order: art (a list, or one string in older records: Soul of Eden's); whitespace collapsed,
+    empty ones left out (build_site.art_list)."""
+    items = art if isinstance(art, list) else [art]
     return [t for t in (" ".join(x.split()) for x in items if isinstance(x, str)) if t]
 
 
 def fold_art(fields: dict) -> dict:
-    """fields with art as art_list's list (None when empty) and no ability_art, when either is there."""
-    if "art" in fields or "ability_art" in fields:
-        fields["art"] = art_list(fields.get("art"), fields.pop("ability_art", None)) or None
+    """fields with art as art_list's list (None when empty), when it is there."""
+    if "art" in fields:
+        fields["art"] = art_list(fields["art"]) or None
     return fields
 
 
@@ -143,12 +141,12 @@ class CardEdits:
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
-             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list, "ability_art": str,
+             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list,
              "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
              "parts": dict, "flags": dict, "colors": list, NAMES_OK: list}
-    NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
+    NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
-             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
+             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art",
              "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
@@ -158,7 +156,7 @@ class CardEdits:
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
-            "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
+            "subseries": "database", "note": "database", "art": "database", "aliases": "database",
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
             "creatures": "psd", "flags": "database", "colors": "psd", NAMES_OK: "database"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures")    # what `_site` may name (edit.js SITE)
@@ -182,8 +180,8 @@ class CardEdits:
             return isinstance(value, list) and all(isinstance(c, dict) and all(
                 k in cls.STATS and (v is None or (isinstance(v, int) and not isinstance(v, bool) and v >= 0))
                 for k, v in c.items()) for c in value)
-        if name in ART_FIELDS:                  # a source, or (art) a list of them
-            return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
+        if name == "art":                       # a list of sources (one string in older entries)
+            return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if isinstance(value, list) else [value]))
         if name == "colors":
             return valid_colors(value)
         if name == NAMES_OK:
@@ -252,8 +250,8 @@ class CardEdits:
             setattr(card.stats, self.STATS[name], -1 if value is None else value)
         elif name == "problems":
             card.problems = list(value or [])
-        elif name == "art":                     # the list; the retired second field is in it
-            card.art, card.ability_art = art_list(value) or None, None
+        elif name == "art":                     # the list
+            card.art = art_list(value) or None
         else:
             setattr(card, self.ATTRS[name], list(value) if isinstance(value, list) else value)
 
@@ -388,28 +386,15 @@ class CardRatings:
     """
     TTSCardMaker's site/Card Ratings.json: dated ratings per card, whole numbers 1-10 (owner, 2026-10-26), oldest first.
     {"about": ..., "cards": {"Card Name": [{"date", "scale", "value", "by", "source"}]}}; names match like the authors
-    file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` (the website's Rate it
-    until 2026-11-11); read by the website build only, which shows none (never the bot, the card sync or the checks).
+    file. by: "group" (a TTS session) or a GitHub login. Data only since 2026-11-12 (owner: the TTS-session import
+    deleted): a card rename moves its entries in this order (card_bake); nothing else reads it.
     """
     SCALES = ("favorability", "power")
     SOURCES = ("TTS session", "website")
-    KEYS = ("date", "scale", "value", "by", "source")
-    ABOUT = ("Card ratings, whole numbers 1 to 10. favorability: how much players like the card; power: 1 weak, 10 too "
-             "strong; the middle (5.5) is balanced. Keyed by card file name; entries oldest first. by: \"group\" (a TTS "
-             "session) or a GitHub login. Read by the website only.")
-
-    @staticmethod
-    def number(value: float):
-        """The nearest whole number, halves up like JS Math.round (4.5 -> 5; Python's round() gives 4)."""
-        return int(floor(value + 0.5))
-
-    @classmethod
-    def entry(cls, day: str, scale: str, value: float, by: str, source: str) -> dict:
-        return {"date": day, "scale": scale, "value": cls.number(value), "by": by, "source": source}
 
     @classmethod
     def order(cls, entries: list) -> list:
-        """Oldest first: date, then source (TTS sessions first), then by, then scale (build_site rating_order)."""
+        """Oldest first: date, then source (TTS sessions first), then by, then scale."""
         rank = lambda seq, v: seq.index(v) if v in seq else len(seq)
         return sorted(entries, key=lambda e: (str(e.get("date", "")), rank(cls.SOURCES, e.get("source")),
                                               str(e.get("by", "")).lower(), rank(cls.SCALES, e.get("scale"))))
@@ -492,19 +477,6 @@ def dump_edits(data: dict) -> str:
     return "{\n" + rest + '  "cards": {' + (f"\n{body}\n  " if keys else "") + "}\n}\n"
 
 
-def dump_ratings(data: dict) -> str:
-    """
-    Card Ratings.json in dump_edits' layout, each card's line its list of entries.
-
-    Args:
-        data: The parsed file
-
-    Returns:
-        The text (with its final newline)
-    """
-    return dump_edits(data)
-
-
 # ========================
 # Module Exports
 # ========================
@@ -514,7 +486,6 @@ __all__ = [
     'CardEdits',
     'CardRatings',
     'ADD_ABILITY',
-    'ART_FIELDS',
     'ART_MAX',
     'COLOR_FIELDS',
     'FLAGS',
@@ -530,7 +501,6 @@ __all__ = [
     'as_parsed',
     'dump_edits',
     'dup_pictures',
-    'dump_ratings',
     'valid_colors',
     'valid_parts',
 ]

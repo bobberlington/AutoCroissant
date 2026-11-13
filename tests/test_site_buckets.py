@@ -1,6 +1,6 @@
 """
-The website's pinned tray (TTSCardMaker site/assets/tray.js, in node): adding and removing pins, keys 1-9 on the first
-nine boxes. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips with a site before them.
+The website's pinned tray (TTSCardMaker site/assets/tray.js, in node), one smoke test (owner 2026-11-12): adding and
+removing pins. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips with a site before them.
 """
 import json
 from pathlib import Path
@@ -40,16 +40,3 @@ process.stdout.write(JSON.stringify([T.addPin(one, { k: "series", v: "mario " })
   T.removePin(full, 0).length, T.removePin(one, 5)]));""", T=TRAY_JS)
     assert out == [{"error": "Already pinned"}, {"pins": [{"k": "series", "v": "Mario"}, {"k": "author", "v": "Mario"}]},
                    {"error": "At most 100 pins"}, 100, 99, [{"k": "series", "v": "Mario"}]]
-
-
-@needs_tray
-def test_many_pins_keys_reach_the_first_nine(tmp_path):
-    """Up to 100 stored pins load; keys 1-9 and their badges and labels are the first nine boxes' only; Skip past nine."""
-    out = node(tmp_path, """
-const many = Array.from({ length: 130 }, (_, i) => ({ k: "series", v: `S${i}` })), pins = T.readPins(JSON.stringify(many));
-const html = T.trayHtml(pins.slice(0, 12), []);
-process.stdout.write(JSON.stringify([pins.length, T.readPins(JSON.stringify(many.slice(0, 9))).length,
-  ["1", "9", "0", "10"].map(k => T.pinOfKey(k, pins)), (html.match(/class="kbd"/g) || []).length,
-  /press (1[0-2])/.test(html), (html.match(/choose this box/g) || []).length,
-  [html, T.trayHtml(pins.slice(0, 9), [])].map(h => h.includes('class="tray-skip"'))]));""", T=TRAY_JS)
-    assert out == [100, 9, [0, 8, None, None], 9, False, 3, [True, False]]

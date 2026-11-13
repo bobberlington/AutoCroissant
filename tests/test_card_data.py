@@ -871,21 +871,20 @@ def test_every_record_straightened(cards):
 
 
 def test_artwork_sources_are_each_entrys_own(cards):
-    """Artwork sources (Card Edits.json art; the retired ability_art its last) reach stats.json per entry: a duplicate never takes its
+    """Artwork sources (Card Edits.json art) reach stats.json per entry: a duplicate never takes its
     original's, and an edit of a duplicate's own is an edited event."""
     put(cards.repo, "Auxiliary/Minions/Mini_Doomer_Alt.png", b"second art")
     put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
-        "Mini Doomer": {"art": "https://x.com/a/1", "ability_art": "Ann", "_by": "web"},
-        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "ability_art": "Bob", "_by": "web"}}}).encode())
+        "Mini Doomer": {"art": ["https://x.com/a/1", "Ann"], "_by": "web"},
+        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "art": ["Bob"], "_by": "web"}}}).encode())
     commit(cards.repo, "web", 1100)
     assert _build(cards, "--empty")[0] == cd.EXIT_OK
     stats = _read(cards)[0]
-    assert (stats["Mini Doomer"].art, stats["Mini Doomer"].ability_art) == (["https://x.com/a/1", "Ann"], None)   # one list (10-31)
-    assert (stats["Mini Doomer Alt"].art, stats["Mini Doomer Alt"].ability_art) == (["Bob"], None)
+    assert stats["Mini Doomer"].art == ["https://x.com/a/1", "Ann"] and stats["Mini Doomer Alt"].art == ["Bob"]
     assert stats["Mini Doomer"].to_dict()["art"] == ["https://x.com/a/1", "Ann"] and "art" not in stats["The Freezer"].to_dict()
     put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
-        "Mini Doomer": {"art": "https://x.com/a/1", "ability_art": "Ann", "_by": "web"},
-        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "art": "Cy", "ability_art": "Bob", "_by": "web"}}}).encode())
+        "Mini Doomer": {"art": ["https://x.com/a/1", "Ann"], "_by": "web"},
+        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "art": ["Cy", "Bob"], "_by": "web"}}}).encode())
     commit(cards.repo, "web", 1200)
     assert _build(cards)[0] == cd.EXIT_OK
     stats, _, _, _, events = _read(cards)
@@ -894,8 +893,8 @@ def test_artwork_sources_are_each_entrys_own(cards):
     assert last == [("edited", "Mini Doomer Alt", {"art": [["Bob"], ["Cy", "Bob"]]}, "web")]
     edited = lambda: sum(e["kind"] == "edited" for e in _read(cards)[4])
     had = edited()
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {             # the same sources as lists: no event
-        "Mini Doomer": {"art": ["https://x.com/a/1", "Ann"], "_by": "web"},
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {             # the same sources, spaced: no event
+        "Mini Doomer": {"art": [" https://x.com/a/1", "Ann  "], "_by": "web"},
         "Mini Doomer Alt": {"dup_of": "Mini Doomer", "art": ["Cy", "Bob"], "_by": "web"}}}).encode())
     commit(cards.repo, "web", 1300)
     assert _build(cards)[0] == cd.EXIT_OK

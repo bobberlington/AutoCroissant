@@ -236,7 +236,7 @@ on use. The card data is built by TTSCardMaker's Card sync Action with this repo
 what it re-parses, its gates, budget and history rules: docs/Campaigns/DATA_BUILD_ACTION.md §6, §7, §13,
 §15). Until 2026-10-25 `/update_stats` parsed changed PSDs on the jetson and saved the pickles (the "legacy mode", its
 commits-API lookups and the one-time history cleanup, `card_data.update`); that path is gone (autocroissant-failure-archaeology).
-`site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
+`site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 ### TTS save (a TTSCardMaker Action since 2026-10-20; /update_tts_save from 2026-10-20 until its retirement 2026-10-25)
 
@@ -917,3 +917,5 @@ commands; OJWikibot builds while it has a setup.py), the no-toolchain rule (fork
 action), /fonts from the manifest's fonts report, the handoff and /update without a build, the jetson-venv re-verify row.
 
 2026-11-12 (asks-1112, owner G4): /frankenstein, /view_old_metadata, /volume, /set_ratio and /set_repo deleted: card_sync.READERS lists 7 commands; the card list and emojis always follow the card repo.
+
+2026-11-12 (asks-1112, owner G5): `site/Card Ratings.json` is data only (`python -m commands.tts_ratings` deleted).

@@ -557,7 +557,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card, else one named after it elsewhere in the title region (2026-10-23: the status effects' top-level titles; letters and digits alike, so Mr Jawsum and Ms Mowz show 'Mr. Jawsum' and 'Ms. Mowz'); else the one visible text layer in the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus 'The Great Papyrus', Sans 'snas.'; never on a rule page, whose headings are named so; `psd_parser.named_after_text`); else, last, rule P (2026-10-26, PARSER_VERSION 5, `_titles_by_place`): the visible text layers under `Text` in the title region, not Ability or FX, and the lines stacked under them in the same face and size, names and words aside (Alex YIIK, Lorian, Lothric, Thunder Thighs 'Thunder thighs', Dark Matter Swordsman, Chris & Jordi, Knight Lost A Lot's four stacked words); byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards, 94 of them differing only in letter case or spacing, shown as printed (the user's call, 2026-10-21); `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
 | `note` / `hidden` | same | from Card Edits.json; omitted when falsy |
 | `duplicate_of` | same | the original card, for another PNG of the same PSD; since 2026-10-25 also every variant picture 2+ (picture 1, or the card its Card Edits.json `dup_of` names; owner: one category, counted once, `card_data.variant_duplicates`), which keeps its own parse, name, art, author and ratings; omitted when falsy |
-| `art` / `ability_art` | same | artwork sources, database-only, from Card Edits.json (each entry its own, duplicates too; 2026-10-25); `/query` shows them as masked links; omitted when falsy |
+| `art` | same | artwork sources (a list; one string in an older record, Soul of Eden's), database-only, from Card Edits.json (each entry its own, duplicates too; 2026-10-25); `/query` shows them as masked links; omitted when falsy; `ability_art` folded in 2026-10-31, the field deleted 2026-11-12 |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
 `problems_ok`, `allow_high_stats`, `parsed_values`, `blob_sha`, `variant` / `variant_of` / `variants` (a tagged
@@ -571,7 +571,7 @@ in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`
 on the card image, so the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md §3) bakes them into the PSD and PNG and the
 website shows "PSD pending" until then (`name` only when it differs from the printed title the parser reads into
 `display_name`; since 2026-10-21 a baked or already-printed name is dropped from the file like any other field). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
-`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures`, `art`, `ability_art`, `flags` live in the file alone (`creatures` overrides the
+`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures`, `art`, `flags` live in the file alone (`creatures` overrides the
 parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
 database-only ones (unless Discord's retired `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
@@ -751,7 +751,7 @@ excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 Spaces around an operator are fine (`hp > 5`, `type == creature`, `created >= 2025`; 2026-10-23, as the website's
 search). `created` is the card's `site/Card Creation Dates.json` date, or its first upload when the file misses it or
 is later (`CardDates.created`, the website's rule); it is in `/export_cards` and the metadata view too.
-`site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
+`site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
 count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (space-joined as the
@@ -894,3 +894,5 @@ change, sections 4-5 are stale until rewritten.
 2026-11-09 (site rounds): §7.2 gotcha 7: the fuzzy pass runs only when no card has the text.
 
 2026-11-12 (asks-1112, owner G4): /set_ratio deleted (match_ratio is DEFAULT_MATCH_RATIO only); query_card's DEFAULT_REPOSITORY folded into CARD_REPO.
+
+2026-11-12 (asks-1112, owner G5/G6): Card Ratings.json data only (`tts_ratings` deleted); the `ability_art` field deleted (`art` keeps reading an older record's one string: Soul of Eden's).

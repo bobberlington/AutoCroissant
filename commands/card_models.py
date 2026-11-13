@@ -89,7 +89,6 @@ class CardInfo:
     variant_of: Optional[str] = None          # variant N's: variant 1's card (same PSD, its own PNG)
     variants: Optional[list] = None           # variant 1's: the other variants' cards
     art: Optional[list] = None                # artwork sources (Card Edits.json; a string in older records); each entry its own
-    ability_art: Optional[str] = None         # retired: older records' second source (card_edits.art_list reads it last)
     version = None                            # card_history's {from, to, cause...}; no field (card_db.EXTRA_KEYS)
     created = None                            # CardDates: {date, from}; no field either
 
@@ -124,7 +123,7 @@ class CardInfo:
 
         if self.problems:
             result["problem"] = self.problems
-        for key in ("display_name", "note", "art", "ability_art", "hidden", "duplicate_of"):
+        for key in ("display_name", "note", "art", "hidden", "duplicate_of"):
             if getattr(self, key, None):
                 result[key] = getattr(self, key)
         if getattr(self, "creatures", None):

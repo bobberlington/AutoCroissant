@@ -1,8 +1,7 @@
 """
-The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node): stat distributions paged
-past 10, short chart texts, which History charts show (Ratings off the site, owner 11-11), power creep, subseries under
-their series, and the charts' links to the Cards grid. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the
-clone; skips without a stats.js with cardsHref (2026-10-25).
+The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node), one smoke test (owner
+2026-11-12): power creep. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a
+stats.js (2026-10-25).
 """
 import json
 from subprocess import run as run_process
@@ -52,8 +51,6 @@ function render(cards, A, q = "", { banned = new Map(), distPage = {} } = {}) {
   st.renderStats(root, ctx, p);
   return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", history: ins.historyHtml(ctx, p) };
 }
-const hrefs = html => [...html.matchAll(/<a class="go" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));
-const params = href => { const p = Object.fromEntries(new URLSearchParams(href.split("?")[1])); if (p.nodup !== "1") throw new Error(`no nodup: ${href}`); delete p.nodup; return p; };
 """
 
 
@@ -80,30 +77,3 @@ out({ ratings: [typeof ins.ratingsHtml, render(rated, A).top.includes("stats-rat
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
     assert not out["item"] and out["gone"] == [] and out["ratings"] == ["undefined", False]   # no Ratings section or jump
-
-
-
-def test_a_subseries_is_one_name_across_series(tmp_path):
-    """Owner 10-25: one subseries across series, a card may have one without a series. Stats (owner 10-31: a Series /
-    Subseries toggle): the series view lists the series and "No series"; the subseries view one row per subseries,
-    counted once across its series, its link by subseries alone. The editor's helpers (edit.js, tray.js) match it by
-    name alone."""
-    out = node(tmp_path, """
-const cards = fixture();
-cards[0].subseries = "Dream"; cards[6].subseries = "Dream";       // M1 (Mario), K1 (Kirby)
-cards.push(C("Z1", null, 2, [3, 3, 3, 3], "2020-05-01", "Ann", { subseries: "Dream" }));
-const top = render(cards, null).top, sec = chart(top, "series");
-delete globalThis.document;                                       // the stub: edit.js imports fresh.js, which reads a real one or none
-const E = await import(%s), T = await import(%s);
-const pins = T.readPins(JSON.stringify([{ k: "subseries", v: "Dream", s: "Mario" }, { k: "subseries", v: "dream", s: "Kirby" }]));
-out({ rows: rows(sec), kpi: text(top).match(/Creature subseries (\\d+)/)?.[1], links: hrefs(sec).map(params).filter(p => p.subseries),
-  carrying: E.carrying(cards, "subseries", "dream").map(c => c.name),
-  filter: E.renamedFilter(new URLSearchParams("series=Kirby&subseries=Dream"), { key: "subseries", from: "Dream", to: "Dreams" }),
-  buckets: E.readBuckets(JSON.stringify({ subseries: ["Dream", "Land"] })).subseries,
-  pins, counts: T.countPins(pins, cards) });
-""" % (json.dumps((ASSETS / "edit.js").as_uri()), json.dumps((ASSETS / "tray.js").as_uri())))
-    assert out["rows"] == [["Mario", "6"], ["Kirby", "6"], ["No series", "1"], ["Dream", "3"]]   # series view, then subseries
-    assert out["kpi"] == "1"
-    assert out["links"] == [{"kind": "creature", "subseries": "Dream"}]
-    assert out["carrying"] == ["M1", "K1", "Z1"] and out["filter"] == {"subseries": ["Dreams"]}
-    assert out["buckets"] == ["Dream", "Land"] and out["pins"] == [{"k": "subseries", "v": "Dream"}] and out["counts"] == [3]

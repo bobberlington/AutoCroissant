@@ -959,7 +959,7 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     extra = [("Banned in constructed" + (f": {escape_markdown(ban)}" if ban else "")) if ban is not None else "",
              f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
-    arts = art_list(getattr(card, "art", None), getattr(card, "ability_art", None)) if card else []   # a card's artwork sources
+    arts = art_list(getattr(card, "art", None)) if card else []   # a card's artwork sources
     extra += [f"Artwork source{f' #{i}' if len(arts) > 1 else ''}: {art_text(source)}" for i, source in enumerate(arts, 1)]
     if card and (shown or subseries or any(extra)):     # website name, subseries, note, art, duplicate or ban: an embed
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
