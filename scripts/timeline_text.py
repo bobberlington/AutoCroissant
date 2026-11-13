@@ -72,6 +72,7 @@ MIN_N = 8                                        # an era with less truth borrow
 FIELDS = ("title", "ability", "stars", "types")
 TOKEN = re.compile(r"\[([^\]:]+)(?::[^\]]*)?\]")
 WORD = re.compile(r"[a-z0-9]+")
+ANY_WORD = re.compile(r"[^\W_]+")              # letters of any script kept (OCR's Cyrillic 'А' is not 'A')
 CONFUSE = str.maketrans({"0": "o", "1": "l", "i": "l", "5": "s", "|": "l"})
 
 
@@ -127,7 +128,7 @@ def ratio(a, b):
     return SequenceMatcher(None, a, b, autojunk=False).ratio() if a and b else 0.0
 
 
-def ability_words(text):
+def ability_words(text, word=WORD):
     """An ability as words: tokens ([fire]) as '<fire>', the rest lower-case letters and digits."""
     out = []
     for part in re.split(r"(\[[^\]]*\])", text or ""):
@@ -135,8 +136,14 @@ def ability_words(text):
         if m:
             out.append("<%s>" % m.group(1).strip().lower())
         else:
-            out += WORD.findall(part.lower())
+            out += word.findall(part.lower())
     return out
+
+
+def passes_agree(a, b):
+    """The two OCR passes give the same words, letters of any script kept: a letter one pass gave in another
+    script never drops out of the check."""
+    return ability_words(a, ANY_WORD) == ability_words(b, ANY_WORD)
 
 
 def type_name(stem):
@@ -833,7 +840,7 @@ def ability_scores(text, other, title):
     alpha = [w for w in ws if not w.isdigit() and not w.startswith("<")]
     voc = vocab()
     share = sum(w in voc and (len(w) > 1 or w == "a") for w in alpha) / len(alpha) if alpha else 0.0
-    agree = ability_words(other) == ws if other is not None else False
+    agree = passes_agree(text, other) if other is not None else False
     return {"vocab": round(share, 4), "agree": agree, "known": ability_known((title or {}).get("name"), text),
             "words": len(ws)}
 
@@ -1489,8 +1496,7 @@ def field_read(rd, field, how, exclude=()):
         ab = ability_variant(rd, how.get("variant", "fix")) or {}
         text = ab.get("text") or None
         method = "ocr+icons" if how.get("variant") == "icons" and rd.get("ability_icons") else "ocr"
-        agree = ability_words((rd.get("ability_fix") or {}).get("text")) == \
-            ability_words((rd.get("ability_raw") or {}).get("text"))
+        agree = passes_agree((rd.get("ability_fix") or {}).get("text"), (rd.get("ability_raw") or {}).get("text"))
         known = ability_known((rd.get("title") or {}).get("name"), text, exclude)
         minconf = min((rd.get("ability_fix") or {}).get("minconf") or 0.0, 1.0)
         return text, method + ("+known" if known else ""), ability_conf(text, agree, minconf, known, ab.get("odd", 0))

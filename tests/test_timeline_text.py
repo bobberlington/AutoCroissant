@@ -48,6 +48,9 @@ def test_the_ability_under_the_bars_without_the_class_line(tt):
            line("\u0421\u0422\u0415\u0410\u0422\u041e\u0419", 0.4, 0.955, 0.2, 0.02)]   # a class line in capitals
     assert tt.ability_block(low, "B", labels, 0.135, "card")[2] == 0
     assert tt.ability_words("[fire]: +1 ATK.") == ["<fire>", "1", "atk"]
+    # a letter one OCR pass gave in another script (Cyrillic) is a different word, not a dropped one
+    assert not tt.passes_agree("(\u0410AT(OPT)This card", "(AT (OPT) This card")
+    assert tt.passes_agree("(AAT)(OPT)This card", "(AAT) (OPT) This card.")
     assert tt.is_right("ability", "Deal 2 damage, then (OPT) heal", "deal 2 damage then (opt) heal.")
     tt._TAGS = {"OYT", "1CD"}
     assert tt.odd_marks("(QYT) Heal 2") == 1 and tt.odd_marks("(OYT) Heal 2 (1CD)") == 0
