@@ -15,6 +15,7 @@ from concurrent.futures.process import BrokenProcessPool
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from hashlib import sha1
 from io import BytesIO
 from json import dumps as json_dumps, loads as json_loads
@@ -997,6 +998,23 @@ def _batch(store: str, shas: list) -> dict:
     return out
 
 
+def _blobs(store: str, shas: list) -> dict:
+    """{sha: bytes} of the blobs a local store holds (one cat-file --batch: no lazy fetch)."""
+    if not store or not shas:
+        return {}
+    done = run(["git", "-C", store, "cat-file", "--batch"], input="\n".join(shas).encode() + b"\n", capture_output=True,
+               env={**environ, **NO_LAZY})
+    data, out, at = done.stdout if done.returncode == 0 else b"", {}, 0
+    while (end := data.find(b"\n", at)) >= 0:
+        head, at = data[at:end].split(), end + 1
+        if len(head) == 3 and head[2].isdigit():   # "<sha> <type> <size>", the bytes, a newline ("<sha> missing")
+            size = int(head[2])
+            if head[1] == b"blob" and len(data) > at + size:
+                out[head[0].decode()] = data[at:at + size]
+            at += size + 1
+    return out
+
+
 def fetch_blobs(checkout: str, shas: list) -> None:
     """The blobs a blobless clone lacks, fetched from origin FETCH_CHUNK a fetch, FETCH_POOL at a time (no REST); a failed
     fetch leaves its blobs out (the caller reads what came)."""
@@ -1227,6 +1245,7 @@ QUALITY_SLACK = 3                                                 # G5: cards th
 DETAILS_SHARE = 0.05                                              # G5: psd_details records that may go
 EXIT_OK, EXIT_ERROR, EXIT_GATE = 0, 1, 2
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}                              # a missing blob fails instead of being fetched
+TEXTS = (ICON_MANIFEST_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_PATH)  # every build reads them (and the rulebook's .md)
 
 
 def _git(repo: str, *args: str) -> str:
@@ -1258,8 +1277,8 @@ class GitBuild(CardBuild):
         from commands.card_history import GitIndex
         super().__init__(db)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
-        self.head = _git(checkout, "rev-parse", head).strip()
-        self.at = float(_git(checkout, "log", "-1", "--format=%ct", self.head).strip())   # not show: a merge diffs (blobs)
+        sha, at = _git(checkout, "log", "-1", "--format=%H %ct", head, "--").split()   # not show: a merge diffs (blobs)
+        self.head, self.at = sha, float(at)
         self.index = GitIndex.from_git(checkout, self.head)
         self.rest = 0                            # REST downloads started
         self.stale: list = []                    # paths held back (budget, rate floor): read on a later run
@@ -1268,14 +1287,30 @@ class GitBuild(CardBuild):
         self._rate_low = False
         self._rate_held: set = set()
         self._stores: dict = {}                  # blob -> store that has it
+        self._trees: dict = {}                   # commit -> its ls_tree
+        self._listed = False                     # the tree's blobs looked up in the stores
+        self._texts: Optional[dict] = None       # blob -> bytes of TEXTS and the rulebook chapters
+
+    def ls_tree(self, head: str) -> dict:
+        """ls_tree at a commit, once."""
+        if head not in self._trees:
+            self._trees[head] = ls_tree(self.checkout, head)
+        return self._trees[head]
 
     def _fetch_tree(self) -> dict:
-        return ls_tree(self.checkout, self.head)
+        return self.ls_tree(self.head)
 
     def _store(self, sha: str) -> str:
         """The local object store that has this blob ("" when none)."""
         if sha in self._stores:
             return self._stores[sha]
+        if self.shas and not self._listed:          # the tree's blobs: one batch per store
+            self._listed = True
+            shas = sorted({s for s in self.shas.values() if s})
+            for store in (self.checkout, self.blobs):   # --blobs wins, as below
+                self._stores.update(dict.fromkeys(_batch(store, shas), store))
+            if sha in self._stores:
+                return self._stores[sha]
         for store in (self.blobs, self.checkout):
             if store and run(["git", "-C", store, "cat-file", "-e", sha], capture_output=True,
                              env={**environ, **NO_LAZY}).returncode == 0:
@@ -1287,6 +1322,14 @@ class GitBuild(CardBuild):
         sha = self.shas.get(path)
         if sha is None:
             return None
+        if self._texts is None:                     # the texts every build reads: one batch per store
+            by_store: dict = {}
+            for each in self.shas:
+                if each in TEXTS or (each.startswith(RULEBOOK_SRC + "/") and each.endswith(".md")):
+                    by_store.setdefault(self._store(self.shas[each]), set()).add(self.shas[each])
+            self._texts = {k: v for store, shas in by_store.items() for k, v in _blobs(store, sorted(shas)).items()}
+        if sha in self._texts:
+            return self._texts[sha].decode("utf-8", "replace")
         store = self._store(sha)
         return _git(store, "cat-file", "blob", sha) if store else super()._repo_text(path)
 
@@ -1521,6 +1564,7 @@ def _remote_tip(db_dir: str) -> Optional[str]:
     return done.stdout.decode().split()[0]
 
 
+@lru_cache(maxsize=1)
 def _builder_commit() -> str:
     try:
         return _git(path_join(dirname(abspath(__file__)), ".."), "rev-parse", "HEAD").strip()
@@ -1659,7 +1703,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     edits = authors = None
     book = None                                               # rulebook.json's text (None: a restore keeps db/'s)
     if not restore:
-        psds = {t["path"] for t in ls_tree(checkout, run_build.head)["tree"] if t["path"].lower().endswith(".psd")}
+        psds = {t["path"] for t in run_build.ls_tree(run_build.head)["tree"] if t["path"].lower().endswith(".psd")}
         had = set(spot)
         render, spot = merge_records(render, spot, [], psds, record_moves(index, psds))   # renamed PSDs keep theirs
         set_records(render, spot)                             # before the parse

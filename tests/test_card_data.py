@@ -584,6 +584,21 @@ def test_git_authors_go_through_the_mailmap(tmp_path):
     assert build.index.first["Items/A.psd"].author == "MichaelJSr"
 
 
+def test_tree_and_texts_read_in_one_batch_and_a_later_blob_found(cards, monkeypatch):
+    """The tree's blobs looked up and the texts read in one call each; a blob that arrives later is still found."""
+    build = cd.GitBuild(cm.StatsDatabase(), str(cards.repo))
+    build.shas = {i["path"]: i["sha"] for i in build._fetch_tree()["tree"]}
+    late = blob_sha_bytes(b"late")
+    build.shas["MDW/Linked/late.png"] = late
+    calls = []
+    monkeypatch.setattr(cd, "run", lambda *a, **k: calls.append(a[0][3]) or run_process(*a, **k))
+    texts = {p: build._repo_text(p) for p in (cd.EDITS_PATH, cd.AUTHORS_PATH, cd.ICON_MANIFEST_PATH)}
+    assert texts == {p: git(cards.repo, "show", f"HEAD:{p}") for p in texts} and calls == ["cat-file"] * 2
+    assert build._store(late) == ""
+    run_process(["git", "-C", str(cards.repo), "hash-object", "-w", "--stdin"], input=b"late", check=True, capture_output=True)
+    assert build._store(late) == str(cards.repo)
+
+
 def test_restore_writes_an_older_data_commit_back(cards):
     data = cards.db.parent
     git(data, "init", "-q", "-b", "data")
