@@ -530,8 +530,8 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 
 The `plates` branch is data like `previews`: never merged, never deleted (a deleted one comes back, but only with the PSDs
 read since; a Card checks dispatch with `all` makes every plate again). No plate: the mock-up erases the old text itself.
-A plate's `bars` (`card_plates.pictured`: custom and item bars, own layer-comp bars, a stat past 10, and template bars the
-mock-up may not find): the bake's own picture of every stat value (classify, set_stat, gate_dirty, the merge, at the
+A plate's `bars` (`card_plates.pictured`: custom and item bars, own layer-comp bars, a stat past 10, a bar printing its
+value (Baba), and template bars the mock-up may not find): the bake's own picture of every stat value (classify, set_stat, gate_dirty, the merge, at the
 site's 720 px view), pasted by the mock-up instead of
 shifting cells; a value with none (the bake refuses it) shows nothing, silently (owner 11-11). Knockout cards get none
 until the fork draws knockout (`psd_links.fork_draws_knockout()`); then a Card checks dispatch (`cards` or `all`) makes
