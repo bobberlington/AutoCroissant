@@ -343,7 +343,7 @@ def build_icons():
         im.thumbnail((128, 128), Image.LANCZOS)
         im.save(join(OUT, "icons", kind, f"{stem}~{digest}.png"))
     tc_git = join(TC, ".git")
-    for tree, store in [(f"origin/main", tc_git)] + [(c, OLD_GIT) for c in OLD_ICONS]:
+    for tree, store in [("origin/main", tc_git)] + [(c, OLD_GIT) for c in OLD_ICONS]:
         listing = git(store, "ls-tree", "-r", tree, "--", "Types") or b""
         for line in listing.decode().splitlines():
             meta, path = line.split("\t", 1)
@@ -396,7 +396,6 @@ def scaled_icon(icon, width):
     """(rgb, mask, coarse): the icon at width px; coarse: transparent pixels at the icon's mean (no weight in a
     plain correlation)."""
     import cv2
-    import numpy as np
     key = (id(icon), int(round(width)))
     if key not in _SCALED:
         name, rgb, mask = icon

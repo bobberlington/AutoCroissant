@@ -79,7 +79,6 @@ def follow_tc(today_paths: list, commits: list) -> dict:
                 elif status == "D":
                     dels[old].append(path)
                     gone_blob[path] = old
-            blob_of = dict(adds)
             changed, used = defaultdict(list), set()
             for path, blob in sorted(adds, key=lambda a: a[0] not in tracked):
                 sources = [s for s in dels.get(blob, []) if s not in used]
