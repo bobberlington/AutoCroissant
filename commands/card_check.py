@@ -33,11 +33,11 @@ from typing import Optional
 
 from psd_tools import PSDImage
 
-from commands.card_edits import CardEdits
-from commands.card_models import StatsDatabase
+from commands.card_edits import CardAuthors, CardEdits
+from commands.card_models import StatsDatabase, card_name
 from commands.font_check import API_TIMEOUT, NOBODY, is_card_psd, old_blobs, pushed_files, tree_blobs
 from commands.github_api import blob_text, fetch_verified, token_from_env
-from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
+from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
 from commands.standards_post import payload, short
 from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
@@ -152,7 +152,8 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
         rel: Its repo path (classifies the card; names it)
 
     Returns:
-        The notes, [] for a clean card; a PSD with variant tags: each picture's, "A Snack2: " before variant 2's
+        The notes, [] for a clean card; a PSD with variant tags: each picture's, "A Snack2: " before variant 2's (a
+        drawn duplicate's own name: "Gust Of Trees: ")
     """
     opened = psd
     if not isinstance(psd, PSDImage):
@@ -166,14 +167,27 @@ def card_notes(parser: PSDParser, edits: Optional[CardEdits], psd, rel: str) -> 
         if edits is not None:
             edits.apply(card.name, card)
         return CardValidator.validate(card)
-    notes = []
+    notes, drawn = [], drawn_names(opened, rel, edits)
     for n in pictures:
         card = parse_card(parser, opened, rel, n)
-        name = card.name if n == 1 else f"{card.name}{n}"
+        name = card.name if n == 1 else drawn.get(n, f"{card.name}{n}")
         if edits is not None:
             edits.apply(name, card)
         notes += [note if n == 1 else f"{name}: {note}" for note in CardValidator.validate(card)]
     return notes
+
+
+def drawn_names(psd: PSDImage, rel: str, edits: Optional[CardEdits]) -> dict:
+    """{n: name} of the tagged PSD's pictures that picture-only duplicates are (their Card Edits.json dup_of names the
+    card: Gust of Trees, Stubborn Queen), as picture_numbers matches their PNGs beside it (a tag first)."""
+    own = CardAuthors.key(card_name(rel))
+    keys = [key for key, fields in (edits.cards if edits is not None else {}).items()
+            if isinstance(fields.get("dup_of"), str) and CardAuthors.key(fields["dup_of"]) == own and key != own]
+    if not keys:
+        return {}
+    folder = rel[:rel.rfind("/") + 1]
+    found = picture_numbers(psd, [f"{folder}{key.replace(' ', '_')}.png" for key in keys])
+    return {n: " ".join(w[:1].upper() + w[1:] for w in card_name(path).split()) for path, n in found.items()}
 
 
 # ========================

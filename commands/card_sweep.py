@@ -37,9 +37,10 @@ from typing import Optional
 import commands.card_standards as standards
 import commands.png_export as png_export
 from commands.card_edits import CardAuthors
-from commands.card_guards import Source, build_context, earlier_fonts, whole_tree_jobs
+from commands.card_guards import Source, build_context, earlier_fonts, tree_dups, whole_tree_jobs
 from commands.card_models import card_name
 from commands.github_api import blob_sha
+from commands.psd_parser import picture_numbers
 
 # ========================
 # Configuration
@@ -92,6 +93,9 @@ def sweep_card(job) -> dict:
     try:
         data = source.blob(job.psd_new)
         pushed = png_export.open_psd(data)
+        drawn = picture_numbers(pushed, [*job.numbered, *job.dups]) if job.dups else {}
+        numbered = {**job.numbered, **{path: job.dups[path] for path in drawn if path in job.dups}}   # a drawn one too
+        out["base"].update(numbered)
         if not standards.pixel_kinds(pushed, (kind,), job.psd, _worker["context"].chart):
             return out
         fixed = standards.fix(data, job.psd, _worker["work"], _worker["parser"], _worker["fonts"], only=kind)
@@ -101,7 +105,7 @@ def sweep_card(job) -> dict:
         out["layers"], out["notes"] = list(fixed.redrawn[kind]), fixed.notes
         if not job.png:
             return {**out, "state": "refused", "why": "no PNG"}
-        pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in {job.png: job.png_new, **job.numbered}.items()}
+        pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in {job.png: job.png_new, **numbered}.items()}
         for path, image in pngs.items():        # the PNGs must show the PSD, as the guards' redraw asks
             if png_export.png_check(pushed, image).get("ok") is not True:
                 return {**out, "state": "refused", "why": f"{basename(path)} does not show the PSD"}
@@ -168,7 +172,7 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
     for kind in kinds:
         slug = kind.replace(" ", "-")
         target = abspath(out_dir if len(kinds) == 1 else join(out_dir, slug))
-        jobs = whole_tree_jobs(tree, "sweep", names or None)
+        jobs = whole_tree_jobs(tree, "sweep", names or None, tree_dups(source, tree))
         work = mkdtemp(prefix="sweep-")
         plan = {"kind": kind, "ref": ref, "commit": commit, "fixed": [], "refused": [], "errors": [], "skipped": 0}
         try:

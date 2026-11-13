@@ -146,6 +146,22 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
 # ========================
 # The clone's cards
 # ========================
+def test_a_drawn_duplicates_picture_takes_its_name(clone):
+    """A tagged PSD's picture a picture-only duplicate is (its tag 'Morning Meal #2', dup_of A Snack: as Gust of Trees)
+    is named after it in the notes, not 'A Snack2' (owner 11-13: tags before titles everywhere)."""
+    import sys
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = {**tags, 1022: "Morning Meal #2"}[layer.layer_id]
+    edits = cc.CardEdits.parse(json.dumps({"cards": {"Morning Meal": {"dup_of": "A Snack"}, "Other": {"dup_of": "Kit"}}}))
+    assert cc.drawn_names(psd, rel, edits) == {2: "Morning Meal"} and cc.drawn_names(psd, rel, None) == {}
+
+
 def test_cli_psd_mode(clone, tmp_path, capsys):
     out, disc = tmp_path / "r.json", tmp_path / "d.json"
     old = old_checkout(clone, tmp_path / "repo")                                 # God Tamer's NO STARS FOUND

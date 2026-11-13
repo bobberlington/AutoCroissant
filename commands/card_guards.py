@@ -558,12 +558,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     def numbered(path: str) -> dict:
         return {p: tree[p][1] for p in snapshot.png_for(path)[1] if p not in pngs and p in tree}
 
-    try:                                        # picture-only duplicates follow their PSD's PNG (owner 11-07, silent)
-        edits = loads(source.blob(tree[EDITS_PATH][1])).get("cards") if EDITS_PATH in tree else None
-    except Exception:                           # unread: they stay as they are this push
-        print(format_exc(), file=stderr)
-        edits = None
-    every_dup = dup_pictures(list(tree), edits)
+    every_dup = tree_dups(source, tree)         # picture-only duplicates follow their PSD's PNG (owner 11-07, silent)
     dups = {psd: {p: tree[p][1] for p in found if p not in pngs} for psd, found in every_dup.items()}
     dups_pushed = {psd: {p: pngs[p].new for p in found if p in pngs and pngs[p].status in "AM"} for psd, found in every_dup.items()}
     dup_pngs = {p for found in every_dup.values() for p in found}
@@ -662,15 +657,27 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
 
 
-def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None) -> list:
-    """Every card PSD of the tree: guard 2 and R10 against its PNG."""
+def tree_dups(source: Source, tree: dict) -> dict:
+    """card_edits.dup_pictures of the tree, its Card Edits.json read by blob; unread: {} (they stay as they are)."""
+    try:
+        edits = loads(source.blob(tree[EDITS_PATH][1])).get("cards") if EDITS_PATH in tree else None
+    except Exception:                           # noqa: BLE001 - unread: none this run
+        print(format_exc(), file=stderr)
+        edits = None
+    return dup_pictures(list(tree), edits)
+
+
+def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None, dups: Optional[dict] = None) -> list:
+    """Every card PSD of the tree: guard 2 and R10 against its PNG; dups (tree_dups): its picture-only duplicates'
+    PNGs in Job.dups (card_sweep: a drawn one is a picture)."""
     snapshot = Snapshot("", "", {}, tree)
     jobs = []
     for path in sorted(tree):
         if is_card_psd(path) and (not cards or CardAuthors.key(card_name(path)) in cards):
             png, numbered = snapshot.png_for(path)
             jobs.append(Job(path, "whole", "", tree[path][1], png, "", tree[png][1] if png else "", login=author,
-                            numbered={p: tree[p][1] for p in numbered if p in tree}))
+                            numbered={p: tree[p][1] for p in numbered if p in tree},
+                            dups={p: tree[p][1] for p in (dups or {}).get(path, ()) if p in tree}))
     return jobs
 
 
@@ -2859,5 +2866,6 @@ __all__ = [
     'run_job',
     'stale_left',
     'summary',
+    'tree_dups',
     'whole_tree_jobs',
 ]

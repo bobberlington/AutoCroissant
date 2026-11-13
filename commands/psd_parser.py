@@ -1721,9 +1721,8 @@ class CardValidator:
 def picture_numbers(psd: PSDImage, paths) -> dict:
     """
     {PNG path: n}: the tagged PSD's picture each PNG is (§9). NameN.png: N. A picture-only duplicate (Gust_of_Trees.png,
-    owner 11-09): the tag no NameN.png has whose printed title is its card name, one to one; a picture whose title is
-    no text layer (a smart object: Gust of Wind 11-11), by a layer tagged it alone named after the card ('Gust of Trees
-    #2'), one to one. {} untagged.
+    owner 11-09): first a layer tagged n alone named after it ('Gust of Trees #2', 'Stubborn Queen #2': owner 11-13, so a
+    retitled picture keeps its PNG), else the tag whose printed title is its card name; one to one. {} untagged.
     """
     tags = variants_of(psd)
     if len(tags) < 2:
@@ -1736,6 +1735,15 @@ def picture_numbers(psd: PSDImage, paths) -> dict:
         else:
             rest.append(path)
     free = [n for n in tags[1:] if n not in out.values()]
+    keys = {path: name_key(card_name(path)) for path in rest}
+    named: dict = {}                            # '<name> #N': the layers tagged n alone, by name
+    for layer in psd.descendants() if rest and free else ():
+        base, found = layer_tag(layer.name)
+        if found is not None and len(found) == 1 and min(found) in free:
+            named.setdefault(min(found), set()).add(name_key(base))
+    _one_to_one(out, {n: [path for path, key in keys.items() if key in names] for n, names in named.items()})
+    rest = [path for path in rest if path not in out]
+    free = [n for n in free if n not in out.values()]
     if not rest or not free:
         return out
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
@@ -1744,24 +1752,21 @@ def picture_numbers(psd: PSDImage, paths) -> dict:
         with variant_view(psd, n):
             found = PSDParser.reading(PSDParser.title_layers(psd, texts, ""))
             titles[n] = name_key(" ".join(title_text(layer.text) for layer in found))
-    keys = {path: name_key(card_name(path)) for path in rest}
     for n in free:
         if not titles[n] or titles[n] == titles[1] or list(titles.values()).count(titles[n]) > 1:
             continue
-        matched = [path for path, key in keys.items() if key == titles[n]]
+        matched = [path for path in rest if keys[path] == titles[n]]
         if len(matched) == 1:
             out[matched[0]] = n
-    named = {}                                  # no title text: the layers tagged n alone, by name
-    for n in free:
-        if not titles[n] and n not in out.values():
-            found = {name_key(layer_tag(layer.name)[0]) for layer in psd.descendants()
-                     if layer_tag(layer.name)[1] == frozenset((n,))}
-            named[n] = [path for path, key in keys.items() if path not in out and key in found]
-    picks = [paths[0] for paths in named.values() if len(paths) == 1]
-    for n, paths in named.items():
+    return out
+
+
+def _one_to_one(out: dict, hits: dict) -> None:
+    """out[path] = n for each n ({n: [paths]}) with one path that no other n has."""
+    picks = [paths[0] for paths in hits.values() if len(paths) == 1]
+    for n, paths in hits.items():
         if len(paths) == 1 and picks.count(paths[0]) == 1:
             out[paths[0]] = n
-    return out
 
 
 # ========================
