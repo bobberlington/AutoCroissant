@@ -27,10 +27,14 @@ def seen(card, keys, by="text", **s):
                                                                        "pick": {"keys": keys, "by": by}}}]
 
 
-def archive(root: Path, posts: list, cards: dict, versions: list, kinds: dict, old_lost=(), old_map=None):
-    """posts: (seconds, (channel id, name), picture number, candidates, extra image fields, thread)."""
-    for sub in ("messages", "attachments", "derived/matcher/match", "derived/catalogue", "derived/oldgit"):
+def archive(root: Path, posts: list, cards: dict, versions: list, kinds: dict, old_lost=(), old_map=None,
+            texts=None):
+    """posts: (seconds, (channel id, name), picture number, candidates, extra image fields, thread); texts: {version
+    key: its OCR lines}."""
+    for sub in ("messages", "attachments", "derived/matcher/match/cache", "derived/catalogue", "derived/oldgit"):
         (root / sub).mkdir(parents=True, exist_ok=True)
+    (root / "derived/matcher/match/cache/cards.jsonl").write_text("".join(
+        json.dumps({"key": k, "lines": [[line, 1.0] for line in lines]}) + "\n" for k, lines in (texts or {}).items()))
     lines, images = [], {}
     for n, (when, (channel, name), pic, candidates, extra, thread) in enumerate(posts):
         mid = snowflake(when)
@@ -69,8 +73,9 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
     joke_title = {"title": ["Fang But Funny"], "title_block": "Fang But Funny",
                   "lines": ["Fang But Funny", "Deal 5 damage to every creature on the field and laugh about it"]}
     old_stuff = {"id": "1331913819563360288", "name": "Old stuff thread"}
-    posts = [(T + 5 * 86400, NEW, 1, seen("fang", ["old"]), {}, None),      # 1: reposted; the port's post first
-             (T, PORT, 1, seen("fang", ["old"]), {}, None),
+    bites = {"text": dm.read_text([["Fang", 1.0], ["Bite for 2", 1.0]])}
+    posts = [(T + 5 * 86400, NEW, 1, seen("fang", ["old"]), dict(bites), None),     # 1: reposted; the port's first
+             (T, PORT, 1, seen("fang", ["old"]), dict(bites), None),
              (T + 86400, IDEAS, 2, [], dict(joke_title), None),             # 2: a joke first posted in ideas
              (T + 2 * 86400, MEME, 2, [], dict(joke_title), None),
              (T + 3 * 86400, PORT, 3, seen("fang", ["now"], by="hash"),          # 3: a port picture, a meme too;
@@ -80,7 +85,8 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
              (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff),     # 5: a paper card's photo
              (T + 7 * 86400, MEME, 6, [], {"lines": ["when the"]}, None)]        # 6: a meme, not a card
     root = tmp_path / "archive"
-    archive(root, posts, cards, versions, {PORT[0]: "port", MEME[0]: "meme/joke"})
+    archive(root, posts, cards, versions, {PORT[0]: "port", MEME[0]: "meme/joke"},
+            texts={"old": ["Fang", "Bite for 2"], "now": ["Fang", "Bite for 3"]})
     dv.build(str(root), log=lambda *a: None, cards_repo="")
     rows = rows_of(root)
     one, two, three, four, five = (rows[dv.picture_id(sha(n))] for n in range(1, 6))
@@ -182,13 +188,15 @@ def test_a_git_look_needs_the_whole_card_and_its_text():
     assert dv.decide(same, later, versions, members)[0] is None              # an unstored version came first
 
 
-def test_a_look_before_git_needs_its_bars_and_numbers():
+def test_a_look_before_git_needs_its_bars_numbers_and_exact_text():
     day, bars, tags = 86400, {"hp": 7, "def": 6, "atk": 5, "spd": 5}, dv.marks(["(2CD) summon it for 2 turns"])
-    v = {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T + 100 * day, "bars": bars, "marks": (tags, tags)}
+    words = dm.read_text([["(2CD) summon it for 2 turns", 1.0]])
+    v = {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T + 100 * day, "bars": bars, "marks": (tags, tags),
+         "reads": [words, words]}
     pick = {"by": "text", "keys": ["a"], "fit": 1.0, "novel": 0}
 
-    def kind(members=(v,), **image):
-        return dv.decide(pick, {"shape": "1:2", "whole": H, **image}, {m["key"]: m for m in members},
+    def kind(members=(v,), how=pick, **image):
+        return dv.decide(how, {"shape": "1:2", "whole": H, "text": words, **image}, {m["key"]: m for m in members},
                          list(members))[0]
     assert tags == {"t:2cd", "n:2:c", "n:2:t"} and dv.marks(["(OPT)(OYT) for 3 turns"]) == {"t:opt", "t:oyt", "n:3:t"}
     assert kind(made=T, marks=tags, bars=bars) == "git"                        # 100 days early, read the same
@@ -196,8 +204,13 @@ def test_a_look_before_git_needs_its_bars_and_numbers():
     assert kind(made=T, marks={"t:e2t", "n:2:t"}, bars=bars) is None          # another timing tag (Gates)
     assert kind(made=T, marks={"t:2cd", "n:2:c", "n:3:t"}, bars=bars) is None  # another number
     assert kind(made=T, marks=tags) is None and kind(made=T + 98 * day, marks=tags) == "git"   # bars unread: grace
-    assert dv.decide({**pick, "missing": 3}, {"shape": "1:2", "whole": H, "made": T + 98 * day, "marks": tags},
-                     {"a": v}, [v])[0] is None                                 # a word fixed before the commit
+    short = dm.read_text([["(2CD) summon it for 2", 1.0]])
+    assert kind(made=T + 98 * day, marks=tags, text=short) is None             # a word fixed before the commit
+    assert kind(made=T + 98 * day, marks=tags, text="") is None                # no text read: can't tell
+    assert kind(made=T + 101 * day, marks=tags, text=short) == "git"           # after git: the hash and marks
+    halo = {"by": "hash", "keys": ["a"], "bits": 2.3}                          # a hash pick of a short text (Halo,
+    assert kind(how=halo, made=T + 99.8 * day, text=short) is None             # Glued): exact at any length too
+    assert kind(how=halo, made=T + 99.8 * day) == "git"
     assert kind(made=T, marks=tags, no_bars=True) == "git" and kind(made=T, no_bars=True) is None
     later = {**v, "key": "b", "ts": T + 200 * day, "bars": {**bars, "atk": 6}}    # one look, two stat sets
     assert kind((v, later), made=T + 300 * day, marks=tags) is None

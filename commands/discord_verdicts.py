@@ -16,12 +16,12 @@ build   A picture is one stored file (its sha256: every post of it, reposts in o
         and outside those: unsure (which card isn't sure: review), art (a card's art only), none (no card).
         Card sure is the matcher's confident verdict at REVIEW or more (a screenshot also needs the card's art or look
         behind it, a look-alike family the card's own title). A git look needs the picture's timing tags and numbers
-        to be that version's, its text exact if made before the look's first git version, and its bars read the same
-        if made more than GRACE_DAYS before (look_check). An embed's picture never dates (fetched when archived). Joke
-        pictures (owner Q1=C: meme-cards, joke-ideas, cursed, idea-graveyard; ai-images and patty-vault are never read)
-        never date a live card; one that is a live card stays its card; a meme that is no card is none. Paper-card
-        photos ('Old stuff', owner Q6=A) are matched but never date anything. Rules pages and app screenshots are never
-        lost cards.
+        to be that version's, its text exact (any length, hash picks too) if made before the look's first git
+        version, and its bars read the same if made more than GRACE_DAYS before (look_check). An embed's picture never
+        dates (fetched when archived). Joke pictures (owner Q1=C: meme-cards, joke-ideas, cursed, idea-graveyard;
+        ai-images and patty-vault are never read) never date a live card; one that is a live card stays its card; a
+        meme that is no card is none. Paper-card photos ('Old stuff', owner Q6=A) are matched but never date anything.
+        Rules pages and app screenshots are never lost cards.
         Lost pictures are grouped into lost cards by title, else by look (ids from the earliest picture's hash and
         cell), each with its first date, channels, whether it was played (port, update or classification channels, an
         update changelog naming it as a card, or the old repo's file; owner Q2=A: Morgue candidates when a card's stats
@@ -71,8 +71,9 @@ CLASH_BITS = 1.5                                # a text pick's look this much f
 GRACE_DAYS = 3                                  # a git look posted more days than this before its first git version:
                                                 # sure only with its bars read the same (the hash can't see a bar)
 EXACT_RUN = 2                                   # a git look posted before its first git version: fewer characters in
-                                                # a row than this its own or the look's (8 of 9 such runs were a typo
-                                                # or a word fixed before the commit)
+                                                # a row than this its own or that version's, at any length, hash
+                                                # picks too (8 of 9 such runs were a typo or a word fixed before the
+                                                # commit; Halo, Glued: short texts a hash picked)
 STATS = ("hp", "def", "atk", "spd")             # the bars, top to bottom
 BARS = ("derived", "readers", "bars", "reads.jsonl")   # the era bar readers' reads: Discord pictures, old repo PNGs
 NO_BARS = {"field", "buff", "debuff"}           # card types that print no stat bars
@@ -314,6 +315,21 @@ def version_marks(entry: dict) -> Optional[tuple]:
     return (set().union(*reads), set.intersection(*reads)) if reads else None
 
 
+def version_reads(entry: dict) -> list:
+    """A version's OCR reads (squashed), one per size read."""
+    return [t for t in (dm.read_text(r) for r in [entry.get("lines"), *(entry.get("rereads") or [])] if r) if t]
+
+
+def text_runs(text: str, reads: list) -> Optional[tuple]:
+    """(novel, missing) in characters in a row: the picture's text no read of the version has, and the version's
+    steady text (in its every read) the picture lacks. None when either has no text read."""
+    if not text or not reads:
+        return None
+    union = set().union(*(dm.grams(t) for t in reads))
+    steady = set.intersection(*(dm.grams(t) for t in reads))
+    return dm.novel_run(text, union), dm.novel_run(reads[0], dm.grams(text) | (dm.grams(reads[0]) - steady))
+
+
 def tag_words(versions) -> frozenset:
     """The timing tags printed on 2+ cards (their versions' every read): real tags, not OCR noise."""
     cards = defaultdict(set)
@@ -377,7 +393,8 @@ def look_check(image: dict, members: list, look: int) -> tuple:
     """(why not, checked) for a git look the hash and text pick: the version shown (before the look's first git
     version: that one; after: the latest at the post) must have the picture's timing tags and numbers, and its bars
     (when both are read) the picture's; a picture made more than GRACE_DAYS before the look's first git version
-    needs its bars read the same (the hash can't see a bar), as does a look whose versions print different stats."""
+    needs its bars read the same (the hash can't see a bar), as does a look whose versions print different stats;
+    one made before it at all, its text read exactly that version's (EXACT_RUN, at any length)."""
     mine = sorted((m for m in members if m.get("look", 0) == look and m.get("ts")), key=lambda m: m["ts"])
     if not mine:
         return None, {}
@@ -407,6 +424,14 @@ def look_check(image: dict, members: list, look: int) -> tuple:
     if not no_bars and "bars" not in checked and \
             len({tuple(sorted(m["bars"].items())) for m in mine if m.get("bars")}) > 1:
         return "that look's git versions print different stats, its bars not read", checked
+    if early:
+        runs = text_runs(image.get("text") or "", shown.get("reads") or [])
+        if runs is None:
+            return "made before that look's first git version, its text not read", checked
+        if max(runs) >= EXACT_RUN:
+            return f"made before that look's first git version, its text not exactly that version's " \
+                   f"({max(runs)} characters in a row)", checked
+        checked["text"] = "same"
     return None, checked
 
 
@@ -451,10 +476,6 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
             why, checked = look_check(image, members, look[1])
             if checked:
                 note["checked"] = checked
-            runs = max(pick.get("novel") or 0, pick.get("missing") or 0)
-            if not why and "days_before_git" in checked and text and runs >= EXACT_RUN:
-                why = f"made before that look's first git version, its text not exactly that look's ({runs} " \
-                      f"characters in a row)"
         if not why:
             return "git", note
         note.update(shows=None, unsure=why, near_look=look[1])
@@ -931,7 +952,8 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     texts = dm.Cache(paths.matcher.card_cache).entries
     for v in versions_list:                     # each version's marks and bars, for the look checks
         feat = v["key"].split("-")[0]
-        v.update(marks=version_marks(texts.get(feat) or {}), bars=blobs.get(feat[1:]))
+        v.update(marks=version_marks(texts.get(feat) or {}), bars=blobs.get(feat[1:]),
+                 reads=version_reads(texts.get(feat) or {}))
     close = lookalikes(cards, versions_list)
     family = families(cards, close)
     verdicts, raw = post_verdicts(images, records, cards, dm.read_json(paths.matcher.rulings, {}) or {},
@@ -1221,7 +1243,7 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
     looks = index.looks()
     _, blobs, _ = bar_reads(root)
     _, copies, _ = bar_reads(root, "jpeg400")   # a version's Discord-like copy read: a post's bars
-    versions = {v["key"]: {**v, "look": looks[v["key"]], "marks": version_marks(v),
+    versions = {v["key"]: {**v, "look": looks[v["key"]], "marks": version_marks(v), "reads": version_reads(v),
                            "bars": blobs.get(v["key"].split("-")[0][1:])} for v in index.versions}
     members = defaultdict(list)
     for v in versions.values():
@@ -1277,6 +1299,7 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
                 looks_out[name]["card " + ("wrong" if cid else status)] += 1
                 continue
             seen = {"shape": feat.get("shape"), "whole": feat.get("whole"), "marks": read_marks(feat.get("lines")),
+                    "text": dm.read_text(feat.get("lines")),
                     "bars": copies.get(v["key"].split("-")[0][1:]), "made": v.get("ts"), "tags": tags,
                     "no_bars": cards.get(truth, {}).get("type") in NO_BARS}
             kind, note = version_of(judged, cid, seen, versions, members[cid])
