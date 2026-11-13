@@ -61,10 +61,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    (a none, art or unsure row titled like a candidate or idea, nearer than any live card's name; a none row that is a
    joke picture, or a played channel's with card evidence) until the eye adds each to an entry, makes an entry of it
    (keyed by its picture id: Wickerbottom's five books, Warcraftian Kel) or rules it not a lost card's; `kin_open`
-   must be empty. Renamed and live entries' first dates are `created_hints` for Created (weak links only by the
-   owner; `meme`: dated only by meme channels, so never a live card's Created). A paper card's photo never dates an
-   entry. Candidates go only to the website's Morgue list (cards.json morgue), never cards[], decks, Unused, the
-   default search or Mentioned by.
+   must be empty. The kin pass also lists the rows that may be a card already in MDW/The Morgue or MDW/Unfinished
+   (the whole within 5 bits of its PNG or the art within 3, a title like its name, the same picture as such an
+   entry's), so those pictures leave the live cards' review too (`taken`); an entry holding an MDW card's PNG but
+   ruled another card is listed in `mdw_clash`, which must be empty. Renamed and live entries' first dates are
+   `created_hints` for Created (weak links only by the owner; `meme`: dated only by meme channels, so never a live
+   card's Created). A paper card's photo (owner Q6) is dated "Before 2020" and comes first; a later photo of a
+   printed card (eye `not_paper`) has no day. Candidates go only to the website's Morgue list (cards.json morgue),
+   never cards[], decks, Unused, the default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types

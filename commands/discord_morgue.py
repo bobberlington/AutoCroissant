@@ -18,7 +18,11 @@ build   Each lost card (derived/match/lost_groups.json) and each lost card of th
         lists rows no entry holds that may be a lost card's (a none, art or unsure row whose title fits a candidate's
         or idea's name better than any live card's; a none row that is a joke picture, or a played channel's with
         card evidence) until the eye adds each to an entry, makes an entry of it (eye.json keyed by its picture id)
-        or rules it not a lost card's (not_kin). Outputs under the archive's derived/morgue/ (never a repo):
+        or rules it not a lost card's (not_kin). It also lists the rows that may be an MDW/The Morgue or
+        MDW/Unfinished card's (the whole within MDW_BITS of its PNG or the art within TWIN, a title like its name,
+        the same picture as such an entry's): an MDW entry takes them as a candidate does (taken), and an entry
+        whose picture is an MDW card's PNG but is ruled otherwise is listed in mdw_clash. A paper card's photo
+        (owner Q6) is dated "Before 2020" and comes first. Outputs under the archive's derived/morgue/ (never a repo):
         candidates.json (candidates, then the lost cards that are not, with why; taken; created_hints: the renamed
         and live ones' first dates for S6), ideas.json, thumbs/ (webp, every entry's pictures).
         Candidates go only to the website's Morgue list (cards.json morgue): never cards[], decks, Unused, the
@@ -50,6 +54,7 @@ PAIRS = ("derived", "matcher", "match", "pairs.json")
 MORGUE_DIR = dv.MORGUE_DIR
 UNFINISHED_DIR = "MDW/Unfinished/"
 OLD_STATS = "db/old_stats.json"                 # the data branch's archived cards (renamed_to: a rename)
+MDW_BITS = 5.0                                  # a row's whole this near an MDW card's PNG (or art within TWIN): kin
 SAME_NAME = 0.9                                 # a title this near an MDW card's or an archived old name: that card
 NAME_NEAR = 0.75                                # nearest live card by name at least this, else by look
 FAR_BITS = 12.0                                 # a nearest look farther than this: far (discord_verdicts' far bits)
@@ -59,6 +64,9 @@ LISTED = ("version_sure", "version_unsure", "draft", "unsure")     # rows a live
 KIN_NAME = dv.GROUP_TITLE                       # a row's title this near a candidate's or idea's name: kin (eye)
 KIN_VERDICTS = ("none", "art", "unsure")        # rows no live card holds for sure
 CANDIDATE, IDEA, TWIN_STATUS = "candidate", "idea", "twin"
+MDW = {"morgue": MORGUE_DIR, "unfinished": UNFINISHED_DIR}      # statuses of cards already in MDW: their folder
+TAKES = (CANDIDATE, IDEA, *MDW)                 # entries whose pictures leave a live card's or the unsure review
+PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"             # owner Q6 (as discord_chain): paper photos first
 NOT = {"morgue": "already in MDW/The Morgue", "unfinished": "in MDW/Unfinished (kept, not retired)",
        "renamed": "an old name or draft of a live card (review: its timeline)", "live": "a live card's own "
        "picture (review: its timeline)", "split": "an old card that became "
@@ -71,10 +79,12 @@ ABOUT = ("Morgue candidates (owner's answers Q1, Q2, confirmed 11-13): joke card
          "classification channel's, an update changelog line, the old repo's file). Only for the website's Morgue "
          "list (cards.json morgue): never cards[], decks, Unused, the default search or Mentioned by. Each checked by "
          "eye (eye.json). not_candidates: lost cards that are not, with why. taken: rows listed for a live card or "
-         "the unsure review that the eye gave to a candidate or idea (the review page drops them there). "
+         "the unsure review that the eye gave to a candidate, an idea or a card already in MDW (the review page "
+         "drops them there). A paper card's photo (owner Q6): 'Before 2020', first. "
          "created_hints: renamed and live entries' first dates (S6: the live card's Created; weak ones only by the "
          "owner; meme: only meme channels date it, so never a live card's Created). counts.kin_open: rows that may be "
-         "a lost card's, not yet ruled by eye. why and eye notes: the review page's, never published. No message "
+         "a lost card's or an MDW card's, not yet ruled by eye; counts.mdw_clash: pictures that are an MDW card's "
+         "PNG in an entry ruled otherwise. why and eye notes: the review page's, never published. No message "
          "text, posters or authors.")
 IDEAS_ABOUT = ("Ideas never ported (owner's answer Q2): card drafts never played, for the review page only (never "
                "published). Each checked by eye (eye.json). No message text, posters or authors.")
@@ -103,13 +113,33 @@ def utc(stamp: Optional[str]) -> Optional[str]:
         return stamp
 
 
-def repo_known(cards_repo: str) -> dict:
-    """{'morgue': {name: path}, 'unfinished': {name: path}, 'renamed': {archived name: today's name}}: the card repo's
-    MDW/The Morgue (a PSD with its PNG, as build_site), MDW/Unfinished and the data branch's archived renames
-    (renamed_to followed to the end)."""
+def mdw_looks(git_dir: str, tree: dict, log: Callable = print) -> list:
+    """[{place, name, path, whole, art}]: MDW/The Morgue's and MDW/Unfinished's PNGs (cards in a folder of MDW),
+    hashed as the matcher hashes a card version; a blob not in the clone is skipped (never fetched)."""
+    from io import BytesIO
+    found = []
+    for path in sorted(tree):
+        place = next((k for k, d in MDW.items() if path.startswith(d)), None)
+        if not place or not path.lower().endswith(".png") or place == "morgue" and \
+                path[:-4] + ".psd" not in tree:     # the Morgue's cards: a PSD with its PNG (build_site)
+            continue
+        data = dm.git_out(git_dir, "cat-file", "blob", tree[path])
+        if data is None:
+            log(f"mdw look {path}: not in the clone, skipped")
+            continue
+        feat = dm.features(dm.load_image(BytesIO(data)), ocr=False, body=False, force_shape=True)
+        found.append({"place": place, "name": dm.file_name(path), "path": path, "whole": feat["whole"],
+                      "art": feat.get("art")})
+    return found
+
+
+def repo_known(cards_repo: str, log: Callable = print) -> dict:
+    """{'morgue': {name: path}, 'unfinished': {name: path}, 'renamed': {archived name: today's name}, 'looks':
+    mdw_looks}: the card repo's MDW/The Morgue (a PSD with its PNG, as build_site), MDW/Unfinished and the data
+    branch's archived renames (renamed_to followed to the end)."""
     git_dir = dm.git_dir_of(cards_repo) if cards_repo else None
     if not git_dir:
-        return {"morgue": {}, "unfinished": {}, "renamed": {}}
+        return {"morgue": {}, "unfinished": {}, "renamed": {}, "looks": []}
     tree = dm.repo_tree(git_dir, f"origin/{dm.CARD_BRANCH}")
     morgue = {dm.file_name(p): p for p in tree if p.startswith(MORGUE_DIR) and "/" not in p[len(MORGUE_DIR):]
               and p.lower().endswith(".psd") and p[:-4] + ".png" in tree}
@@ -129,7 +159,8 @@ def repo_known(cards_repo: str) -> dict:
             name = step[name]
             seen.add(name)
         return name
-    return {"morgue": morgue, "unfinished": unfinished, "renamed": {n: last(n) for n in step}}
+    return {"morgue": morgue, "unfinished": unfinished, "renamed": {n: last(n) for n in step},
+            "looks": mdw_looks(git_dir, tree, log)}
 
 
 def auto_status(group: dict, known: dict, live: dict) -> tuple:
@@ -173,17 +204,18 @@ def first_post(posts: list) -> Optional[dict]:
     return min(people or posts, key=lambda p: int(p["message"])) if posts else None
 
 
-def picture_of(row: dict, takes: bool = False) -> dict:
-    """One picture; taken (a candidate's or idea's): the list it leaves (a row a live card or the unsure review lists,
-    added by eye). A paper card's photo only (owner Q6): undated (paper)."""
+def picture_of(row: dict, takes: bool = False, printed: bool = False) -> dict:
+    """One picture; taken (a candidate's, idea's or MDW card's): the list it leaves (a row a live card or the unsure
+    review lists, added by eye). A paper card's photo only (owner Q6): day 'Before 2020', sorting first; printed (eye
+    not_paper: a later photo of a printed card): no day, never dates the entry."""
     posts = row.get("posts") or []
     post = first_post(posts) or {}
     paper = bool(posts) and all(p.get("paper") for p in posts)
     taken = {"verdict": row["verdict"], "card": row_card(row)} if takes and row.get("verdict") in LISTED else None
+    how = ({"printed": True} if printed else {"day": PAPER_DAY, "sort": PAPER_SORT, "paper": True}) if paper else {}
     return {"id": row["id"], "date": None if paper else post.get("date"), "channel": post.get("channel"),
             "thread": post.get("thread"), "cell": row.get("cell"), "w": row.get("w"), "h": row.get("h"),
-            "thumb": f"thumbs/{row['id']}.webp", "source": "discord", **({"paper": True} if paper else {}),
-            **({"taken": taken} if taken else {})}
+            "thumb": f"thumbs/{row['id']}.webp", "source": "discord", **how, **({"taken": taken} if taken else {})}
 
 
 def image_of(row: dict, images: dict, by_sha: dict) -> dict:
@@ -203,9 +235,9 @@ def ocr_titles(image: dict) -> list:
 def kin_rows(rows: dict, held: set, names: list, live: dict, images: dict, by_sha: dict, eras: dict,
              kinds: dict) -> dict:
     """{picture id: why}: rows no entry holds that may be a lost card's, for the check by eye. (a) A none, art or
-    unsure row whose title fits a candidate's or idea's name (names: [(entry id, name)]) at KIN_NAME, better than any
-    live card's name; (b) a none row that is a joke picture (Q1: the flag follows the picture), or a played channel's
-    (Q2) with card evidence (stat labels, a template's size, a card era, a card shape)."""
+    unsure row whose title fits a candidate's, idea's or MDW card's name (names: [(label, name)]) at KIN_NAME, better
+    than any live card's name; (b) a none row that is a joke picture (Q1: the flag follows the picture), or a played
+    channel's (Q2) with card evidence (stat labels, a template's size, a card era, a card shape)."""
     found = {}
     for pid, row in rows.items():
         if pid in held or row.get("verdict") not in KIN_VERDICTS:
@@ -228,33 +260,66 @@ def kin_rows(rows: dict, held: set, names: list, live: dict, images: dict, by_sh
     return found
 
 
+class Hashes:
+    """Rows' whole and art hashes as arrays: each row's distance in bits to one hash set (dm.hash_distance)."""
+    def __init__(self, rows: list):
+        np = self.np = dm._np()
+
+        def table(part):
+            return {k: np.frombuffer(b"".join(bytes.fromhex(r[part][k]) if r.get(part) else bytes(n) for r in rows),
+                                     dtype=np.uint8).reshape(len(rows), n) for k, n in (("p", 8), ("d", 8), ("q", 32))}
+        self.parts = {"whole": table("whole"), "art": table("art")}
+        self.has_art = np.array([bool(r.get("art")) for r in rows])
+
+    def dist(self, part: str, h: dict):
+        np, arrays = self.np, self.parts[part]
+        return sum(np.bitwise_count(arrays[k] ^ np.frombuffer(bytes.fromhex(h[k]), dtype=np.uint8)).sum(axis=1) /
+                   (4 if k == "q" else 1) for k in ("p", "d", "q")) / 3
+
+
 def twin_finder(rows: dict) -> Callable:
     """picture id -> the LISTED rows that are the same picture (whole and art within TWIN bits; the whole alone when
     either has no art)."""
     listed = [r for r in rows.values() if r.get("verdict") in LISTED and r.get("whole")]
     if not listed:
         return lambda pid: []
-    np = dm._np()
-
-    def table(part):
-        return {k: np.frombuffer(b"".join(bytes.fromhex(r[part][k]) if r.get(part) else bytes(n) for r in listed),
-                                 dtype=np.uint8).reshape(len(listed), n) for k, n in (("p", 8), ("d", 8), ("q", 32))}
-    whole, art = table("whole"), table("art")
-    has_art = np.array([bool(r.get("art")) for r in listed])
-
-    def dist(arrays, h):
-        return sum(np.bitwise_count(arrays[k] ^ np.frombuffer(bytes.fromhex(h[k]), dtype=np.uint8)).sum(axis=1) /
-                   (4 if k == "q" else 1) for k in ("p", "d", "q")) / 3
+    table = Hashes(listed)
 
     def find(pid: str) -> list:
         row = rows.get(pid) or {}
         if not row.get("whole"):
             return []
-        near = dist(whole, row["whole"]) <= TWIN
+        near = table.dist("whole", row["whole"]) <= TWIN
         if row.get("art"):
-            near &= ~has_art | (dist(art, row["art"]) <= TWIN)
-        return [listed[i]["id"] for i in np.flatnonzero(near) if listed[i]["id"] != pid]
+            near &= ~table.has_art | (table.dist("art", row["art"]) <= TWIN)
+        return [listed[i]["id"] for i in table.np.flatnonzero(near) if listed[i]["id"] != pid]
     return find
+
+
+def mdw_near(rows: list, looks: list) -> dict:
+    """{picture id: (bits, look)}: each row's nearest MDW card PNG (mdw_looks) within MDW_BITS (whole), or with the
+    art within TWIN (another text or look of that card)."""
+    rows = [r for r in rows if r.get("whole")]
+    if not rows or not looks:
+        return {}
+    table, found = Hashes(rows), {}
+    for look in looks:
+        whole = table.dist("whole", look["whole"])
+        near = whole <= MDW_BITS
+        if look.get("art"):
+            near |= table.has_art & (table.dist("art", look["art"]) <= TWIN)
+        for i in table.np.flatnonzero(near):
+            pid, bits = rows[i]["id"], round(float(whole[i]), 1)
+            if pid not in found or bits < found[pid][0]:
+                found[pid] = (bits, look)
+    return found
+
+
+def mdw_ruled(x: dict, look: dict) -> bool:
+    """An entry ruled the MDW card that look is (its status the card's folder, its card that name or a picture of it:
+    Satou for Satou Matsustaka's entry, The One Who Rhymes2 for The One Who Rhymes)."""
+    a, b = plain(x.get("card") or ""), plain(look["name"])
+    return x["status"] == look["place"] and bool(a and b) and (a.startswith(b) or b.startswith(a))
 
 
 def row_card(row: dict) -> Optional[str]:
@@ -287,7 +352,7 @@ class Paths:
 
 
 def build(root: str, log: Callable = print, cards_repo: str = dm.LOCAL_DIR_LOC) -> dict:
-    return _build(Paths(root), repo_known(cards_repo), log)
+    return _build(Paths(root), repo_known(cards_repo, log), log)
 
 
 def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
@@ -377,21 +442,35 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         if x["twins"]:
             x.update(status=TWIN_STATUS, card=row_card(rows[x["twins"][0]]))
     held = {p for x in entries.values() for p in x["pictures"] + (x.get("twins") or [])}
-    named = [(gid, n) for gid, x in entries.items() if x["status"] in (CANDIDATE, IDEA)
+    named = [(gid, n) for gid, x in entries.items() if x["status"] in TAKES
              for n in sorted({x["eye"].get("name"), x.get("title"), (x["group"] or {}).get("title")} - {None, ""})]
+    named += [(f"{MDW[place]}{n}", n) for place in MDW for n in sorted(known.get(place) or {})]
     kin = kin_rows(rows, held, named, live, images, by_sha, eras, kinds)
+    mdw = known.get("looks") or []
+    for p, (bits, look) in mdw_near([r for k, r in rows.items() if k not in held], mdw).items():
+        kin[p] = f"like {look['path']} ({bits} bits)"
+    for gid, x in entries.items():              # MDW cards' entries: their twins are kin (eye), never a demotion
+        if x["status"] in MDW:
+            for t in sorted({t for p in x["pictures"] for t in twins(p)} - held):
+                kin.setdefault(t, f"the same picture as {gid}'s")
     kin_open = sorted(set(kin) - set(eye.get("not_kin") or {}))     # each ruled by eye: added, made, or not_kin
     for p in kin_open:
         log(f"kin open {p}: {kin[p]}")
+    near_mdw = mdw_near([rows[p] for p in held if p in rows], mdw)
+    clash = sorted(f"{p} in {gid}: {look['path']} ({bits} bits)" for gid, x in entries.items()
+                   if x["status"] != "merged" for p in x["pictures"] if p in near_mdw
+                   for bits, look in [near_mdw[p]] if bits <= MDW_BITS and not mdw_ruled(x, look))
+    for c in clash:                             # an MDW card's PNG in an entry ruled another card: fix the eye
+        log(f"mdw clash {c}")
     candidates, ideas, others = [], [], []
     for gid, x in entries.items():
         entry = describe(gid, x, rows, kinds, live, used if x["status"] == CANDIDATE else None)
         (candidates if x["status"] == CANDIDATE else ideas if x["status"] == IDEA else others).append(entry)
     for found in (candidates, ideas, others):
-        found.sort(key=lambda e: (e["first"]["date"] or "9", e["id"]))
+        found.sort(key=lambda e: (PAPER_SORT if e["first"].get("day") else e["first"]["date"] or "9", e["id"]))
     thumbs(paths, candidates + ideas + others, rows)
-    taken = [{"picture": p["id"], "entry": e["id"], **p["taken"]} for e in candidates + ideas for p in e["pictures"]
-             if p.get("taken")]
+    taken = [{"picture": p["id"], "entry": e["id"], **p["taken"]} for e in candidates + ideas + others
+             for p in e["pictures"] if p.get("taken")]
     assert len({t["picture"] for t in taken}) == len(taken), "a picture taken twice"
     hints = [created_hint(e, rows) for e in others
              if e["status"] in ("renamed", "live", TWIN_STATUS) and e.get("card") in live]
@@ -402,7 +481,7 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
               "pictures": sum(len(e["pictures"]) for e in candidates), "taken": len(taken),
               "made": sum(bool(x.get("made")) for x in entries.values()), "kin": len(kin),
               "twins_open": [e["id"] for e in others if e["status"] == TWIN_STATUS], "kin_open": kin_open,
-              "unchecked": unchecked}
+              "mdw_clash": clash, "unchecked": unchecked}
     stamp = dm.now_iso()
     dm.write_json(join(paths.out, "candidates.json"), {"generated": stamp, "about": ABOUT, "counts": counts,
                                                        "candidates": candidates, "not_candidates": others,
@@ -415,25 +494,28 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
 def created_hint(e: dict, rows: dict) -> dict:
     """A renamed or live entry's first date for S6: its earliest post that may date a live card (discord_verdicts
     dating: no meme channel's, bot's, paper photo's or embed's) or old repo file; meme: none, its date is a meme
-    channel's (never a live card's Created)."""
+    channel's (never a live card's Created). A paper card's photo (owner Q6): 'Before 2020' (day), no date."""
     posts = [p for pic in e["pictures"] for p in (rows.get(pic["id"]) or {}).get("posts") or [] if dv.dating(p)]
     found = [(utc(p["date"]), p.get("channel")) for p in posts] + [
         (pic["date"], "old repo") for pic in e["pictures"] if pic.get("source") == "old repo" and pic.get("date")]
     date, channel = min(found) if found else (e["first"]["date"], e["first"]["channel"])
-    return {"entry": e["id"], "name": e["name"], "card": e["card"], "date": date, "channel": channel,
-            "weak": bool(e.get("weak")), "meme": not found}
+    paper = any(pic.get("paper") for pic in e["pictures"])
+    return {"entry": e["id"], "name": e["name"], "card": e["card"], "date": None if paper else date,
+            "channel": "paper card" if paper else channel, **({"day": PAPER_DAY} if paper else {}),
+            "weak": bool(e.get("weak")), "meme": not (found or paper)}
 
 
 def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optional[set]) -> dict:
     """One lost card's entry: name, kind, first date and channel, pictures, nearest live card, why."""
     g, e, old = x["group"] or x.get("made") or {}, x["eye"], x["old"]
-    pics = [picture_of(rows[p], x["status"] in (CANDIDATE, IDEA)) for p in x["pictures"] if p in rows]
+    printed = set(e.get("not_paper") or [])     # by eye: a later photo of a printed card, not a paper card (Q6)
+    pics = [picture_of(rows[p], x["status"] in TAKES, p in printed) for p in x["pictures"] if p in rows]
     posts = [p for pid in x["pictures"] if pid in rows for p in rows[pid].get("posts") or []]
     if old:
         pics.append({"id": old["id"], "date": utc(old["first"]["date"]), "commit": old["first"]["commit"],
                      "thumb": f"thumbs/{old['id']}.webp", "source": "old repo"})
     dated = sorted((p for p in pics if p.get("date")), key=lambda p: utc(p["date"]))
-    first = dated[0] if dated else {}
+    first = next((p for p in pics if p.get("paper")), None) or (dated[0] if dated else {})     # owner Q6: paper first
     played = played_posts(posts, kinds)
     joke = "joke" in (g.get("kinds") or [])
     kind = e.get("kind") or ("joke" if joke else "played")
@@ -444,8 +526,6 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
             why.append(f"a joke card: posted in {', '.join(meme)}" if meme else
                        "a joke card: the same picture as one posted in a meme channel")
         why += [f"{'an' if c[:1] in 'aeiou' else 'a'} {c} picture ({d})" for c, d in played]
-        why += [f"{p['id']}: by eye this card's; taken from {p['taken']['card'] or 'no card'} ({p['taken']['verdict']})"
-                for p in pics if p.get("taken")]
         if kind == "played" and g.get("changelog_days"):
             why.append(f"named in update changelogs on {', '.join(g['changelog_days'][:6])}")
         if old:
@@ -454,6 +534,8 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
                        f"{', deleted' if old.get('deleted') else ', at its end'})")
     else:
         why.append(NOT.get(x["status"], x["status"]) + (f": {x['card']}" if x.get("card") else ""))
+    why += [f"{p['id']}: by eye this card's; taken from {p['taken']['card'] or 'no card'} ({p['taken']['verdict']})"
+            for p in pics if p.get("taken")]
     for t in x.get("twins") or []:
         twin, post = rows[t], first_post(rows[t].get("posts") or []) or {}
         why.append(f"the same picture as {t} ({twin['verdict']} {row_card(twin)}, {post.get('channel')} "
@@ -486,7 +568,8 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "card": x.get("card") if x["status"] != CANDIDATE else None,
              "first": {"date": utc(first.get("date")), "channel": first.get("channel") or (
                  "old repo" if first.get("source") == "old repo" else None), "thread": first.get("thread"),
-                 "source": first.get("source")},
+                 "source": "paper card" if first.get("paper") else first.get("source"),
+                 **({"day": PAPER_DAY} if first.get("paper") else {})},
              "last": max((utc(p["date"]) for p in dated), default=None),
              "channels": dict(Counter(p["channel"] for p in posts if p.get("channel"))),
              "pictures": pics, "thumb": pics[0]["thumb"] if pics else None,
