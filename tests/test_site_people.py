@@ -1,11 +1,9 @@
 """
 The website's person pages (TTSCardMaker site/assets/profile.js in node), one smoke test (owner 2026-11-12): the star
-mix within a kind. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without profile.js.
+mix within a kind. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 from subprocess import run as run_process
-
-import pytest
 
 from conftest import SITE_SRC
 
@@ -14,8 +12,6 @@ PROFILE_JS = SITE_SRC / "site" / "assets" / "profile.js"
 
 def node(tmp_path, body: str):
     """Run body after importing profile.js as pf; its stdout as JSON."""
-    if not PROFILE_JS.is_file():
-        pytest.skip(f"no profile.js at {PROFILE_JS}")
     script = tmp_path / "probe.mjs"
     script.write_text(f"const pf = await import({json.dumps(PROFILE_JS.as_uri())});\n"
                       "const out = x => process.stdout.write(JSON.stringify(x));\n"

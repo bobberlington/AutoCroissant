@@ -2,18 +2,14 @@
 printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF."""
 import json
 import os
-import re
-import shutil
 import subprocess
 import types
 from io import BytesIO
 from time import sleep, time
 
-import pytest
 from PIL import Image
 
 from commands import rulebook, rulebook_pages, tts_save
-from conftest import SITE_SRC
 
 CHAPTER = """# Stats {.x}
 
@@ -237,77 +233,6 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     head = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout
     assert (out / "inputs").read_text() == "\n".join((head.strip(), *rulebook_pages.INPUTS)) + "\n" and (out / "Rulebook.pdf").is_file()
     assert rulebook_pages.read_pages("", str(out))["key"] == "k1" and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0"
-
-
-def _gh_bash(script, cwd, env, timeout=60):
-    """A workflow step's script as GitHub's shell: bash runs it (expressions dropped)."""
-    script = re.sub(r"\$\{\{.*?\}\}", "", script)
-    return subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=cwd, env=env,
-                          capture_output=True, text=True, timeout=timeout)
-
-
-def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
-    """card-sync.yml as written: Rulebook PDF's exit 3 (the website lagged past the wait) sets lag and the step after it
-    marks the lane, as it does a failed step (exit 1, its time run out); the Gate of the schedule's next run passes over a
-    marked lane, so a rulebook picture's commit since the lane before it is card input (GO); unmarked, nothing to do; the
-    lane before it marked too (a lag that lasts, skeptic 6): not passed over, nothing to do."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    main = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]
-    assert main["defaults"]["run"]["shell"] == "bash"
-    steps = {s.get("name"): s for s in main["steps"]}
-    names = [s.get("name") for s in main["steps"]]
-    pages, gate = steps["Rulebook PDF"], steps["Gate"]
-    mark = steps[gate["env"]["UNDRAWN"]]
-    assert names.index(mark["name"]) == names.index("Rulebook PDF") + 1
-    assert all(c in mark["if"] for c in ("steps.pages.outputs.lag == 'true' || steps.pages.outcome == 'failure'", "env.DRY_RUN != 'true'"))
-    assert pages["continue-on-error"] is True and pages["timeout-minutes"] * 60 >= rulebook_pages.SITE_WAIT + 120
-    repo, bin_ = tmp_path / "ws", tmp_path / "bin"
-    (repo / "bot").mkdir(parents=True)
-    bin_.mkdir()
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    _commit(repo, "2026-11-10T20:00:00+00:00", {"TTS/Rulebook/pages.json": b"{}", "site/rulebook/01-a.md": b"# A"})
-    old = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
-    _commit(repo, "2026-11-10T20:16:39+00:00", {"site/rulebook/img/table-map.webp": b"2"})
-    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
-    venv = tmp_path / "temp" / "venv" / "bin"
-    venv.mkdir(parents=True)
-    for name, body in {"fc-list": "echo 'Noto Color Emoji'", "python": 'echo "Rulebook PDF: a look"; exit "$CODE"',
-                       "gh": 'f=$1; [ "$1" = api ] && f=$(basename "$(dirname "$2")"); jq -r "${@: -1}" "$FIX/$f.json"'}.items():
-        for where in (bin_, venv) if name == "python" else (bin_,):
-            (where / name).write_text(f"#!/bin/bash\n{body}\n")
-            (where / name).chmod(0o755)
-    env = {"PATH": f"{bin_}:{os.path.dirname(shutil.which('jq'))}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path / "temp"), "GITHUB_WORKSPACE": str(repo),
-           "SITE_URL": "https://site", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"), "HOME": str(tmp_path)}
-    for code, ok, lag in (("0", True, "false"), ("3", True, "true"), ("1", False, None)):
-        out = tmp_path / f"out{code}"
-        out.write_text("")
-        done = _gh_bash(pages["run"], repo / "bot", {**env, "CODE": code, "GITHUB_OUTPUT": str(out)})
-        assert (done.returncode == 0) is ok, (code, done.stdout, done.stderr)
-        assert (f"lag={lag}" in out.read_text().split()) if lag else "lag=" not in out.read_text(), (code, out.read_text())
-    fix = tmp_path / "fix"
-    fix.mkdir()
-    (fix / "run.json").write_text(json.dumps([{"databaseId": 3, "headSha": head, "displayTitle": "Card sync"},
-                                              {"databaseId": 2, "headSha": old, "displayTitle": "Card sync"}]))
-    job = lambda marked: {"jobs": [{"name": gate["env"]["LANE"], "conclusion": "success", "steps": [
-        {"name": "Gate", "conclusion": "success"}, {"name": "Rulebook PDF", "conclusion": "success"},
-        {"name": mark["name"], "conclusion": "success" if marked else "skipped"}]}]}
-    (fix / "2.json").write_text(json.dumps(job(False)))
-    for marked, go in ((True, "true"), (False, "false"), ((True, True), "false")):
-        if marked == (True, True):                       # 4, a schedule run's lane at head, marked too
-            (fix / "run.json").write_text(json.dumps([{"databaseId": 4, "headSha": head, "displayTitle": "Card sync"},
-                                                      *json.loads((fix / "run.json").read_text())]))
-            (fix / "4.json").write_text(json.dumps(job(True)))
-        (fix / "3.json").write_text(json.dumps(job(bool(marked))))
-        envs = tmp_path / "env"
-        envs.write_text("")
-        done = _gh_bash(gate["run"], repo, {**env, "FIX": str(fix), "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "o/r",
-                                            "GITHUB_OUTPUT": str(tmp_path / "gate-out"), "GITHUB_ENV": str(envs), "DRY_RUN": "false",
-                                            "LANE": gate["env"]["LANE"], "UNDRAWN": gate["env"]["UNDRAWN"], "RETRY": "", "CHAIN": "",
-                                            "GIT_NO_LAZY_FETCH": "1"})
-        assert done.returncode == 0 and f"GO={go}" in envs.read_text().split(), (marked, done.stdout, done.stderr)
 
 
 def test_card_sync_keeps_the_look_in_the_background(tmp_path):

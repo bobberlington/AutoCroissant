@@ -3,18 +3,15 @@ The website build (TTSCardMaker site/build/build_site.py): one smoke test per pi
 the bot against the site. The build on a small card repo made here, offline, from the card sync's db/ (CARD_DATA_DIR,
 load_card_data): the current text dated from its start; the bundle's lazy chunks; website-only fields (edit.js and
 CardEdits); the parser notes an edit answers; a real card's inks (psd_details); R14's names (card_standards); web-only
-rulebook chapters (rulebook.js); site.yml's steps. Loads build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or
-the clone; skips without it.
+rulebook chapters (rulebook.js). Loads build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips
+without it.
 """
 import importlib.util
-import io
 import json
 import re
 import subprocess
 import sys
-import tarfile
 import time
-import zipfile
 from collections import defaultdict
 from html import unescape as html_unescape
 from os import environ
@@ -253,8 +250,6 @@ def test_parser_notes_answered_as_the_bot_does(bs):
 def test_card_inks_on_a_real_card(bs, clone):
     """Tainted Lazarus: its two Ability layers' runs on the parsed ability (joined; no [undead] since 11-09, its creature 2
     header icon): the status words in their colours, the white title none."""
-    if not hasattr(bs, "card_inks"):
-        pytest.skip("before TC's card colours land")
     import commands.psd_details as pd
     import commands.psd_edit as pe
     from psd_tools import PSDImage
@@ -288,8 +283,6 @@ def test_guards_name_rule_matches_the_site(bs):
 def test_a_web_chapter_is_not_printed(bs, tmp_path):
     """Owner 2026-11-07: a chapter titled {.web} is on the website only (rulebook.js printed, build_site printed_chapters)."""
     book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
-    if not hasattr(bs, "printed_chapters"):
-        pytest.skip("a site before {.web}")
     book = [{"id": "stats", "source": "# Stats\n\n## HEALTH {.hp}\nWords.\n"}, {"id": "font", "source": "# Font {.web}\n\nWords.\n"}]
     assert [c["id"] for c in bs.printed_chapters(book)] == ["stats"]
     probe = tmp_path / "probe.mjs"
@@ -298,286 +291,6 @@ def test_a_web_chapter_is_not_printed(bs, tmp_path):
     done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == ["stats"]
-
-
-def test_site_workflow_sets_up_in_the_background(tmp_path):
-    """site.yml's Setup start returns at once, uv, npm, the PSD sizes, the data clone and the deploy's versions (the version
-    job's artifact, not waited for; none when that job did not run in this attempt) running on (their output not held);
-    Setup wait prints each one's log and fails on uv or npm, only warns on the sizes (3 tries); a failed data clone: the
-    data checked out between it and the build. uv is fetched there
-    (no setup-uv), else from the GitHub release, else pip installs. An early build's Images start runs once uv is in;
-    Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "site.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
-    names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
-    assert names.index("py") < names.index("python") < names.index("Setup start") < names.index("Setup wait") == names.index("build") - 2
-    fallback = steps[names.index("build") - 1]
-    assert fallback["if"] == "steps.early.outputs.run == '' && steps.setup.outputs.data != 'true'"
-    assert fallback["with"] == {"ref": "data", "path": "carddata", "fetch-depth": 1}
-    assert steps[names.index("python")]["if"] == "steps.early.outputs.run == '' && steps.py.outputs.python == ''"
-    gone = ("actions/configure-pages", "astral-sh/setup-uv", "actions/upload-pages-artifact")    # never downloaded
-    assert not [s for s in steps if s.get("uses", "").split("@")[0] in gone]
-    assert names.index("cache-before") < names.index("Images start") < names.index("Data wait")
-    assert steps[names.index("Images start")]["if"] == "inputs.after"
-    start, images, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Images start", "Setup wait"))
-    bin_ = tmp_path / "bin"
-    bin_.mkdir()
-    call = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"; [ -z "$HOLD" ] '      # held till go (60 s at most)
-            '|| until [ -e "$RUNNER_TEMP/go" ] || [ $(( held += 1 )) -gt 6000 ]; do /bin/sleep 0.01; done; ')
-    curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
-            'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
-    for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
-                       "gh": call + 'case "$*" in *runs/5/artifacts\\?name=pages-versions-3*) echo 77;; *artifacts/77/zip) cat "$ZIP";; '
-                              '*runs/5/jobs\\?filter=latest*) echo "${VERSION_AT:-3}";; *) echo \'{"tree": []}\';; esac; '
-                              'exit "${GH_CODE:-0}"', "timeout": 'shift; exec "$@"',
-                       "git": 'case "$1" in clone) ' + call + '[ "$GIT_CONFIG_KEY_0" = http.extraheader ] || exit 9; '
-                              'exit "${CLONE_CODE:-0}";; esac\necho 0123abcd',
-                       "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
-                       "sha256sum": 'cat > /dev/null; exit "${SHA_CODE:-0}"', "pip-python": call + 'echo "pip said"',
-                       "sleep": "exec /bin/sleep 0.01", "seq": 'exec /usr/bin/seq "$(( $1 < 3 ? $1 : 3 ))"'}.items():   # 3 tries
-        (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
-        (bin_ / name).chmod(0o755)
-    uv = f"#!/bin/sh\n{call}echo \"uv said\"; exit \"${{UV_CODE:-0}}\"\n".encode()
-    with tarfile.open(tmp_path / "uv.tar.gz", "w:gz") as tar:      # the release's layout
-        info = tarfile.TarInfo("uv-x86_64-unknown-linux-gnu/uv")
-        info.size, info.mode = len(uv), 0o755
-        tar.addfile(info, io.BytesIO(uv))
-    versions = f"{'c1' * 20}\n{'c2' * 20}\n"
-    with zipfile.ZipFile(tmp_path / "versions.zip", "w") as zf:        # the version job's artifact
-        zf.writestr("versions.txt", versions)
-    shell = lambda run, env, limit=30: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
-                                                      capture_output=True, text=True, timeout=limit)
-    # 1: a wrong checksum from both: pip. 2: the mirror down: the GitHub release
-    for n, (codes, failed, warns) in enumerate((({"HOLD": "1"}, "", False), ({"GH_CODE": "1", "SHA_CODE": "1"}, "", True),
-                                                ({"UV_CODE": "2", "NPM_CODE": "3", "ASTRAL_CODE": "22", "CLONE_CODE": "128", "VERSION_AT": "2"},
-                                                 " uv npm", False))):            # 2: the version job of attempt 2 (a re-run)
-        temp = tmp_path / f"t{n}"
-        temp.mkdir()
-        (temp / "out").write_text("")
-        env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r",
-               "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(temp / "out"), "TARBALL": str(tmp_path / "uv.tar.gz"),
-               "UV_PYTHON": str(bin_ / "pip-python"), "GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "3",
-               "ZIP": str(tmp_path / "versions.zip"), **codes}
-        try:
-            done = shell(start, env)
-            assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
-        finally:
-            (temp / "go").touch()                                     # 0: the held jobs go on (never left spinning)
-        assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
-        end = time.monotonic() + 120                                 # a loaded machine: slow, never stuck
-        while n == 0 and time.monotonic() < end:                     # 0: Setup wait once it runs (else never started)
-            if (temp / "calls").exists() and "--images" in (temp / "calls").read_text():
-                break
-            time.sleep(0.01)
-        done = shell(wait, env, 120)
-        out = done.stdout
-        assert (done.returncode != 0) == bool(failed) and ("::error::" in out) == bool(failed), (out, done.stderr)
-        assert not failed or f"::error::failed:{failed}" in out
-        assert ("::warning::PSD sizes failed" in out) == warns and ("pip said" if n == 1 else "uv said") in out and "npm said" in out
-        assert ("::warning::uv not fetched" in out) == (n == 1)
-        assert out.index(f"::group::uv (exit {codes.get('UV_CODE', 0)})") < out.index(f"::group::npm (exit {codes.get('NPM_CODE', 0)})")
-        calls = (temp / "calls").read_text().splitlines()
-        assert sum("/gh api repos/o/r/git/trees/0123abcd?recursive=1" in c for c in calls) == (3 if warns else 1)
-        assert any(("/pip-python -m pip" if n == 1 else "/uv/uv pip") + " install -q -r site/build/requirements.txt" in c for c in calls)
-        hosts = [c.split()[-1].split("/")[2] for c in calls if c.split()[0].endswith("/curl")]
-        assert hosts == ["releases.astral.sh"] + ["github.com"] * (n > 0)
-        assert (temp / "tree.json").read_text().strip() == '{"tree": []}'
-        early = {0: "0", 2: "uv"}.get(n)
-        assert ("::group::images" in out) == bool(early) and ("::warning::early images failed" in out) == (n == 2)
-        assert not early or f"::group::images (exit {early})" in out and ("python said" in out) == (n == 0)
-        assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
-        assert sum("/git clone -q --depth 1 --no-tags --single-branch --branch data https://x/o/r carddata" in c for c in calls) == 1
-        assert ((temp / "out").read_text() == "data=true\n") == (n != 2) and ("::warning::the data clone failed" in out) == (n == 2)
-        code, end = temp / "setup" / "versions.code", time.monotonic() + 120
-        while time.monotonic() < end:                                # 1: every call fails, all tries
-            if code.exists() and code.read_text().strip():
-                break
-            time.sleep(0.01)
-        assert code.read_text().strip() == ("0" if n == 0 else "1")
-        assert ((temp / "versions.txt").read_text() if n == 0 else versions) == versions
-        log = (temp / "setup" / "versions.log").read_text()
-        artifacts = [c for c in (temp / "calls").read_text().splitlines() if "/artifacts" in c]
-        assert ("did not run in attempt 3" in log) == (n == 2) and bool(artifacts) == (n != 2)
-
-
-def test_site_workflow_python_from_the_tool_cache(tmp_path):
-    """site.yml's py step puts the image's newest 3.14.x on PATH with its lib, as setup-python does; none: nothing (setup-python)."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "site.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    run = next(s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"] if s.get("id") == "py")["run"]
-    for n, have in enumerate((["3.13.9/x64", "3.14.2/x64", "3.14.10/x64", "3.14.11/x64-freethreaded", "3.15.0/x64"], ["3.13.9/x64"])):
-        cache, out = tmp_path / f"c{n}", tmp_path / f"o{n}"
-        for v in have:
-            (cache / "Python" / v / "bin").mkdir(parents=True)
-            (cache / "Python" / v / "bin" / "python").touch(mode=0o755)
-        out.mkdir()
-        files = {k: out / k for k in ("GITHUB_PATH", "GITHUB_ENV", "GITHUB_OUTPUT")}
-        env = {"PATH": "/usr/bin:/bin", "RUNNER_TOOL_CACHE": str(cache), "LD_LIBRARY_PATH": "/old", **{k: str(f) for k, f in files.items()}}
-        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env, capture_output=True, text=True)
-        got = {k: f.read_text() if f.exists() else "" for k, f in files.items()}
-        py = cache / "Python" / "3.14.10" / "x64"
-        assert done.returncode == 0 and got == ({"GITHUB_PATH": f"{py}/bin\n", "GITHUB_ENV": f"LD_LIBRARY_PATH={py}/lib:/old\n",
-                                                 "GITHUB_OUTPUT": f"python={py}/bin/python\n"} if n == 0 else
-                                                dict.fromkeys(files, "")), (done.stderr, got)
-
-
-def test_site_image_cache_saved_whenever_the_build_changed_it(tmp_path):
-    """site.yml's card images: restored only; saved last (a passed build too) when their names or JSON indexes changed,
-    under the run id (the newest entry, restore-keys' pick); the job's saved (caches.yml prunes) only after a save."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "site.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    job = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]
-    step = {s["id"]: s for s in job["steps"] if "id" in s}
-    restore, before, after, save = (step[n] for n in ("cache", "cache-before", "cache-after", "cache-save"))
-    assert restore["uses"].startswith("actions/cache/restore@") and restore["with"]["restore-keys"] == "card-images-v2-"
-    assert job["steps"][-2:] == [after, save] and before["run"] == after["run"] and after["if"].startswith("always() && ")
-    assert save["if"] == "always() && steps.cache-after.outputs.names != '' && steps.cache-after.outputs.names != steps.cache-before.outputs.names"
-    assert save["with"] == {"path": "site/.cache", "key": restore["with"]["key"] + "-${{ github.run_id }}-${{ github.run_attempt }}"}
-    assert job["outputs"]["saved"] == "${{ steps.og-save.outcome == 'success' || steps.cache-save.outcome == 'success' }}"
-    cache = tmp_path / "site" / ".cache"
-    (cache / "img").mkdir(parents=True)
-    out = tmp_path / "out"
-    def names(*change):
-        for f, text in change:
-            (cache / f).write_text(text)
-        out.unlink(missing_ok=True)
-        subprocess.run(["bash", "-e", "-c", after["run"]], cwd=tmp_path, env={**environ, "GITHUB_OUTPUT": str(out)}, check=True)
-        return out.read_text()
-    seen = [names(("images.json", "{}"))]
-    assert names() == seen[0]
-    for change in (("img/a.avif", "x"), ("fonts.json", '{"f": 1}'), ("fonts.json", '{"f": 2}')):    # a file, an index
-        seen.append(names(change))
-    assert len(set(seen)) == 4
-
-
-def test_site_deploy_under_a_version_of_its_own(tmp_path):
-    """site.yml's deployment: the version job (the one that writes) makes two commits, the run's commit their parent and
-    its tree theirs (3 tries a call); each try deploys under its own (TRY; none handed over: GITHUB_SHA) with the OIDC
-    token (masked), polling its status. 2 min syncing files while a newer main build waits (never an early build):
-    cancelled and handed on (green: no retry); a failed cancel polls on. A failed deploy: red, no cancel; 6 minutes or 15
-    unread statuses: cancelled. The retry, on the same artifact: the first commit's deploy still syncing files at
-    the end (stuck), the same script under the second; else, or that failing too, deploy-pages under GITHUB_SHA (a
-    version never fails a deploy)."""
-    yaml = pytest.importorskip("yaml")
-    path = SITE_SRC / ".github" / "workflows" / "site.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
-    steps = {s.get("id"): s for s in jobs["build"]["steps"]}
-    assert jobs["build"]["permissions"]["contents"] == "read" and jobs["version"]["permissions"] == {"contents": "write"}
-    assert jobs["version"]["continue-on-error"] is True
-    made, upload = jobs["version"]["steps"]
-    assert upload["if"] == "always()"
-    assert upload["uses"].startswith("actions/upload-artifact@") and upload["with"]["name"] == "pages-versions-${{ github.run_attempt }}"
-    run, retry = steps["deployment"]["run"], steps["retry"]
-    assert "-ge 120 ]" in run and "-lt 360 ]" in run and steps["deployment"]["continue-on-error"] is True
-    assert steps["deployment"]["env"] == {"GH_TOKEN": "${{ github.token }}", "ARTIFACT": "${{ steps.artifact.outputs.artifact-id }}",
-                                          "TRY": "1"}
-    assert retry["run"] == 'exec bash "$RUNNER_TEMP/deploy.sh"' and retry["env"]["TRY"] == "2"
-    assert retry["env"]["ARTIFACT"] == steps["deployment"]["env"]["ARTIFACT"]
-    pages, order = steps["pages"], [s.get("id") or s.get("if") for s in jobs["build"]["steps"]]
-    assert retry["if"] == "steps.deployment.outcome == 'failure' && steps.deployment.outputs.stuck == 'true'"
-    assert retry["continue-on-error"] is True and order.index("retry") + 2 == order.index("pages")
-    assert order[order.index("retry") + 1] == "steps.retry.outcome == 'failure'"           # the cancel settles
-    assert pages["if"] == ("steps.deployment.outcome == 'failure' && (steps.deployment.outputs.stuck != 'true' "
-                           "|| steps.retry.outcome == 'failure')")
-    assert pages["uses"].startswith("actions/deploy-pages@") and "artifact_name" not in pages["with"]      # github-pages
-    bin_ = tmp_path / "bin"
-    bin_.mkdir()
-    gh = r"""echo "$*" >> "$RUNNER_TEMP/calls"
-case "$*" in
-  *git/commits/*) [ ! -e "$RUNNER_TEMP/fail" ] || { rm "$RUNNER_TEMP/fail"; echo '{"message":"Server Error"}'; exit 1; }; echo tree1;;
-  *"POST repos/o/r/git/commits "*) [ ! -e "$RUNNER_TEMP/failpost" ] || { rm "$RUNNER_TEMP/failpost"; echo '{"message":"Bad"}'; exit 1; }
-    n=$(( $(cat "$RUNNER_TEMP/made" 2> /dev/null || echo 0) + 1 )); echo "$n" > "$RUNNER_TEMP/made"; printf "c$n%.0s" $(seq 20); echo;;
-  *"pages/deployments --input -") cat > "$RUNNER_TEMP/body"; v=$(jq -r .pages_build_version "$RUNNER_TEMP/body")
-    echo "{\"id\": \"$v\", \"status_url\": \"https://x/$v\", \"page_url\": \"https://o.github.io/r/\"}";;
-  *cancel*) [ "$CANCEL" = 0 ] || echo '{"message":"Conflict"}'; exit "$CANCEL";;
-  *runs*) while [ $# -gt 1 ]; do [ "$1" != --jq ] || f=$2; shift; done; jq -r "$f" "$RUNS";;
-  *pages/deployments/*) s=$(head -1 "$STATUSES"); [ "$(wc -l < "$STATUSES")" -le 1 ] || sed -i.bak 1d "$STATUSES"
-    [ "$s" != ERR ] || { echo '{"message":"Bad Gateway"}'; exit 1; }; echo "$s";;
-esac"""
-    for name, body in {"gh": gh, "curl": """echo '{"value": "tok3n"}'""", "sleep": "exec /bin/sleep 0.01",
-                       "timeout": 'shift; exec "$@"'}.items():
-        (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
-        (bin_ / name).chmod(0o755)
-    v1, v2, sha = "c1" * 20, "c2" * 20, "ab" * 20
-    temp = tmp_path / "version"
-    temp.mkdir()
-    (temp / "fail").touch()                                          # the tree's first read fails, and the first commit
-    (temp / "failpost").touch()
-    env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5",
-           "GITHUB_SHA": sha}
-    done = subprocess.run(["bash", "-e", "-c", made["run"]], env=env, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0 and (temp / "versions.txt").read_text() == f"{v1}\n{v2}\n", (done.stdout, done.stderr)
-    assert (temp / "calls").read_text().splitlines() == [f"api repos/o/r/git/commits/{sha} --jq .tree.sha"] * 2 + [
-        f"api -X POST repos/o/r/git/commits -f message=Pages deploy: run 5, try {n} -f tree=tree1 -f parents[]={sha} --jq .sha"
-        for n in (1, 1, 2)]
-    runs = tmp_path / "runs.json"            # 7: the newest waiting main build (4 older, 8 done, 9 an early build)
-    runs.write_text(json.dumps({"workflow_runs": [{"id": 4, "status": "queued", "display_title": "Card browser"},
-                                                  {"id": 9, "status": "queued", "display_title": "Card browser (after 3 data)"},
-                                                  {"id": 7, "status": "queued", "display_title": "Card browser"},
-                                                  {"id": 8, "status": "completed", "display_title": "Card browser"}]}))
-    fast = {"-ge 120 ]": "-ge 0 ]"}
-    stuck = {"-lt 360 ]": '-lt 360 ] && [ "$last" != syncing_files ]'}     # times out after a status read, not at a clock tick
-    for n, (statuses, cancel, swap, code, said, cancels) in enumerate((
-            (["deployment_queued", "syncing_files", "succeed"], "0", {}, 0, "Deployed in", 0),
-            (["syncing_files"], "0", fast, 0, "Run 7 waits: deploy handed to it", 1),
-            (["syncing_files"] * 3 + ["succeed"], "22", fast, 0, "Run 7 waits: cancel failed", 1),
-            (["deployment_queued", "deployment_failed"], "0", {}, 1, "::error::deployment_failed", 0),
-            (["deployment_queued"], "0", {"-lt 360 ]": "-lt 0 ]"}, 1, "::error::not deployed in 6 minutes", 1),
-            (["ERR"], "0", {"-lt 15 ]": "-lt 2 ]"}, 1, "::error::15 status reads failed", 1),   # the 2nd failed read, as the 15th
-            (["syncing_files"], "0", stuck, 1, "::error::not deployed in 6 minutes", 1))):   # stuck
-        temp = tmp_path / f"t{n}"
-        (temp / "setup").mkdir(parents=True)
-        (temp / "setup" / "versions.code").write_text("0\n")          # the hand-over
-        (temp / "versions.txt").write_text(f"{v1}\n{v2}\n")
-        (temp / "statuses").write_text("\n".join(statuses) + "\n")
-        env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5",
-               "GITHUB_SHA": sha, "GITHUB_OUTPUT": str(temp / "out"), "GITHUB_STEP_SUMMARY": str(temp / "summary"),
-               "ARTIFACT": "42", "TRY": "1", "ACTIONS_ID_TOKEN_REQUEST_URL": "https://t/?x=1",
-               "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "rt", "CANCEL": cancel, "STATUSES": str(temp / "statuses"), "RUNS": str(runs)}
-        step = run
-        for a, b in swap.items():
-            assert a in step, a
-            step = step.replace(a, b)
-        done = subprocess.run(["bash", "-e", "-c", step], env=env, capture_output=True, text=True, timeout=120)
-        calls = (temp / "calls").read_text().splitlines()
-        out = done.stdout
-        assert done.returncode == code and said in out and "::warning::" not in out, (n, out, done.stderr)
-        assert not [c for c in calls if "git/commits" in c]
-        assert json.loads((temp / "body").read_text()) == {"artifact_id": 42, "pages_build_version": v1, "oidc_token": "tok3n"}
-        assert [line for line in out.splitlines() if "tok3n" in line] == ["::add-mask::tok3n"]
-        assert (temp / "out").read_text() == "page_url=https://o.github.io/r/\n" + "stuck=true\n" * (n == 6)
-        assert sum(c == f"api -X POST repos/o/r/pages/deployments/{v1}/cancel" for c in calls) == cancels
-        assert ((temp / "summary").exists() and "Run 7 waits" in (temp / "summary").read_text()) == (n == 1)
-        assert f"Deployment {v1}: version {v1}" in out and "  ".join(calls).count(f"pages/deployments/{v1} --jq") >= len(statuses) - 1
-    (temp / "statuses").write_text("succeed\n")                      # the retry, after the stuck try
-    done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43", "TRY": "2"}, capture_output=True,
-                          text=True, timeout=120)
-    assert done.returncode == 0 and f"Deployment {v2}: version {v2}" in done.stdout, done.stdout
-    assert json.loads((temp / "body").read_text()) == {"artifact_id": 43, "pages_build_version": v2, "oidc_token": "tok3n"}
-    (temp / "setup" / "versions.code").write_text("1\n")              # none handed over: the run's commit, and why
-    (temp / "setup" / "versions.log").write_text("the version job did not run in attempt 2\n")
-    (temp / "versions.txt").unlink()
-    (temp / "statuses").write_text("succeed\n")
-    done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43"}, capture_output=True, text=True,
-                          timeout=120)
-    assert done.returncode == 0 and f"::warning::no version commit handed over: {sha}, as deploy-pages\nthe version job" in done.stdout
-    assert json.loads((temp / "body").read_text())["pages_build_version"] == sha
-    (temp / "out").write_text("")                                     # under GITHUB_SHA: never stuck, never to a run at it
-    (temp / "statuses").write_text("syncing_files\n")
-    runs.write_text(json.dumps({"workflow_runs": [{"id": 7, "status": "queued", "display_title": "Card browser", "head_sha": sha}]}))
-    done = subprocess.run(["bash", "-e", "-c", run.replace("-ge 120 ]", "-ge 0 ]").replace("-lt 360 ]", stuck["-lt 360 ]"])],
-                          env={**env, "ARTIFACT": "43"}, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 1 and "stuck" not in (temp / "out").read_text() and "Run 7" not in done.stdout, done.stdout
-    assert sum("actions/workflows/site.yml/runs" in c for c in (temp / "calls").read_text().splitlines()) == 1
 
 
 def test_site_push_with_card_data_left_to_the_early_build(tmp_path):

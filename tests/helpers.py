@@ -4,17 +4,14 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import struct
 import subprocess
 from copy import deepcopy
 from functools import lru_cache
 from io import BytesIO
-from os import environ
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import numpy as np
@@ -315,27 +312,6 @@ def third_party_imports(code: str, cwd) -> set:
     assert done.returncode == 0, done.stderr
     return set(ast.literal_eval(done.stdout.strip()))
 
-FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml")   # install requirements-cards.txt
-
-FORK_ACTION = ".github/actions/cards-python/action.yml"                 # their one setup (2026-10-25)
-
-VENV_ACTION = ".github/actions/cards-venv/action.yml"                   # its venv hit first, else it (2026-11-09)
-
-FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
-
-FORK_WHEELS = "~/.cache/card-wheels"
-
-OXIPNG_VERSION = "10.2.1"                                               # the CLI in the venv entry (SMALLER_PNG_PUSHES.md)
-
-OXIPNG_JOBS = {"card-guards.yml": {"check"}, "card-sync.yml": {"main"}, "card-preview.yml": set()}   # write PNGs
-
-FORK_KEY = ("card-wheels-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.reqs.outputs.minor }}")                       # one entry for all, any 3.14.x
-FORK_VENV_KEY = ("card-venv-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
-                 "-py${{ steps.python.outputs.python-version }}-ox" + OXIPNG_VERSION)   # the patch version; the CLI in it
-
-BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
-
 
 def card_pin() -> str:
     """The psd-tools fork's tag: requirements-cards.txt's one fork URL, the only pin (no other requirements file has one)."""
@@ -347,92 +323,11 @@ def card_pin() -> str:
     return pins[0]
 
 
-def _uses_setup(step) -> bool:
-    return step.get("uses") in ["./" + a.rsplit("/", 1)[0] for a in (FORK_ACTION, VENV_ACTION)]
-
-
 def bot_files(job: dict, step: dict) -> list:
     """A checkout's sparse-checkout lines (`${{ env.X }}`: the job's X)."""
     listed = step["with"]["sparse-checkout"]
     named = re.fullmatch(r"\$\{\{ env\.(\w+) \}\}", listed.strip())
     return (job["env"][named.group(1)] if named else listed).split()
-
-
-def fork_action(workflows) -> str:
-    """
-    The card workflows' one setup (.github/actions/cards-python): Python 3.14; a venv cached whole by requirements-cards.txt's
-    hash, runner and Python patch version, a restored one's packages checked; on a miss the wheels (keyed by the minor
-    version: a runner image's new patch reuses them) restored, built only
-    on a miss, installed offline by name with uv (pip builds a URL line from git again), both saved only after they
-    installed; the venv first on PATH when the caller names none.
-
-    Returns:
-        The wheels' cache key.
-    """
-    yaml = pytest.importorskip("yaml")
-    steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, reqs, env, check, restore, uv, install, save, oxipng, save_env, path = steps
-    assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"] and 'echo "minor=' in reqs["run"]   # the key: requirement lines, comments stripped
-    assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
-    assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
-    assert env["uses"].startswith("actions/cache/restore@") and env["id"] == "env"
-    assert env["with"] == {"path": "${{ steps.reqs.outputs.venv }}", "key": FORK_VENV_KEY}
-    assert check["id"] == "check" and check["env"]["HIT"] == "${{ steps.env.outputs.cache-hit }}" and 'rm -rf "$VENV"' in check["run"]
-    missed = "steps.check.outputs.ok != 'true'"
-    assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels" and restore["if"] == missed
-    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
-    assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False and uv["if"] == missed
-    run = install["run"]
-    assert install["if"] == missed and install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-    assert run.index("pip wheel -q -f ~/.cache/card-wheels -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
-    assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
-    assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith(f"{missed} && steps.wheels.outputs.cache-hit != 'true'")
-    assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
-    assert save_env["uses"].startswith("actions/cache/save@") and save_env["if"] == f"{missed} && steps.oxipng.outputs.unsaved != 'true'"
-    assert save_env["with"] == {"path": env["with"]["path"], "key": "${{ steps.env.outputs.cache-primary-key }}"}
-    assert 'echo "$VENV/bin" >> "$GITHUB_PATH"' in path["run"] and '"$VENV/bin/python" -m "commands.$module" --help' in path["run"]
-    assert oxipng["if"] == f"{missed} || inputs.oxipng == 'true'" and oxipng["env"]["VERSION"] == OXIPNG_VERSION   # every miss: one entry
-    assert oxipng["env"]["BIN"] == "${{ steps.reqs.outputs.venv }}/.oxipng" and oxipng["id"] == "oxipng"      # off PATH unless asked
-    assert re.fullmatch(r"[0-9a-f]{64}", oxipng["env"]["SHA256"]) and "sha256sum -c" in oxipng["run"]
-    assert oxipng["run"].index("sha256sum -c") < oxipng["run"].index("tar ") < oxipng["run"].index("GITHUB_PATH")
-    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
-        (Path(tmp) / "bot").mkdir()
-        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
-        run_process(["bash", "-c", BY_NAME], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
-        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
-    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
-    return restore["with"]["key"]
-
-
-def fork_install(path) -> str:
-    """
-    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin): every job that installs uses the shared
-    setup (fork_action) after a bot checkout bringing the file; no pin of the workflow's own, no other install
-    (the oxipng CLI on PATH only in the jobs that write PNGs, OXIPNG_JOBS).
-
-    Returns:
-        The cache key.
-    """
-    text = path.read_text(encoding="utf-8")
-    assert "PSD_TOOLS_REF" not in text and "MichaelJSr/psd-tools" not in text, f"{path.name}: the pin is requirements-cards.txt's"
-    assert not re.search(r"cards-\d{8}", text), f"{path.name}: no fork tag of its own"
-    assert not re.search(r"pip install", text), f"{path.name}: no install of its own"
-    yaml = pytest.importorskip("yaml")
-    installs = 0
-    for name, job in yaml.safe_load(text)["jobs"].items():
-        steps = job.get("steps", [])
-        setups = [i for i, s in enumerate(steps) if _uses_setup(s)]
-        if not setups:
-            continue
-        installs += 1
-        bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
-               and "/requirements-cards.txt" in bot_files(job, s)]
-        assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
-        want = (steps[setups[0]].get("with") or {}).get("oxipng", "true")
-        on = re.fullmatch(r"\$\{\{ github\.job (==|!=) '(\w+)' \}\}", want)
-        assert (want == "true" or bool(on) and (on[1] == "==") == (on[2] == name)) == (name in OXIPNG_JOBS[path.name]), name
-    assert installs, f"{path.name}: installs requirements-cards.txt"
-    return fork_action(path.parent)
 
 
 # ========================

@@ -1,11 +1,9 @@
 """
 Card ratings (TTSCardMaker site/Card Ratings.json): data only since 2026-11-12 (owner: the TTS-session import deleted);
 the file in dump_edits' layout (a card rename rewrites it so, card_bake) and the bot never reading it. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; those tests skip without it.
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
-
-import pytest
 
 import commands.card_sync as card_sync
 from commands.card_edits import CardEdits, dump_edits
@@ -17,10 +15,7 @@ SITE = SITE_SRC
 
 def test_ratings_file_is_whole():
     """The card repo's file: whole values only (the 2026-10-26 migration), in dump_edits' layout."""
-    path = SITE / RATINGS_PATH
-    if not path.is_file():
-        pytest.skip(f"no {path}")
-    text = path.read_text(encoding="utf-8")
+    text = (SITE / RATINGS_PATH).read_text(encoding="utf-8")
     data = json.loads(text)
     assert dump_edits(data) == text
     bad = [(name, e) for name, entries in data["cards"].items() for e in entries
@@ -34,7 +29,5 @@ def test_bot_ignores_ratings():
                                               "source": "TTS session"}]}})
     assert CardEdits.parse(shaped).cards == {}
     workflows = SITE / ".github" / "workflows"
-    if not workflows.is_dir():
-        pytest.skip(f"no workflows at {workflows}")
     for name in ("card-sync", "card-guards"):
         assert "Card Ratings.json" not in (workflows / f"{name}.yml").read_text(encoding="utf-8"), name

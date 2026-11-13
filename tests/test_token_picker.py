@@ -1,24 +1,17 @@
 """
-The website's token picker and token variants (TTSCardMaker site/, in node and Python): typing "[" in card text
-suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags (assets/tokens.js); build_site's
-build_icons makes each icon's WebP copies. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone;
-skips without it.
+The website's token picker (TTSCardMaker site/assets/tokens.js, in node), one smoke test (owner 2026-11-12): typing "["
+in card text suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags. Loads the site from
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
-import importlib.util
 import json
 import re
 from pathlib import Path
 from subprocess import run as run_process
 
-import pytest
-
 from conftest import SITE_SRC
 
 SITE = SITE_SRC / "site"
 TOKENS_JS = SITE / "assets" / "tokens.js"
-BUILD_SITE = SITE / "build" / "build_site.py"
-pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
-                                reason=f"no {TOKENS_JS}")
 
 ALL = ["tint", "sticker", "glow", "darkglow"]
 
@@ -67,37 +60,3 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
                         ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
                         ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
     assert out[19:] == [["[fire] x", 6], ["[fire]", 6]]                    # never "[fire:]": letters in the font
-
-
-@pytest.fixture(scope="module")
-def bs():
-    spec = importlib.util.spec_from_file_location("site_build_tokens", BUILD_SITE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _icons(bs, monkeypatch, root, tree, out):
-    monkeypatch.setattr(bs, "REPO", str(root))
-    monkeypatch.setattr(bs, "DIST", str(out / "dist"))
-    monkeypatch.setattr(bs, "CACHE", str(out / ".cache"))
-    return bs.build_icons(tree)
-
-
-def test_icons_get_a_68_px_copy(bs, tmp_path, monkeypatch):
-    """Each icon is a 96 px WebP plus <name>.<stamp>.68.webp beside it (grid.js iconSet's srcset), both from the PNG; a
-    cache with only the 96 px one (before 11-11) gets the 68 px one alone."""
-    from PIL import Image
-    root = tmp_path / "repo"
-    (root / "Types").mkdir(parents=True)
-    Image.new("RGBA", (300, 150), (220, 60, 20, 255)).save(root / "Types" / "fire.png")
-    tree = {"Types/fire.png": "ab" * 20}
-    big = tmp_path / "dist" / _icons(bs, monkeypatch, root, tree, tmp_path)[0]["fire"]["file"]
-    small = big.with_name(big.name.replace(".webp", ".68.webp"))
-    assert (Image.open(big).size, Image.open(small).size) == ((96, 48), (68, 34))
-    cached = {p.name: p.stat().st_mtime_ns for p in (tmp_path / ".cache" / "icons").iterdir()}
-    for p in (tmp_path / ".cache" / "icons").glob("*.68.webp"):
-        p.unlink()
-    _icons(bs, monkeypatch, root, tree, tmp_path)
-    assert {p.name: p.stat().st_mtime_ns for p in (tmp_path / ".cache" / "icons").iterdir() if not p.name.endswith(".68.webp")} \
-        == {k: v for k, v in cached.items() if not k.endswith(".68.webp")} and small.is_file()

@@ -22,10 +22,7 @@ BACK = "MDW/cardback.png"
 # Serializer
 # ========================
 def test_serializer_round_trip_real_save():
-    path = CLONE / tts.TTS_SAVE_PATH
-    if not path.exists():
-        pytest.skip(f"no {path}")
-    raw = path.read_bytes()
+    raw = (CLONE / tts.TTS_SAVE_PATH).read_bytes()
     assert tts._dump(loads(raw.decode("utf-8"))).encode("utf-8") == raw
 
 

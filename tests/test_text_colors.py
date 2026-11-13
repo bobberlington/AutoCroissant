@@ -164,8 +164,6 @@ def test_site_words_agree_with_tts(tmp_path):
     "x" a times sign), counters; icons and badges never; a word in another card's name plain on both (text.js render,
     build_site unlinked); build_site's palette is the one cards.json and tts.json carry."""
     spec = importlib.util.spec_from_file_location("site_build_words", SITE / "build" / "build_site.py")
-    if not (spec and Path(spec.origin).is_file() and "def unlinked" in Path(spec.origin).read_text(encoding="utf-8")):
-        pytest.skip("a site before its 11-11 palette rules")
     bs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bs)
     script = tmp_path / "words.mjs"
@@ -394,8 +392,6 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color
     Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text."""
-    if "export function paintedOver(rec, colors, typed = [], edit" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"):
-        pytest.skip("mockup.js has no retyped paintedOver yet")
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))

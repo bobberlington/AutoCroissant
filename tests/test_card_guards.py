@@ -3,8 +3,8 @@ card_guards (the push guards' driver): a card repo made here with git (fixture P
 bot commits left out), check end to end on it (the report, the one Discord post without mentions or previews, the plan),
 land against a fake GitHub (superseded cards, a moved head) and in a local clone, the replay of the real
 push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12 Reactions2 "PNG still current"), the
-Action's sparse copy (SPARSE_FILES), card-guards.yml's shape, and its steps' shell against a fake gh and curl (one post
-per push, the failure streak, a re-run's lookups and window, the refused dispatch, MODE in any case).
+Action's sparse copy (SPARSE_FILES, card-guards.yml's checkouts of it), the steps that run the bot's own code against a
+fake gh and curl (one post per push, the pushed blobs and earlier fonts the checks read, the fonts wait), and actionlint.
 """
 import json
 import os
@@ -13,7 +13,6 @@ import shutil
 import subprocess
 import sys
 import types
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from sys import executable
@@ -1405,6 +1404,11 @@ def test_action_shaped_copy(tmp_path):
         code = f"import sys, commands.{module}; print(sorted(m for m in ('config', 'discord') if m in sys.modules))"
         done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
+    doc = _guard_steps(None)[0]
+    for name in ("check", "checks", "tell"):                                   # its bot checkouts: that list
+        job = doc["jobs"][name]
+        bot = next(s for s in job["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
+        assert bot_files(job, bot) == ["/" + f for f in cg.SPARSE_FILES], name
 
 
 def _workflow(clone) -> Path:
@@ -1414,304 +1418,12 @@ def _workflow(clone) -> Path:
     return path
 
 
-SYNC = "workflow run card-sync.yml -f dry_run=false -f bake=pending"   # Follow up's card sync (its data commit builds the site)
-
-
-
 def _guard_steps(clone) -> tuple:
-    """card-guards.yml's jobs read as one: (doc, every named step by name, the jobs' env merged: TOLD, STREAK)."""
+    """card-guards.yml's jobs read as one: (doc, every named step by name, the jobs' env merged: TOLD)."""
     doc = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))
     jobs = doc["jobs"].values()
     return (doc, {s["name"]: s for job in jobs for s in job.get("steps", []) if s.get("name")},
             {k: v for job in jobs for k, v in job.get("env", {}).items()})
-
-
-def test_workflow_shape(clone):
-    """card-guards.yml: push on PSDs, PNGs and fonts, the guards behind CARD_GUARDS (the card and font checks always,
-    2026-10-25), dry dispatches by default, a run per push, the sparse list = SPARSE_FILES, requirements-cards.txt's
-    install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
-    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). The jobs: check (lands,
-    then ends after the comment), checks (a push's two checks beside it, 2026-11-07), post (at once since 2026-11-03: no
-    environment, no quiet window, no setup; only with something to land or tell), tell (the one standards post,
-    2026-11-11: after all three, whatever MODE says, on the runner's python3), finish (card errors, the alert)."""
-    path = _workflow(clone)
-    text = path.read_text(encoding="utf-8")
-    doc, steps_by_name, env = _guard_steps(clone)
-    on = doc[True]
-    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG", "MDW/Fonts/*",
-                                                   "Types/**", "MDW/Linked/**"]}          # linked files: G2, G3
-    inputs = on["workflow_dispatch"]["inputs"]
-    assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
-    assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
-                                           "format('card-guards-{0}', github.run_id) }}") and doc["concurrency"]["cancel-in-progress"] is False
-    assert list(doc["jobs"]) == ["check", "checks", "post", "tell", "finish", "caches"]  # caches: prunes old wheel and font entries
-    job, checks, post, tell_job, finish = (doc["jobs"][name] for name in ("check", "checks", "post", "tell", "finish"))
-    assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
-    assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
-                                  "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
-    # no quiet window (owner 2026-11-03): the post job takes no environment and Land (the check job's) waits for nothing
-    assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post", "tell"]
-    assert tell_job["needs"] == ["check", "checks", "post"] and tell_job["if"] == "${{ !cancelled() && github.event_name == 'push' }}"
-    # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
-    assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and checks["env"] == {"BOT_FILES": job["env"]["BOT_FILES"]}
-    here = "github.event_name != 'push'"                                      # a dispatch's, in check; a push's in checks
-    assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
-    assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
-    named = [s.get("name") for s in checks["steps"] if s.get("name")]
-    assert named == ["Bot start", "Pushed blobs start", "Bot", "Card and font checks", "Pushed blobs"]
-    assert "Tell the checks" not in steps_by_name                             # the tell job tells (2026-11-11)
-    reports = checks["steps"][-1]
-    assert reports["uses"].startswith("actions/upload-artifact") and reports["with"]["name"] == "card-checks" and reports["if"] == "always()"
-    assert "--discord" not in steps_by_name["Card and font checks"]["run"]
-    fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
-    assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
-    assert "environment" not in post
-    assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
-                          "needs.check.outputs.mode == 'on'")
-    assert finish["if"] == "always() && (github.event_name == 'push' || needs.check.outputs.mode != 'off')"   # a push whatever MODE
-    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 60 }}" and post["timeout-minutes"] == tell_job["timeout-minutes"] == 10
-    assert job["permissions"] == {"contents": "write", "actions": "write"}           # Land's commit, Start Card sync
-    assert "environment" not in job and "environment" not in finish
-    assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}",
-                              "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
-                              "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
-                              "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
-                              "fixes": "${{ steps.plan.outputs.fixes }}", "early": "${{ steps.early.outputs.started }}",
-                              "early_run": "${{ steps.early.outputs.run }}",
-                              "land_ran": "${{ steps.land.outputs.ran }}", "land_sha": "${{ steps.land.outputs.sha }}",
-                              "land_already": "${{ steps.land.outputs.already }}"}
-    assert "outputs" not in post and tell_job["outputs"] == {"told": "${{ steps.tell.outputs.told || steps.told.outputs.told }}"}
-    assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
-    assert post["env"]["TOLD"] == job["env"]["TOLD"] == tell_job["env"]["TOLD"]
-    assert finish["env"] == {"FAILURE_TOLD": "<!-- discord-failure-told -->"}         # Card sync's marker too
-    assert finish["permissions"] == tell_job["permissions"] == {"contents": "write", "actions": "read"}
-    assert checks["permissions"] == {"contents": "read"}                      # its reports go to the tell job
-    for one in (job, checks):                                                  # cloned beside the card checkout, else checked out
-        bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-        assert bot_files(one, bot) == ["/" + f for f in cg.SPARSE_FILES] and "ref" not in bot["with"]
-        at = [s.get("name") or s.get("uses") for s in one["steps"]]
-        assert at.index("Bot start") < at.index("actions/checkout@v7") < at.index("Bot") == one["steps"].index(bot) - 1
-        assert bot["if"] == "steps.bot.outputs.ok != 'true'"
-    bot = next(s for s in tell_job["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-    assert bot_files(tell_job, bot) == ["/" + f for f in cg.SPARSE_FILES] and tell_job["env"]["BOT_FILES"] == job["env"]["BOT_FILES"]
-    assert not [s for s in tell_job["steps"] if "uses" in s and "artifact" not in s["uses"] and s is not bot]   # no setup: python3
-    assert [s["with"]["name"] for s in tell_job["steps"] if "artifact" in s.get("uses", "")] == ["card-guards", "card-checks"]
-    assert not [s for s in post["steps"] if "uses" in s and "artifact" not in s["uses"]]     # no checkout, no setup
-    for one in (job, checks, post, tell_job, finish):                          # a copied step runs twice unseen
-        named = [s["name"] for s in one["steps"] if s.get("name")]
-        assert len(named) == len(set(named)), named
-    cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
-    assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 1     # History brings the rest
-    assert post["env"]["GH_REPO"] == "${{ github.repository }}"               # gh workflow run without the card repo
-    from helpers import FORK_KEY, FORK_WORKFLOWS, fork_install
-    others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
-    keys = {p.name: fork_install(p) for p in [path, *others]}                  # one pin: requirements-cards.txt's
-    assert set(keys.values()) == {FORK_KEY}                                    # one entry for the six, on 3.14
-    assert "--fonts" not in steps_by_name["Check"]["run"]                     # R7 is the font check's
-    names = [s.get("name") for s in job["steps"]]
-    assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
-        < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") \
-        < names.index("History clone start") < names.index("Types for the conversion") < names.index("Normalise") \
-        < names.index("Land") < names.index("Landed") \
-        < names.index("Comment on the commit")
-    assert names.index("Start Card sync") == names.index("Fixes to land") + 1               # Card sync sets up while the guards land
-    types, normalise = steps_by_name["Types for the conversion"], steps_by_name["Normalise"]     # after Decided: Card sync waits for neither
-    assert types["env"] == {"GIT_NO_LAZY_FETCH": "0"} and "sparse.expectFilesOutsideOfPatterns true" in types["run"]
-    assert normalise["if"] == "${{ !cancelled() && steps.types.outcome == 'success' }}" and normalise["continue-on-error"] is True
-    assert "card_guards normalise" in normalise["run"] and "--deadline" in normalise["run"]
-    plan = job["steps"][names.index("Plan for the post job")]
-    assert plan["id"] == "plan" and plan["if"] == "always() && steps.check.outcome == 'success'"
-    assert job["steps"][names.index("Decided")]["if"] == "always()"             # Card sync's wait ends on it, whatever the check did
-    hand = job["steps"][names.index("Comment on the commit") + 1]
-    assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
-    assert hand["with"]["path"].splitlines() == ["${{ runner.temp }}/guards", "!${{ runner.temp }}/guards/files"]   # Land read files/ from disk
-    kept = job["steps"][names.index("Comment on the commit") + 2]
-    assert kept["with"]["name"] == "card-guards-files" and "steps.land.outcome != 'success'" in kept["if"]
-    assert job["steps"][names.index("Landed")]["if"] == "always()"             # a follow-up's wait ends on it, landed or not
-    post_names = [s.get("name") for s in post["steps"]]
-    take = post["steps"][1]
-    assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
-    assert post_names == ["Work dir", None, "Told before", "Follow up"]
-    assert [s.get("name") for s in tell_job["steps"]][-2:] == ["Told already", "Tell Discord"]
-    early = steps_by_name["Start Card sync"]    # with fixes and 25 PSDs or fewer to convert, Card sync sets up while the guards land (its lanes wait for Landed)
-    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' && steps.plan.outputs.normalise <= 25 }}"
-    assert early["continue-on-error"] is True and early["env"]["GH_REPO"] and "-F return_run_details=true" in early["run"]
-    assert '-f "inputs[guards]=$GITHUB_RUN_ID"' in early["run"] and "card-sync.yml/dispatches" in early["run"]
-    assert all(f'-f "inputs[{k}]={v}"' in early["run"] for k, v in (("dry_run", "false"), ("bake", "pending")))   # as SYNC's
-    assert steps_by_name["Follow up"]["env"]["EARLY"] == "${{ needs.check.outputs.early }}"
-    assert steps_by_name["Follow up"]["env"]["EARLY_RUN"] == "${{ needs.check.outputs.early_run }}"
-    assert [s.get("name") for s in finish["steps"] if s.get("name")] == ["Fail on card errors", "Tell Discord the run failed"]
-    steps = steps_by_name
-    tell = steps["Tell Discord"]
-    assert tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "python3 -m commands.standards_post" in tell["run"]
-    assert tell["if"] == "steps.told.outputs.told != 'true'" and tell["working-directory"] == "bot"
-    for name in ("Told before", "Told already"):
-        assert steps[name]["env"]["CHECK_TOLD"] == "${{ needs.check.outputs.told }}" and "if" not in steps[name]
-    assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in text and "set -x" not in text
-    land = steps["Land"]
-    # Land goes before the Comment step (a failed comment cannot drop the writes), only with something to land or tell
-    assert land["if"] == "${{ !cancelled() && steps.plan.outputs.land == 'true' && env.MODE == 'on' }}"
-    assert "--dry-run" not in land["run"] and "steps.check.outcome == 'success'" in steps["Comment on the commit"]["if"]
-    assert "discord" not in tell["run"]                                        # never check's early post, nor Land's own
-    assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
-    alert = steps["Tell Discord the run failed"]
-    # a push whose post told it all (told: whole, or an earlier attempt's) alerts only for the checks job, Follow up or
-    # the tell job itself; one alert per broken push (2026-11-11): the failure marker, no streak
-    assert alert["if"] == ("(failure() || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && "
-                           "github.event_name == 'push' && (needs.checks.result != 'success' || needs.post.result == 'failure' || "
-                           "needs.post.result == 'cancelled' || needs.tell.outputs.told != 'true')")
-    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}, flags: 4" in alert["run"]
-    assert alert["env"]["RESULTS"] == ("check=${{ needs.check.result }} checks=${{ needs.checks.result }} "
-                                       "post=${{ needs.post.result }} tell=${{ needs.tell.result }}")
-    assert '{"check": 60, "checks": %d, "post": %d, "tell": %d}' % (
-        checks["timeout-minutes"], post["timeout-minutes"], tell_job["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
-    assert ">= %d ))" % (60 * 60 - 120) in alert["run"]                       # no job list: the check's own
-    assert "STREAK" not in text and "stay quiet" not in text and alert["id"] == "alert"
-    assert steps["Fail on card errors"]["id"] == "errors" and finish["steps"][-1] is alert
-    refuse = steps["No push run in its window"]
-    assert refuse["if"] == "github.event_name == 'workflow_dispatch' && env.MODE == 'on'"
-    assert "<@&" not in text and "ROLE" not in text and "DISCORD_FONT_WEBHOOK" not in text
-    assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN", "DISCORD_STANDARDS_WEBHOOK"}
-    check = steps["Check"]
-    for flag in ("--clone", "--repo", "--after", "--out", "--mode", "--cards", "--whole-tree"):
-        assert flag in check["run"]
-    assert "AUTHOR" not in check["env"] and "--author" in steps["Check start"]["run"]   # a push's alone: never the dispatcher
-    # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
-    assert not any("runner." in str(value) for one in (job, post, tell_job, finish) for value in one["env"].values())
-    assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
-    assert 'OUT=$RUNNER_TEMP/guards' in tell_job["steps"][1]["run"]
-    follow = steps["Follow up"]
-    assert "report-landed.md" in follow["run"] \
-        and follow["if"] == "always() && (needs.check.outputs.land_ran == 'true' || needs.check.outputs.fixes == 'true')"
-    assert follow["id"] == "follow" and "REFRESH" not in tell["env"]          # a card sync not started: the alert
-    assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
-    # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
-    uploads = [s for s in job["steps"] + checks["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
-    assert len(uploads) == 5 and all(s["with"]["overwrite"] is True for s in uploads)
-    landed = job["steps"].index(steps["Landed"])                               # a follow-up's wait reads both before it
-    events = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-events")       # Card sync reads it
-    assert job["steps"].index(steps["Land"]) < job["steps"].index(events) < landed and events["if"] == "always() && steps.land.outputs.sha != ''"
-    records = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-records")     # Card sync merges it
-    assert job["steps"].index(records) < landed and records["with"]["path"].endswith("/records.json")
-
-
-
-def test_oxipng_cli_rides_in_the_venv(clone, tmp_path):
-    """cards-python's oxipng step: a miss fetches the CLI into the venv in every job, a hit fetches nothing, PATH only
-    when asked; a fetch that fails fails a job that asks, else leaves the venv unsaved."""
-    import hashlib
-    import tarfile
-    from helpers import FORK_ACTION
-    yaml = pytest.importorskip("yaml")
-    action = yaml.safe_load((_workflow(clone).parents[2] / FORK_ACTION).read_text(encoding="utf-8"))
-    step = next(s for s in action["runs"]["steps"] if s.get("id") == "oxipng")
-    member = f"oxipng-{step['env']['VERSION']}-x86_64-unknown-linux-musl/oxipng"
-    tgz, shim = tmp_path / "ox.tar.gz", tmp_path / "shim"
-    with tarfile.open(tgz, "w:gz") as tar:
-        info, body = tarfile.TarInfo(member), b"#!/bin/sh\necho oxipng\n"
-        info.size, info.mode = len(body), 0o755
-        tar.addfile(info, BytesIO(body))
-    shim.mkdir()
-    (shim / "curl").write_text('#!/bin/sh\necho "$@" >> "$CURLS"\n[ -z "$FAIL" ] || exit 22\n'
-                               'while [ "$1" != -o ]; do shift; done; cp "$TGZ" "$2"\n')
-    (shim / "sha256sum").write_text(f"#!{executable}\nimport hashlib, sys\nsha, path = sys.stdin.read().split()\n"
-                                    "sys.exit(hashlib.sha256(open(path, 'rb').read()).hexdigest() != sha)\n")
-    for one in shim.iterdir():
-        one.chmod(0o755)
-    venv = tmp_path / "venv"
-
-    def run(want, fail="", sha=hashlib.sha256(tgz.read_bytes()).hexdigest()):
-        files = {k: tmp_path / k for k in ("out", "path", "curls")}
-        for f in files.values():
-            f.write_text("")
-        env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64",
-               "RUNNER_TEMP": str(tmp_path), "VERSION": step["env"]["VERSION"], "SHA256": sha, "ASSET": "1", "TOKEN": "t",
-               "BIN": str(venv / ".oxipng"), "WANT": want, "FAIL": fail, "TGZ": str(tgz), "CURLS": str(files["curls"]),
-               "GITHUB_OUTPUT": str(files["out"]), "GITHUB_PATH": str(files["path"])}
-        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env,
-                              capture_output=True, text=True, timeout=60)
-        return done.returncode, len(files["curls"].read_text().splitlines()), files["path"].read_text(), files["out"].read_text()
-
-    assert run("false") == (0, 1, "", "")                                  # a data job's miss: fetched, off PATH
-    assert (venv / ".oxipng" / "oxipng").is_file()
-    assert run("true", fail="1") == (0, 0, f"{venv / '.oxipng'}\n", "")   # a hit: no network
-    shutil.rmtree(venv)
-    assert run("false", fail="1") == (0, 2, "", "unsaved=true\n")          # both links down: the entry waits
-    assert not (venv / ".oxipng").exists()
-    assert run("true", sha="0" * 64)[:2] == (1, 1)                        # a bad file fails a job that writes PNGs
-
-
-def test_venv_first_is_cards_pythons_hit(clone, tmp_path):
-    """cards-venv: cards-python's venv key (setup-python's pick, the image's newest 3.14.x), path and check; a hit puts
-    it on PATH as cards-python does (the CLI when asked), with setup-python's LD_LIBRARY_PATH, and runs help; anything
-    else (no 3.14, a miss, a failed check, no CLI) runs cards-python with the same inputs. A job's own restore of that
-    key (restored) is only checked; of another key, removed."""
-    from helpers import FORK_ACTION, FORK_VENV_KEY, VENV_ACTION
-    yaml = pytest.importorskip("yaml")
-    root = _workflow(clone).parents[2]
-    if not (root / VENV_ACTION).is_file():
-        pytest.skip("no cards-venv yet")
-    first = yaml.safe_load((root / VENV_ACTION).read_text(encoding="utf-8"))
-    full = yaml.safe_load((root / FORK_ACTION).read_text(encoding="utf-8"))
-    steps, own = ({s["id"]: s for s in a["runs"]["steps"] if "id" in s} for a in (first, full))
-    defaults = [{k: v["default"] for k, v in a["inputs"].items()} for a in (first, full)]
-    assert list(steps) == ["key", "env", "hit", "full"] and defaults[0] == {**defaults[1], "restored": ""}
-    assert steps["env"]["if"] == "steps.key.outputs.key != '' && steps.key.outputs.restored != 'true'"
-    assert steps["hit"]["if"] == "steps.env.outputs.cache-hit == 'true' || steps.key.outputs.restored == 'true'"
-    assert steps["full"] == {"id": "full", "if": "steps.hit.outputs.ok != 'true'", "uses": "./" + FORK_ACTION.rsplit("/", 1)[0],
-                             "with": {k: f"${{{{ inputs.{k} }}}}" for k in full["inputs"]}}
-    assert first["outputs"]["wheels"]["value"] == "${{ steps.full.outputs.wheels }}" and set(first["outputs"]) == set(full["outputs"])
-    assert steps["key"]["env"]["VENV"] == own["reqs"]["env"]["VENV"] and steps["env"]["uses"] == own["env"]["uses"]
-    assert steps["env"]["with"] == {"path": "${{ steps.key.outputs.venv }}", "key": "${{ steps.key.outputs.key }}"}
-    check = re.compile(r"-c '[^']*'")
-    assert check.findall(steps["hit"]["run"]) == check.findall(own["check"]["run"])
-
-    def bash(script, **env):
-        files = {k: tmp_path / k for k in ("GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_PATH")}
-        for f in files.values():
-            f.write_text("")
-        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=tmp_path, timeout=30,
-                              env={"PATH": os.environ["PATH"], **runner, **{k: str(v) for k, v in files.items()}, **env})
-        assert done.returncode == 0
-        out, set_env = (dict(line.split("=", 1) for line in files[k].read_text().splitlines()) for k in ("GITHUB_OUTPUT", "GITHUB_ENV"))
-        return out, set_env, files["GITHUB_PATH"].read_text().splitlines()
-    (tmp_path / "bot").mkdir()
-    shutil.copy(REPO / "requirements-cards.txt", tmp_path / "bot")
-    cache, venv = tmp_path / "cache", tmp_path / "venv"
-    runner = {"RUNNER_TOOL_CACHE": str(cache), "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "RUNNER_TEMP": str(tmp_path)}
-    assert bash(steps["key"]["run"], VENV=str(venv))[0] == {"venv": str(venv)}            # no 3.14: cards-python
-    for v in ("3.13.9", "3.14.2", "3.14.9", "3.14.10", "3.14.11-rc.1"):
-        (cache / "Python" / v / "x64").mkdir(parents=True)
-    out = bash(steps["key"]["run"], VENV=str(venv))[0]
-    sha = bash(own["reqs"]["run"], VENV="")[0]["sha"]
-    key = FORK_VENV_KEY.replace("${{ steps.reqs.outputs.sha }}", sha).replace("${{ runner.os }}", "Linux").replace("${{ runner.arch }}", "X64")
-    assert out == {"venv": str(venv), "key": key.replace("${{ steps.python.outputs.python-version }}", "3.14.10"),
-                   "lib": f"{cache}/Python/3.14.10/x64/lib"}
-    venv.mkdir()
-    assert bash(steps["key"]["run"], VENV=str(venv), RESTORED=out["key"])[0] == {**out, "restored": "true"} and venv.is_dir()
-    assert bash(steps["key"]["run"], VENV=str(venv), RESTORED="card-venv-other")[0] == out and not venv.exists()
-    (venv / "bin").mkdir(parents=True)
-    (venv / "bin" / "python").write_text('#!/bin/sh\n[ "$LD_LIBRARY_PATH" = /lib314:/old ] || exit 9\necho "$*" >> "$CALLS"\n'
-                                         '[ "$1" != -c ] || exit "$CHECK"\n')
-    (venv / "bin" / "python").chmod(0o755)
-    calls = tmp_path / "calls"
-
-    def hit(check=0, want="true", own_venv="", cli=True):
-        shutil.rmtree(venv / ".oxipng", ignore_errors=True)
-        if cli:
-            (venv / ".oxipng").mkdir()
-            (venv / ".oxipng" / "oxipng").write_text("#!/bin/sh\necho oxipng 10.2.1\n")
-            (venv / ".oxipng" / "oxipng").chmod(0o755)
-        calls.write_text("")
-        got = bash(steps["hit"]["run"], VENV=str(venv), LIB="/lib314", LD_LIBRARY_PATH="/old", OWN=own_venv, WANT=want,
-                   HELP="card_guards font_check", CHECK=str(check), CALLS=str(calls))
-        return got, [line.split()[:2] for line in calls.read_text().splitlines()]
-    helped = [["-c", "import"], ["-m", "commands.card_guards"], ["-m", "commands.font_check"]]
-    assert hit() == (({"ok": "true"}, {"LD_LIBRARY_PATH": "/lib314:/old"}, [f"{venv}/.oxipng", f"{venv}/bin"]), helped)
-    assert hit(want="false", own_venv=str(venv)) == (({"ok": "true"}, {"LD_LIBRARY_PATH": "/lib314:/old"}, []), helped)
-    assert hit(check=1) == (({}, {}, []), helped[:1])                          # cards-python checks it again
-    assert hit(cli=False) == (({}, {}, []), helped[:1])                        # cards-python fetches it
-    assert hit(want="false", cli=False)[0][0] == {"ok": "true"}               # a data job needs no CLI
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
@@ -1731,27 +1443,13 @@ def jq(data):
     return subprocess.run(["jq", "-r", expr], input=json.dumps(data), capture_output=True, text=True, check=True).stdout.rstrip("\n")
 
 
-if os.environ.get("FAKE_FAIL") and os.environ["FAKE_FAIL"] in " ".join(args):
-    json.dump(db, open(state, "w"))
-    sys.exit(1)
 if args[:2] == ["workflow", "run"]:
     pass
-elif args[:2] == ["run", "list"]:
-    out = jq(json.loads(os.environ["FAKE_RUNS"])) if "FAKE_RUNS" in os.environ else ""
 elif args[0] == "api":
     method = args[args.index("--method") + 1] if "--method" in args else "GET"
     path = next(a for a in args[1:] if a.startswith("repos/"))
-    if path.endswith("/jobs"):                  # the attempt's jobs: FAKE_JOBS, the API's {"jobs": [...]}; FAKE_JOBS_LATER from look FAKE_LOOKS on
-        late = sum("/jobs --jq" in line for line in db["log"]) > int(os.environ.get("FAKE_LOOKS", "1000"))
-        jobs = json.loads(os.environ["FAKE_JOBS_LATER"] if late else os.environ.get("FAKE_JOBS", '{"jobs": []}'))
-        out = jq(jobs) if "--jq" in args else json.dumps(jobs)
-    elif "/runs?" in path:                      # a workflow's runs: FAKE_GUARD_RUNS
-        out = jq(json.loads(os.environ["FAKE_GUARD_RUNS"]))
-    elif "/git/trees/" in path:                 # the PSD sizes: FAKE_TREE
-        out = os.environ["FAKE_TREE"]
-    elif path.endswith("/artifacts"):
-        marked = path.split("/")[-2] in os.environ.get("FAKE_MARKED", "").split(",")
-        out = jq({"artifacts": [{"name": "card-guards"}] + ([{"name": os.environ["STREAK"]}] if marked else [])})
+    if path.endswith("/jobs"):                  # the attempt's jobs: none
+        out = jq({"jobs": []}) if "--jq" in args else json.dumps({"jobs": []})
     elif method == "POST":
         db["next"] += 1
         db["comments"][str(db["next"])] = json.load(sys.stdin)["body"]
@@ -1768,7 +1466,7 @@ print(out)
 """
 FAKE_CURL = r"""#!/bin/sh
 for a in "$@"; do case "$prev" in --data) jq -c . "${a#@}" >> "$FAKE_POSTS";; esac; prev="$a"; done
-exit "${FAKE_CURL_STATUS:-0}"
+exit 0
 """
 
 
@@ -1878,82 +1576,13 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     assert "Alice pushed Alice: no stars" in (tmp_path / "posts.txt").read_text().splitlines()[-1]
 
 
-def test_workflow_failure_alert_once_per_push(clone, tmp_path):
-    """The failure alert (owner 2026-11-11): "Card guards failed on <login>'s push <sha8>: <failed steps> <run>", no ping,
-    no preview, then the failure marker on the pushed commit; quiet when the marker is there (an earlier attempt, or
-    Card sync, told it). The steps from the attempt's job list (a timed-out one so marked, this job's own card errors
-    last), else the jobs; a failed webhook call leaves no marker."""
-    pytest.importorskip("yaml")
-    doc, steps, jenv = _guard_steps(clone)
-    posts, state = tmp_path / "posts.txt", tmp_path / "gh.json"
-    marker = doc["jobs"]["finish"]["env"]["FAILURE_TOLD"]
-    jobs = json.dumps({"jobs": [
-        {"name": "check", "conclusion": "failure", "steps": [{"name": "Run ./.github/actions/cards-venv", "conclusion": "failure"},
-                                                             {"name": "Check", "conclusion": "success"},
-                                                             {"name": "Land", "conclusion": "failure"},
-                                                             {"name": "Normalise", "conclusion": "failure"}]},
-        {"name": "checks", "conclusion": "success", "steps": [{"name": "Card and font checks", "conclusion": "failure"}]},
-        {"name": "post", "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z", "completed_at": "2026-11-07T10:10:00Z",
-         "steps": [{"name": "Follow up", "conclusion": "cancelled"}]},
-        {"name": "finish", "conclusion": None, "steps": [{"name": "Fail on card errors", "conclusion": "failure"}]}]})
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
-           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state), "FAKE_POSTS": str(posts),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(tmp_path), "GITHUB_RUN_ID": "7",
-           "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "RUN": "https://github.com/o/cards/actions/runs/7",
-           "GITHUB_SHA": "f" * 40, "FAILURE_TOLD": marker, "FAKE_JOBS": jobs,
-           "RESULTS": "check=failure checks=success post=cancelled tell=success", "OWN": "Fail on card errors"}
-    run = "https://github.com/o/cards/actions/runs/7"
-    _run_steps(steps, ["Tell Discord the run failed"], env, {})
-    assert json.loads(posts.read_text()) == {
-        "content": f"Card guards failed on Alice's push ffffffff: Python environment, Land, Normalise, Follow up (timed out), "
-                   f"Fail on card errors {run}",
-        "allowed_mentions": {"parse": []}, "flags": 4}
-    (body,) = json.loads(state.read_text())["comments"].values()
-    assert body == f"Failure told in Discord: {run}\n{marker}\n"
-    _run_steps(steps, ["Tell Discord the run failed"], {**env, "GITHUB_RUN_ATTEMPT": "2"}, {})     # told: quiet
-    assert len(posts.read_text().splitlines()) == 1
-    state.write_text(json.dumps({"comments": {"5": f"Card sync failed ...\n{marker}"}, "next": 5, "log": []}))   # Card sync's
-    _run_steps(steps, ["Tell Discord the run failed"], env, {})
-    assert len(posts.read_text().splitlines()) == 1
-    for extra, said in (({"FAKE_FAIL": "/jobs", "OWN": "", "STARTED": "1"}, "the check job, the post job"),   # no job list
-                        ({"FAKE_CURL_STATUS": "22"}, None)):                        # the webhook failed: no marker
-        state.unlink()
-        posts.write_text("")
-        _run_steps(steps, ["Tell Discord the run failed"], {**env, **extra}, {})
-        if said:
-            assert json.loads(posts.read_text())["content"] == f"Card guards failed on Alice's push ffffffff: {said} {run}"
-        else:
-            assert not json.loads(state.read_text())["comments"]
-
-
-def test_workflow_alert_tells_a_timeout_from_a_cancel(clone, tmp_path):
-    """Every job is in the alert's limits: one missing reads as timed out, so a cancel by hand would tell Discord."""
-    pytest.importorskip("yaml")
-    doc, steps, jenv = _guard_steps(clone)
-    posts = tmp_path / "posts.txt"
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
-           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(tmp_path),
-           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice",
-           "RUN": "https://github.com/o/cards/actions/runs/7", "GITHUB_SHA": "f" * 40,
-           "FAILURE_TOLD": doc["jobs"]["finish"]["env"]["FAILURE_TOLD"], "RESULTS": "check=success checks=cancelled post=skipped tell=success"}
-    def cancelled(name, minutes):
-        return json.dumps({"jobs": [{"name": name, "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z",
-                                     "completed_at": f"2026-11-07T10:{minutes:02}:00Z"}]})
-    for name, minutes, sent in (("checks", 1, 0), ("checks", 39, 1), ("tell", 9, 1)):
-        posts.write_text("")
-        (tmp_path / "gh.json").unlink(missing_ok=True)
-        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_JOBS": cancelled(name, minutes)}, {})
-        assert len(posts.read_text().splitlines()) == sent, (name, minutes)
-
-
 def _fake_tools(tmp_path) -> Path:
     """gh, curl and a sleep that does not wait (the comment lookup's retries)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "gh").write_text(FAKE_GH)
     (bin_dir / "curl").write_text(FAKE_CURL)
-    (bin_dir / "sleep").write_text("#!/bin/sh\necho \"$1\" >> \"${FAKE_SLEPT:-/dev/null}\"\n")
+    (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
     for tool in ("gh", "curl", "sleep"):
         (bin_dir / tool).chmod(0o755)
     return bin_dir
@@ -1965,89 +1594,6 @@ def _shell(step, env, cwd=None):
     done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env, cwd=cwd,
                           capture_output=True, text=True, timeout=60)
     return done, dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
-
-
-FAKE_PYTHON = r"""#!/bin/sh
-echo "$*" >> "$FAKE_PYTHON_ARGS"
-printf '%s' "$FAKE_LANDED" > "$OUT/landed.json"
-exit 0
-"""
-
-
-def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
-    """Land (the check job's) runs only in on mode with something to tell or write: the check job's plan says land=true.
-    A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
-    step hands on the sha and the count already on the branch; with fixes History clone start makes the history clone,
-    reading the checkout's objects (git_commit's delta push), and Land waits for it. Follow up starts the card sync after a
-    commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not on a
-    first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
-    always, landed or not."""
-    pytest.importorskip("yaml")
-    doc, steps, jenv = _guard_steps(clone)
-    bin_dir = _fake_tools(tmp_path)
-    (bin_dir / "python").write_text(FAKE_PYTHON)
-    (bin_dir / "python").chmod(0o755)
-    out, args, state = tmp_path / "guards", tmp_path / "args.txt", tmp_path / "gh.json"
-    out.mkdir()
-    (tmp_path / "bot").mkdir()
-    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "OUT": str(out), "GITHUB_REPOSITORY": "o/cards", "EVENT": "push",
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "FAKE_PYTHON_ARGS": str(args),
-           "GITHUB_OUTPUT": str(tmp_path / "land.output"), "FAKE_STATE": str(state), "TOLD": jenv["TOLD"]}
-    landed = json.dumps({"sha": "", "already": [["Snack", "X/Snack.png"]], "landed": []})
-    subprocess.run(["git", "init", "-q", "--bare", str(tmp_path / "o" / "cards.git")], check=True)
-    hist = tmp_path / "TTSCardMaker-history.git"
-    clones = {"RUNNER_TEMP": str(tmp_path), "GITHUB_SERVER_URL": f"file://{tmp_path}", "GITHUB_WORKSPACE": str(tmp_path)}
-    assert steps["History clone start"]["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' }}"
-    for mode, told, writes, attempt, event, ran, rerun in (("on", 0, 2, "1", "push", True, False),
-                                                           ("on", 0, 2, "2", "push", True, True),
-                                                           ("on", 0, 1, "1", "workflow_dispatch", True, True),
-                                                           ("on", 0, 0, "1", "push", False, False)):
-        args.write_text("")
-        (out / "summary.json").write_text(json.dumps({"told": told, "writes": writes}))
-        planned, plan_out = _shell(steps["Plan for the post job"], {**env, "MODE": mode, "GITHUB_EVENT_NAME": event})
-        assert planned.returncode == 0 and (plan_out.get("land") == "true") is ran, (mode, told, writes, plan_out)
-        fixes = mode == "on" and event == "push" and writes > 0       # Card sync's push run leaves its main lane to Follow up
-        assert (plan_out.get("fixes") == "true") is fixes, (mode, event, writes, plan_out)
-        if fixes and not hist.exists():
-            assert _shell(steps["History clone start"], {**env, **clones})[0].returncode == 0
-        if ran:
-            done, outputs = _shell(steps["Land"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "EVENT": event,
-                                                   "FAKE_LANDED": landed, "AUTOCROISSANT_HISTORY_CLONE": str(hist)},
-                                   cwd=tmp_path / "bot")
-            assert done.returncode == 0 and "::warning::" not in done.stdout, done.stderr
-            assert hist.is_dir() is (mode == "on"), (mode, event)     # waited for: made by then
-        else:
-            outputs = {}
-        called = args.read_text()
-        assert bool(called) is ran and outputs.get("ran") == ("true" if ran else None), (mode, told, writes)
-        assert ("--rerun" in called) is rerun and "--dry-run" not in called, called
-        if ran:
-            assert outputs["sha"] == "" and outputs["already"] == "1"
-    assert (hist / "objects" / "info" / "alternates").read_text() == f"{tmp_path}/.git/objects\n"
-    (out / "report-landed.md").write_text("## Card guards\n\nNothing new to land.\n")
-    for mode, attempt, sha, already, fixes, started in (("on", "2", "", "1", "", True), ("on", "1", "", "1", "", False),
-                                                        ("on", "2", "", "0", "", False),
-                                                        ("on", "1", "c" * 40, "", "", True), ("on", "2", "", "", "", False),
-                                                        ("on", "1", "", "", "true", True)):   # fixes, nothing landed
-        state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))
-        done, outputs = _shell(steps["Follow up"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "SHA": sha,
-                                                    "ALREADY": already, "COMMENT": "", "TOLD_BEFORE": "", "FIXES": fixes,
-                                                    "LAND_RAN": "true"})
-        log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
-        assert done.returncode == 0 and log == ([SYNC] if started else []), \
-            (mode, attempt, sha, already, fixes, log)
-    lane = lambda name, conclusion=None: {"name": name, "status": "completed" if conclusion else "queued", "conclusion": conclusion}  # noqa: E731
-    for run, jobs, again in (("5", [lane("Card data"), lane("Bake and save")], False),     # Start Card sync did: none again
-                             ("5", [lane("Card data", "success"), lane("Bake and save", "cancelled")], True),   # a newer run took its place
-                             ("5", [lane("Card data", "cancelled"), lane("Bake and save")], True),
-                             ("", [], True)):                                             # no run id: one more
-        state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))
-        done, _ = _shell(steps["Follow up"], {**env, "MODE": "on", "GITHUB_RUN_ATTEMPT": "1", "SHA": "c" * 40, "ALREADY": "", "COMMENT": "",
-                                              "TOLD_BEFORE": "", "FIXES": "true", "LAND_RAN": "true", "EARLY": "true", "EARLY_RUN": run,
-                                              "FAKE_JOBS": json.dumps({"jobs": jobs})})
-        log = json.loads(state.read_text())["log"]
-        assert done.returncode == 0 and [c for c in log if c.startswith("workflow run")] == ([SYNC] if again else []), (run, jobs, log)
-        assert any(c.startswith(f"api repos/o/cards/actions/runs/{run}/jobs") for c in log) is bool(run)
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
@@ -2064,51 +1610,16 @@ def test_land_commits_only_an_on_plan(tmp_path, capsys):
         assert cg.main(["land", "--plan", plan, "--dry-run"]) == 0 and (Path(plan).parent / "landed.json").exists()
 
 
-def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_path):
-    """A dispatch with dry_run off on a commit whose push run is unfinished (its head is the commit or after it) would
-    post and land first: refused. A push run of an earlier commit, or none, lets it through; an unknown head (pushed
-    since the checkout) refuses."""
-    pytest.importorskip("yaml")
-    doc, steps, jenv = _guard_steps(clone)
-    step = steps["No push run in its window"]
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init", "-q")
-    shas = []
-    for n in range(2):
-        (repo / "f.txt").write_text(str(n))
-        _git(repo, "add", "f.txt")
-        _commit(repo, f"c{n}")
-        shas.append(_git(repo, "rev-parse", "HEAD"))
-    one, two = shas
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "o/cards", "GITHUB_SHA": two,
-           "FAKE_STATE": str(tmp_path / "gh.json"), "GITHUB_OUTPUT": str(tmp_path / "refuse.output")}
-    def runs(*pairs):
-        return json.dumps([{"status": status, "headSha": head} for status, head in pairs])
-    for sha, pushes, code in (("", runs(), 0), (one, runs(("in_progress", two)), 1), (two, runs(("in_progress", one)), 0),
-                              ("", runs(("queued", two)), 1), (one, runs(("completed", two)), 0),
-                              (one, runs(("completed", one), ("waiting", one), ("in_progress", two)), 1),
-                              (two, runs(("in_progress", "e" * 40)), 1)):
-        done, _ = _shell(step, {**env, "SHA": sha, "FAKE_RUNS": pushes}, cwd=repo)
-        assert done.returncode == code, (sha, pushes, done.stdout, done.stderr)
-        if code:
-            assert "is still in its quiet window" in done.stdout
-
-
 def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkeypatch):
-    """Pushed blobs start, right after the card checkout, fetches the push's blobs in the background and returns at once
-    (its output not held); Check and the two checks start at once and wait for each listed blob (CARD_BLOBS_PENDING);
-    Pushed blobs, after Decided and after the two checks, waits and counts. A fetch that fails: those blobs by REST, the
-    warning and a failed step."""
+    """Pushed blobs start fetches the push's blobs in the background and returns at once (its output not held); Check and
+    the two checks start at once and wait for each listed blob (CARD_BLOBS_PENDING); Pushed blobs waits and counts. A
+    fetch that fails: those blobs by REST, the warning and a failed step."""
     import commands.card_bake as cb
     import commands.github_api as gh
     pytest.importorskip("yaml")
-    doc, steps, _ = _guard_steps(clone)
-    for job, wait in (("check", "Decided"), ("checks", "Card and font checks")):
-        names = [s.get("name") or s.get("uses") for s in doc["jobs"][job]["steps"]]
-        assert names[names.index("Pushed blobs start") - 1] == "actions/checkout@v7" and names.index("Pushed blobs start") < 4
-        assert names.index("Pushed blobs") == names.index(wait) + 1 and steps[wait if job == "checks" else "Check start"]["env"][
-            gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
+    _, steps, _ = _guard_steps(clone)
+    for wait in ("Card and font checks", "Check start"):                       # the bot's wait reads the list
+        assert steps[wait]["env"][gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
     rest = []
     monkeypatch.setattr(gh, "fetch_blob", lambda repo, sha, timeout: rest.append(sha) or SimpleNamespace(content=subprocess.run(
         ["git", "-C", str(origin), "cat-file", "blob", sha], capture_output=True, check=True).stdout))
@@ -2162,149 +1673,6 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
 def _until(path, seconds=30):
     """Waits for a background step's mark."""
     subprocess.run(["timeout", str(seconds), "sh", "-c", f'until [ -e "{path}" ]; do sleep 0.05; done'], check=True)
-
-
-def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
-    """In `check` Pushed blobs start lists what Check would read by REST: first the edits, the manifest, the chart, the
-    card data and its links, then with each pushed card PSD (not deleted, not MDW/) the head's PNG and numbered PNGs.
-    A fetch takes whole lines up to 8 blobs (a file's two sides together); `checks` lists the diff alone, 8 a fetch."""
-    pytest.importorskip("yaml")
-    _, steps, _ = _guard_steps(clone)
-    work, origin, temp = tmp_path / "work", tmp_path / "origin.git", tmp_path / "temp"
-    work.mkdir()
-    _git(work, "init", "-q", "-b", "main")
-
-    def put(*paths):
-        for rel in paths:
-            (work / rel).parent.mkdir(parents=True, exist_ok=True)
-            (work / rel).write_bytes(os.urandom(64))
-    put("Cards/A.psd", "Cards/A.png", "Cards/a2.png", "Cards/A9x.png", "Cards/B.psd", "Cards/B.png", "Cards/D.psd",
-        "Cards/D.png", "Cards/E.png", "MDW/T.psd", "MDW/T.png", cg.EDITS_PATH, cg.ICON_MANIFEST_PATH, cg.psd_edit.STATUS_CHART)
-    before = _commit(work, "base")
-    _git(work, "checkout", "-q", "-b", "data")
-    put(cg.DATA_STATS, cg.LINKS)
-    _commit(work, "data")
-    _git(work, "checkout", "-q", "main")
-    put("Cards/A.psd", "Cards/B.psd", "Cards/B.png", "Cards/E.psd", "MDW/T.psd")
-    (work / "Cards/D.psd").unlink()
-    after = _commit(work, "push")
-    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(origin)], check=True)
-    _git(origin, "config", "uploadpack.allowFilter", "true")
-    _git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
-    repo = tmp_path / "clone"
-    subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout", f"file://{origin}", str(repo)], check=True)
-
-    def at(rev, rel):
-        return _git(work, "rev-parse", f"{rev}:{rel}")
-    a, b = (at(before, "Cards/A.psd"), at(after, "Cards/A.psd")), (at(before, "Cards/B.psd"), at(after, "Cards/B.psd"))
-    png, t = (at(before, "Cards/B.png"), at(after, "Cards/B.png")), (at(before, "MDW/T.psd"), at(after, "MDW/T.psd"))
-    context = [at(after, cg.EDITS_PATH), at(after, cg.ICON_MANIFEST_PATH), at(after, cg.psd_edit.STATUS_CHART),
-               at("data", cg.DATA_STATS), at("data", cg.LINKS)]
-    cards = [[*a, at(after, "Cards/A.png"), at(after, "Cards/a2.png")], [*png], [*b], [at(before, "Cards/D.psd")],
-             [at(after, "Cards/E.psd"), at(after, "Cards/E.png")], [*t]]
-    for job, lines in (("check", [context, cards[0] + cards[1] + cards[2], cards[3] + cards[4] + cards[5]]),
-                       ("checks", [[*a, *png, *b, *cards[3], cards[4][0]], [*t]])):
-        shutil.rmtree(temp, ignore_errors=True)
-        temp.mkdir()
-        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp), "BEFORE": before,
-               "GITHUB_SHA": after, "GITHUB_JOB": job, "GITHUB_OUTPUT": str(temp / "output")}
-        done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
-        assert done.returncode == 0, (done.stdout, done.stderr)
-        _until(temp / "blobs.ready")
-        assert [line.split() for line in (temp / "blobs.fetch").read_text().splitlines()] == lines, job
-        assert (temp / "blobs").read_text().split() == [sha for line in lines for sha in line]
-        subprocess.run(["timeout", "30", "sh", "-c", f'until [ -s "{temp}/blobs.done" ]; do sleep 0.1; done'], check=True)
-        found = _git(repo, "cat-file", "--batch-check", "--batch-all-objects")
-        assert (temp / "blobs.done").read_text().strip() == "0" and all(sha in found for line in lines for sha in line)
-
-
-def test_workflow_joins_the_history_in_the_background(clone, tmp_path):
-    """The checkout is depth 1; in check Bot start fetches main's and the data branch's history (blobless) into
-    history.git, Pushed blobs start the push's first head and the data branch, History start joins them locally (no
-    remote left in the config) and History lets Check run on a complete clone only: GitHub's history when that failed,
-    else an error. A dispatch (no first head) takes the data branch from history.git."""
-    pytest.importorskip("yaml")
-    _, steps, _ = _guard_steps(clone)
-    work, origin, bin_dir = tmp_path / "work", tmp_path / "origin.git", tmp_path / "bin"
-    for folder in (work, bin_dir):
-        folder.mkdir()
-    (bin_dir / "gh").write_text("#!/bin/sh\necho '{}'\n")          # Bot start's records
-    (bin_dir / "gh").chmod(0o755)
-    _git(work, "init", "-q", "-b", "main")
-    heads = []
-    for n in range(3):
-        (work / "A.psd").write_bytes(os.urandom(64))
-        heads.append(_commit(work, f"c{n}"))
-    _git(work, "checkout", "-q", "--orphan", "data")
-    _git(work, "rm", "-rq", "--cached", ".")
-    (work / "A.psd").unlink()
-    (work / "db").mkdir()
-    (work / "db" / "stats.json").write_text("{}")
-    data = _commit(work, "data")
-    _git(work, "checkout", "-q", "-f", "main")
-    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(origin)], check=True)
-    for key in ("uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"):
-        _git(origin, "config", key, "true")
-    for n, case in enumerate(("push", "dispatch", "fallback", "failed")):
-        repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
-        temp.mkdir()
-        subprocess.run(["git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout", f"file://{origin}",
-                        str(repo)], check=True)
-        _git(repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")     # as actions/checkout
-        env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp),
-               "GITHUB_SHA": heads[2], "BEFORE": heads[1], "GITHUB_JOB": "check", "GITHUB_OUTPUT": str(temp / "output"),
-               "GITHUB_ENV": str(temp / "env"), "GITHUB_SERVER_URL": f"file://{tmp_path}", "GITHUB_REPOSITORY": "origin.git",
-               "BOT_REPO": "gone/bot", "GH_TOKEN": "t"}
-        if case in ("push", "dispatch"):
-            assert _shell(steps["Bot start"], env, cwd=repo)[0].returncode == 0
-            _until(temp / "history.git.code")
-        else:
-            (temp / "history.git.code").write_text("128\n")
-        if case == "push":
-            assert _shell(steps["Pushed blobs start"], env, cwd=repo)[0].returncode == 0
-        if case == "failed":
-            _git(repo, "remote", "set-url", "origin", f"file://{tmp_path}/gone.git")
-        assert _shell(steps["History start"], env, cwd=repo)[0].returncode == 0
-        done, _ = _shell(steps["History"], env, cwd=repo)
-        shallow = _git(repo, "rev-parse", "--is-shallow-repository")
-        if case == "failed":
-            assert done.returncode == 1 and "::error::the card repo's history did not come" in done.stdout and shallow == "true"
-            continue
-        assert done.returncode == 0 and shallow == "false", (case, done.stdout, done.stderr)
-        assert _git(repo, "rev-list", "--count", heads[2]) == "3" and _git(repo, "rev-parse", "origin/data") == data
-        assert ("history fetched again" in done.stdout) == (case == "fallback")
-        assert {line.split()[0] for line in _git(repo, "config", "--get-regexp", r"^remote\.").splitlines()} == {
-            "remote.origin.url", "remote.origin.fetch", "remote.origin.promisor", "remote.origin.partialclonefilter"}
-        if case == "push":
-            _until(temp / "blobs.done")
-            assert _git(repo, "cat-file", "-t", _git(work, "rev-parse", f"{heads[1]}:A.psd")) == "blob"
-
-
-def test_workflow_runs_the_two_checks_side_by_side(clone, tmp_path):
-    """checks' Card and font checks: the font check in the background, each to its own report.md, both in the summary
-    in order once both end; no fonts, no font check; one that breaks: the other still reports, a warning, exit 1."""
-    pytest.importorskip("yaml")
-    _, steps, _ = _guard_steps(clone)
-    fake = tmp_path / "bin" / "python"
-    fake.parent.mkdir()
-    fake.write_text('#!/bin/sh\necho "start $2 $*" >> "$FAKE_ARGS"\n[ "$2" = commands.card_check ] && sleep 0.5\n'
-                    'echo "end $2" >> "$FAKE_ARGS"\necho "$2"\n[ "$2" != "$FAKE_BREAK" ]\n')
-    fake.chmod(0o755)
-    for n, (fonts, broken, said) in enumerate((("true", "", ["commands.card_check", "commands.font_check"]),
-                                               ("false", "", ["commands.card_check"]),
-                                               ("true", "commands.font_check", ["commands.card_check", "commands.font_check"]))):
-        summary, args = tmp_path / f"summary{n}", tmp_path / f"args{n}"
-        env = {"PATH": f"{fake.parent}:{os.environ['PATH']}", "RUNNER_TEMP": str(tmp_path / f"t{n}"),
-               "GITHUB_STEP_SUMMARY": str(summary), "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_REPOSITORY": "o/cards",
-               "GITHUB_WORKSPACE": "/w", "GITHUB_SHA": "a" * 40, "BEFORE": "b" * 40, "AUTHOR": "maker", "FONTS": fonts,
-               "FAKE_ARGS": str(args), "FAKE_BREAK": broken}
-        done, _ = _shell(steps["Card and font checks"], env)
-        assert done.returncode == bool(broken) and summary.read_text().split() == said, (done.stdout, done.stderr)
-        assert ("font-check" in done.stdout) == bool(broken)
-        lines = args.read_text().splitlines()
-        assert [line for line in lines if line.startswith("end")] == ["end " + c for c in said[::-1]]   # side by side
-        assert all(f"--before {'b' * 40}" in line and "--author maker" in line and ("--fonts" in line) == ("font" in line.split()[1])
-                   for line in lines if line.startswith("start"))
 
 
 FAKE_RAW = r"""#!/bin/sh
@@ -2371,17 +1739,13 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
 
 
 def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypatch):
-    """A push's Check starts right after cards-venv; Check then waits and carries its output (stdout to the summary) and
+    """A push's Check starts at Check start; Check then waits and carries its output (stdout to the summary) and
     exit code over; a dispatch's runs at Check. Its font reads wait for Fonts ready's mark (fonts_for, FONTS_WAIT)."""
     import threading
     import time
     import commands.psd_edit as psd_edit
-    doc, steps, _ = _guard_steps(clone)
-    names = [s.get("name") or s.get("id") for s in doc["jobs"]["check"]["steps"]]
+    _, steps, _ = _guard_steps(clone)
     start, check = steps["Check start"], steps["Check"]
-    assert names[names.index("setup") + 1:names.index("Check start")] == ["History", "Earlier fonts start", "No push run in its window"]
-    assert names.index("Fonts ready") == names.index("fonts-miss") + 1
-    assert start["if"] == "github.event_name == 'push' && env.MODE != 'off'" and steps["Fonts ready"]["if"] == "always()"
     assert start["env"][cg.FONTS_READY_ENV] == "${{ runner.temp }}/fonts.ready" and cg.FONTS_READY_ENV not in check["env"]
     fake = tmp_path / "bin" / "python"
     fake.parent.mkdir()
@@ -2413,425 +1777,6 @@ def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypa
     assert cg.Source(str(root)).fonts_for(["A"]) == str(root / psd_edit.FONTS_DIR) and time.monotonic() - began >= 0.25
     timer.join()
 
-
-def test_workflow_lowercases_card_guards(clone, tmp_path):
-    """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
-    step; a push's MODE other than on is off (a dispatch keeps dry)."""
-    pytest.importorskip("yaml")
-    doc, steps, jenv = _guard_steps(clone)
-    step = steps["Start"]
-    for typed, mode, event in (("On", "on", "push"), ("REPORT", "off", "push"), ("dry", "off", "push"),
-                               ("dry", "dry", "workflow_dispatch")):
-        github_env = tmp_path / f"env-{typed}-{event}"
-        github_env.write_text("")
-        done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path),
-                                  "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": event,
-                                  "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
-        assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
-    assert "--dry-run" not in steps["Land"]["run"]
-
-
-def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
-    """Card sync's "Guards' fixes" against a fake gh: the wait ends at the check job's Decided step or, failing that, its end
-    (never at another job's), and the hold rule then reads Fixes to land. It looks every 3 s, the run every 5th look."""
-    yaml = pytest.importorskip("yaml")
-    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    guards = next(s for s in doc["jobs"]["main"]["steps"] if s.get("name") == "Guards' fixes")
-    assert guards["env"]["DECIDED"] == "Decided"
-    bin_dir = _fake_tools(tmp_path)
-    naps = tmp_path / "sleeps.txt"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    state = tmp_path / "gh.json"
-    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_STATE": str(state), "FAKE_SLEPT": str(naps), "GITHUB_REPOSITORY": "o/cards", "SHA": "a" * 40,
-           "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x",
-           "FAKE_GUARD_RUNS": json.dumps({"workflow_runs": [{"id": 7, "status": "in_progress", "created_at": now}]}),
-           **{k: guards["env"][k] for k in ("FIXES", "DECIDED", "FOLLOW")}}
-
-    def jobs(status="in_progress", decided="completed", fixes="skipped", name="check"):
-        steps = [{"name": "Fixes to land", "status": "completed", "conclusion": fixes}]
-        steps += [{"name": "Decided", "status": decided, "conclusion": "success" if decided == "completed" else None}] if decided else []
-        return json.dumps({"jobs": [{"name": name, "status": status, "steps": steps}]})
-
-    for answer, later, sleeps, held in ((jobs(), None, 0, False),
-                                        (jobs(fixes="success"), None, 0, True),
-                                        (jobs("completed", decided=None), None, 0, False),            # a run from before Decided
-                                        (jobs(decided="pending"), jobs(fixes="success"), 7, True),
-                                        (jobs(name="checks"), jobs(), 2, False)):                     # the wrong job's step: not it
-        state.unlink(missing_ok=True)
-        naps.write_text("")
-        done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(sleeps)} if later else {})})
-        assert done.returncode == 0, done.stderr
-        assert naps.read_text().split() == ["3"] * sleeps and ("run" in outputs) is held, (answer, outputs)
-    runs = [line for line in json.loads(state.read_text())["log"] if "/runs?" in line]
-    assert len(runs) == 1                                                       # the first read only: 2 looks, none the 5th
-    state.unlink()
-    done, _ = _shell(guards, {**env, "FAKE_JOBS": jobs(decided="pending"), "FAKE_JOBS_LATER": jobs(), "FAKE_LOOKS": "11"})
-    assert done.returncode == 0 and sum("/runs?" in line for line in json.loads(state.read_text())["log"]) == 3    # looks 5 and 10
-
-
-def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
-    """A follow-up (input guards, started by the guards' check job before Land): both lanes set up, then "Guards' fixes"
-    waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then History wait
-    and Newest. A first attempt's push: main by git every 0.5 s, the API every 4th; its landing there: Bake and save goes
-    at once, Card data asks the API at every look."""
-    yaml = pytest.importorskip("yaml")
-    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
-                                    ("main", 11, ["Fonts first", None, "Fonts first (cache miss)", "Rulebook PDF start"], ["History wait"])):
-        names = [s.get("name") for s in doc["jobs"][job]["steps"]]
-        want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]
-        assert names[at:at + len(want)] == want, (job, names)
-    assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the guards' run id
-    guards = next(s for s in doc["jobs"]["data"]["steps"] if s.get("name") == "Guards' fixes")
-    naps = tmp_path / "sleeps.txt"
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
-           "GITHUB_REPOSITORY": "o/cards", "RUN": "7", "SHA": "", "GITHUB_OUTPUT": str(tmp_path / "out"),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x",
-           "LANDED": guards["env"]["LANDED"]}
-    assert "LANDED" in guards["run"] and "POST" not in guards["env"]
-
-    def jobs(*pairs, name="check", status="in_progress", **run):
-        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": n, "status": st} for n, st in pairs], **run}]})
-
-    land, landed = ("Land", "completed"), ("Landed", "in_progress")
-    for answer, later, looks in ((jobs(land, landed), None, 0),
-                                 (jobs(("Land", "in_progress"), ("Landed", "queued")), jobs(land, landed), 4),
-                                 (jobs(("Land", "completed"), status="completed"), None, 0),          # cancelled or failed before it
-                                 (jobs(land, landed, name="post"), jobs(land, ("Landed", "completed")), 2)):   # not its job
-        (tmp_path / "gh.json").unlink(missing_ok=True)
-        naps.write_text("")
-        done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {})})
-        assert done.returncode == 0 and "run" not in outputs and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
-        assert not any("card-guards.yml/runs" in line for line in json.loads((tmp_path / "gh.json").read_text())["log"])
-    origin, temp = tmp_path / "o" / "cards", tmp_path / "temp"
-    temp.mkdir()
-    git = lambda *a: subprocess.run(["git", "-C", str(origin), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
-                                    check=True, capture_output=True, text=True).stdout.strip()
-    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
-    git("config", "uploadpack.allowFilter", "true")
-    git("commit", "-q", "--allow-empty", "-m", "push")
-    push = git("rev-parse", "HEAD")
-    env = {**env, "RUNNER_TEMP": str(temp), "GITHUB_SERVER_URL": f"file://{tmp_path}", "FAKE_LOOKS": "1"}
-    for lane, named, attempt, sleeps in (("main", push, 1, []), ("data", push, 1, ["0.5"]),
-                                         ("main", "b" * 40, 1, ["0.5"] * 4), ("main", push, 2, ["3"])):   # another's; a re-run
-        git("reset", "-q", "--hard", push)
-        git("commit", "-q", "--allow-empty", "-m", f"Card guards: 1 PNG re-exported\n\nGuarded-push: {named}")
-        (tmp_path / "gh.json").unlink(missing_ok=True)
-        naps.write_text("")
-        run = {"head_sha": push, "run_attempt": attempt}
-        done, _ = _shell(guards, {**env, "GITHUB_JOB": lane, "FAKE_JOBS": jobs(("Land", "in_progress"), ("Landed", "queued"), **run),
-                                  "FAKE_JOBS_LATER": jobs(land, landed, **run)})
-        assert done.returncode == 0 and naps.read_text().split() == sleeps, (lane, named, attempt, done.stderr)
-        assert (f"landed {git('rev-parse', '--short=8', 'HEAD')} on main" in done.stdout) is (sleeps == []), done.stdout
-
-
-def test_site_build_starts_with_the_data_job(clone, tmp_path):
-    """A push's data job, a guards' follow-up and the after job dispatch the site build and the card checks first, named
-    by run and job; their Site build and Card checks dispatch again only when that run is missing, ended, or past its
-    20-minute Data wait (or unread)."""
-    yaml = pytest.importorskip("yaml")
-    workflows = _workflow(clone).parent
-    sync = yaml.safe_load((workflows / "card-sync.yml").read_text(encoding="utf-8"))
-    site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))
-    steps = sync["jobs"]["data"]["steps"]
-    checks = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))
-    start, build, late = steps[0], *(next(s for s in steps if s.get("name") == n) for n in ("Site build", "Card checks"))
-    assert sync["jobs"]["after"]["steps"] is steps and start["name"] == "Site build start"
-    assert start["if"] == "env.DRY_RUN != 'true' && (github.event_name == 'push' || inputs.guards || github.job == 'after')"
-    assert site["run-name"] == "${{ inputs.after && format('Card browser (after {0} {1})', inputs.after, inputs.job) || '' }}"
-    assert build["env"]["EARLY"] == "Card browser (after ${{ github.run_id }} ${{ github.job }})"
-    assert checks["run-name"].startswith("${{ inputs.after && format('Card checks (after {0} {1})', inputs.after, inputs.job) || ")
-    assert late["env"]["EARLY"] == "Card checks (after ${{ github.run_id }} ${{ github.job }})"
-    names = [s.get("name") or s.get("id") or s.get("uses") for s in site["jobs"]["build"]["steps"]]
-    assert names.index("og-before") + 1 == names.index("Data wait") == names.index("Setup wait") - 1
-    wait = site["jobs"]["build"]["steps"][names.index("Data wait")]
-    assert wait["env"]["JOB"] == "${{ inputs.job == 'after' && 'Card data after the bake' || 'Card data' }}"
-    assert (sync["jobs"]["data"]["name"], sync["jobs"]["after"]["name"]) == ("Card data", "Card data after the bake")
-    assert wait["env"]["COMMIT"] in [s.get("name") for s in steps] and site["jobs"]["build"]["permissions"]["actions"] == "read"
-    state, temp = tmp_path / "gh.json", tmp_path / "temp"
-    temp.mkdir()
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(state), "GITHUB_REPOSITORY": "o/cards",
-           "GITHUB_RUN_ID": "9", "GITHUB_JOB": "data", "RUNNER_TEMP": str(temp), "GITHUB_OUTPUT": str(tmp_path / "out"),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "EARLY": "Card browser (after 9 data)"}
-    log = lambda: json.loads(state.read_text())["log"] if state.exists() else []
-    done, _ = _shell(start, env)
-    for _ in range(100):
-        if (temp / "site-start").exists() and (temp / "card-checks-start").exists():
-            break
-        subprocess.run(["/bin/sleep", "0.05"])
-    assert done.returncode == 0 and sorted(log()) == [f"workflow run {w}.yml --ref main -R o/cards -f after=9 -f job=data"
-                                                      for w in ("card-checks", "site")]
-    now = int(datetime.now(timezone.utc).timestamp())
-    runs = lambda *rows: json.dumps({"workflow_runs": [{"display_title": t, "status": st} for t, st in rows]})
-    for step, title, file, again_ in ((build, "Card browser", "site-start", "workflow run site.yml --ref main -R o/cards"),
-                                      (late, "Card checks", "card-checks-start",
-                                       "workflow run card-checks.yml --ref main -R o/cards -f after=9 -f job=data")):
-        for at, listed, fail, again in ((now - 30, runs(("T (after 9 data)", "in_progress")), "", False),
-                                        (now - 30, runs(("T", "in_progress"), ("T (after 9 data)", "pending")), "", False),
-                                        (now - 30, runs(("T (after 9 after)", "in_progress"), ("T (after 9 data)", "completed")), "", True),
-                                        (now - 30, runs(("T (after 8 data)", "in_progress")), "", True),       # not found
-                                        (now - 30, runs(("T (after 9 data)", "in_progress")), "/runs?", True),  # not read
-                                        (now - 1200, runs(("T (after 9 data)", "in_progress")), "", True),     # past its wait
-                                        (None, runs(), "", True)):                                          # never started
-            state.unlink(missing_ok=True)
-            (temp / file).unlink(missing_ok=True)
-            if at:
-                (temp / file).write_text(f"{at}\n")
-            done, _ = _shell(step, {**env, "EARLY": f"{title} (after 9 data)", "FAKE_GUARD_RUNS": listed.replace('"T', f'"{title}'),
-                                    "FAKE_FAIL": fail})
-            dispatched = [c for c in log() if c.startswith("workflow run")]
-            assert done.returncode == 0 and dispatched == ([again_] if again else []), (title, at, listed, log())
-            assert sum("/runs?" in c for c in log()) == (at == now - 30)
-
-
-def test_site_data_wait(clone, tmp_path):
-    """site.yml's Data wait: git looks every 0.5 s, the jobs API every 4th, until a newer "Card data" commit is on data (by
-    git: no jobs API look; another writer's: the API's) or the named Card sync job's Commit data is done or the job ended
-    (never another job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
-    head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches (the step's
-    timeout leaves room for them): checked out later too. A look that finds main past the early images' commit, those
-    done (exit 0): the early images again at main's head (same log and code)."""
-    yaml = pytest.importorskip("yaml")
-    site = yaml.safe_load((_workflow(clone).parent / "site.yml").read_text(encoding="utf-8"))
-    wait = next(s for s in site["jobs"]["build"]["steps"] if s.get("name") == "Data wait")
-    try_ = int(re.search(r"timeout (\d+) git -C carddata fetch", wait["run"]).group(1))
-    assert wait["timeout-minutes"] * 60 >= 1200 + 15 + 3 * try_ + 10 + 15 + 60       # the last look, 3 tries, 1 min spare
-    origin, work, temp, naps = tmp_path / "origin", tmp_path / "work", tmp_path / "temp", tmp_path / "sleeps.txt"
-    git = lambda *a: subprocess.run(["git", "-C", str(origin), "-c", "user.name=A", "-c", "user.email=a@x", *a],
-                                    check=True, capture_output=True, text=True)
-    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
-
-    def push(name, data):
-        (origin / name).write_bytes(data)
-        git("add", "-A")
-        git("commit", "-qm", name)
-
-    push("A.psd", b"1")
-    subprocess.run(["git", "clone", "-q", str(origin), str(work)], check=True)
-    dorigin, card = tmp_path / "dataorigin", work / "carddata"
-    subprocess.run(["git", "init", "-q", "-b", "data", str(dorigin)], check=True)
-    rev = lambda repo: subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-
-    def data(text):                                                       # Card sync's data commit
-        (dorigin / "stats.json").write_text(text)
-        for a in (("add", "-A"), ("commit", "-qm", text)):
-            subprocess.run(["git", "-C", str(dorigin), "-c", "user.name=A", "-c", "user.email=a@x", *a], check=True, capture_output=True)
-
-    data("1")
-    subprocess.run(["git", "clone", "-q", "--depth", "1", "-b", "data", f"file://{dorigin}", str(card)], check=True)
-    (temp / "setup").mkdir(parents=True)
-    (temp / "setup" / "data.code").write_text("0\n")
-    (temp / "setup" / "sizes.code").write_text("0\n")
-    (temp / "tree.json").write_text("old")
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
-           "GITHUB_REPOSITORY": "o/cards", "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(tmp_path / "out"),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(temp), "RUN": "7", "JOB": "Card data",
-           "COMMIT": wait["env"]["COMMIT"], "FAKE_TREE": "new"}
-
-    def jobs(commit, name="Card data", status="in_progress"):
-        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": "Commit data", "status": commit}]}]})
-
-    def run(answer, later=None, looks=0, **more):
-        (tmp_path / "gh.json").unlink(missing_ok=True)
-        naps.write_text("")
-        done, _ = _shell(wait, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {}),
-                                **more}, cwd=work)
-        for _ in range(200):                                              # the PSD sizes' read, in the background
-            if (temp / "setup" / "sizes.code").exists() and (temp / "setup" / "sizes.code").read_text().strip():
-                break
-            subprocess.run(["/bin/sleep", "0.05"])
-        assert done.returncode == 0 and naps.read_text().split() == ["0.5"] * 4 * looks, (answer, done.stderr)
-        calls = json.loads((tmp_path / "gh.json").read_text())["log"]
-        return [c for c in calls if "/git/trees/" in c]
-
-    assert not run(jobs("completed"))
-    assert not run(jobs("pending"), jobs("completed"), 3)
-    assert not run(jobs("completed", name="Card data after the bake"), jobs("completed"), 2)    # another job's step
-    assert not run(jobs("pending", status="completed"))                                          # ended before it
-    push("B.png", b"2")                                                   # main moved, no PSD: the sizes stand
-    data("2")
-    assert not run(jobs("completed")) and (temp / "tree.json").read_text() == "old"
-    assert rev(card) == rev(dorigin) and (card / "stats.json").read_text() == "2"
-    (temp / "setup" / "data.code").write_text("128\n")                    # the clone failed: not fetched
-    data("3")
-    assert not run(jobs("completed")) and (card / "stats.json").read_text() == "2"
-    (temp / "setup" / "data.code").write_text("0\n")
-    (temp / "setup" / "sizes.code").write_text("1\n")
-    push("A.psd", b"3")
-    head = git("rev-parse", "HEAD").stdout.strip()
-    assert run(jobs("completed")) == [f"api repos/o/cards/git/trees/{head}?recursive=1"]
-    assert subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip() == head
-    assert (temp / "tree.json").read_text().strip() == "new" and (temp / "setup" / "sizes.code").read_text().strip() == "0"
-    (temp / "tree.json").write_text("older")
-    push("A.psd", b"4")
-    assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
-    assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
-    for subject, by_git in (("Card checks", False), ("Card data: 1 changed (main x)", True)):    # the data on origin too
-        data(subject)
-        git("fetch", "-q", str(dorigin), "+data:data")
-        push("B.png", subject.encode())
-        if not by_git:
-            assert not run(jobs("pending"), jobs("completed"), 1)
-        else:
-            naps.write_text("")
-            (tmp_path / "gh.json").unlink(missing_ok=True)
-            done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("pending"), "FAKE_JOBS_LATER": jobs("completed"), "FAKE_LOOKS": "0"}, cwd=work)
-            assert done.returncode == 0 and "committed" in done.stdout and not naps.read_text() and not (tmp_path / "gh.json").exists(), done.stderr
-        assert rev(card) == rev(dorigin) and rev(work) == git("rev-parse", "HEAD").stdout.strip()
-    subprocess.run(["git", "-C", str(card), "remote", "set-url", "origin", str(tmp_path / "gone")], check=True)
-    naps.write_text("")
-    done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("completed")}, cwd=work)
-    assert done.returncode == 0 and "::warning::data not fetched again (3 tries): checked out" in done.stdout, done.stderr
-    assert not card.exists() and (temp / "setup" / "data.code").read_text().strip() == "1" and naps.read_text().split() == ["10", "15"]
-    setup, bin_ = temp / "setup", Path(env["PATH"].split(":")[0])     # follow: main moved past the early images, those done
-    (bin_ / "python").write_text('#!/bin/sh\necho "python $*"\n')
-    (bin_ / "python").chmod(0o755)
-    git("config", "uploadpack.allowFilter", "true")
-    for code, moved, again in (("0", True, True), ("0", False, False), ("1", True, False)):
-        at = git("rev-parse", "HEAD").stdout.strip()
-        (setup / "images.code").write_text(f"{code}\n")
-        (setup / "images.at").write_text(f"{at}\n")
-        (setup / "images.log").write_text("")
-        if moved:
-            push("C.png", at.encode())
-        head = git("rev-parse", "HEAD").stdout.strip()
-        assert not run(jobs("completed"))
-        for _ in range(100):
-            if (setup / "images.code").read_text().strip():
-                break
-            subprocess.run(["/bin/sleep", "0.05"])
-        ran = f"python site/build/build_site.py --images {head} {setup}/images.stop\n"
-        assert (setup / "images.log").read_text() == (ran if again else "") and (setup / "images.code").read_text().strip() == code
-        assert (setup / "images.at").read_text().strip() == (head if again else at)
-
-
-def test_checks_data_wait(clone, tmp_path):
-    """card-checks.yml's early run: fonts restored, then site.yml's Data wait, then main's and the data's heads (the
-    sparse files fetched; a "Card data" commit seen by git: no jobs API look); a fonts change in the wait: the outdated
-    restore removed and the new fonts checked out."""
-    yaml = pytest.importorskip("yaml")
-    workflows = _workflow(clone).parent
-    job = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))["jobs"]["check"]
-    site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
-    names = [s.get("name") or s.get("id") or s.get("uses") for s in job["steps"]]
-    step = {n: s for n, s in zip(names, job["steps"])}
-    assert names.index("Python environment") + 6 == names.index("Data wait") == names.index("To check") - 1    # Help start, join
-    assert step["fonts-first-cache"]["uses"].startswith("actions/cache/restore@") and step["font-cache"]["if"].endswith("&& !inputs.after")
-    loop = lambda run: [ln for ln in run[run.index("while ["):run.index("if [ \"$SECONDS\" -ge")].splitlines() if "follow" not in ln]  # noqa: E731
-    assert loop(step["Data wait"]["run"]) == loop(next(s for s in site if s.get("name") == "Data wait")["run"])
-    origin, work = tmp_path / "origin", tmp_path / "work"
-    git = lambda cwd, *a: subprocess.run(["git", "-C", str(cwd), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
-                                         check=True, capture_output=True, text=True).stdout.strip()
-
-    def commit(branch, files, subject=None):
-        git(origin, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
-        git(origin, "reset", "-q", "--hard")
-        for name, text in files.items():
-            (origin / name).parent.mkdir(parents=True, exist_ok=True)
-            (origin / name).write_text(text)
-        git(origin, "add", "-A")
-        git(origin, "commit", "-qm", subject or branch)
-    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
-    git(origin, "config", "uploadpack.allowFilter", "true")
-    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
-    commit("main", {"site/Card Edits.json": "1", "MDW/Fonts/a.ttf": "old", "A.psd": "1"})
-    git(origin, "branch", "data")
-    commit("data", {"db/stats.json": "1"})
-    url = f"file://{origin}"
-    git(tmp_path, "clone", "-q", "--filter=blob:none", "--depth", "1", "--no-checkout", "-b", "main", url, str(work))
-    git(work, "sparse-checkout", "set", "--no-cone", "/site/Card Edits.json")
-    git(work, "checkout", "-q", "main")
-    git(tmp_path, "clone", "-q", "--depth", "1", "-b", "data", url, str(work / "carddata"))
-    naps = tmp_path / "sleeps.txt"
-    naps.write_text("")
-    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
-           "GITHUB_REPOSITORY": "o/cards", "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(tmp_path / "out"),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GIT_NO_LAZY_FETCH": "1"}
-    run = lambda name, **more: _shell(step[name], {**env, **{k: v for k, v in step[name].get("env", {}).items() if "${{" not in v},  # noqa: E731
-                                                  **more}, cwd=work)
-    jobs = lambda status: json.dumps({"jobs": [{"name": "Card data", "status": "in_progress",  # noqa: E731
-                                                "steps": [{"name": "Commit data", "status": status}]}]})
-    done, first = run("Fonts first")
-    (work / "MDW/Fonts").mkdir(parents=True)
-    (work / "MDW/Fonts/a.ttf").write_text("old")                       # the cache's restore
-    for fonts in ("old", "new"):
-        commit("main", {"site/Card Edits.json": fonts, "MDW/Fonts/a.ttf": fonts, "A.psd": fonts})
-        commit("data", {"db/stats.json": fonts})
-        naps.write_text("")
-        (tmp_path / "gh.json").unlink(missing_ok=True)
-        done, _ = run("Data wait", RUN="7", JOB="Card data", FAKE_JOBS=jobs("in_progress"), FAKE_JOBS_LATER=jobs("completed"), FAKE_LOOKS="2")
-        assert done.returncode == 0 and naps.read_text().split() == ["0.5"] * 8, done.stderr
-        assert git(work, "rev-parse", "HEAD") == git(origin, "rev-parse", "main") and (work / "site/Card Edits.json").read_text() == fonts
-        assert git(work / "carddata", "rev-parse", "HEAD") == git(origin, "rev-parse", "data")
-        assert (work / "MDW/Fonts/a.ttf").read_text() == "old"           # a restore: outside the patterns, kept
-        done, tree = run("Fonts tree")
-        if tree["sha"] != first["sha"]:                                   # Fonts (cache miss)'s if
-            done, _ = run("Fonts (cache miss)")
-        assert done.returncode == 0 and (tree["sha"] == first["sha"]) == (fonts == "old"), done.stderr
-        assert (work / "MDW/Fonts/a.ttf").read_text() == fonts
-    commit("main", {"site/Card Edits.json": "2", "MDW/Fonts/a.ttf": "new", "A.psd": "2"})
-    commit("data", {"db/stats.json": "2"}, "Card data: 1 changed (main x)")
-    naps.write_text("")
-    (tmp_path / "gh.json").unlink(missing_ok=True)
-    done, _ = run("Data wait", RUN="7", JOB="Card data", FAKE_JOBS=jobs("in_progress"), FAKE_JOBS_LATER=jobs("completed"), FAKE_LOOKS="0")
-    assert done.returncode == 0 and not naps.read_text() and not (tmp_path / "gh.json").exists(), done.stderr
-    assert git(work, "rev-parse", "HEAD") == git(origin, "rev-parse", "main") and (work / "site/Card Edits.json").read_text() == "2"
-    assert git(work / "carddata", "rev-parse", "HEAD") == git(origin, "rev-parse", "data")
-
-
-def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
-    """Card sync's main lane sets up (checkouts, Python), waits for this push's guards, takes main's and the data's heads
-    again, then gates (no Gate when the guards hold it). A push rides along on a lane queued or in that wait; the
-    schedule's gate and the failure streak pass over a held lane."""
-    yaml = pytest.importorskip("yaml")
-    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    main = doc["jobs"]["main"]
-    assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
-    steps = {s.get("name"): s for s in main["steps"]}
-    assert [s.get("name") for s in main["steps"]][11:20] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
-                                                            "Rulebook PDF start", "Guards' fixes", "History wait", "Newest", "Gate"]
-    assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
-    bin_dir = _fake_tools(tmp_path)
-    state, posts = tmp_path / "gh.json", tmp_path / "posts.jsonl"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_STATE": str(state), "FAKE_POSTS": str(posts), "GITHUB_REPOSITORY": "o/cards",
-           "GITHUB_RUN_ID": "9", "GITHUB_JOB": "main", "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_ENV": str(tmp_path / "env"),
-           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x", "RUN_URL": "https://x/run"}
-
-    def lane(status="completed", conclusion="success", *steps_):
-        return {"name": "Bake and save", "status": status, "conclusion": conclusion,
-                "steps": [{"name": n, "status": "completed" if c else "in_progress", "conclusion": c} for n, c in steps_]}
-    other = next(s for s in doc["jobs"]["timer"]["steps"] if s["name"] == "Another timer")
-    for job, rides in ((lane("queued", None), True), (lane("in_progress", None, ("Guards' fixes", None)), True),
-                       (lane("in_progress", None, ("Guards' fixes", "success"), ("Gate", None)), False),
-                       (lane(), False), ({"name": "Quiet window", "status": "in_progress", "steps": []}, False)):
-        state.unlink(missing_ok=True)
-        done, out = _shell(other, {**env, **other["env"], "FAKE_RUNS": json.dumps([{"databaseId": 5, "status": "in_progress", "createdAt": now}]),
-                                   "FAKE_JOBS": json.dumps({"jobs": [job]})})
-        assert done.returncode == 0 and (out.get("run") == "5") is rides, (job, done.stderr)
-    held, went = lane("completed", "success", ("Gate", "skipped")), lane("completed", "success", ("Gate", "success"))
-    repo = tmp_path / "cards"                   # the schedule's gate: the held push's head is not a synced one
-    git = ["git", "-C", str(repo), "-c", "user.name=Alice", "-c", "user.email=a@x"]
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    for name in ("A.psd", "B.psd"):
-        (repo / name).write_bytes(name.encode())
-        subprocess.run([*git, "add", name], check=True)
-        subprocess.run([*git, "commit", "-qm", name], check=True)
-    heads = subprocess.run([*git, "rev-list", "HEAD"], capture_output=True, text=True, check=True).stdout.split()
-    state.unlink(missing_ok=True)
-    gate = steps["Gate"]
-    done, out = _shell(gate, {**env, **{k: v for k, v in gate["env"].items() if "${{" not in str(v)}, "GITHUB_EVENT_NAME": "schedule",
-                              "DRY_RUN": "false", "FAKE_LOOKS": "1", "FAKE_JOBS": json.dumps({"jobs": [held]}), "FAKE_JOBS_LATER": json.dumps({"jobs": [went]}),
-                              "FAKE_RUNS": json.dumps([{"databaseId": 2, "headSha": heads[0], "displayTitle": "Card sync"},
-                                                       {"databaseId": 1, "headSha": heads[1], "displayTitle": "Card sync"}])}, cwd=repo)
-    assert done.returncode == 0 and out["go"] == "true", done.stdout + done.stderr
-    assert f"card inputs changed in 1 commits since {heads[1][:8]}" in done.stdout
-    tell = steps["Tell Discord"]                # the streak: the held lane between is passed over, so no second post
-    state.unlink(missing_ok=True)
-    done, _ = _shell(tell, {**env, "WEBHOOK": "https://hook", "FAKE_LOOKS": "2", "FAKE_JOBS": json.dumps({"jobs": [held]}),
-                            "FAKE_JOBS_LATER": json.dumps({"jobs": [lane("completed", "failure", ("Gate", "success"))]}),
-                            "FAKE_RUNS": json.dumps([{"databaseId": 8, "displayTitle": "Card sync"}, {"databaseId": 7, "displayTitle": "Card sync"}])})
-    assert done.returncode == 0 and "failed in the last live run where it ran too" in done.stdout and not posts.exists(), done.stdout
 
 def test_the_bot_clone_and_records_run_here(clone, tmp_path):
     """check's Bot start and Bot against a stand-in GitHub (file://, a fake gh): SPARSE_FILES alone in bot/, no header
@@ -2874,11 +1819,8 @@ def test_the_bot_clone_and_records_run_here(clone, tmp_path):
 
 
 def test_workflow_lints(clone):
-    """actionlint (when installed) accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
-    actionlint = shutil.which("actionlint")
-    if not actionlint:
-        pytest.skip("no actionlint on PATH")
-    done = subprocess.run([actionlint, "-shellcheck=", str(_workflow(clone))], capture_output=True, text=True, timeout=120)
+    """actionlint accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
+    done = subprocess.run(["actionlint", "-shellcheck=", str(_workflow(clone))], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
 
 

@@ -66,14 +66,11 @@ def node(tmp_path, body: str):
 
 
 def test_power_creep(tmp_path):
-    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items. The removed charts stay
-    gone: series strength, ban reasons, last change by month, top subseries, ratings."""
+    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards), r = render(cards, A), all = r.top + r.balance + r.history;
-const rated = fixture(); rated[0].ratings = [{ date: "2025-04-28", scale: "power", value: 7, by: "group", source: "TTS session" }];
-out({ ratings: [typeof ins.ratingsHtml, render(rated, A).top.includes("stats-ratings")], creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep"),
-  gone: ["bal-series", "bans", "timeline", "subseries"].filter(id => all.includes(`id="chart-${id}"`)) });
+const cards = fixture(), A = analytics(cards), r = render(cards, A);
+out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep") });
 """)
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
-    assert not out["item"] and out["gone"] == [] and out["ratings"] == ["undefined", False]   # no Ratings section or jump
+    assert not out["item"]

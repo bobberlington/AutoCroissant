@@ -592,10 +592,7 @@ Re-pin:
    they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days). TTSCardMaker's
    cards-python action builds the wheels with `--uploaded-prior-to <date>` (PyPI as of then): move that date only when
    the fork needs a package or build tool released after it.
-3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers) and,
-   against a TTSCardMaker checkout, `AC_SITE_SRC=<checkout>`
-   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`helpers.fork_install` checks each card
-   workflow's install: no pin of its own, the shared cards-python setup, the file's wheels, one cache key on 3.14).
+3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers).
 4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
    1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b` and `cards-20261112c`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).

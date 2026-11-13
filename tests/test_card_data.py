@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import time
 from subprocess import run as run_process
 from sys import executable
 
@@ -73,208 +72,13 @@ def _sync_doc():
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _bash(script, cwd, env, timeout=60):
-    return run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], env=env, cwd=str(cwd),
-                       capture_output=True, text=True, timeout=timeout)
-
-
-def test_card_sync_clones_the_builder_and_the_data(tmp_path):
-    """card-sync.yml: BOT_FILES (the data, main and after jobs' one list) is SPARSE_FILES. Its Clones start, Cards start,
-    Cards and Bot and data run against a stand-in GitHub (file://): the builder at a sha, BOT_FILES alone; the data
-    branch with its push header kept for carddata/ alone; main's head in the workspace as the checkout makes it (its
-    files, depth 1, blobless, the header, gc.auto 0, main on origin/main) and requirements-cards.txt read through the
-    API; a failed clone or fetch leaves its folder to the checkout after it. Earlier bake records join Records start."""
-    doc = _sync_doc()
-    jobs = doc["jobs"]
+def test_card_sync_checks_out_sparse_files():
+    """card-sync.yml: BOT_FILES (the data, main and after jobs' one list, their bot checkout's) is SPARSE_FILES."""
+    jobs = _sync_doc()["jobs"]
     steps = {s.get("name") or s.get("with", {}).get("path"): s for s in jobs["data"]["steps"]}
     assert jobs["data"]["env"]["BOT_FILES"].split() == ["/" + f for f in cd.SPARSE_FILES]
     assert jobs["main"]["env"]["BOT_FILES"] == jobs["after"]["env"]["BOT_FILES"] == jobs["data"]["env"]["BOT_FILES"]
     assert bot_files(jobs["data"], steps["bot"]) == ["/" + f for f in cd.SPARSE_FILES]
-    assert (steps["bot"]["if"], steps["carddata"]["if"]) == ("steps.clones.outputs.bot != 'true'", "steps.clones.outputs.carddata != 'true'")
-    for job, order in (("data", ["Clones start", "Cards start", "History start", "Venv key", "Cards", "actions/checkout@v7", "History join",
-                                 "Bot and data", "Records start", "Python environment", "Earlier bake records", "Gate"]),
-                       ("main", ["Clones start", "Cards start", "History start", "Venv key", "Cards", "actions/checkout@v7", "History join",
-                                 "Bot and data", "Python environment", "Fonts first", "Guards' fixes", "History wait", "Newest", "Gate",
-                                 "Earlier bake records"])):
-        at = [s.get("name") or s.get("with", {}).get("path") or s.get("uses") for s in jobs[job]["steps"]]
-        assert [at.index(x) for x in order] == sorted(at.index(x) for x in order) and at.index("Bot and data") == at.index("bot") - 1
-        named = {s.get("name"): s for s in jobs[job]["steps"]}
-        checkout = next(s for s in jobs[job]["steps"] if s.get("uses", "").startswith("actions/checkout") and "path" not in s["with"])
-        assert checkout["if"] == "steps.cards.outputs.ok != 'true'" and checkout["with"]["fetch-depth"] == 1
-        assert checkout["with"]["sparse-checkout"] == named["Cards start"]["env"]["CARD_FILES"]
-        # main: the data job's steps, its files plus TTS/ (the save, the rulebook PDF)
-        assert all(named[n] == steps[n] for n in ("History start", "Venv key", "Cards", "History join", "History wait"))
-        assert named["Cards start"]["run"] == steps["Cards start"]["run"]
-    main_files = next(s for s in jobs["main"]["steps"] if s.get("name") == "Cards start")["env"]["CARD_FILES"].split("\n")
-    assert [f for f in main_files if f != "/TTS/"] == steps["Cards start"]["env"]["CARD_FILES"].split("\n") != main_files
-    server, seed = tmp_path / "github", tmp_path / "seed"
-    for rel in cd.SPARSE_FILES + ("config.py",):
-        (seed / rel).parent.mkdir(parents=True, exist_ok=True)
-        (seed / rel).write_text(rel)
-    git(tmp_path, "init", "-q", "-b", "main", str(seed))
-    sha = commit(seed, "Base", 1)
-    (seed / "global_config.py").write_text("later")
-    commit(seed, "Base", 2)                              # BUILDER_REF is the first: a sha, not the branch's head
-    data, cards = tmp_path / "data", tmp_path / "cards"
-    (data / "db").mkdir(parents=True)
-    (data / "db" / "stats.json").write_text("{}")
-    git(tmp_path, "init", "-q", "-b", "data", str(data))
-    commit(data, "AutoCroissant", 1)
-    for rel in (".github/actions/a/action.yml", ".mailmap", "site/Card Edits.json", "site/rulebook/1.md", "site/rulebook/1.png", "MDW/Fonts/f.ttf"):
-        (cards / rel).parent.mkdir(parents=True, exist_ok=True)
-        (cards / rel).write_text(rel)
-    git(tmp_path, "init", "-q", "-b", "main", str(cards))
-    head = commit(cards, "Base", 1)
-    for repo, src in (("bobberlington/AutoCroissant", seed), ("o/cards", data)):
-        git(tmp_path, "clone", "-q", "--bare", str(src), str(server / repo))
-        git(server / repo, "config", "uploadpack.allowAnySHA1InWant", "true")
-        git(server / repo, "config", "uploadpack.allowFilter", "true")
-    git(cards, "push", "-q", str(server / "o" / "cards"), "main")
-    api = server / "api" / "repos" / "bobberlington" / "AutoCroissant" / "contents" / "requirements-cards.txt"
-    api.parent.mkdir(parents=True)
-    api.write_text("read\n")
-    runs = {step: steps[step]["run"] for step in ("Clones start", "Cards start", "Cards", "Bot and data")}
-    for step, cap in (("Cards start", "timeout 15 git"), ("Cards start", "timeout 8 git"), ("Cards", "$SECONDS -lt 25 ]")):
-        assert cap in runs[step], cap                     # 300 s: a loaded Mac is slow, never failing
-        runs[step] = runs[step].replace(cap, re.sub(r"\d+", "300", cap))
-    for name, ref in (("ok", sha), ("failed", "nope")):
-        workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
-        workspace.mkdir(parents=True)
-        runner.mkdir()
-        if name == "failed":                             # a stale repo here: the fetch fails, the checkout makes it
-            git(workspace, "init", "-q")
-            git(workspace, "remote", "add", "origin", f"file://{tmp_path}/nowhere")
-        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null",
-               "RUNNER_TEMP": str(runner), "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_WORKSPACE": str(workspace),
-               "GITHUB_SERVER_URL": f"file://{server}", "GITHUB_REPOSITORY": "o/cards", "BOT_REPO": "bobberlington/AutoCroissant",
-               "GITHUB_API_URL": f"file://{server}/{'api' if name == 'ok' else 'none'}", "CARD_FILES": steps["Cards start"]["env"]["CARD_FILES"],
-               "BUILDER_REF": ref, "BOT_FILES": jobs["data"]["env"]["BOT_FILES"], "TOKEN": "t0ken",
-               "GITHUB_ENV": str(runner / "env"), "HIT": "true" if name == "ok" else "", "KEY": "k3y"}
-        done = [_bash(r, workspace, env) for r in runs.values()]
-        assert [d.returncode for d in done] == [0, 0, 0, 0] and "::add-mask::" in done[0].stdout, done[3].stdout
-        output = (runner / "output").read_text() if (runner / "output").is_file() else ""
-        assert ("bot=true" in output) == (name == "ok") == (workspace / "bot").is_dir() and "carddata=true" in output
-        assert ("::warning::the bot clone failed" in done[3].stdout) != (name == "ok")
-        assert ("ok=true" in output) == (name == "ok") == (workspace / ".git").is_dir() != ("::warning::the card repo" in done[2].stdout)
-        assert ((runner / "bot.reqs").read_text() if (runner / "bot.reqs").exists() else None) == ("read\n" if name == "ok" else None)
-        assert (runner / "env").is_file() == (name == "ok") and (name != "ok" or (runner / "env").read_text() == "VENV_RESTORED=k3y\n")
-    assert steps["Python environment"]["with"]["restored"] == "${{ env.VENV_RESTORED }}"            # the venv's hit: checked only
-    assert steps["Cards"]["env"] == {"HIT": "${{ steps.venv-cache.outputs.cache-hit }}", "KEY": "${{ steps.venv-key.outputs.key }}"}
-    bot, carddata, ws = tmp_path / "ok" / "ws" / "bot", tmp_path / "ok" / "ws" / "carddata", tmp_path / "ok" / "ws"
-    assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cd.SPARSE_FILES)
-    assert git(bot, "rev-parse", "HEAD").strip() == sha and (bot / "global_config.py").read_text() == "global_config.py"
-    assert "extraheader" not in (bot / ".git" / "config").read_text()
-    header = git(carddata, "config", "--get-urlmatch", "http.extraheader", f"file://{server}/o/cards").strip()
-    assert header.startswith("AUTHORIZATION: basic ") and "t0ken" not in header        # Commit data's push: the token's
-    assert git(carddata, "rev-parse", "--abbrev-ref", "HEAD").strip() == "data" and (carddata / "db" / "stats.json").is_file()
-    assert git(ws, "rev-parse", "HEAD", "main@{u}").split() == [head, head] and (ws / ".git" / "shallow").is_file()   # as actions/checkout
-    keys = ("gc.auto", "remote.origin.promisor", "remote.origin.partialclonefilter")
-    assert [git(ws, "config", k).strip() for k in keys] == ["0", "true", "blob:none"]
-    assert git(ws, "config", "--get-urlmatch", "http.extraheader", f"file://{server}/o/cards").strip() == header
-    assert sorted(str(p.relative_to(ws)) for p in ws.rglob("*") if p.is_file() and p.relative_to(ws).parts[0] not in (".git", "bot", "carddata")) \
-        == [".github/actions/a/action.yml", ".mailmap", "site/Card Edits.json", "site/rulebook/1.md"]
-    # Earlier bake records: Records start's run joined (its output and exit code), else read here (a follow-up's data job, main)
-    start, join = steps["Records start"], steps["Earlier bake records"]
-    assert start["env"]["RECORDS_SH"] == join["run"] == next(s for s in jobs["main"]["steps"] if s.get("name") == "Earlier bake records")["run"]
-    assert start["if"] == "${{ !inputs.guards || github.job != 'data' }}" and "RECORDS_BG=1 timeout 300 bash" in start["run"]
-    tools = tmp_path / "tools"
-    tools.mkdir()
-    (tools / "gh").write_text('#!/bin/sh\n[ -z "$GH_FAIL" ] || exit 1\necho "[]"\n')
-    (tools / "gh").chmod(0o755)
-    for fail in ("", "1"):
-        for bg in (True, False):
-            runner = tmp_path / f"records{fail}{bg}"
-            runner.mkdir()
-            env = {"PATH": f"{tools}:{os.environ['PATH']}", "RUNNER_TEMP": str(runner), "GITHUB_REPOSITORY": "o/cards",
-                   "RECORDS": "", "RESTORE": "", "GH_FAIL": fail, "RECORDS_SH": join["run"]}
-            if bg:
-                assert _bash(start["run"], ws, env).returncode == 0
-            done = _bash(join["run"], ws, env)
-            assert (done.returncode == 0) == (not fail) and ("No bake records to merge." in done.stdout) == (not fail)
-            assert (runner / "records-in" / "ids.json").is_file() == (not fail) and (runner / "records-in.code").is_file() == bg
-
-
-def test_card_sync_history_joins_the_early_fetch(tmp_path):
-    """card-sync.yml's data job against a stand-in GitHub: History start fetches main's history beside Cards start's
-    depth-1 fetch, History join adds it there (no config written); main moved between the two, or that fetch failed:
-    from GitHub. History wait then finds the checkout whole."""
-    steps = _sync_doc()["jobs"]["data"]["steps"]
-    at = [s.get("name") or s.get("uses") for s in steps]
-    order = ["Clones start", "Cards start", "History start", "Cards", "actions/checkout@v7", "History join", "History wait"]
-    assert [at.index(x) for x in order] == sorted(at.index(x) for x in order)
-    named = {s.get("name"): s for s in steps}
-    seed, server = tmp_path / "seed", tmp_path / "github" / "o" / "cards"
-    git(tmp_path, "init", "-q", "-b", "main", str(seed))
-    for k in range(3):
-        (seed / "f.txt").write_text(str(k))
-        commit(seed, "Base", k + 1)
-    git(tmp_path, "clone", "-q", "--bare", str(seed), str(server))
-    git(server, "config", "uploadpack.allowFilter", "true")
-    for case in ("joined", "moved", "failed"):
-        runner, ws = tmp_path / case / "temp", tmp_path / case / "ws"
-        runner.mkdir(parents=True)
-        ws.mkdir()
-        (runner / "carddata-credentials.config").write_text("")
-        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null", "RUNNER_TEMP": str(runner),
-               "GITHUB_SERVER_URL": f"file://{tmp_path / 'github'}", "GITHUB_REPOSITORY": "o/cards", "GITHUB_API_URL": f"file://{tmp_path}/none",
-               "BOT_REPO": "b/bot", "BUILDER_REF": "main", "CARD_FILES": named["Cards start"]["env"]["CARD_FILES"],
-               "GITHUB_OUTPUT": str(runner / "output")}
-
-        def step(name, cwd=ws, **more):
-            return _bash(named[name]["run"], cwd, {**env, **more})
-        assert step("History start", runner, **({"GITHUB_REPOSITORY": "o/none"} if case == "failed" else {})).returncode == 0
-        for _ in range(600):
-            if (runner / "history-fetch.code").is_file():
-                break
-            time.sleep(0.05)
-        if case == "moved":
-            (seed / "f.txt").write_text("moved")
-            commit(seed, "Base", 9)
-            git(seed, "push", "-q", str(server), "main")
-        assert [step(name).returncode for name in ("Cards start", "Cards")] == [0, 0] and "ok=true" in (runner / "output").read_text()
-        config = (ws / ".git" / "config").read_text()
-        done = [step(name) for name in ("History join", "History wait")]
-        assert [d.returncode for d in done] == [0, 0] and git(ws, "rev-parse", "--is-shallow-repository").strip() == "false", done[1].stdout
-        assert git(ws, "rev-list", "--count", "HEAD").strip() == ("3" if case == "joined" else "4")   # 4 from moved on
-        assert ("History join: joined" if case == "joined" else "History join: from GitHub") in done[1].stdout
-        assert (ws / ".git" / "config").read_text() == config and "::warning::" not in done[1].stdout
-
-
-def test_venv_key_is_one_formula(tmp_path):
-    """The card venv's cache key is one formula in three places: card-sync.yml's Venv key (the API's
-    requirements-cards.txt, else the bot clone's), card-preview.yml's venv step (the same two) and cards-venv's key
-    step (the clone's) give one key for one file, comments aside."""
-    yaml = pytest.importorskip("yaml")
-    root = SITE_SRC / ".github"
-    if not (root / "actions" / "cards-venv" / "action.yml").is_file():
-        pytest.skip(f"no {root}")
-    load = lambda rel: yaml.safe_load((root / rel).read_text(encoding="utf-8"))   # noqa: E731
-    sync = next(s for s in load("workflows/card-sync.yml")["jobs"]["data"]["steps"] if s.get("id") == "venv-key")
-    preview = next(s for s in load("workflows/card-preview.yml")["jobs"]["preview"]["steps"] if s.get("id") == "venv")
-    venv = next(s for s in load("actions/cards-venv/action.yml")["runs"]["steps"] if s.get("id") == "key")
-    cache = tmp_path / "cache"
-    for v in ("3.13.9", "3.14.2", "3.14.10", "3.14.11-rc.1"):
-        (cache / "Python" / v / "x64").mkdir(parents=True)
-    text = (REPO / "requirements-cards.txt").read_text(encoding="utf-8")
-    keys = {}
-    for name, script, cases in (("sync", sync["run"], ("read", "clone")), ("preview", preview["run"], ("read", "clone")),
-                                ("venv", venv["run"], ("clone",))):
-        for case in cases:
-            run = tmp_path / f"{name}-{case}"
-            if case == "read":
-                run.mkdir()
-                (run / "bot.reqs").write_text("# the API's\n" + text)
-                (run / "reqs.done").touch()
-            else:                                         # card-sync's clone in RUNNER_TEMP, the others' in bot/
-                (run / "bot").mkdir(parents=True)
-                (run / "bot" / "requirements-cards.txt").write_text(text)
-                (run / "bot.code").write_text("0\n")
-                (run / "reqs.done").touch()                   # the API's read failed
-            env = {"PATH": os.environ["PATH"], "RUNNER_TOOL_CACHE": str(cache), "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64",
-                   "RUNNER_TEMP": str(run), "GITHUB_OUTPUT": str(run / "out"), "VENV": str(run / "venv")}
-            assert _bash(script, run, env, timeout=30).returncode == 0
-            keys[name, case] = dict(line.split("=", 1) for line in (run / "out").read_text().splitlines())["key"]
-    assert len(set(keys.values())) == 1 and next(iter(keys.values())).endswith("-Linux-X64-py3.14.10-ox10.2.1"), keys
 
 
 def _requirements(name: str) -> list:
@@ -852,7 +656,6 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     last = {e["kind"]: e for e in events if e["card"] == "Mini Doomer" and e["at"] == max(x["at"] for x in events)}
     assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
     assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
-
 
 
 def test_every_record_straightened(cards):

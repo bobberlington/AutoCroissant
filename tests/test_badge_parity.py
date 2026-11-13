@@ -2,7 +2,7 @@
 Token variants (2026-10-23): the variants the stoogedings font draws ([fire:glow], [fire:darkglow]...) are the parser's
 ICON_VARIANTS, and the parser reads all but :no as the plain icon; every name and alias with the longest variant is one
 token to the parser, the bake, the emojis and the site. Reads the clone's fonts and the site from $AC_SITE_SRC or the
-clone; skips without them.
+clone.
 """
 import json
 import re
@@ -16,8 +16,6 @@ from conftest import CLONE, SITE_SRC
 BUILD = CLONE / "MDW" / "Fonts" / "stoogedings-src" / "build_stoogedings.py"
 FONT = CLONE / "MDW" / "Fonts" / "stoogedings.ttf"
 TEXT_JS = SITE_SRC / "site" / "assets" / "text.js"
-
-pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), reason=f"no {BUILD} or {TEXT_JS}")
 
 
 def shaper(order: list):
@@ -78,8 +76,6 @@ def test_token_limit_fits_every_icon():
     from commands.psd_edit import TOKEN
     from commands.psd_parser import ICON_SCAN_PATTERN, ICON_VARIANTS
     from commands.type_emojis import TOKEN_PATTERN
-    if not MANIFEST.is_file():
-        pytest.skip(f"no manifest in {CLONE}")
     icons = json.loads(MANIFEST.read_text())["icons"]
     longest = max((n for key, icon in icons.items() for n in [key] + icon.get("aliases", [])), key=len)
     token = f"[{longest}:{max(ICON_VARIANTS, key=len)}]"
