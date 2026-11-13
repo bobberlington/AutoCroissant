@@ -5086,7 +5086,7 @@ def hold_lines(layer, fonts) -> int:
     if not past or not all(line.drawn for line in lines):
         return 0
     bottom = past[-1].y + BOX_DESCENT * max(run.style.size for run in model.runs if run.end > run.start)
-    set_text_box(layer, (tx, ty, tx + xx * box[2], ty + yy * bottom), pixels=False)
+    set_text_box(layer, (tx, ty, tx + xx * box[2], ty + yy * bottom))     # at its origin: nothing moves
     return max(1, round(yy * (bottom - box[3])))
 
 
