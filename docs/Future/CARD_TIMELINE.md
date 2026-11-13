@@ -1,6 +1,7 @@
 # Card timelines from Discord
 
-**Status:** planned with the owner, 2026-11-08; not started. Mining waits until the task starts (owner).
+**Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post; reads, chains,
+review page and a local preview next. Nothing published (preview first, owner 11-13).
 
 ## Goal
 
@@ -26,8 +27,8 @@ the card's Image versions on the website before the git versions. Cards that nev
 
 ## Pipeline
 
-1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads beside the
-   production bot on the same token, resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
+1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads with Waxwell
+   (the Mac's bot token, not production; owner 11-13), resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:
    check free disk first.
 2. **Match** (`commands/discord_match.py`, restored 2026-11-13): each picture to a card by perceptual hashes of the card and

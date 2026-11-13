@@ -182,6 +182,12 @@ def nearest(looks: list, table: dict, limit: int = 4) -> list:
     return best[:limit]
 
 
+def picture_id(prefix: str, versions: list) -> str:
+    """A stable id from the oldest picture's blob (a PNG, else any): prefix-<10 hex>."""
+    pictures = [v for v in versions if v.get("ext") == "png"] or versions
+    return f"{prefix}-{pictures[0]['blob'][:10]}" if pictures else f"{prefix}-none"
+
+
 def to_target(looks: list, refs: list) -> dict:
     w = a = 99.0
     for lw, la in looks:
@@ -488,13 +494,14 @@ def map_main():
     for oid, c in sorted(cards.items(), key=lambda kv: kv[1]["first"]["date"]):
         if c["status"] != "lost":
             continue
-        lost.append({"old_id": oid, "paths": c["paths"], "first": c["first"], "last": c["last"],
-                     "deleted": c.get("deleted"), "at_end": c["at_end"], "authors": c["authors"],
+        mine = sorted(by_old[oid], key=lambda v: position[v["commit"]])
+        lost.append({"id": picture_id("OL", mine), "old_id": oid, "paths": c["paths"], "first": c["first"],
+                     "last": c["last"], "deleted": c.get("deleted"), "at_end": c["at_end"], "authors": c["authors"],
                      "versions": c["versions"], "read": c.get("read"), "thumb": c["thumb"], "note": c.get("note"),
                      "nearest": (c["evidence"].get("picture") or {}).get("nearest", [])[:3]})
     write_json(join(OUT, "lost.json"), {
         "about": "Old cards with no counterpart among today's, archived or Morgue cards: Morgue candidates "
-                 "(owner 11-13). "
+                 "(owner 11-13). id: stable, from the oldest picture's blob (OL-<10 hex>). "
                  "nearest: the closest pictures, for the owner's check.", "cards": lost})
     log(f"map: {json.dumps(summary)}")
     return cards
