@@ -58,7 +58,9 @@ NMS_STAR, NMS_TYPE = 0.45, 0.6                   # peaks nearer than this share 
 INLINE_FLOOR = 0.6                               # an icon inside the ability's lines
 CLASS_Y = 0.96                                   # a creature's class line sits under this (share of height)
 NAME_MIN = 0.6                                   # a title this like a name takes the name
-BAR_TARGET = 0.98                                # "sure": this share right on the era's truth
+BAR_TARGET = 0.985                               # bars are picked at this share right ("sure" >= 98%, with margin)
+EYE_POOL = 50                                    # eye-truth eras with fewer reads also meet the pooled eye bar
+UNSORTED = ("other", "bars-other")                # pictures no era fits (not all cards): no borrowed bars
 MIN_N = 8                                        # an era with less truth borrows its group's bar
 FIELDS = ("title", "ability", "stars", "types")
 TOKEN = re.compile(r"\[([^\]:]+)(?::[^\]]*)?\]")
@@ -1376,6 +1378,7 @@ def calibrate():
         by_era[(rd["era"], rd["src"])].append(rd)
     cal = {"made": time.strftime("%Y-%m-%d %H:%M"), "target": BAR_TARGET, "eras": {}}
     choices = {}
+    eye_rows = defaultdict(list)
     for (era, src), rds in sorted(by_era.items()):
         key = f"{era}/{src}"
         cal["eras"][key] = {"population": len(rds)}
@@ -1428,6 +1431,35 @@ def calibrate():
                 "share_above_all": round(above_all / len(rds), 4) if rds else None,
                 "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None, "cv": cv}
             choices[(era, src, field)] = (how, bar)
+            eye_rows[field] += [(r[0], r[1], key) for r in res] if src == "discord" else []
+    # small eye samples: a bar under the pooled eye bar (every eye era's reads, each under its era's choice) is
+    # raised to it (stars excepted: each era counts by its own method)
+    for field in ("title", "ability", "types"):
+        pbar, pk, pok = pick_bar([(c, r) for c, r, k in eye_rows[field]])
+        cal["eye_pooled_" + field] = {"n": len(eye_rows[field]), "bar": pbar, "above": pk, "right_above": pok}
+        for (era, src, f), (how, bar) in list(choices.items()):
+            entry = cal["eras"][f"{era}/{src}"][f]
+            if f == field and src == "discord" and 0 < entry["n"] < EYE_POOL and bar is not None and pbar is not None \
+                    and pbar > bar:
+                rds = by_era[(era, src)]
+                entry.update(bar=pbar, raised_from=bar, share_above_all=round(sum(
+                    1 for rd in rds if field_read(rd, f, how)[2] >= pbar) / len(rds), 4))
+                choices[(era, src, f)] = (how, pbar)
+    # pooled bars (every era's truth): a title's name likeness and an ability read equal to a known text mean
+    # the same in every era; eras with no truth of their own take these
+    pooled = {}
+    for field, how in (("title", {}), ("ability", {"variant": "fix"})):
+        rows = []
+        for rd in raw.values():
+            for t in truth.get(rd["id"], []):
+                v = usable_truth(field, t)
+                if v is not None and not t["how"].startswith("eye:val_"):
+                    val, method, conf = field_read(rd, field, how, t.get("own") or [])
+                    rows.append((conf, is_right(field, val, v, rd.get("kind") == "card")))
+                    break
+        bar, k, ok = pick_bar(rows)
+        pooled[field] = (how, bar, "pooled")
+        cal["pooled_" + field] = {"n": len(rows), "bar": bar, "above": k, "right_above": ok}
     # eras with too little truth borrow: Discord template eras take the old repo's bar for the same era
     for (era, src, field), (how, bar) in list(choices.items()):
         n = cal["eras"][f"{era}/{src}"][field]["n"]
@@ -1435,7 +1467,7 @@ def calibrate():
             continue
         donor = next((choices[(era, s, field)] + (f"{era}/{s}",) for s in ("old", "discord", "today")
                       if s != src and (era, s, field) in choices and cal["eras"][f"{era}/{s}"][field]["n"] >= MIN_N),
-                     None)
+                     None) or (pooled.get(field) if era not in UNSORTED else None)
         entry = cal["eras"][f"{era}/{src}"][field]
         if donor:
             entry.update(borrowed=donor[2], how=donor[0], bar=donor[1])
