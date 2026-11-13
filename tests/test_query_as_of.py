@@ -155,6 +155,19 @@ def test_a_duplicate_shows_its_originals_history(db):
     assert "ability: Second text." in text
 
 
+def test_a_variant_picture_goes_back_through_its_picture_1(db):
+    """Picture 2 of Bethany's PSD with no history of its own: older dates answer from picture 1's (owner 10-25)."""
+    current = cm.stats_db.stats["Tainted Bethany"]
+    cm.stats_db.stats["Bethany Two"] = _card("Bethany Two", BETHANY, current.timestamp, "Current text.", blob="d" * 40,
+                                             variant=2, variant_of="Tainted Bethany", duplicate_of="Tainted Bethany")
+    qc.card_repo.git_files["bethany_two.png"] = "Creatures/Isaac/4 Stars/Bethany_Two.png"
+    text = _texts("Bethany Two", "2026-02-10")[0]
+    assert text.startswith(f"**Bethany Two** (same card as Tainted Bethany) as of 2026-02-10 {HEAD}version 2 of 5, ")
+    assert "ability: Second text." in text
+    assert _texts("Bethany Two", "2026-10-21")[0].startswith(
+        f"**Bethany Two** as of 2026-10-21 {HEAD}the current card (version 5 of 5)")
+
+
 def test_no_as_of_is_the_plain_query(db):
     assert _texts("Tainted Bethany", None) == ["https://img/tainted_bethany.png"]
     assert _texts("Tainted Bethany", "  ") == ["https://img/tainted_bethany.png"]

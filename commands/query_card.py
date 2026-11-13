@@ -1117,7 +1117,8 @@ def _history_lookup(query: str) -> Optional[tuple]:
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     """
     /query as_of: the card at the end of that day in TIMEZONE. Its versions are old_stats (oldest first) then the
-    current card; each runs from its start (_since) to the next one's, the last of an archived card to its archive.
+    current card (a variant picture's after its picture 1's from before them); each runs from its start (_since) to
+    the next one's, the last of an archived card to its archive.
 
     Args:
         interaction: Discord interaction
@@ -1140,7 +1141,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         print(f"Search guess: /query {query!r} as_of -> {name}")
     current = stats_db.stats.get(name)
     if current is not None and picture_only(current):
-        # a copy: its original's history (a variant picture, a marked PSD have their own)
+        # a copy: its original's history (a variant picture: its own, below; a marked PSD: its own)
         label = f"**{name}** (same card as {current.duplicate_of})"
         name = current.duplicate_of
         current = stats_db.stats.get(name)
@@ -1151,9 +1152,15 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     if not versions:
         queue_message(interaction, f"{label} has no stored card data.")
         return
-
-    head = f"{label} as of {day.isoformat()} (end of day, {TIMEZONE.key}): "
+    picture1, theirs = getattr(current, "variant_of", None), []
+    starts = [t for t in map(_since, versions) if t]
+    if picture1 and starts:          # a variant picture: before its own, its picture 1's (the same card then, owner 10-25)
+        theirs = [v for v in stats_db.old_stats.get(picture1) or [] if 0 < _since(v) < min(starts)]
+        versions = theirs + versions
     index = version_at(versions, end)
+    if index is not None and index < len(theirs):
+        label = f"{label} (same card as {picture1})"
+    head = f"{label} as of {day.isoformat()} (end of day, {TIMEZONE.key}): "
     if index is None:
         first = versions[0]
         queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(_since(first))}"

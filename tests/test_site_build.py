@@ -70,7 +70,7 @@ def repo(tmp_path):
     """A card repo of three commits and the bot's data for it:
     - Alpha: "Old text." (c1), "New text." (c2), the same data re-saved with new art (c3): the bot's card is dated c3,
       its start carried to c2 (version.from, no from_commit);
-    - Watermelon with its duplicate Watermelon2 (its own PNG), one earlier text;
+    - Watermelon with its picture 2 Watermelon2 (its own PNG, no history of its own), one earlier text;
     - White Palace, archived: its PSD moved into MDW/The Morgue in c3."""
     root = tmp_path / "repo"
     root.mkdir()
@@ -97,9 +97,9 @@ def repo(tmp_path):
     c3, t3 = _commit(root, "Standardize", start + 2 * DAY)
 
     stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),
-             "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item"),
+             "Watermelon": _card("Watermelon", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item", variant=1),
              "Watermelon2": _card("Watermelon2", f"{MELON}.psd", "Heal 2.", t2, blob_sha="m2", card_type="item",
-                                  duplicate_of="Watermelon")}
+                                  duplicate_of="Watermelon", variant=2, variant_of="Watermelon")}
     stats["Alpha"].version = {"from": float(t2), "to": None, "cause": "psd"}     # a carried start (no from_commit)
     palace = _card("White Palace", PALACE, "Field.", t1, card_type="field", series="kirby")     # an old spelling
     palace.archived = {"at": float(t3), "path": PALACE, "commit": c3, "moved_to": "MDW/The Morgue/White_Palace.psd"}
@@ -144,13 +144,16 @@ def _by_name(cards: list) -> dict:
 
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
     """Alpha's text started at c2 (the bot's carried start), though its PSD was last committed at c3: cards.json keeps
-    ts (the last commit, "updated") and adds since; history.json holds the older text at c1."""
+    ts (the last commit, "updated") and adds since; history.json holds the older text at c1. A variant picture's goes
+    back through its picture 1's."""
     t1, t2, t3 = repo["t"]
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
     assert (alpha["ts"], alpha["since"]) == (t3, t2)
     assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "Old text."}]
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
+    melon2 = _by_name(out["cards.json"]["cards"])["Watermelon2"]
+    assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
 
 
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
