@@ -173,7 +173,9 @@ def test_a_comp_bar_at_zero_is_pictured(monkeypatch):
 
 
 def test_bar_changes_read_caps_once(clone, monkeypatch):
-    """bar_changes reads stat_caps once for all its values; a value's picture is bar_value's own (classify reading them)."""
+    """bar_changes reads stat_caps once for all its values; a value's picture is bar_value's own (classify reading them).
+    Its frozen card and gate_dirty's are only read (rcache re-keys them at exit)."""
+    monkeypatch.setenv("PSD_RCACHE_VERIFY", "1")
     raw = (clone / PUZZLED).read_bytes()
     psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / PUZZLED.replace(".psd", ".png"))
     png.load()
