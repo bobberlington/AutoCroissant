@@ -20,9 +20,11 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
         A title snapped to an old PSD layer's casing takes today's name when the picture's own OCR spells it so
         (printed_name). Stop at git: a card's entries end at its first record in the card repo (--cards-repo, read
         only: its PNG's moves followed as the website follows them, lineage); its git_first is dated when its card-data
-        version was committed, approx when the card had versions before it. A confirmed changelog fact names the version
-        that confirms it (confirmed_by). Old-repo versions come from the old .git (read only, cat-file). Webps already
-        there are kept (--force: made again); webps and timelines no entry names any more are deleted.
+        version was committed, approx when the card had versions before it; an MDW Morgue card's Discord pictures end
+        at its first record in the old repo (oldgit map.json) or the card repo (mdw_firsts). A confirmed changelog fact
+        names the version that confirms it (confirmed_by). Old-repo versions come from the old .git (read only,
+        cat-file). Webps already there are kept (--force: made again); webps and timelines no entry names any more are
+        deleted.
 check   Every published version's fields read again from its webp (title OCR and its nearest name, the stars, the
         bars, the ability's words, the types' icons) against its timeline.json -> derived/preview/check.jsonl and
         check.txt. A field the readers can't read again is counted apart from a disagreement.
@@ -57,6 +59,8 @@ EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop":
 #                                             "covered": {"<card>|<entry id>": why}: a photo whose card lies under another}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
+OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> today's (an MDW card's first old record)
+MDW_FOLDER = "MDW/The Morgue/"
 BEFORE_GIT = ("discord", "text", "first repo")               # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
 PICTURE_KINDS = ("discord", "old repo", "paper")
@@ -361,6 +365,35 @@ def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict]) -> Option
     return out
 
 
+def mdw_firsts(root: str, cards_repo: Optional[str], commits: list) -> dict:
+    """{MDW card (alnum): epoch of its first git record}: the earlier of the old repo's first commit of the old cards
+    mapped to it (oldgit map.json, archived or Morgue) and its PNG's first record in the card repo (moves followed)."""
+    out = {}
+    for c in ((dm.read_json(join(root, *OLD_MAP), {}) or {}).get("cards") or {}).values():
+        when = dm.epoch((c.get("first") or {}).get("date"))
+        if c.get("status") in ("archived", "morgue") and when:
+            key = dm.alnum(c.get("key"))
+            out[key] = min(when, out.get(key, when))
+    git_dir = dm.git_dir_of(cards_repo) if cards_repo and commits else None
+    listed = dm.git_out(git_dir, "ls-tree", "--name-only", "-z", f"origin/{CARD_BRANCH}", MDW_FOLDER) \
+        if git_dir else None
+    pngs = [p for p in (listed or b"").decode("utf-8", "replace").split("\0") if p.lower().endswith(".png")]
+    for key, rows in lineage(commits, {dm.alnum(splitext(basename(p))[0]): p for p in pngs}).items():
+        out[key] = min(rows[-1][0], out.get(key, rows[-1][0]))
+    return out
+
+
+def mdw_cut(entry: dict, first: Optional[float]) -> list:
+    """Stop at git for an MDW Morgue card: its Discord pictures posted at or after its first git record (first) are left
+    out; returns their ids."""
+    if first is None:
+        return []
+    gone = [p["id"] for p in entry.get("pictures") or () if p.get("source") == "discord" and p.get("date")
+            and (dm.epoch(p["date"]) or 0) >= first]
+    entry["pictures"] = [p for p in entry.get("pictures") or () if p["id"] not in gone]
+    return gone
+
+
 # ========================
 # Pictures
 # ========================
@@ -506,7 +539,12 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         files[r["id"]] = (join(root, r["file"]), tuple(r["box"]) if r.get("box") else None)
     entries = [(e, "candidate") for e in morgue.get("candidates") or ()]
     entries += [(e, "mdw") for e in morgue.get("not_candidates") or () if e.get("status") == "morgue"]
+    firsts, mdw_gone = mdw_firsts(root, expanduser(cards_repo) if cards_repo else None, commits), {}
     for entry, kind in entries:
+        if kind == "mdw":
+            gone = mdw_cut(entry, firsts.get(dm.alnum(entry.get("card") or entry["name"])))
+            if gone:
+                mdw_gone[entry.get("card") or entry["name"]] = len(gone)
         out, pics = morgue_out(entry, files, kind)
         if not out["entries"]:
             continue
@@ -574,6 +612,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); {total / 1e6:.1f} MB")
     for path, err in failed[:20]:
         log(f"build: failed {path[len(out_dir) + 1:]}: {err}")
+    log(f"build: MDW Morgue cards, stop at git: {sum(mdw_gone.values())} Discord pictures at or after the card's first "
+        f"git record left out ({', '.join(f'{k} {n}' for k, n in sorted(mdw_gone.items())) or 'none'})")
     if commits:
         moved = [(c, m) for c, m in cut if m.get("stop")]
         left = ", ".join(f"{c} {len(m['dropped'])}" for c, m in moved if m["dropped"]) or "none"

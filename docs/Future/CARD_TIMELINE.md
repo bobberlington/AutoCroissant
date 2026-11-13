@@ -76,7 +76,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
    eye truth, then their sure reads), the rest name a review item (types with nothing read: unread). Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
-   40 not judged; formatting-only text is no change); a fact a later picture contradicts goes to review. **Created:**
+   40 not judged; formatting-only text is no change); a fact a later picture contradicts goes to review (a stated step,
+   'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact
+   that bounded its window goes), and a fact whose move the pictures around it show (the last sure value before, the
+   next after, no other fact on that field between) is confirmed by that picture (counted once). **Created:**
    the earliest confident appearance (a named paper photo: "Before 2020", source paper card, sorting before every day;
    else a card-sure picture, the old repo, the card repo) against `site/Card Creation Dates.json`: same, earlier
    (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and
@@ -106,7 +109,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
-   committed, approximate when the card had versions before that one. A confirmed changelog fact names its version
+   committed, approximate when the card had versions before that one; an MDW Morgue card's Discord pictures end at its
+   first record in the old repo (oldgit `map.json`) or the card repo. A confirmed changelog fact names its version
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
    so. The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
@@ -116,7 +120,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    version there; their changes and the changelog facts (data only, owner Q4; a fact its confirming version also
    records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
    joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
-   first posts as Pacific days); the proposed Created dates apply (never later, never over hand; "Before 2020" counts in
+   first posts as Pacific days), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
+   one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020" counts in
    a "Before 2020" year of its own).
 
 ## Verification
@@ -124,7 +129,9 @@ the card's Image versions on the website before the git versions. Cards that nev
 - `discord_match selftest` (degraded copies of every PNG and version) before trusting a new era reader; a reader's accuracy on
   that era's git versions reported per field.
 - Every published version's fields re-read from its webp agree with timeline.json (`discord_preview check`: the
-  timelines' own readers on the webp; what they can't read again is counted apart, a disagreement goes to the eye).
+  timelines' own readers on the webp; what they can't read again is counted apart, a disagreement goes to the eye, and
+  so does every version published with no types: an absent icon can't be read again, a recoloured one matching no
+  `Types/` picture).
 - The website build and its checks pass with and without the `history` branch.
 
 ## Open questions (for the start of the task)

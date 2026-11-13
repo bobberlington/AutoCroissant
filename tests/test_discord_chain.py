@@ -372,3 +372,27 @@ def test_the_owner_s_answers():
         else:
             assert not moved.used and done["owner: a git look told, its version gone (not applied)"] == 1 and \
                 [i["picture"] for i in chain.review.values() if i["kind"] == "look not told"] == ["P-000000000002"]
+
+
+def test_facts_by_a_step_and_by_the_pictures_around_them():
+    chain = dc.Chain(inputs([]))
+    at = lambda days: iso(T + days * DAY)
+    pic = lambda n, days, stats=None, stars=None: {"id": f"D-{n}", "kind": "discord", "date": at(days), "fields": {
+        **({"stats": dc.sure(stats, "picture")} if stats else {}),
+        **({"stars": dc.sure(stars, "psd")} if stars else {})}}
+    fact = lambda n, days, **change: {"id": f"F-f{n}", "kind": "text", "date": at(days), "change": change}
+    entries = [pic(1, 0, {"hp": 8, "def": 5, "atk": 6, "spd": 3}, 2), fact("a", 1, field="atk", by=1),
+               fact("d", 2, field="def", by=-1), fact("e", 2, field="hp", to=9, **{"from": 8}),
+               fact("f", 2, field="stars", to=1, **{"from": 2}), pic(2, 3, {"atk": 7}), fact("b", 4, field="spd", by=2),
+               fact("c", 5, field="spd", by=-2), pic(3, 6, {"spd": 5}), pic(4, 300, stars=2),
+               pic(5, 400, {"hp": 9, "def": 4}, 1)]
+    kept = {e["id"]: e for e in chain.check_facts("bolt", entries)}
+    assert kept["F-fa"]["confirmed_by"] == "D-2"                   # 6 + 1, read 3 days on
+    assert "F-fc" not in kept and kept["F-fb"]["confirmed_by"] == "D-3"    # 3 + 2 - 2 read 5: the -2 to review
+    item = next(i for i in chain.review.values() if i["kind"] == "fact vs picture")
+    assert (item["fact"], item["fact_to"], item["fact_by"], item["picture_reads"]) == ("fc", 3, -2, 5)
+    assert kept["F-fd"]["confirmed_by"] == kept["F-fe"]["confirmed_by"] == "D-5"   # far, the move the pictures show
+    assert "confirmed_by" not in kept["F-ff"]                       # a picture between still reads 2 stars
+    widened = [pic(6, 0, {"hp": 4}), fact("g", 10, field="hp", to=5), fact("h", 11, field="hp", to=7),
+               pic(7, 12, {"hp": 9})]
+    assert [e["id"] for e in chain.check_facts("bolt", widened)] == ["D-6", "D-7"]    # h gone, g's window reaches D-7

@@ -9,6 +9,8 @@ the era's readers). Per field:
             types: every published type's icon at least TYPE_ON)
   near      ability words between ABILITY_NEAR and ABILITY_RECALL
   unread    the reader read nothing there (a field the readers can't see on this picture)
+  eye       types published as none: an absent icon can't be read again (a recoloured one, Nailsage Sly's wind, matches
+            no Types/ picture, while some picture scores TYPE_ON on every card's band): each listed for the eye
   differs   anything else: listed for the eye (check.txt names each)
 -> derived/preview/check.jsonl (one row per version: its fields' results and reads) and check.txt (counts, the
 differing ones). Nothing is changed: a field the eye rules wrong is fixed upstream (the chain) and the preview rebuilt.
@@ -32,6 +34,7 @@ TEXT = join(dirname(dirname(__file__)), "scripts", "timeline_text.py")
 NAME_RATIO = 0.8
 ABILITY_RECALL, ABILITY_NEAR = 0.75, 0.5
 TYPE_ON = 0.6
+READ_KINDS = {"name": str, "ability": str, "stars": int, "stats": dict, "types": list}   # fields check_one reads
 DEFAULT_STAR_RULE = {"ncc": 0.7, "mad": 45}
 TOKEN = re.compile(r"\[[^\]]*\]|\([0-9X/G-]*(?:CD|U|PT|PGT|T|GT)\)")     # icon tokens and timing tags: not OCR words
 _TT = None
@@ -114,7 +117,9 @@ def check_one(job: dict) -> dict:
             seen = {k: v for k, v in read.items() if v is not None}
             diff = {k: [f["stats"][k], v] for k, v in seen.items() if v != f["stats"][k]}
             res["stats"] = {"r": result(not diff, seen), "read": read, **({"diff": diff} if diff else {})}
-        if isinstance(f.get("types"), list) and f["types"]:
+        if f.get("types") == []:                 # none published: for the eye (an absent icon can't be read again)
+            res["types"] = {"r": "eye"}
+        elif isinstance(f.get("types"), list):
             a = np.asarray(tt.load(item).convert("RGB"))
             H0, W0 = a.shape[:2]
             work = cv2.resize(a, (tt.WORK_W, max(2, round(tt.WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
@@ -159,8 +164,9 @@ def jobs_of(root: str) -> list:
 
 
 def check(root: str, workers: int = 3, redo: bool = False):
-    """redo: keep the last check's rows (a field no longer published left out), read again those with an error or an
-    ability that didn't read the same (the ability rule changed last)."""
+    """redo: keep the last check's rows (a field no longer published left out), read again those with an error, an
+    ability that didn't read the same (the ability rule changed last), or a field published since or read now that
+    has no result there (types none published: read since)."""
     root = dm.check_root(root)
     jobs = jobs_of(root)
     out = join(root, *OUT)
@@ -170,7 +176,9 @@ def check(root: str, workers: int = 3, redo: bool = False):
             if not r.get("error") and (r.get("fields", {}).get("ability") or {"r": "same"})["r"] == "same":
                 last[(r["card"], r["id"], r["image"])] = r
     key = lambda j: (j["card"], j["id"], j["image"])
-    kept = {i: last[key(j)] for i, j in enumerate(jobs) if key(j) in last}
+    fresh = lambda r, j: all(k in r.get("fields", {}) and r["published"].get(k) == v
+                             for k, v in j["fields"].items() if isinstance(v, READ_KINDS.get(k, ())))
+    kept = {i: last[key(j)] for i, j in enumerate(jobs) if key(j) in last and fresh(last[key(j)], j)}
     todo = [j for i, j in enumerate(jobs) if i not in kept]
     print(f"check: {len(jobs)} versions with sure fields, {len(todo)} to read", flush=True)
     done = {}
@@ -193,7 +201,7 @@ def check(root: str, workers: int = 3, redo: bool = False):
              f"errors: {sum(1 for r in rows if r.get('error'))}"]
     for f in fields:
         n = sum(v for (g, _), v in tally.items() if g == f)
-        got = ", ".join(f"{k} {tally[(f, k)]}" for k in ("same", "near", "unread", "differs") if tally[(f, k)])
+        got = ", ".join(f"{k} {tally[(f, k)]}" for k in ("same", "near", "unread", "eye", "differs") if tally[(f, k)])
         lines.append(f"{f}: {n} published; {got}")
     lines.append("")
     lines.append("DIFFERS (each for the eye: card, version, field, published -> read)")
@@ -203,6 +211,8 @@ def check(root: str, workers: int = 3, redo: bool = False):
                 pub = json.dumps(r["published"].get(f), ensure_ascii=False)[:120]
                 lines.append(f"  {r['card']} {r['id']} {r['image']} {f}: {pub} -> "
                              f"{json.dumps({k: v[k] for k in v if k != 'r'}, ensure_ascii=False)[:160]}")
+    lines += ["", "EYE (types published as none: each for the eye; card, version, image)"]
+    lines += [f"  {r['card']} {r['id']} {r['image']}" for r in rows if (r.get("fields", {}).get("types") or {}).get("r") == "eye"]
     dm.write_text(join(out, "check.txt"), "\n".join(lines) + "\n")
     print("\n".join(lines[:2 + len(fields)]), flush=True)
     return rows

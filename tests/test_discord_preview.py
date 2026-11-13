@@ -108,7 +108,8 @@ def test_build(tmp_path):
 def test_stop_at_git(tmp_path):
     """A card moved and redrawn in one commit (4 Stars -> 3 Stars: the matcher's stop is that commit) starts at its first
     file, as the website follows it: the Discord post after that is left out, the stop moves back, and git_first is
-    diffed again, dated by its PSD's commit and approx (an older PSD version came first)."""
+    diffed again, dated by its PSD's commit and approx (an older PSD version came first). An MDW Morgue card's pictures
+    end at its first record: the old repo's (oldgit map.json), else its PNG's in the card repo."""
     repo = tmp_path / "cards"
     who = {"GIT_AUTHOR_NAME": "M", "GIT_AUTHOR_EMAIL": "m@x", "GIT_COMMITTER_NAME": "M", "GIT_COMMITTER_EMAIL": "m@x"}
     git = lambda *a, at=0: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True, env={
@@ -136,3 +137,19 @@ def test_stop_at_git(tmp_path):
     assert done == {"stop": "2021-01-07", "was": "2025-02-19", "dropped": ["D-2"], "approx": True}
     assert [e["id"] for e in t["entries"]] == ["D-1"] and t["stop"]["path"] == "Bolt/4 Stars/Bolt.png"
     assert t["git_first"]["date"] == dm.iso(1740000000) and t["git_first"]["changes"]["stats"][0]["atk"] == 5
+    (repo / "MDW" / "The Morgue").mkdir(parents=True)
+    (repo / "MDW" / "The Morgue" / "Ech.png").write_bytes(b"ech")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Ech", at=1750000000)
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    root = tmp_path / "archive"
+    (root / "derived" / "oldgit").mkdir(parents=True)
+    (root / "derived" / "oldgit" / "map.json").write_text(json.dumps({"cards": {
+        "White Palace": {"key": "White Palace", "status": "archived", "first": {"date": "2023-10-24T17:43:59-04:00"}},
+        "Bolt": {"key": "Bolt", "status": "live", "first": {"date": "2020-01-01T00:00:00+00:00"}}}}))
+    firsts = dp.mdw_firsts(str(root), str(repo), dp.repo_log(str(repo)))
+    assert firsts == {"whitepalace": dm.epoch("2023-10-24T21:43:59+00:00"), "ech": 1750000000}
+    entry = {"pictures": [{"id": "P-1", "source": "discord", "date": "2023-10-24T18:34:59+00:00"},
+                          {"id": "P-2", "source": "discord", "date": "2026-06-19T04:06:58+00:00"},
+                          {"id": "P-3", "source": "discord", "date": None, "printed": True}]}
+    assert dp.mdw_cut(entry, firsts["whitepalace"]) == ["P-2"] and [p["id"] for p in entry["pictures"]] == ["P-1", "P-3"]

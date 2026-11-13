@@ -473,7 +473,8 @@ def test_theme_colours_pass_the_contrast_test():
 def _timelines(root):
     """A HISTORY_DIR: Alpha's paper card (under another card), Discord look, first-repo notice, changelog facts (one its
     old-repo version confirms), old-repo version, git_first and a Discord post after its first version here; one Morgue
-    joke card; Alpha's Created proposed as a paper card's."""
+    joke card; White Palace's (MDW) Discord pictures, one after its PNG's first record; Alpha's Created proposed as a
+    paper card's."""
     from PIL import Image
 
     def pic(folder, name):
@@ -501,10 +502,14 @@ def _timelines(root):
             "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
-    for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke)):
+    palace = {"card": "white-palace", "key": "White Palace", "name": "White Palace", "morgue": "mdw", "entries": [
+        {"id": f"P-{n}", "kind": "discord", "date": when, "channel": "new-cards", "image": pic("_morgue/white-palace", f"P-{n}.webp"),
+         "w": 40, "h": 80, "fields": {}, "changes": {}} for n, when in ((7, "2026-01-01T00:00:00+00:00"), (8, "2027-06-01T00:00:00+00:00"))]}
+    for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke), ("_morgue/white-palace", palace)):
         (root / folder / "timeline.json").write_text(json.dumps(t), encoding="utf-8")
     index = {"version": 1, "cards": {"alpha": {"key": "Alpha", "dir": "alpha"}},
-             "morgue": [{"dir": "_morgue/joke-card", "name": "Joke Card"}], "mdw": [],
+             "morgue": [{"dir": "_morgue/joke-card", "name": "Joke Card"}],
+             "mdw": [{"dir": "_morgue/white-palace", "name": "White Palace", "card": "White Palace"}],
              "created": {"Alpha": {"date": "Before 2020", "source": "paper card"}}}
     (root / "index.json").write_text(json.dumps(index), encoding="utf-8")
     return root
@@ -513,11 +518,14 @@ def _timelines(root):
 def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     """The card timelines before the card repo (HISTORY_DIR, AutoCroissant discord_preview's layout): Image versions rows
     after the repo's (versions.json early) with their webps, none at or after the card's first version here, the Morgue's
-    entries from Discord (never cards[], never on a renamed card's old page), a paper card's Created ("Before 2020") and
-    their changes under Recorded changes, a confirmed fact once; without HISTORY_DIR, none of it."""
+    entries from Discord (never cards[], never on a renamed card's old page), an MDW Morgue card's pictures after its
+    PNG's current version (none after its first record here), a paper card's Created ("Before 2020") and their changes
+    under Recorded changes, a confirmed fact once; without HISTORY_DIR, none of it."""
     if not hasattr(bs, "HISTORY_DIR"):
         pytest.skip("a site before HISTORY_DIR")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
+    _png(repo["root"] / "MDW/The Morgue/White_Palace.png", 70)
+    palace_commit, _ = _commit(repo["root"], "Palace picture", 1_780_000_000 + 3 * DAY)
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
     rows = out["versions.json"]["early"][alpha["id"]]
@@ -538,6 +546,11 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
                               bs.slugify, {"joke-card"})[0]
     assert taken[0]["id"] == "joke-card-morgue"                                      # a renamed card's old page stays its
     assert "Joke Card" not in _by_name(out["cards.json"]["cards"]) and out["versions.json"]["early"][joke[0]["id"]]
+    # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
+    palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")
+    assert [out["versions.json"]["commits"][r[0]][0] for r in out["versions.json"]["cards"][palace["id"]]] == [palace_commit]
+    assert [r["img"] for r in out["versions.json"]["early"][palace["id"]]] == ["history/_morgue/white-palace/P-7.webp"]
+    assert (palace["iv"], palace["ive"]) == (1, 1)
     # Recorded changes: the old repo's nerf and the changelog's fact (data, never its text), each saying where from
     changes = out["analytics.json"]["cards"][alpha["id"]]["changes"]
     assert {"ts": 1682899200, "stats": [[3, 2, 5, 1], [3, 2, 4, 1]], "bal": "nerf", "early": "old repo"} in changes
@@ -548,4 +561,5 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")
     assert "early" not in plain["versions.json"] and "ive" not in _by_name(plain["cards.json"]["cards"])["Alpha"]
-    assert all(not c.get("lost") for c in plain["cards.json"]["morgue"])
+    assert all(not c.get("lost") and "iv" not in c for c in plain["cards.json"]["morgue"])
+    assert not set(plain["versions.json"]["cards"]) & {c["id"] for c in plain["cards.json"]["morgue"]}

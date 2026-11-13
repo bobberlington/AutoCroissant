@@ -343,8 +343,10 @@ def chain_items(inputs: Inputs) -> list:
             fact = inputs.facts.get(r.get("fact")) or {}
             it = item(kind, r["id"], "matches", "facts", head + f"{when(r.get('date'))} #{fact.get('channel')}",
                       card=cid, fact=r.get("fact"), entry=r.get("entry"), date=r.get("date"))
-            it["meta"] = [f"a changelog line: {r.get('field', '').upper()} -> {r.get('fact_to')}; the next picture "
-                          f"reads {r.get('picture_reads')}"]
+            to = f"{r['fact_by']:+d} (so {r.get('fact_to')})" if isinstance(r.get("fact_by"), int) else \
+                f"-> {r.get('fact_to')}"
+            it["meta"] = [f"a changelog line: {r.get('field', '').upper()} {to}; the next picture reads "
+                          f"{r.get('picture_reads')}"]
             it["link"] = jump(fact)
             it["pics"] = [entry_pic(inputs, cid, r.get("entry") or "", "the next picture")]
             it["choices"] = [choice("fact", "the changelog is right (keep the line)"),

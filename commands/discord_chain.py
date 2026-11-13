@@ -1126,45 +1126,94 @@ class Chain:
                 self.tally["discord: stars, an icon read change nothing backs (review)"] += 1
 
     def check_facts(self, cid: str, entries: list) -> list:
-        """A stat or stars fact whose next picture (within NEAR_DAYS, before the next fact on that field) reads
-        another value goes to review; one it agrees with is confirmed by it."""
-        kept = []
+        """A stat or stars fact against the pictures. Its new value (to; else by on the value before it: the last sure
+        picture's, moved by the kept facts since) read otherwise by the next picture (within NEAR_DAYS, before the next
+        kept fact on that field) goes to review, again until none is left; one the next picture agrees with is
+        confirmed by it. With no picture that near, one whose move the pictures around it show (the last sure value
+        before it and the next after it, at any distance, no other fact on that field between) is that change too:
+        confirmed by the later picture (counted once)."""
         versions = [e for e in entries if e["kind"] in ("discord", "old repo") and e.get("date")]
-        for e in entries:
-            if e["kind"] != "text" or e["change"].get("field") not in (*STATS, "stars") or "to" not in e["change"]:
-                kept.append(e)
-                continue
-            field, to, when = e["change"]["field"], e["change"]["to"], dm.epoch(e["date"])
-            later = [f for f in entries if f["kind"] == "text" and f["change"].get("field") == field
-                     and dm.epoch(f["date"]) > when]
-            until = min([dm.epoch(f["date"]) for f in later] + [when + NEAR_DAYS * 86400])
-            seen = None
-            for v in versions:
-                t = dm.epoch(v["date"])
-                if when <= t < until:
-                    got = v["fields"].get("stats" if field in STATS else "stars")
-                    if is_sure(got):
-                        seen = (v, got["value"].get(field) if field in STATS else got["value"])
-                        if seen[1] is not None:
-                            break
-            if seen and seen[1] is not None and seen[1] != to:
+        facts = [e for e in entries if e["kind"] == "text" and e["change"].get("field") in (*STATS, "stars")
+                 and ("to" in e["change"] or "by" in e["change"])]
+        gone, ruled = set(), set()
+        at = lambda e: dm.epoch(e["date"])
+
+        def read(v: dict, field: str):
+            got = v["fields"].get("stats" if field in STATS else "stars")
+            if not is_sure(got):
+                return None
+            return got["value"].get(field) if field in STATS else got["value"]
+
+        def kept_on(e: dict) -> list:
+            return [f for f in facts if f is not e and f["id"] not in gone
+                    and f["change"]["field"] == e["change"]["field"]]
+
+        def before(e: dict) -> tuple:
+            """(the value before e, the picture it was read on; None when a kept fact since moved it)."""
+            field = e["change"]["field"]
+            pic = next((v for v in reversed(versions) if at(v) < at(e) and read(v, field) is not None), None)
+            value, since = (read(pic, field) if pic else None), (at(pic) if pic else float("-inf"))
+            moved = False
+            for f in kept_on(e):
+                if since < at(f) and facts.index(f) < facts.index(e):
+                    value = f["change"]["to"] if "to" in f["change"] else value + f["change"]["by"] \
+                        if value is not None else None
+                    moved = True
+            return value, (None if moved else pic)
+
+        def wanted(e: dict):
+            ch = e["change"]
+            if "to" in ch:
+                return ch["to"]
+            value = before(e)[0]
+            return value + ch["by"] if value is not None else None
+
+        def next_read(e: dict, near: bool = True):
+            """(picture, value): the first sure read at or after e, before the next kept fact on its field."""
+            field, when = e["change"]["field"], at(e)
+            until = min([at(f) for f in kept_on(e) if at(f) > when] +
+                        [when + NEAR_DAYS * 86400 if near else float("inf")])
+            return next(((v, read(v, field)) for v in versions if when <= at(v) < until and read(v, field) is not None),
+                        None)
+
+        again = True
+        while again:                             # a fact gone widens the window of the one before it on that field
+            again = False
+            for e in facts:
+                if e["id"] in gone or e["id"] in ruled:
+                    continue
+                to, seen = wanted(e), next_read(e)
+                if to is None or not seen or seen[1] == to:
+                    continue
+                again, field = True, e["change"]["field"]
                 against = review_id("fact vs picture", e["id"])
                 choice = (self.rulings.get(against) or {}).get("choice")
                 if choice in ("fact", "picture"):
                     self.used.add(against)
                     self.tally[f"owner: fact vs picture, the {choice} kept"] += 1
-                    if choice == "fact":
-                        kept.append(e)
+                    (ruled if choice == "fact" else gone).add(e["id"])
                     continue
                 self.add_review("fact vs picture", e["id"], card=cid, fact=e["id"][2:], entry=seen[0]["id"],
-                                field=field, fact_to=to, picture_reads=seen[1], date=e["date"],
-                                why="the next picture reads another value")
+                                field=field, fact_to=to, fact_by=e["change"].get("by"), picture_reads=seen[1],
+                                date=e["date"], why="the next picture reads another value")
                 self.tally["facts: a picture reads another value (review)"] += 1
+                gone.add(e["id"])
+        for e in facts:
+            if e["id"] in gone or e["id"] in ruled:
                 continue
-            if seen and seen[1] == to:
-                e["confirmed_by"] = seen[0]["id"]
-            kept.append(e)
-        return kept
+            seen = next_read(e)
+            if seen:
+                if seen[1] == wanted(e):
+                    e["confirmed_by"] = seen[0]["id"]
+                continue
+            value, pic = before(e)
+            after = next_read(e, near=False)
+            ch = e["change"]
+            if pic and after and after[1] != value and ch.get("from", value) == value and \
+                    (ch["to"] if "to" in ch else value + ch["by"]) == after[1]:
+                e["confirmed_by"] = after[0]["id"]         # the pictures around it show that move
+                self.tally["facts: confirmed by the move the pictures around it show"] += 1
+        return [e for e in entries if e["id"] not in gone]
 
     def diff(self, entries: list) -> None:
         """Each version against the one before (text rows aside; a paper photo, its name only read, is no before);
