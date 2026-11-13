@@ -1,0 +1,89 @@
+"""discord_preview build on a made-up archive: only sure fields are published (value, method, confidence), no message,
+poster, note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read
+from its git dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new."""
+import json
+import subprocess
+
+from PIL import Image
+
+import commands.discord_preview as dp
+
+BAD_KEYS = {"message", "jump_url", "poster", "author_id", "content", "note", "why", "review", "conf", "file", "box"}
+
+
+def keys(obj):
+    if isinstance(obj, dict):
+        return set(obj) | {k for v in obj.values() for k in keys(v)}
+    return {k for v in obj for k in keys(v)} if isinstance(obj, list) else set()
+
+
+def test_build(tmp_path):
+    root = tmp_path / "archive"
+    (root / "attachments").mkdir(parents=True)
+    Image.new("RGB", (1000, 2000), (200, 30, 30)).save(root / "attachments" / "a.png")
+    sheet = Image.new("RGB", (800, 600), (200, 30, 30))
+    sheet.paste((10, 200, 10), (400, 0, 800, 600))              # a 1x2 sheet: cell 2 green
+    sheet.paste((20, 20, 220), (400, 0, 420, 20))                # a corner unlike the rest: nothing trimmed
+    sheet.save(root / "attachments" / "s.png")
+    git = tmp_path / "old.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(git)], check=True)
+    png = tmp_path / "old.png"
+    Image.new("RGBA", (300, 600), (0, 0, 255, 255)).save(png)
+    blob = subprocess.run(["git", "--git-dir", str(git), "hash-object", "-w", str(png)], capture_output=True, text=True,
+                          check=True).stdout.strip()
+    sure = lambda v, how: {"value": v, "method": how, "confidence": "sure", "conf": 0.99}
+    pic = lambda pid, f, cell=None, box=None: {"id": pid, "date": "2021-01-01T00:00:00+00:00", "channel": "new-cards",
+                                               "file": f"attachments/{f}", "cell": cell, "box": box, "verdict": "draft",
+                                               "message": "1", "jump_url": "https://x"}
+    t = {"card": "bolt", "key": "Bolt", "name": "Bolt", "kind": "creature", "stop": {"day": "2023-05-01", "source": "old repo"},
+         "git_first": None, "created": {}, "entries": [
+             {"id": "D-P-a", "kind": "discord", "date": "2021-01-01T00:00:00+00:00", "day": "2021-01-01", "channel": "new-cards",
+              "look": {"draft": True}, "era": "D2", "pictures": [pic("P-a", "a.png")], "minor": False,
+              "fields": {"name": sure("Bolt", "ocr+name"), "ability": {"method": "ocr", "confidence": "review", "why": "x", "review": "chain-1"}},
+              "changes": {"ability_change": "first"}},
+             {"id": "D-P-s-c2", "kind": "discord", "date": "2021-02-01T00:00:00+00:00", "day": "2021-02-01", "channel": "ideas",
+              "look": {"git": {"commit": "c"}}, "pictures": [pic("P-s-c2", "s.png", 2, [0.5, 0.0, 1.0, 1.0])], "minor": False,
+              "fields": {"stars": sure(3, "eye")}, "changes": {"ability_change": "unknown"}},
+             {"id": "F-1", "kind": "text", "date": "2022-01-01T00:00:00+00:00", "day": "2022-01-01", "channel": "update-05",
+              "source": "changelog", "change": {"field": "atk", "from": 5, "to": 4, "stated": {"from": 5}}, "confidence": "sure"},
+             {"id": "O-1", "kind": "old repo", "date": "2023-05-01T00:00:00+00:00", "day": "2023-05-01", "badge": "old repo",
+              "author": "Maker", "subject": "Bolt", "commit": "c" * 40, "path": "Creatures/Bolt.png", "blob": blob,
+              "thumb": "x", "minor": True, "share": 0.01, "fields": {"stats": sure({"hp": 3, "def": 2, "atk": 4, "spd": 1}, "picture")},
+              "changes": {}}]}
+    (root / "derived" / "chain" / "timelines").mkdir(parents=True)
+    (root / "derived" / "chain" / "timelines" / "bolt.json").write_text(json.dumps(t))
+    created = {"cards": {"Bolt": {"status": "earlier", "proposed": True, "date": "2021-01-01", "sort": "2021-01-01",
+                                  "ours": {"source": "discord", "picture": "P-a"}, "file": {"date": "2021-05-05"}},
+                         "Pike": {"status": "later", "proposed": False, "date": "2020-01-01", "ours": {"source": "discord"}}}}
+    (root / "derived" / "chain" / "created.json").write_text(json.dumps(created))
+    (root / "derived" / "match").mkdir(parents=True)
+    (root / "derived" / "match" / "verdicts.jsonl").write_text(json.dumps({"id": "P-m", "file": "attachments/a.png"}) + "\n")
+    (root / "derived" / "morgue").mkdir(parents=True)
+    morgue = {"candidates": [{"id": "LC-1", "name": "Joke", "slug": "joke", "kind": "joke", "status": "candidate",
+                              "first": {"date": "2020-01-01T00:00:00+00:00", "channel": "meme-cards", "source": "discord"},
+                              "why": ["x"], "eye": {"note": "x"},
+                              "pictures": [{"id": "P-m", "date": "2020-01-01T00:00:00+00:00", "channel": "meme-cards", "source": "discord"}]}],
+              "not_candidates": [{"id": "LC-2", "name": "Old One", "card": "Old One", "status": "morgue", "first": {},
+                                  "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord", "printed": True}]}]}
+    (root / "derived" / "morgue" / "candidates.json").write_text(json.dumps(morgue))
+    index = dp.build(str(root), str(git), workers=1)
+    out = root / "derived" / "preview" / "history"
+    got = json.loads((out / "bolt" / "timeline.json").read_text())
+    assert [e["kind"] for e in got["entries"]] == ["discord", "discord", "text", "old repo"]
+    first, cell, fact, old = got["entries"]
+    assert first["fields"] == {"name": {"value": "Bolt", "method": "ocr+name", "confidence": "sure"}}   # the review field left out
+    assert cell["git_look"] and fact["change"] == {"field": "atk", "from": 5, "to": 4} and old["minor"] and old["author"] == "Maker"
+    assert not keys(got) & BAD_KEYS and not keys(index) & BAD_KEYS
+    sizes = {e["image"]: Image.open(out / "bolt" / e["image"]).size for e in got["entries"] if e.get("image")}
+    assert sizes["P-a.webp"] == (dp.WEBP_W, 2 * dp.WEBP_W) and sizes[f"O-{blob[:12]}.webp"] == (300, 600)
+    assert sizes["P-s-c2.webp"] == (400, 600)                                       # the sheet's cell 2 alone
+    assert Image.open(out / "bolt" / "P-s-c2.webp").convert("RGB").getpixel((200, 500))[1] > 150   # green
+    assert index["created"] == {"Bolt": {"date": "2021-01-01", "sort": "2021-01-01", "source": "discord", "status": "earlier",
+                                         "was": "2021-05-05"}}
+    assert [m["name"] for m in index["morgue"]] == ["Joke"] and [m["card"] for m in index["mdw"]] == ["Old One"]
+    mdw = json.loads((out / index["mdw"][0]["dir"] / "timeline.json").read_text())
+    assert mdw["entries"][0]["date"] is None and mdw["entries"][0]["printed"]       # a printed card's photo: no day
+    # a rebuild keeps the webps, and drops one no entry names any more
+    (out / "bolt" / "stale.webp").write_bytes(b"x")
+    dp.build(str(root), str(git), workers=1)
+    assert not (out / "bolt" / "stale.webp").exists() and (out / "bolt" / "P-a.webp").exists()
