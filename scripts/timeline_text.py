@@ -155,8 +155,8 @@ def old_inputs():
         if v.get("ext") != "png" or v["blob"] in seen:
             continue
         seen.add(v["blob"])
-        rows.append({"id": "o:" + v["blob"], "src": "old", "blob": v["blob"], "at": v["date"], "path": v["path"],
-                     "old_id": v.get("old_id")})
+        rows.append({"id": "o:" + v["blob"], "src": "old", "blob": v["blob"], "at": v["date"], "ts": v["ts"],
+                     "path": v["path"], "old_id": v.get("old_id")})
     return rows
 
 
@@ -717,19 +717,11 @@ _VOCAB = None
 
 
 def vocab():
-    """Words an ability may print: the dictionary's and every known ability's (today's, the old repo's)."""
+    """Words an ability may print: every word of every known ability (today's, the old repo's). An OCR slip into
+    another English word ('DEE', 'O') is not a game word."""
     global _VOCAB
     if _VOCAB is None:
-        found = set()
-        try:
-            with open("/usr/share/dict/words") as f:
-                found |= {w.strip().lower() for w in f}
-        except OSError:
-            pass
-        for t in known_abilities().values():
-            for a in t:
-                found |= set(WORD.findall(a.lower()))
-        _VOCAB = found
+        _VOCAB = {w for v in known_abilities().values() for t, src in v for w in ability_words(t)}
     return _VOCAB
 
 
@@ -737,41 +729,46 @@ _KNOWN = None
 
 
 def known_abilities():
-    """{loose name: {ability texts}} from today's cards and the old repo's PSD reads."""
+    """{loose name: [[ability text, [sources]]]} from today's cards (t:<id>) and the old repo's PSD reads (psd:<blob>)."""
     global _KNOWN
     if _KNOWN is None:
-        found = read_json(join(OUT, "known.json"))
+        found = read_json(join(OUT, "known_abilities.json"))
         if found is None:
-            found = defaultdict(set)
+            acc = defaultdict(dict)
             from commands.discord_match import load_cards
-            for card in load_cards(TC).values():
+            for cid, card in load_cards(TC).items():
                 if card.get("ability"):
-                    for n in (card.get("name"), card.get("key")):
-                        if n:
-                            found[loose(n)].add(card["ability"])
+                    for n in {card.get("name"), card.get("key")} - {None}:
+                        acc[loose(n)].setdefault(card["ability"], []).append("t:" + cid)
             for r in jsonl(join(ROOT, "derived/oldgit/reads.jsonl")):
                 rd = r.get("read") or {}
-                if rd.get("ability") and rd.get("title"):
-                    found[loose(rd["title"])].add(rd["ability"])
-            found = {k: sorted(v) for k, v in found.items()}
-            write_json(join(OUT, "known.json"), found)
-        _KNOWN = {k: set(v) for k, v in found.items()}
+                if r.get("kind") == "psd" and rd.get("ability") and rd.get("title"):
+                    acc[loose(rd["title"])].setdefault(rd["ability"], []).append("psd:" + r["blob"])
+            found = {k: [[t, sorted(set(src))] for t, src in v.items()] for k, v in acc.items()}
+            write_json(join(OUT, "known_abilities.json"), found)
+        _KNOWN = found
     return _KNOWN
 
 
+def ability_known(name, text, exclude=()):
+    """True when a known version of the named card prints these words (sources in exclude left out)."""
+    ws = ability_words(text)
+    return bool(ws) and any(ability_words(t) == ws and not set(src) <= set(exclude)
+                            for t, src in known_abilities().get(loose(name or ""), []))
+
+
+ODD = re.compile(r"[^A-Za-z0-9\s.,:;'\"()/+\-%!?&*#\[\]’‘“”—–]")
+
+
 def ability_scores(text, other, title):
-    """Confidence parts: vocabulary share, the two OCR passes' agreement, a known text of the card equal to it."""
+    """Confidence parts kept with a read: game-word share, the two OCR passes' agreement, a known text of the card."""
     ws = ability_words(text)
     alpha = [w for w in ws if not w.isdigit() and not w.startswith("<")]
     voc = vocab()
-    share = sum(w in voc for w in alpha) / len(alpha) if alpha else 0.0
+    share = sum(w in voc and (len(w) > 1 or w == "a") for w in alpha) / len(alpha) if alpha else 0.0
     agree = ability_words(other) == ws if other is not None else False
-    known = False
-    if title and title.get("name"):
-        for t in known_abilities().get(loose(title["name"]), ()):
-            if ability_words(t) == ws:
-                known = True
-    return {"vocab": round(share, 4), "agree": agree, "known": known, "words": len(ws)}
+    return {"vocab": round(share, 4), "agree": agree, "known": ability_known((title or {}).get("name"), text),
+            "words": len(ws)}
 
 
 def inline_icons(a, rows, card_w):
@@ -1051,7 +1048,8 @@ def type_presence(a, band_h, names):
 
 def verified_types(rd, rule, exclude=()):
     """(types, conf) from the card's known type sets checked on the picture (types_known): the one set whose icons
-    are all present (gray ncc >= rule['on']) while the other known icons are absent (< rule['off'])."""
+    are all present (gray ncc >= rule['on']) while the other known icons are absent (< rule['off']). An empty set
+    is never offered (absence proves nothing)."""
     tk = rd.get("types_known")
     if not tk or not tk.get("sets"):
         return None, 0.0
@@ -1063,7 +1061,7 @@ def verified_types(rd, rule, exclude=()):
             pres[c] = v
     sets = [sorted(t for t in canon_types(ts) if not (card and t == "equip")) for ts, src in tk["sets"]
             if not set(src) <= set(exclude)]
-    sets = [json.loads(x) for x in dict.fromkeys(json.dumps(s) for s in sets)]
+    sets = [json.loads(x) for x in dict.fromkeys(json.dumps(s) for s in sets) if x != "[]"]   # no icon: unprovable
     if not sets:
         return None, 0.0
     union = sorted({t for s in sets for t in s})
@@ -1205,10 +1203,13 @@ def build_truth():
             d = hash_distance(png["look"]["whole"], psd["composite"]["whole"])
             if d <= 2 * PAIR_BITS:
                 near.add("psd:" + p["blob"])
-            if best is None or d < best[0]:
-                best = (d, psd)
-        if not best or best[0] > PAIR_BITS:
+            if d <= PAIR_BITS:          # the PSD as it was when the PNG was made (text moves no hash bits)
+                when = (p["ts"] > v["ts"] + 60, abs(p["ts"] - v["ts"]))
+                if best is None or when < best[1]:
+                    best = (d, when, psd)
+        if not best:
             continue
+        best = (best[0], best[2])
         rd = best[1]["read"]
         problems = " ".join(rd.get("problems") or []) + " " + " ".join(rd.get("validator") or [])
         fields = {}
@@ -1261,15 +1262,19 @@ def titles_of(t):
     return {norm(x) for x in (t if isinstance(t, list) else [t]) if x}
 
 
-def ability_conf(ab):
-    """An ability read's confidence: a known text of the card read exactly is 1; else the two OCR passes agreeing,
-    Vision's line confidence and the share of known words."""
-    if not ab or not ab.get("text"):
+def ability_conf(text, agree, minconf, known):
+    """An ability read's confidence: a known text of the card read exactly is 1; else at most 0.81, from the two
+    OCR passes agreeing, Vision's line confidence, the share of game words (one-letter words other than 'a' are
+    not) and no odd characters (accents, OCR's brackets)."""
+    if not text:
         return 0.0
-    if ab.get("known"):
+    if known:
         return 1.0
-    base = 0.55 + 0.35 * bool(ab.get("agree")) + 0.1 * min(1.0, ab.get("minconf") or 0.0)
-    return round(base * (ab.get("vocab") or 0.0) ** 3, 4)
+    ws = [w for w in ability_words(text) if not w.isdigit() and not w.startswith("<")]
+    voc = vocab()
+    share = sum(w in voc and (len(w) > 1 or w == "a") for w in ws) / len(ws) if ws else 0.0
+    base = 0.5 + 0.3 * bool(agree) + 0.1 * (minconf >= 0.99)
+    return round(0.9 * base * share ** 4 * 0.5 ** len(ODD.findall(text)), 4)
 
 
 def ability_variant(rd, variant):
@@ -1290,7 +1295,11 @@ def field_read(rd, field, how, exclude=()):
         ab = ability_variant(rd, how.get("variant", "fix")) or {}
         text = ab.get("text") or None
         method = "ocr+icons" if how.get("variant") == "icons" and rd.get("ability_icons") else "ocr"
-        return text, method + ("+known" if ab.get("known") else ""), ability_conf(ab)
+        agree = ability_words((rd.get("ability_fix") or {}).get("text")) == \
+            ability_words((rd.get("ability_raw") or {}).get("text"))
+        known = ability_known((rd.get("title") or {}).get("name"), text, exclude)
+        minconf = min((rd.get("ability_fix") or {}).get("minconf") or 0.0, 1.0)
+        return text, method + ("+known" if known else ""), ability_conf(text, agree, minconf, known)
     if field == "stars":
         rule = how.get("rule") or STAR_RULES[0]
         n, conf = (count_blobs(rd.get("star_blobs"), rule) if rule.get("kind") else
@@ -1316,7 +1325,7 @@ def is_right(field, value, truth, card=False):
     if field == "stars":
         return int(value) == int(truth)
     if field == "types":
-        return sorted(value) == sorted(t for t in canon_types(truth) if not (card and t == "equip"))
+        return set(value) == {t for t in canon_types(truth) if not (card and t == "equip")}
     return False
 
 
@@ -1377,6 +1386,7 @@ def calibrate():
                     v = usable_truth(field, t)
                     if v is not None:
                         labelled.append((rd, v, t.get("own") or []))
+                        break
             options = [{}]
             if field == "stars":
                 options = [{"rule": r} for r in STAR_RULES]
