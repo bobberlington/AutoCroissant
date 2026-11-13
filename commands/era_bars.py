@@ -837,6 +837,12 @@ def calibrate(root: str):
     for g, (k, n) in reads.items():
         cal["groups"][g]["discord"] = {"stats": n, "share_sure": round(k / n, 4)}
     cal["classes"] = classes(rows, root)
+    sample = cal["classes"]["rule_on_random_sample"]
+    for r in rows:                                           # the class's confidence: by eye, else its rule's sample
+        if r["src"] == "discord":
+            got = sample.get(r.get("era"), {})
+            r["era_conf"] = (1.0 if r.get("era_how") == "eye" else
+                             round(got["right"] / got["n"], 3) if got.get("n", 0) >= 10 else None)
     with open(join(base, "calibration.json.tmp"), "w") as f:
         f.write(dumps(cal, indent=1))
     replace(join(base, "calibration.json.tmp"), join(base, "calibration.json"))
