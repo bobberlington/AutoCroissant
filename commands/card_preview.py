@@ -54,7 +54,8 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt",
-                "commands/psd_links.py", "commands/card_preview_reads.py")    # the last: the Reads step's (stdlib)
+                "commands/psd_links.py", "commands/card_preview_reads.py",    # the Reads step's (stdlib)
+                "commands/ability_place.py", "commands/ability_index.json")    # a "+ability" (card_bake imports it)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
 SMALL_AS = ("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None,
