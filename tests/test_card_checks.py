@@ -449,3 +449,29 @@ def test_the_mock_up_reads_the_stat_notes(tmp_path, monkeypatch):
     every = ["hp", "def", "atk", "spd"]
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == [every, every, ["hp", "def"], ["atk", "spd"], every, []]
+
+
+ABIGAIL = ("69876f29527feae72106a91cf0aba6e59197851a", "0e0cf53cfd524eee909c05e1d729097d4bde8212")   # before / after 11-13
+HALBERD = "ab6eb4738ce468e4bb1ba0700703899415c0e1cc"     # Halberd Reactor: DEF at 10 over a plain dark
+
+
+def test_hidden_bar_looks_are_flagged():
+    """A bar's hidden cells a stat edit bakes unlike the card's look (cardissues 11-13): Abigail's DEF before its repaint
+    (plain white under the darks), not after; Halberd Reactor's DEF at 10 (a plain dark). A row of its own colour, a
+    texture across every bar and one stopping at the value (PoD05 Lead Bloon) read as they are."""
+    from io import BytesIO
+    from psd_tools import PSDImage
+    from conftest import CLONE, card_blob
+    notes = lambda sha: cc.look_notes(PSDImage.open(BytesIO(raw := card_blob(CLONE, sha))), raw)
+    assert notes(ABIGAIL[0]) == [cc.LIT_LOOK_NOTE.format("DEF bar's")] and notes(ABIGAIL[1]) == []
+    assert notes(HALBERD) == [cc.DARK_LOOK_NOTE.format("DEF bar's")]
+    flat = lambda rgb: np.tile(np.asarray(rgb, float), (10, 3, 1))
+    pink, red, grey = flat((250, 210, 215)), flat((95, 30, 45)), flat((80, 70, 70))
+    row = lambda label, value, lit, dark=grey: (label, value, lit, dark)
+    assert cc.unlike_looks([row("HP", 5, pink), row("DEF", 3, pink), row("ATK", 7, flat((130, 150, 175))),
+                            row("SPD", 4, pink)]) == []                                   # ATK: its own colour
+    stops = np.concatenate([pink[:4], red[4:]])                                            # a look stopping at 4
+    assert cc.unlike_looks([row("HP", 4, stops), row("DEF", 4, stops), row("ATK", 4, stops), row("SPD", 4, stops)]) == \
+        [(k, "lit") for k in ("HP", "DEF", "ATK", "SPD")]
+    texture = np.random.default_rng(3).uniform(40, 220, (10, 3, 3))
+    assert cc.unlike_looks([row(k, v, texture) for k, v in (("HP", 2), ("DEF", 6), ("ATK", 4), ("SPD", 9))]) == []

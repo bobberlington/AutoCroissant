@@ -1,8 +1,9 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, old-style bars, a stat edit that cannot bake, a linked picture the repo
-lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
+hand: the picture says other than the data, old-style bars, a stat edit that cannot bake or would bake bar cells unlike
+the card's (look_notes), a linked picture the repo lacks, one that looks the same as another file, or one Card sync
+could not draw again (db/links.json, worded at each
 save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
 (exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM
 (R) (C) aside); none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures
@@ -55,7 +56,7 @@ from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
 from commands.psd_parser import picture_numbers, variant_view
-from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
+from commands.psd_regions import STATS, bar_box, comp_bars, comp_creature, linked_items, placed_data, stat_rows, union_box
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
 # ========================
@@ -112,6 +113,15 @@ NAME_FILE = 'The card prints "{printed}" but its file is {file}.'
 NAME_SITE = 'The website shows "{site}" but the card prints "{printed}".'
 NAME_BOTH = 'The card prints "{printed}" but the website shows "{site}" and its file is {file}.'
 MARKS = "\u2122\u00ae\u00a9"                 # TM (R) (C): never count in the file-name check (owner 2026-11-11)
+# hidden bar looks (cardissues 11-13: the conversion's leftovers under the darks a stat edit bakes)
+LOOK_BANDS = ((0.15, 0.35), (0.4, 0.6), (0.65, 0.85))  # a cell's heights read (its middle half wide): a top-down gradient
+LOOK_SAME = 12                              # levels (each channel, each band) two cells look alike within
+LOOK_LIT = 60                               # a lit cell this far off the look the bar shows: unlike it
+LOOK_DARK = 24                              # an empty cell this far off the other bars' there: unlike them
+LOOK_SHARE = 0.6                            # bars alike on this share of the cells both show lit are one look (a
+#                                             card's own row colour: King Bob-omb's ATK)
+LIT_LOOK_NOTE = "Its {} hidden lit cells look unlike the lit ones shown: a raise bakes them, make them alike in Photoshop."
+DARK_LOOK_NOTE = "Its {} empty cells look unlike the other bars': a stat edit bakes them, make them alike in Photoshop."
 
 
 # ========================
@@ -431,6 +441,104 @@ def bar_style(psd: PSDImage, creatures: Optional[list]) -> tuple:
 
 
 # ========================
+# Hidden bar looks
+# ========================
+def _look_cells(image: np.ndarray, origin: tuple, box: tuple) -> np.ndarray:
+    """A bar's 10 template cells' mean colours at LOOK_BANDS' heights: (10, 3 bands, RGB)."""
+    x0, y0, x1, y1 = box
+    scale, out = (x1 - x0) / TEMPLATE_CELLS[-1], np.zeros((10, len(LOOK_BANDS), 3))
+    for c in range(10):
+        a, b = x0 + TEMPLATE_CELLS[c] * scale - origin[0], x0 + TEMPLATE_CELLS[c + 1] * scale - origin[0]
+        xa, xb = int(a + (b - a) / 4), int(a + 3 * (b - a) / 4)
+        for n, (f0, f1) in enumerate(LOOK_BANDS):
+            ya, yb = int(y0 + (y1 - y0) * f0) - origin[1], int(y0 + (y1 - y0) * f1) - origin[1]
+            part = image[max(ya, 0):max(yb, ya + 1), max(xa, 0):max(xb, xa + 1), :3]
+            out[c, n] = part.reshape(-1, 3).mean(0) if part.size else 0
+    return out
+
+
+def bar_looks(psd: PSDImage, raw: bytes) -> list:
+    """
+    The shown layer-comp bars as the bake draws them: [(label, value 0-10, lit cells, empty cells)] (_look_cells of the
+    card with every bar at comp 10, then at comp 0: comp_render, as set_comp stores it); a bar the bake cannot draw
+    raises Refused.
+    """
+    from psd_tools.api.layers import TypeLayer
+    found = [(stat, layer, value, tuple(box)) for stat, bars in comp_bars(psd).items() for layer, value, box in bars
+             if value is not None and layer.is_visible()]
+    if not found:
+        return []
+    x0, y0, x1, y1 = union_box([box for *_, box in found])
+    view = (max(x0, 0), max(y0, 0), min(x1, psd.width), min(y1, psd.height))
+    drawn = {}
+    for at in (10, 0):
+        card = psd_edit.edit_copy(psd, raw)
+        for layer, value, _ in [bar for bars in comp_bars(card).values() for bar in bars]:
+            if value is None or not layer.is_visible():
+                continue
+            rgba, where = psd_edit.comp_render(layer, at, check=False)
+            TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
+            layer._invalidate_bbox()
+        drawn[at] = np.asarray(card.composite(viewport=view, ignore_preview=True, apply_icc=False).convert("RGBA"),
+                               np.float64)
+    name = lambda stat, layer: STAT_NAMES[stat] + (f" (creature {n})" if (n := comp_creature(layer)) > 1 else "")
+    return [(name(stat, layer), min(max(int(value), 0), 10), _look_cells(drawn[10], view, box),
+             _look_cells(drawn[0], view, box)) for stat, layer, value, box in found]
+
+
+def unlike_looks(rows: list) -> list:
+    """
+    [(label, "lit" | "dark")] of the bars whose hidden looks a stat edit would bake unlike the card's (bar_looks' rows):
+    lit cells (a raise) off the bars of its look showing them lit (2 or more, alike), or a flat run of them to the bar's
+    end unlike every lit cell its look shows (a texture stopping at the value: PoD05 Lead Bloon); empty cells (a
+    lowering) off the bars showing them empty with a like lit cell there (2 or more, alike: Halberd Reactor's plain dark).
+    """
+    far = lambda a, b: float(np.abs(a - b).max())
+    alike = lambda cells: all(far(cell, cells[0]) <= LOOK_SAME for cell in cells)
+
+    def one_look(a, b) -> bool:
+        both = range(min(a[1], b[1]))
+        return sum(far(a[2][k], b[2][k]) <= LOOK_LIT for k in both) >= LOOK_SHARE * len(both)
+    out = []
+    for row in rows:
+        label, value, lit, dark = row
+        others = [other for other in rows if other is not row]
+        kin = [other for other in others if one_look(row, other)]
+        bad = False
+        for c in range(value, 10):
+            refs = [other[2][c] for other in kin if c < other[1]]
+            bad = bad or len(refs) >= 2 and alike(refs) and far(lit[c], np.mean(refs, 0)) > LOOK_LIT
+        run = 0
+        while run < 10 - value and far(lit[9 - run], lit[9]) <= LOOK_SAME:
+            run += 1
+        shown = [one[2][k] for one in (row, *kin) for k in range(one[1])]
+        bad = bad or run >= 2 and bool(shown) and min(far(lit[9], cell) for cell in shown) > LOOK_LIT
+        if bad:
+            out.append((label, "lit"))
+        for c in range(value):
+            refs = [other[3][c] for other in others if c >= other[1] and far(other[2][c], lit[c]) <= LOOK_SAME]
+            if len(refs) >= 2 and alike(refs) and far(dark[c], np.mean(refs, 0)) > LOOK_DARK:
+                out.append((label, "dark"))
+                break
+    return out
+
+
+def look_notes(psd: PSDImage, raw: bytes) -> list:
+    """unlike_looks as notes, the bars of each kind in one; none for a bar the bake cannot draw (its own note)."""
+    try:
+        found = unlike_looks(bar_looks(psd, raw))
+    except psd_edit.Refused:
+        return []
+    out = []
+    for kind, note in (("lit", LIT_LOOK_NOTE), ("dark", DARK_LOOK_NOTE)):
+        labels = [label for label, which in found if which == kind]
+        if labels:
+            names = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " and " + labels[-1]
+            out.append(note.format(f"{names} bar's" if len(labels) == 1 else f"{names} bars'"))
+    return out
+
+
+# ========================
 # Website edits
 # ========================
 @dataclass
@@ -603,6 +711,9 @@ def check_card(ctx: Context, rel: str) -> dict:
     if style == "custom" and votes:
         reads = drawn_reads(votes, parsed["card"])
     notes += _stat_notes(ctx, rel, psd, parsed, style, image)
+    if style == "new":
+        with variant_view(psd, 1):
+            notes += look_notes(psd, raw)
     dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
     for path in dups:                           # nothing redraws the others (owner 11-07)
