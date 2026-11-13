@@ -15,9 +15,11 @@ from psd_tools.api.layers import PixelLayer
 from psd_tools.api.links import link_content_id
 
 import commands.png_export as png_export
+import commands.psd_edit as pe
 import commands.psd_links as pl
 
 DELTA = "Auxiliary/Minions/Delta.psd"            # three Star of beth items (Croissant trimmed the file, 11-07)
+MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"   # a 'Display' profile card
 FREEZER = "Field/1 Stars/The_Freezer.psd"        # an embedded PSB holding a gradient fill (before the big pass)
 
 
@@ -293,6 +295,28 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
         render = np.asarray(new.composite(ignore_preview=True).convert("RGB"), np.int16)
         png = np.asarray(Image.open(BytesIO(done.files[pngs[rel]])).convert("RGB"), np.int16)
         assert np.abs(png - render).max() <= png_export.TOL
+
+
+def test_a_linked_document_keeps_its_colours(clone):
+    """A document in the card's own profile is placed as it is (through sRGB, 46 linked ones came back up to 56 levels
+    off, effectsgaps 11-13); an untagged one is converted once, sRGB into the card's."""
+    from psd_tools.constants import Resource
+    from psd_tools.psd.image_resources import ImageResource
+    card = PSDImage.open(clone / MINI_DOOMER)
+    icc = card.image_resources.get_data(Resource.ICC_PROFILE)
+    pixels = np.array([[[0, 255, 0, 255], [255, 0, 40, 255], [10, 40, 250, 255], [250, 240, 10, 255]]], np.uint8).repeat(3, 0)
+
+    def document(profile) -> bytes:
+        doc = PSDImage.new("RGB", (4, 3))
+        PixelLayer.frompil(Image.fromarray(pixels, "RGBA"), doc, "art")
+        if profile:
+            doc.image_resources[Resource.ICC_PROFILE] = ImageResource(key=Resource.ICC_PROFILE, data=profile)
+        out = BytesIO()
+        doc.save(out)
+        return out.getvalue()
+    assert pe.foreign_profile(card) == icc and np.array_equal(pl.picture(card, document(icc), "psb"), pixels)
+    untagged = pl.picture(card, document(None), "psb")
+    assert np.array_equal(untagged, pl.in_document(card, pixels, None)) and not np.array_equal(untagged, pixels)
 
 
 COPPER = "Items/Equip/1 Stars/Copper_Sword.psd"     # its art under one Gaussian Blur smart filter (6.6 px)

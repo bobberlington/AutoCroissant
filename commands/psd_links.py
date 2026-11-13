@@ -58,7 +58,7 @@ from psd_tools import PSDImage
 from psd_tools.api.effects import GradientOverlay, Stroke
 from psd_tools.api.layers import AdjustmentLayer, FillLayer, Group, PixelLayer
 from psd_tools.api.links import FILETYPES, LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
-from psd_tools.constants import BlendMode, LinkedLayerType, StrokeFillType, Tag
+from psd_tools.constants import BlendMode, ColorMode, LinkedLayerType, Resource, StrokeFillType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
 from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
 from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
@@ -123,16 +123,26 @@ def _text(value) -> str:
 
 
 def decode(data: bytes, kind: str) -> Optional[np.ndarray]:
-    """A file's pixels as straight RGBA uint8 (psd and psb through the fork's composite), None when unreadable or when
-    the fork cannot draw it (undrawable)."""
+    """A file's pixels as straight RGBA uint8 in its own colours (psd and psb through the fork's composite), None when
+    unreadable or when the fork cannot draw it (undrawable)."""
+    return _decoded(data, kind)[0]
+
+
+def _decoded(data: bytes, kind: str) -> tuple:
+    """(decode's pixels, the file's ICC profile or None). An RGB psd or psb is read with no ICC step (in_document
+    converts it once, as Photoshop places it; through sRGB clipped saturated colours, effectsgaps 11-13)."""
     try:
         if kind in ("psd", "psb"):
             doc = PSDImage.open(BytesIO(data))
-            return None if undrawable(doc) else np.asarray(doc.composite(ignore_preview=True).convert("RGBA"))
+            if undrawable(doc):
+                return None, None
+            rgb = doc.color_mode == ColorMode.RGB
+            pixels = np.asarray(doc.composite(ignore_preview=True, apply_icc=not rgb).convert("RGBA"))
+            return pixels, doc.image_resources.get_data(Resource.ICC_PROFILE) if rgb else None
         with Image.open(BytesIO(data)) as image:
-            return np.asarray(image.convert("RGBA"))
+            return np.asarray(image.convert("RGBA")), image.info.get("icc_profile")
     except Exception:
-        return None
+        return None, None
 
 
 @cache
@@ -549,11 +559,11 @@ def draw(rgba: np.ndarray, corners: list, mode: int) -> tuple:
 
 
 def in_document(psd: PSDImage, rgba: np.ndarray, profile: Optional[bytes]) -> np.ndarray:
-    """A file's pixels in the card's colours, as Photoshop places them: its own profile (else sRGB) into the card's
-    when either is not sRGB (psd_edit._make_icon's rule)."""
+    """A file's pixels in the card's colours, as Photoshop places them: as they are in the card's own profile, else its
+    profile (else sRGB) into the card's when either is not sRGB (psd_edit._make_icon's rule)."""
     from commands.psd_edit import foreign_profile
     target = foreign_profile(psd)
-    if target is None and not profile:
+    if (target is None and not profile) or (profile and profile == psd.image_resources.get_data(Resource.ICC_PROFILE)):
         return rgba
     from PIL import ImageCms
     def cms(data): return ImageCms.ImageCmsProfile(BytesIO(data)) if data else ImageCms.createProfile("sRGB")
@@ -565,17 +575,8 @@ def in_document(psd: PSDImage, rgba: np.ndarray, profile: Optional[bytes]) -> np
 
 def picture(psd: PSDImage, data: bytes, kind: str) -> Optional[np.ndarray]:
     """A linked file's pixels in the card's colours (decode, then in_document), None when unreadable."""
-    rgba = decode(data, kind)
-    if rgba is None:
-        return None
-    profile = None
-    if kind in RASTER:
-        try:
-            with Image.open(BytesIO(data)) as image:
-                profile = image.info.get("icc_profile")
-        except Exception:
-            profile = None
-    return in_document(psd, rgba, profile)
+    rgba, profile = _decoded(data, kind)
+    return None if rgba is None else in_document(psd, rgba, profile)
 
 
 def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
