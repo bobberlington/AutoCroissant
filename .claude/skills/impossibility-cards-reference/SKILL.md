@@ -645,7 +645,9 @@ print another card type: Air Totem a minion, then an item), dated where the PICK
 at another path), each restored version's blob that of its start's commit; a name the 2025 PICKLEs held at two paths
 keeps its own path's (Auto Croissant, not Mini Auto Croissant's minion); the cards gone before archiving are archived
 from their last reading (`backfill`, dated from git, `renamed_to` along exact rename chains, `moved_to` into MDW), and a
-renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before).
+renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's archive holds the time before;
+the website and, since 2026-11-13, `/query as_of` put the versions of the names renamed into a card before its own:
+build_site and `query_card.renamed_into`, `history_of`).
 Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
 differ are one misread (`misreads`). A history value out of range (stars outside 0..7, a stat above 20 (10 until
 2026-11-06) without an allowance (`allows_high`: the card's allow_high_stats, raid boss stars, or no current card), any
