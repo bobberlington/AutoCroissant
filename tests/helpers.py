@@ -268,7 +268,7 @@ class _Commits:
 
 
 @pytest.fixture
-def github(monkeypatch, tmp_path, files, clone):
+def github(monkeypatch, tmp_path, tmp_path_factory, files, clone):
     """LocalCards of files (helpers.files): the token's REST reads go to the fake GitHub."""
     fake = FakeGitHub(cb.CARD_REPO, files)
     monkeypatch.setattr(ga, "get", fake.get)
@@ -281,6 +281,21 @@ def github(monkeypatch, tmp_path, files, clone):
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
     monkeypatch.setattr(gc, "cant_write", False)
     origin, local = tmp_path / "origin", tmp_path / "clone"
+    made = _github_repos(tmp_path_factory, files)                       # files is the same in every test
+    subprocess.run(["cp", "-Rc", str(made / "origin"), str(made / "clone"), str(tmp_path)], check=True)  # APFS clones
+    subprocess.run(["git", "-C", str(local), "remote", "set-url", "origin", f"file://{origin}"], check=True)
+    return LocalCards(fake, origin, local)
+
+
+_MADE: list = []
+
+
+def _github_repos(tmp_path_factory, files: dict) -> Path:
+    """origin (files) and its blobless sparse clone, as Card sync's runner holds them: built once per worker."""
+    if _MADE:
+        return _MADE[0]
+    root = tmp_path_factory.mktemp("github")
+    origin, local = root / "origin", root / "clone"
     env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "web", "GIT_AUTHOR_EMAIL": "w@x",
            "GIT_COMMITTER_NAME": "web", "GIT_COMMITTER_EMAIL": "w@x"}
     origin.mkdir()
@@ -290,10 +305,11 @@ def github(monkeypatch, tmp_path, files, clone):
     for args in (("init", "-q", "-b", "main"), ("config", "uploadpack.allowFilter", "true"), ("add", "-A"),
                  ("commit", "-q", "-m", "Website edit: test")):
         subprocess.run(["git", "-C", str(origin), *args], capture_output=True, check=True, env=env)
-    for args in (("-C", str(tmp_path), "clone", "-q", "--filter=blob:none", "--sparse", f"file://{origin}", str(local)),
+    for args in (("-C", str(root), "clone", "-q", "--filter=blob:none", "--sparse", f"file://{origin}", str(local)),
                  ("-C", str(local), "sparse-checkout", "set", "--no-cone", *CARD_SYNC_SPARSE)):
         subprocess.run(["git", *args], capture_output=True, check=True, env=env)
-    return LocalCards(fake, origin, local)
+    _MADE.append(root)
+    return root
 
 CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
                  "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"}}
