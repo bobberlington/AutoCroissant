@@ -931,6 +931,9 @@ def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", ol
                 if v["blob"] in there else f"{RAW_BASE}{CARD_REPO}/{v['commit']}/{quote(v['path'])}" \
                 if download and not v.get("old") and v.get("commit") else None
             plan.append({**v, "key": key, "feat": feat, "old": bool(v.get("old")), "source": source})
+    for v in plan:                              # the times of versions in no store: a later post may show one
+        if v["source"] is None:
+            cards[v["card"]].setdefault("unstored", []).append(v["ts"])
     missing = sum(1 for v in plan if v["source"] is None)
     log(f"{len(cards)} cards, {len(plan)} versions ({sum(1 for v in plan if v['old'])} from the old repo); "
         f"{missing} in no local store" + ("" if download or not missing else " (skipped: --download fetches them)"))
@@ -1287,7 +1290,8 @@ class CardIndex:
     def pick_version(self, cid: str, feat: dict, text: str, skip: Optional[int] = None) -> dict:
         """Which of a card's looks a card-shaped image shows: by its OCR'd text when it has enough (the looks no
         other look beats), else by the whole-card hash. {keys: the versions of the looks left, nearest first; by:
-        text, hash, draft (a look not in git) or None (can't tell); fit, novel, bits}. skip: leave a look out."""
+        text, hash, draft (a look not in git) or None (can't tell); fit, novel (its text the looks lack), missing
+        (the looks' steady text it lacks; characters in a row), bits}. skip: leave a look out."""
         groups = {look: g for look, g in self.groups.get(cid, {}).items() if look != skip}
         members = [i for look, g in groups.items() for i in g[2]]
         whole = {i: hash_distance(feat["whole"], self.versions[i]["whole"]) for i in members} \
@@ -1312,7 +1316,9 @@ class CardIndex:
                 near = {look: min(whole[i] for i in groups[look][2]) for look in won}
                 won = [look for look in won if near[look] <= min(near.values()) + HASH_TIE]
             known = set().union(*(groups[look][1] for look in won))
-            found.update(fit=round(len(seen & known) / max(1, len(seen)), 3), novel=novel_run(text, known))
+            found.update(fit=round(len(seen & known) / max(1, len(seen)), 3), novel=novel_run(text, known),
+                         missing=min((novel_run(self.reads[i][0], seen | (grams(self.reads[i][0]) - self.stable[i]))
+                                      for look in won for i in groups[look][2] if self.reads[i]), default=0))
             if whole_card and found["novel"] >= DRAFT_RUN:
                 won, found["by"] = [], "draft"
             else:
@@ -2551,7 +2557,7 @@ def version_note(look: Optional[tuple], pick: dict, versions: dict) -> dict:
     shows = None if look is None else "draft" if look[0] == "draft" else "current" if look[1] == 0 else "older"
     note = {"shows": shows, "by": pick.get("by"), "commits": [v.get("commit") for v in tied if v.get("commit")],
             "git_dates": sorted({iso(v["ts"])[:10] for v in tied if v.get("ts")})}
-    note.update({k: pick[k] for k in ("fit", "novel", "bits") if pick.get(k) is not None})
+    note.update({k: pick[k] for k in ("fit", "novel", "missing", "bits") if pick.get(k) is not None})
     if look and look[0] == "git":
         note["look"] = look[1]
     return note
