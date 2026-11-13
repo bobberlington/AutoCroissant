@@ -554,7 +554,7 @@ them (`to_check` re-reads only a PSD with no result or a changed PNG).
 
 | Setting | Kind | Meaning |
 |---|---|---|
-| `CARD_GUARDS` | repository variable | the push guards' mode (`dry`, `report`, `on`); unset = off (2026-10-23) |
+| `CARD_GUARDS` | repository variable | the push guards' mode on a push: `on`; unset, `off` or any other value = off (2026-10-23; `dry` and `report` are off since 2026-11-12, owner); a dispatch is dry or on by its `dry_run` input |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (the changelog posts only; never pings). Card sync's failure alerts moved to the standards channel on 2026-11-11 (owner) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: ONE post per push (the push guards, card check and font check together, new notes only; pings the card makers' role only when a font is missing) and the failure alerts of Card guards and Card sync (one per broken push, marker `<!-- discord-failure-told -->` in the head commit's comments), 2026-11-11 |
 | `card-guards-quiet` | environment, UNUSED since 2026-11-03 (no job names it: owner, no 30-minute wait; deletable in Settings > Environments) (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
@@ -711,7 +711,7 @@ table with its command before quoting it in the future.
 | Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
 | GIT_TOKEN consumers/rate-limit prints | `grep -rn "GIT_TOKEN" commands/ main.py` (defined once in github_api.py) |
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
-| git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write" commands/git_commit.py`; `grep -n "commit_files(" commands/card_bake.py commands/card_guards.py` |
+| git_commit constants and its caller | `grep -n "^[A-Z_]* = \|^cant_write" commands/git_commit.py`; `grep -n "commit_files(" commands/card_guards.py` |
 | font_check constants (no alias table since 2026-10-23) | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" .` (no output) |
 | card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
 | card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |

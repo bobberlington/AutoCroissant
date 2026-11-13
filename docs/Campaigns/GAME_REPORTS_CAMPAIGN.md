@@ -28,8 +28,10 @@ the host decides and the report records that it was the host.
 ## 2. What the save has, what is missing
 
 The save is rebuilt by `commands/tts_save.py` (`_update`: `_pin_links` -> `_fix_keys` -> `_sync_decks` -> `_fix_cards` ->
-`_resize_targets`; `_dump` writes TTS-style JSON byte for byte) from `TTS/decks.json` (keys `about`, `generated`,
-`decks` (57), `bags` (15), `objects` (56), `large_cards`; `repo_head` and the per-deck `cards` counts dropped 2026-10-22) and the
+`_resize_targets`; `_dump` writes TTS-style JSON byte for byte) from `TTS/decks.json` (keys `about`,
+`decks` (57), `bags` (15); `repo_head` and the per-deck `cards` counts dropped 2026-10-22, `objects` 10-30, `large_cards` and
+the audit's unread fields (`generated`, deck `name`/`position`/`confidence`, bag `type`/`where`/`position`/`holds`/`contents`)
+2026-11-12) and the
 card PNGs; run by TTSCardMaker's `tts-save.yml` (once a day when the PNGs, `TTS/decks.json`, `site/Card Edits.json`, the save or
 the card browser's names changed; by hand) and by `/update_tts_save`. The bot commits through the GitHub API
 (`update_repo_save`: blob -> tree -> commit -> `PATCH git/refs/heads/main`, 3 tries when main moves) and, when the token can't

@@ -269,12 +269,12 @@ class CardRepository:
 
     def _fetch_tree(self, repo: str) -> tuple:
         """
-        GET repo's tree, with the cached ETag when it is repo's (hold _tree_lock).
+        GET repo's tree, with the cached ETag (hold _tree_lock).
 
         Returns:
             (tree, its ETag, 200, "") or (None, "", status (0: no reply or not a tree), why)
         """
-        etag = self._tree_etag if repo == self.repository and self._tree and self._tree_etag else ""
+        etag = self._tree_etag if self._tree and self._tree_etag else ""
         try:
             response = fetch_tree(repo, etag)
             if response.status_code == 304:                 # unchanged: free, and no download

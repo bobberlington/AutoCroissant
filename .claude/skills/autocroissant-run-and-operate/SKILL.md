@@ -46,7 +46,7 @@ python3 main.py
 ```
 Git token found, API limited to 5000 requests/hour.    <- import time: main.py:89 print_token_status() (github_api.py); "No git token in config..." if GIT_TOKEN unset
 We have logged in as AutoCroissant#....                <- on_ready (main.py:114-118)
-Registered 46 slash commands for reminder system.      <- slash_registry populated; 46 since 2026-10-25 (five Discord edit commands retired, then /push; 52 from 2026-10-21)
+Registered 42 slash commands for reminder system.      <- slash_registry populated; 42 since 2026-11-12 (/volume, /set_ratio, /set_repo, /view_old_metadata, /frankenstein deleted; 47 from 2026-11-09)
 Bot initialization complete                            <- the four loops started (main.py:139-142)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
 Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
@@ -118,7 +118,7 @@ re-execs main.py. Deploy (2026-10-25): the `jetson-deploy` skill (~/.claude/skil
 `~/venvs/autocroissant/bin/python -m pip install --only-binary :all: -r requirements-bot.txt` (the bot's pins; a no-op
 when nothing moved), then, since there is no `setup.py` (2026-11-11), the removal of untracked build files (every
 `*.so`, a `*.c` beside its `.py`/`.pyx`, `build/`; it fails if any remain), `sudo systemctl restart autocroissant` (always:
-no skip gate, owner 2026-11-11), then waits up to 90 s for `Registered N slash commands` (47) and `Bot initialization
+no skip gate, owner 2026-11-11), then waits up to 90 s for `Registered N slash commands` (42) and `Bot initialization
 complete` in the new process's journal (`_PID=` its MainPID; a Traceback from it, or a changed MainPID, fails early) and
 prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or install stops before the restart).
 `--bot ojwikibot` does the same for ~/Documents/OJWikibot, with its own `setup.py build_ext --inplace` while that
@@ -382,8 +382,8 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   of an edited box past 24 levels), a blank render or a read-back that differs from the edit refuses; a smaller miss is
   baked and written in the bake report and the commit note. The bake also takes the layers it used to refuse
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) or, failing
-  those, after its own text (title-own-text: Papyrus, Sans; the bake's rename after the new title went 2026-11-12, so
-  such a name edit refuses at the read-back until the layer is named Name), and a single
+  those, after its own text (title-own-text: Papyrus, Sans; the bake's rename after the new title went 2026-11-12:
+  the layer keeps its old name and the parser reads the new title by its place (rule P)), and a single
   visible Ability layer under another name; since 2026-10-25 an ability over several layers is edited box by box
   (`parts`, `psd_edit.set_parts`, copies following; a plain edit there refuses at bake time: "N title layers", "N ability layers"). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.

@@ -47,12 +47,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from json import dumps, loads
-from os import cpu_count, environ, getpid, makedirs, pathsep, remove, replace
+from multiprocessing import parent_process
+from multiprocessing.connection import wait as wait_fds
+from os import _exit, cpu_count, environ, getpid, makedirs, pathsep, remove, replace
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, findall, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
+from threading import Thread
 from time import perf_counter
 from traceback import format_exc
 from typing import Callable, Optional
@@ -1598,6 +1601,9 @@ def name_clashes(cards: list) -> set:
 def _init_worker(repository: str, head: str, info: dict, tree: dict, local: str, fonts_dir: str, work: str,
                  cores: int = 0) -> None:
     token_from_env()        # a spawned worker (forkserver on 3.14) starts without the run's header
+    parent = parent_process()   # the run that made it: once gone (killed), the worker exits too
+    if parent is not None:      # None: Inline, in the run's own process
+        Thread(target=lambda: (wait_fds([parent.sentinel]), _exit(1)), daemon=True).start()
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
     snapshot = Snapshot(repository, head, info, tree, local)

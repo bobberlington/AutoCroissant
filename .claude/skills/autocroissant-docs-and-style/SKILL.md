@@ -43,15 +43,15 @@ router function, and `__all__`. The style rules in section 5 apply to it too.
 The cutover's override dict (`card_sync_commands`, `_with_card_sync`) went with `CARD_SYNC` on 2026-10-25: its texts are
 the five dicts' own now.
 
-| Dict | help.py line | Entries (2026-11-09) | /help category |
+| Dict | help.py line | Entries (2026-11-12) | /help category |
 |---|---|---|---|
 | `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20; `/forum_votes` 2026-11-09) | `general` (also the fallback) |
 | `text_commands` | 24 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
-| `card_commands` | 30 | 9 keys = 8 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 46 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
-| `music_commands` | 56 | 17 | `music` |
+| `card_commands` | 31 | 6 keys = 5 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query syntax"` pseudo-entry | `card` |
+| `stats_commands` | 44 | 5 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25; `/view_old_metadata` deleted 2026-11-12) | `stats` |
+| `music_commands` | 53 | 16 (`/volume` deleted 2026-11-12) | `music` |
 
-Total: 48 keys, 47 real commands documented (2026-11-09, with `/forum_votes`; 46 before it) (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
+Total: 43 keys, 42 real commands documented (2026-11-12; 47 from 2026-11-09, with `/forum_votes`) (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
 
 ### 2.2 Entry format
 
@@ -211,8 +211,8 @@ both halves of that pattern.
 Triple-quoted. One-liners for simple functions
 (`"""Send a message to the last active channel."""`, music_player.py:89).
 Args/Returns sections for anything with non-obvious parameters — real shapes:
-`populate_files` has `Args:` and `Returns:` blocks (query_card.py:77-83); `update_bot`
-has an `Args:` block (update_bot.py:143-145). No Sphinx/Google tooling
+`get_card_url` has `Args:` and `Returns:` blocks (query_card.py:830-834); `update_bot`
+has an `Args:` block (update_bot.py:120-122). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
 ### 5.4 The `x[len(x) - 1]` idiom (from the cythonized modules; nothing is compiled since 2026-11-11)

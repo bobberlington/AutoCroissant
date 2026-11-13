@@ -9,8 +9,8 @@ their rules (TTS/decks.json: missing repo cards added, an empty deck filled, car
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
 comes back unless excluded), sets card Nicknames to the card browser's names made from a card data build's
-stats.json (--names), writes the global script and UI from TTS/Global.lua and TTS/Global.xml (nobody edits the save's
-script by hand) and regenerates their resizeTargets table, and puts the rulebook's PDF
+stats.json (--names), writes the global script from TTS/Global.lua (nobody edits the save's script by hand) and
+regenerates its resizeTargets table, and puts the rulebook's PDF
 (TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
@@ -56,7 +56,6 @@ SKIP_PARTS = ("MDW", "Markers")                                             # bu
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
 GLOBAL_LUA = "TTS/Global.lua"               # the save's global script (resizeTargets' rows are the updater's)
-GLOBAL_XML = "TTS/Global.xml"               # the save's global UI
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
 STARS_FOLDER = regex(r"(?<=/)\d+ Stars(?=/)")
 JSON_ESCAPED = {"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"}   # TTS (Newtonsoft) escapes these
@@ -136,8 +135,8 @@ def _walk(objects, parents=()):
 
 def _strings(value, fn, top=False):
     """Apply fn to every string holding a repo link, in place inside containers (a card's TEAM_FIELDS skipped; top: the
-    save, whose global script and UI are Global.lua's and Global.xml's, their links live data on main but pages.json's,
-    which _global_script pins with the PDF)."""
+    save, whose global script is Global.lua's (its links live data on main but pages.json's, which _global_script pins
+    with the PDF) and whose UI stays as it is)."""
     if isinstance(value, dict):
         card = value.get("Name") in CARD_NAMES
         for k, v in value.items():
@@ -459,7 +458,7 @@ class _Report:
         self.stale: list = []
         self.lua_added: list = []
         self.lua_removed: list = []
-        self.script: list = []          # the global script and UI written from their files
+        self.script: list = []          # the global script written from Global.lua
         self.rulebook: list = []        # the Rulebooks bag's changes, one line each
         self.left: list = []
         self.errors: list = []
@@ -781,30 +780,28 @@ def _fix_cards(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
 
 
 def _global_script(save: dict, repo: _Repo, report: _Report) -> None:
-    """The save's global script and UI from TTS/Global.lua and TTS/Global.xml (a missing file leaves its part alone);
-    the script's resizeTargets rows stay the save's, for _resize_targets to regenerate; its pages.json link pinned to the
-    PDF's commit (the Rulebooks bag's link), so the page list is the PDF's (main when history doesn't know the PDF)."""
+    """The save's global script from TTS/Global.lua (a missing file leaves it alone); the script's resizeTargets rows
+    stay the save's, for _resize_targets to regenerate; its pages.json link pinned to the PDF's commit (the Rulebooks
+    bag's link), so the page list is the PDF's (main when history doesn't know the PDF)."""
     pages = f"{RULEBOOK_PAGES}/{PAGES_JSON}"
     ref = repo.sha(f"{RULEBOOK_PAGES}/{PDF_FILE}")
-    for path, key in ((GLOBAL_LUA, "LuaScript"), (GLOBAL_XML, "XmlUI")):
-        try:
-            with open(join(repo.checkout, path), encoding="utf-8") as f:
-                text = f.read().replace("\r\n", "\n")
-        except OSError:
-            continue
-        old = save.get(key) or ""
-        if key == "LuaScript":
-            now, mine = LUA_TABLE.search(old), LUA_TABLE.search(text)
-            if not mine:
-                report.errors.append(f"{path}: no resizeTargets table; the save's script left as it is.")
-                continue
-            if now:                                         # the rows the updater keeps
-                text = text[:mine.start(2)] + now.group(2) + text[mine.end(2):]
-            if ref:
-                text = text.replace(f"{RAW}{CARD_BRANCH}/{pages}", f"{RAW}{ref}/{pages}")
-        if text != old:
-            save[key] = text
-            report.script.append(f"`{path}` written into the save")
+    try:
+        with open(join(repo.checkout, GLOBAL_LUA), encoding="utf-8") as f:
+            text = f.read().replace("\r\n", "\n")
+    except OSError:
+        return
+    old = save.get("LuaScript") or ""
+    now, mine = LUA_TABLE.search(old), LUA_TABLE.search(text)
+    if not mine:
+        report.errors.append(f"{GLOBAL_LUA}: no resizeTargets table; the save's script left as it is.")
+        return
+    if now:                                             # the rows the updater keeps
+        text = text[:mine.start(2)] + now.group(2) + text[mine.end(2):]
+    if ref:
+        text = text.replace(f"{RAW}{CARD_BRANCH}/{pages}", f"{RAW}{ref}/{pages}")
+    if text != old:
+        save["LuaScript"] = text
+        report.script.append(f"`{GLOBAL_LUA}` written into the save")
 
 
 def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:

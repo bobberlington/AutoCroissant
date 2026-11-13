@@ -110,7 +110,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/ability_place.py", "commands/ability_index.json",
                 "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py", "commands/png_changes.py",
                 "commands/standards_post.py")
-SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
+SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
 DATA_STATS = "db/stats.json"                    # the card data on the data branch (card_data): R14's card names
@@ -1288,23 +1288,19 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
 
 
 def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str, shown: dict, faces=None) -> None:
-    """A PSD pushed with its PNG but not its numbered pictures (owner 11-07, silent): each drawn again as its picture (a
-    tagged PSD's: png_export.render_picture) or taking the PNG's change (follow); one that refuses stays as it is."""
+    """A PSD pushed with its PNG but not its numbered pictures (owner 11-07, silent): each drawn again as its picture
+    (png_export.render_picture); an untagged one, or one that refuses, stays as it is."""
     left = {path: sha for path, sha in job.numbered.items() if path not in job.pushed}
     if not left:
         return
     tags = set(psd_edit.variants_of(new))
     numbers = picture_numbers(new, [*job.numbered, *job.pushed])   # a drawn duplicate's too
-    base = png_export.open_png(source.blob(job.base_png))
-    remade = any(w.get("back") or w.get("skipped") for w in result.writes)
-    pushed = shown[job.png] if remade else png_export.open_png(source.blob(job.png_new))
     for path, sha in sorted(left.items()):
-        image = png_export.open_png(source.blob(sha))
         n = numbers.get(path)
-        if len(tags) > 1 and n in tags:
-            data, _ = png_export.render_picture(old, new, image, n, faces)
-        else:
-            data = png_export.follow(base, pushed, {path: image}).get(path, b"")
+        if not (len(tags) > 1 and n in tags):
+            continue                            # untagged: stays as it is
+        image = png_export.open_png(source.blob(sha))
+        data, _ = png_export.render_picture(old, new, image, n, faces)
         if data:
             result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
                                   "line": "follows the PSD (its picture)", "silent": True, "dup": True})
@@ -2374,7 +2370,6 @@ def message(landed: list, after: str, renamed: Optional[dict] = None) -> str:
     fix is said (owner, 2026-10-25)."""
     renamed = renamed or {}
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
-    psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
     folders = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("folders"))
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
@@ -2385,7 +2380,6 @@ def message(landed: list, after: str, renamed: Optional[dict] = None) -> str:
     silent = [f"{standards.PIXEL_LINES.get(kind, kind)} on {plural(pixels.count(kind), 'card')}"
               for kind in dict.fromkeys(pixels)]          # the pixel fixes: said here alone, as the composer
     counts = ", ".join(part for part in (plural(pngs, "PNG") + " re-exported" if pngs else "",
-                                         plural(psds, "PSD") + " fixed" if psds else "",
                                          "Single-line Composer on " + plural(composer, "card") if composer else "",
                                          f"{FOLDERS} on " + plural(folders, "card") if folders else "",
                                          *silent,
@@ -2519,9 +2513,7 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
             if here and not _holds(entry, write["path"], here(write["path"])) and not (by_bot and write["path"] == psd):
                 continue                        # the author replaced that file: nothing to tell
             why = why.replace("superseded: ", "")
-            if write["kind"] == "psd":
-                lines.append(f"{write['line']} (the bot could not fix it: {why})")
-            elif write["path"] == png:
+            if write["path"] == png:
                 lines.append(f"PNG not made: {why}; export it in Photoshop")
             else:
                 lines.append(f"{basename(write['path'])} not updated: {why}; re-export it in Photoshop")

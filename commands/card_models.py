@@ -89,7 +89,7 @@ class CardInfo:
     variant_of: Optional[str] = None          # variant N's: variant 1's card (same PSD, its own PNG)
     variants: Optional[list] = None           # variant 1's: the other variants' cards
     art: Optional[list] = None                # artwork sources (Card Edits.json; a string in older records); each entry its own
-    version = None                            # card_history's {from, to, cause...}; no field (card_db.EXTRA_KEYS)
+    version = None                            # card_history's {from, from_commit, cause}; no field (card_db.EXTRA_KEYS)
     created = None                            # CardDates: {date, from}; no field either
 
     def to_dict(self) -> dict:

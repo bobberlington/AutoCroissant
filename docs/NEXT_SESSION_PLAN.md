@@ -87,11 +87,11 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
   stoogedings (the ring build), Futura-Bold, Lucida Grande Bold, Rockwell Bold, Elephant Italic, Myriad Arabic and
   Roboto Black are in `~/Library/Fonts`; keep stoogedings.ttf identical to main's.
 - No guides or checklists for the owner. Problem cards are the website's hand and bars flags (owner 11-07; the CSV is gone).
-- The TTS save's global script is `TTS/Global.lua` (+ `Global.xml`); never edit the save by hand except as a deliberate
+- The TTS save's global script is `TTS/Global.lua`; never edit the save by hand except as a deliberate
   edit (then move drift.py's BASELINE). No Lua patterns (MoonSharp). Test a Lua change with
   `~/.venvs/tts-checks/bin/python TTS/checks/lua_mock.py "TTS/Impossibility Simulator.json" TTS/Global.lua`; the whole
   suite: `TTS_HISTORY=~/Documents/Tools/wt/scratch/tts/history.git ~/.venvs/tts-checks/bin/python
-  TTS/checks/run_all.py` (17 checks, 4 at a time, about 1 minute).
+  TTS/checks/run_all.py` (13 checks, 4 at a time, about 1 minute).
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 - Every scripted TC commit that changes card PSDs or PNGs carries `Card-sweep: <kind>` (memory `maintenance-pushes-silent`).
@@ -103,7 +103,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 - Workflows: never resume a multi-lane workflow with edited caps (memory `workflow-resume-multilane`). Multi-step shell:
   a `set -euo pipefail` bash script, not a zsh one-liner (zsh: no word splitting; `$C:r` eats `:refs`).
 - AC tests that read TC's workflows or site from a stale checkout: point `AC_SITE_SRC` at a shallow
-  sparse clone of TC main (`.github`, `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`).
+  sparse clone of TC main (`.github`, `site`, `TTS/Global.lua`, `decks.json`).
 
 ## State (2026-11-10 ~05:00, all pushed)
 

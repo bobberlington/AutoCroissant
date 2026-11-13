@@ -393,7 +393,7 @@ its picture); an untagged one is refused ("tag its picture in the PSD"). Picture
 |---|---|
 | `blob` | G1 |
 | `recent` | G9 (the same 30 min) |
-| `duplicate` | G8 (delta transfer instead of a flat refusal) |
+| `duplicate` | G8 (a tagged picture drawn as its picture; an untagged NameN.png refused since 2026-11-12) |
 | `parity` (baseline) | G6 (a), over R, the same render and bar; both refuse only past the floor since 2026-10-23 (section 18) |
 | `shape` | G7 (on the old PNG, before the merge) |
 | `idempotence` | G6 (b): the merge against Photoshop's own image of the new PSD (the bake re-renders its saved PSD) |
@@ -859,7 +859,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
   a hidden one with unread words; R4 tells only new cards and regressions. Dropping them is the R3/R4 block of
   `card_standards.check`.
 - Choices beyond the literal brief, to confirm before `CARD_GUARDS=on`: numbered PNGs (A_Snack2.png) are re-made by
-  copying the changed pixels into them (G8); R10 now stays in the comment (`TELL_PNG_MISMATCH = True` would post it: 0
+  copying the changed pixels into them (G8); R10 now stays in the comment (its Discord switch deleted 2026-11-12: 0
   flags in the last 10 pushes, 2 cards in the tree, Dark_Mind_Eye and Kel, whose restore is pending).
 - The 57 cards within the bar but past 2 levels (2.1). With the fork render only the changed layers' box is replaced, so
   their other pixels stay as exported; G6 (b) still compares the change with Photoshop's image.

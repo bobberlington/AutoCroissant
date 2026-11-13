@@ -587,15 +587,14 @@ def test_discord_fits_and_says_nothing_without_issues():
 
 def test_message():
     landed = [{"login": "Zomoroko", "commit": "7cb4c867" + "0" * 32,
-               "writes": [{"path": "Items/X.png", "kind": "png", "line": "re-exported by the bot's render of the PSD (12 px changed)"},
-                          {"path": "Items/Y.psd", "kind": "psd", "line": "Txt2 synced"}]}]
+               "writes": [{"path": "Items/X.png", "kind": "png", "line": "re-exported by the bot's render of the PSD (12 px changed)"}]}]
     text = cg.message(landed, "f" * 40)
-    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed (push {'f' * 8})"
+    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported (push {'f' * 8})"
     assert "Items/X.png: re-exported by the bot's render of the PSD (12 px changed) (Zomoroko, 7cb4c867)" in text
     assert text.rstrip().endswith(f"Guarded-push: {'f' * 40}") and "Edit-by" not in text
     landed[0]["writes"].append({"path": "Items/Z.png", "kind": "recompress", "line": "recompressed losslessly (9.0 MB -> 2.0 MB)"})
     text = cg.message(landed, "f" * 40)
-    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
+    assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PNG recompressed (push {'f' * 8})"
     trailers = subprocess.run(["git", "interpret-trailers", "--parse"], input=text, capture_output=True, text=True, check=True).stdout
     assert trailers == f"Recompressed: Items/Z.png\nGuarded-push: {'f' * 40}\n"     # what git (and build_site) reads
 
@@ -975,13 +974,14 @@ def test_r1_is_untold_once_its_tags_fix_lands(tmp_path, monkeypatch, png_pushed)
 
 def test_land_never_raises_and_still_settles_the_post(tmp_path, monkeypatch):
     """A requests error (a POST, or a GET past its retries) is the error like a Transient: landed.json, the comment's
-    new body and the settled post are written, exit 1, and the post tells the PNG and the fix that were not made."""
+    new body and the settled post are written, exit 1, and the post tells the PNG that was not made (a PSD fix is silent)."""
     import requests
     out = tmp_path / "plan"
     snack = _entry("Snack", export={"outcome": "re-exported", "changed_px": 5, "numbers": {}})
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     bread = _entry("Bread")
-    _write(out, bread, "X/Bread.psd", "psd", b"psd", "the Name layer is named 'NAME'")
+    _write(out, bread, "X/Bread.psd", "psd", b"psd", "straight apostrophes")
+    bread["writes"][0].update(silent=True, pixels=["apostrophes"])
     plan = _full_plan(tmp_path, [snack, bread])
     for where in ("ref_head", "commit_files"):
         FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1"), "X/Bread.psd": ("100644", "s1"),
@@ -997,7 +997,7 @@ def test_land_never_raises_and_still_settles_the_post(tmp_path, monkeypatch):
         assert landed["error"] == "ConnectionError: connection reset" and landed["sha"] == "", where
         assert "Not landed: ConnectionError: connection reset. Nothing was committed." in (out / "report-landed.md").read_text()
         post = json.loads((out / "discord-final.json").read_text())["content"]
-        assert "PNG not made: the bot's commit failed" in post and "(the bot could not fix it: the bot's commit failed)" in post
+        assert "PNG not made: the bot's commit failed" in post and "could not fix" not in post
 
 
 def test_a_rerun_after_a_landing_says_landed_not_superseded(tmp_path, monkeypatch):
@@ -1827,7 +1827,7 @@ def test_workflow_lints(clone):
 def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     entry = _entry("A", composer=["Name"])
     _write(tmp_path / "plan", entry, "X/A.psd", "psd", b"fixed", "Single-line Composer (Name)")
-    entry["writes"][0].update(shown="", silent=True, composer=True)
+    entry["writes"][0].update(silent=True, composer=True)
     plan = _full_plan(tmp_path, [entry])
     data = json.loads(Path(plan).read_text())
     assert cg.summary(data, []) == {**cg.summary(data, []), "told": 0, "comment": 0, "writes": 1}
@@ -1859,7 +1859,7 @@ def test_pixel_fixes_are_said_only_in_the_commit(tmp_path, monkeypatch):
     assert result.pixel_left == [("apostrophes", "not redrawn: PNG not made: G6")]
     entry = _entry("A")
     _write(tmp_path / "plan", entry, "X/A.psd", "psd", b"straight", "straight apostrophes (Name)")
-    entry["writes"][0].update(shown="", silent=True, composer=False, pixels=["apostrophes"])
+    entry["writes"][0].update(silent=True, composer=False, pixels=["apostrophes"])
     data = json.loads(Path(_full_plan(tmp_path, [entry])).read_text())
     assert cg.discord_payload(data, "o/r") == {} and "apostrophe" not in cg.markdown(data, [], [], [])
     assert cg.message([entry], "f" * 40).startswith(f"Card guards: straight apostrophes on 1 card (push {'f' * 8})")
@@ -1949,11 +1949,11 @@ def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
     entry = _entry("A")
     _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability); straight apostrophes (Name)")
     (out / "files" / "A.psd.plain").write_bytes(b"plain")
-    entry["writes"][0].update(shown="", silent=True, composer=True, pixels=["apostrophes"],
+    entry["writes"][0].update(silent=True, composer=True, pixels=["apostrophes"],
                               plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain"),
                                      "line": "Single-line Composer (Ability)"})
     _write(out, entry, "X/A.png", "png", b"png2", "re-exported for the Single-line Composer's rewrap")
-    entry["writes"][1].update(shown="", silent=True, composer=True)
+    entry["writes"][1].update(silent=True, composer=True)
     plan = _full_plan(tmp_path, [entry])
     sent = {}
     for png, files in (("p1", {"X/A.psd": b"drawn", "X/A.png": b"png2"}), ("author", {"X/A.psd": b"plain"})):

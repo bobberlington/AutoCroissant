@@ -115,7 +115,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
 | `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count). Several layers: edited box by box (`parts`, PARTS_EDITOR.md; the joined `set_ability_layers` splice was deleted 2026-10-25, a plain edit there refuses as impossible); a plain edit of one layer with copies (SOMETHING's) goes through `set_parts`, the copies following (a relaid hidden one too until 2026-11-12) | field removed |
-| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renamed it after the new title, as Photoshop renames a layer it named (`Edit.renamed`), until 2026-11-12 (owner: deleted; such a name edit now refuses at the read-back until the layer is named Name); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
+| `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renamed it after the new title, as Photoshop renames a layer it named (`Edit.renamed`), until 2026-11-12 (owner: deleted; the layer keeps its old name and the parser reads the new title by its place (rule P)); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
 | `creatures` | PSD on a bar per creature (the 2 and 3 creature templates, since 2026-11-07; digit rows per creature since 2026-11-08: Pix, Tainted Lazarus, Twin Emperors, Computer Virus), else website only, as any value the bars can't print (`_site`) | each creature's comp bar set, or its own rows (`set_creatures`, `set_stat(creature=n)`), a shared bar once, moving every creature on it | field removed (website only: stays) |
@@ -218,8 +218,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (removed 2026-11-04; PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
-   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word
-   layers the chart has no style for, `[type]` tokens on a card with image icons in the ability's gaps), `stat>10` (on
+   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, any overlay word
+   layer (since 2026-11-12), `[type]` tokens on a card with image icons in the ability's gaps), `stat>10` (on
    the value alone; `allow_high_stats` is the website's business). (` FX: ` layers the chart has no style for were
    refused until 2026-10-23; they are rebuilt in their own style since.)
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
@@ -369,12 +369,13 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    where counting any overlap left " In Time" without a layer) gets a new one (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
    "2Blazing", beside a whole-word one has no JSX name and refuses `unsupported-card`), cut the same way, the
    chart layer's `lfx2`/`lrFX` deep-copied, a fresh layer id (the seed resource moves past it), directly above the ability's
-   top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
-   the ability is hidden when it names a styled chart status, else the card refuses `unsupported-card`. The report tells
+   top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. Any hand-made overlay word layer over
+   the ability refuses the edit `unsupported-card` (since 2026-11-12; until then one naming a styled chart status was hidden). The report tells
    every FX layer deleted, renamed or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
    remains for FX words with no pixels.
-5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
-   outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
+5. **Render + merge** (section 6). `merge_png` writes only inside each edit's padded region, so outside it the PNG is the
+   old one; a PNG of another size or mode (not RGB/RGBA) is refused `shape` before the merge (the after-merge gates
+   `region`/`shape`, gate_region/gate_shape, deleted 2026-11-12, owner).
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
    the fork's `save(preview=)`, 0.13 s; regenerated where it can't, 9-11 s) or `save(update_preview=False)` (stale preview):
    question 2 decides once, for every card; no flag. Gate `bytes`: compare parsed layer
@@ -473,7 +474,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` (above
    20 since 2026-11-06) like any other new problem (the two-row exemption deleted 2026-11-12). FX layers back as declared after the reopen: the names in order, the new ones
-   visible, styled, directly above the ability's top-level group, no overlay word layer showing. Gate `gate_fx` (BUG 2,
+   visible, styled, directly above the ability's top-level group. Gate `gate_fx` (BUG 2,
    2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
    the new layout): every FX layer inks only inside its phrases' glyph boxes padded
    by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
@@ -1293,7 +1294,7 @@ fresh orphan with this preview and the newest `KEEP_AFTER` (150) under `DAYS_AFT
 the margin makes a rewrite about daily, not every run. So a preview stays at least 6 days unless 150 newer ones came
 after it. Size: about 60 KB a preview (Mini Doomer's WebP 59 KB, result.json 1 KB), so about 12 MB at 200, and history
 stays one rewrite deep. Nothing triggers on it: every push trigger in TTSCardMaker is `branches: [main]` and none
-listens for branch creation, workflow_run or checks (tests/test_card_preview.py checks every workflow), a GITHUB_TOKEN
+listens for branch creation, workflow_run or checks, a GITHUB_TOKEN
 push starts no workflow anyway, and the full-depth checkouts (site, guards, card sync, TTS save) are blobless, so the
 branch adds only its commits and trees to them; the local clones fetch main only.
 
