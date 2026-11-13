@@ -3,7 +3,7 @@ from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
-from discord import Embed, File, Interaction
+from discord import AllowedMentions, Embed, File, Interaction
 from discord.utils import escape_markdown
 from hashlib import sha256
 from io import BytesIO
@@ -27,7 +27,7 @@ from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
 from commands.type_emojis import render_type_tokens
-from commands.utils import BREAK_LEN, queue_file, queue_message
+from commands.utils import BREAK_LEN, queue_file as _queue_file, queue_message as _queue_message
 
 # ========================
 # Configuration
@@ -58,6 +58,7 @@ UNFINISHED = "MDW/Unfinished/"                           # cards not finished: n
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
 NAME_NORM = compile(r"[\s_\-.'\u2019!?,:\u2122\u00ae\u00a9]+")  # autocomplete: WEB_NORM and ! ? , : TM (R) (C)
+NO_MENTIONS = AllowedMentions.none()                     # replies quote the typed text: never ping
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -872,6 +873,16 @@ class CardRepository:
 # ========================
 # Discord Command Functions
 # ========================
+def queue_message(interaction: Interaction, content: str, **kwargs) -> None:
+    """utils.queue_message, pinging nobody."""
+    _queue_message(interaction, content, allowed_mentions=NO_MENTIONS, **kwargs)
+
+
+def queue_file(interaction: Interaction, file: File, **kwargs) -> None:
+    """utils.queue_file, pinging nobody."""
+    _queue_file(interaction, file, allowed_mentions=NO_MENTIONS, **kwargs)
+
+
 def _stats_card(filename: str):
     """The stats entry for a registry file name (aliases resolve to their PNG)."""
     from commands.psd_analyzer import card_name, stats_db

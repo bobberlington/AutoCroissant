@@ -144,6 +144,20 @@ def test_rulebook_lines(monkeypatch):
                     "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]
 
 
+def test_replies_ping_nobody(monkeypatch):
+    """A reply quotes the typed text: '@everyone' in it pings nobody."""
+    import commands.utils as utils
+    from discord import AllowedMentions
+    from pandas import DataFrame
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": ["Each slot takes its turn."]}, index=["08 Global Turn"])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "@everyone")
+    [(_, kw)] = utils.dispatch_queue
+    assert kw["content"] == "No rulebook lines match '@everyone'."
+    assert kw["allowed_mentions"].to_dict() == AllowedMentions.none().to_dict()
+
+
 def test_ban_list(monkeypatch):
     """The website's ban list: a section after the chapters (its own link), a banned card's line (a duplicate's too)."""
     import commands.utils as utils
