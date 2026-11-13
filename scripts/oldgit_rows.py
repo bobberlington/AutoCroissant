@@ -7,8 +7,9 @@ each checked against the picture: stats read off the PNG (the printed value wins
 and ability against the PNG's OCR both ways (the matcher's card cache), stars the PSD draws against the 'N Stars'
 folder, types by their header icon layers' pictures (Types/; today's names), and the PSD's composite against the PNG.
 Two-creature cards are flagged, never summed.
-Minor looks (under png_changes.VISIBLE of the pixels, no data change) fold under "minor changes"; formatting-only text
-changes merge (owner 11-09). A renamed card's rows show the old name (old_name, old_file); never an alias.
+Minor looks (under png_changes.VISIBLE of the pixels, every field sure on both rows and the same) fold under "minor
+changes"; formatting-only text changes merge (owner 11-09). A line ending 'can't affect' (an icon the PSD text lacks)
+goes to review. A renamed card's rows show the old name (old_name, old_file); never an alias.
 
     python oldgit_rows.py reread [-j N]     PSDs whose read has no ability, read again with the text layers named
                                             after their own text as the Ability (rereads.jsonl)
@@ -57,6 +58,9 @@ RECALL = 0.75               # OCR word recall of an ability: it is printed ...
 LETTERS = 0.8               # ... or this share of its letters and digits in order (OCR joins words: '1or 2')
 CLASS_ZONE = 0.935          # a 1:2 card's class line below this (y of a line's middle, card heights)
 GAP = re.compile(r"\S {5,}\S")  # an icon the parser left as spaces ('not          take 2 damage')
+DANGLING = {"affect", "per", "against", "vs", "to", "a", "an", "the", "of", "on", "by", "with", "from", "any", "all",
+            "each", "every", "is", "are"}       # a line ending so wants an icon after it ("can't affect [fire]")
+TOKEN = re.compile(r"\[[^\]]*\]")
 TEXT_SEEN = 2               # OCR words under the bars/title: the card prints text ('-25% SPD')
 HEADER, ICON_MAX = 0.32, 0.3      # type icon layers: bottom and largest side, in card widths
 ICON_SIDE = 32              # type icons compared at this size; one matches a type's picture within
@@ -472,7 +476,7 @@ class Data:
             names = {key, card.get("display_name") or key, (edits.get(key) or {}).get("name") or key}
             s = card.get("stats") or {}
             self.today[key] = {"names": names, "creatures": len(card.get("creatures") or ()), "type": card.get("card_type"),
-                               "stars": card.get("stars"), "stats": valid_stats(
+                               "stars": card.get("stars"), "ability": card.get("ability"), "stats": valid_stats(
                                    {k: s.get(w) for k, w in zip(ORDER, ("hp", "defense", "attack", "speed"))})}
             self.vocab.update(card_words(card.get("ability") or ""))
 
@@ -738,7 +742,7 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
         size = (data.png.get(png["blob"]) or {}).get("size") or [0, 0]
         fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys)
     if kind in ABILITY_KINDS:
-        fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab)
+        fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,
             **({"off": off} if off is not None else {})} if psd else None
     return fields, kind, two, note
@@ -871,17 +875,44 @@ def recall(R, text: str, seen: list):
     return {"words": round(words, 2), "letters": round(letters, 2)}
 
 
-def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=frozenset()) -> dict:
+def dangling(text: str) -> list:
+    """Words a line ends in that want an icon after them ('can't affect', 'per') where the text ends or the next line
+    starts a new sentence: an icon printed at a line's end the PSD text lacks (status cards)."""
+    lines = [line.strip() for line in re.split(r"[\r\n]+", text or "") if line.strip()]
+    out = []
+    for i, line in enumerate(lines):
+        last = re.search(r"([A-Za-z]+)$", line)
+        after = lines[i + 1][0] if i + 1 < len(lines) else None
+        if last and last.group(1).lower() in DANGLING and (after is None or after.isupper() or after == "("):
+            out.append(last.group(1))
+    return out
+
+
+def with_icons(text: str, today) -> bool:
+    """Today's ability is this text's words with more icons."""
+    bare = lambda t: text_key(TOKEN.sub(" ", t or ""))
+    return bool(today) and bare(today) == bare(text) and len(TOKEN.findall(today)) > len(TOKEN.findall(text))
+
+
+def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=frozenset(), today=None) -> dict:
     """The PSD's ability checked against the OCR both ways: its words are printed (recall), and the printed card words
-    are in it (printed_back: no lines it lacks; with the composite off the PNG, every card word and digit)."""
+    are in it (printed_back: no lines it lacks; with the composite off the PNG, every card word and digit). A line
+    ending in a word that wants an icon goes to review (today's text proposed when it is these words with icons)."""
     R = _W.get("readers") or _W.setdefault("readers", readers())
     text = OLD_TOKENS.sub(lambda m: "[" + OLD_TYPES[m.group(1)], ((read or {}).get("ability") or "").strip())
     seen = ability_lines(lines, kind)
     if text:
         found = recall(R, text, seen)
         back = printed_back(text, ability_zone(lines, kind), vocab)
+        ends = dangling(text)
         if GAP.search(text):
             why = "a gap in the text: an icon not read"
+        elif ends:
+            why = f"a line ends in '{ends[0]}': an icon there not read"
+            if with_icons(text, today):
+                out = field(today, "psd + today's icons", False, why=why + "; proposed: today's text (the same words)")
+                out["psd"], out["recall"], out["back"] = text, found, back
+                return out
         elif (read or {}).get("ability_layers", 1) > 1:
             why = f"joined from {read['ability_layers']} text layers"
         elif not (found is None or found["words"] >= RECALL or found["letters"] >= LETTERS):
@@ -902,11 +933,24 @@ def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=fr
     return field("", "psd", read is not None, "ocr", "" if read is not None else "no PSD")
 
 
+def creature_reads(f: dict):
+    """A multi-creature card's stats as read (each creature's picture half, the PSD's rows); None unless every half
+    is read in full."""
+    reads = (f or {}).get("creatures") or {}
+    halves = reads.get("picture")
+    if not halves or any(not half or None in half.values() for half in halves):
+        return None
+    return json.dumps([halves, reads.get("psd")], sort_keys=True)
+
+
 def changed(a: dict, b: dict) -> list:
-    """Fields b changed from a (a field either could not know is no change; text beyond formatting only)."""
+    """Fields b changed from a, sure or not (a field either could not read is no change here: settled() keeps such
+    rows from folding; text beyond formatting only; a multi-creature card's stats by its creatures' reads)."""
     out = []
     for name in ("name", "stars", "types", "stats", "ability"):
         x, y = (a.get(name) or {}).get("value"), (b.get(name) or {}).get("value")
+        if name == "stats" and x is None and y is None:
+            x, y = creature_reads(a.get(name)), creature_reads(b.get(name))
         if x is None or y is None:
             continue
         if name in ("name", "ability"):
@@ -920,14 +964,40 @@ def changed(a: dict, b: dict) -> list:
     return out
 
 
+def settled(a: dict, b: dict) -> bool:
+    """Every field either row has is sure in both and the same (a multi-creature card's stats: the same full reads of
+    each creature): only then may a small look change fold as minor (owner 11-09: a data change is always listed)."""
+    for name in set(a) | set(b):
+        x, y = a.get(name), b.get(name)
+        if not x or not y:
+            return False
+        if name == "stats" and (x.get("creatures") or y.get("creatures")):
+            if creature_reads(x) is None or creature_reads(x) != creature_reads(y):
+                return False
+        elif any(f.get("confidence") != "sure" or f.get("value") is None for f in (x, y)):
+            return False
+    return not changed(a, b)
+
+
+def ability_change(prev: dict, row: dict) -> str:
+    """same / formatting / changed between two sure texts; unknown when either is missing or not sure (a text run never
+    joins across it); same for one picture."""
+    a, b = prev["fields"].get("ability") or {}, row["fields"].get("ability") or {}
+    if prev["blob"] == row["blob"]:
+        return "same"                                          # one picture prints one card
+    if any(f.get("value") is None or f.get("confidence") != "sure" for f in (a, b)):
+        return "unknown"
+    from commands.changelog import formatting_only
+    return "same" if a["value"] == b["value"] else "formatting" if formatting_only(a["value"], b["value"]) else "changed"
+
+
 def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
     """The rows of one card's old files' PNG versions, oldest first."""
     from commands.png_changes import VISIBLE
-    from commands.changelog import formatting_only
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
-    rows, prev, run = [], None, 0
+    rows = []
     for i, png in enumerate(pngs):
         psds = [v for v in versions if v["ext"] == "psd" and v["old_id"] == png["old_id"]]
         until = next((p["ts"] for p in pngs[i + 1:] if p["old_id"] == png["old_id"] and p["ts"] > png["ts"]), float("inf"))
@@ -945,22 +1015,21 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
             row["old_file"] = stem                             # a renamed file (oldgit map's renames)
         if two:
             row["two_creatures"], row["creatures"] = True, two
+        rows.append(row)
+    confirm_stars(rows, today)                                 # before the fold: it moves stars' confidence
+    run = 0
+    for prev, row in zip([None] + rows, rows):
         if prev is None:
             row["minor"], row["data_change"], row["ability_change"] = False, [], "first"
         else:
-            share = 0.0 if prev["blob"] == png["blob"] else data.shares.get((prev["blob"], png["blob"]))
-            diff = [] if prev["blob"] == png["blob"] else changed(prev["fields"], fields)    # one picture prints one card
+            same = prev["blob"] == row["blob"]                 # one picture prints one card
+            share = 0.0 if same else data.shares.get((prev["blob"], row["blob"]))
             row["share"] = share
-            row["data_change"] = diff
-            row["minor"] = not diff and share is not None and share < VISIBLE
-            a, b = (prev["fields"].get("ability") or {}).get("value"), (fields.get("ability") or {}).get("value")
-            row["ability_change"] = "unknown" if a is None or b is None else "same" if a == b else \
-                "formatting" if formatting_only(a, b) else "changed"
-            run += row["ability_change"] == "changed"
+            row["data_change"] = [] if same else changed(prev["fields"], row["fields"])
+            row["minor"] = share is not None and share < VISIBLE and (same or settled(prev["fields"], row["fields"]))
+            row["ability_change"] = ability_change(prev, row)
+            run += row["ability_change"] in ("changed", "unknown")
         row["text_run"] = run                                  # one text, formatting aside: its last form, dated by its first
-        rows.append(row)
-        prev = row
-    confirm_stars(rows, today)
     return rows
 
 
@@ -977,7 +1046,7 @@ def review_items(rows: list, kind: str = "field") -> list:
             items.append({"id": "oldrows-" + stable_id(kind, row["id"], name), "kind": f"{name} unsure", "card": row["card"],
                           "row": row["id"], "date": row["date"], "thumb": row["thumb"], "field": name,
                           "proposed": f.get("value"), "why": f.get("why"),
-                          **{k: f[k] for k in ("reads", "creatures", "recall", "back", "ocr", "raw") if k in f}})
+                          **{k: f[k] for k in ("reads", "creatures", "recall", "back", "ocr", "raw", "psd") if k in f}})
     return items
 
 

@@ -171,3 +171,42 @@ def test_rows_fold_minor_looks_merge_formatting_and_show_the_old_name(rows):
     assert {r["old_name"] for r in found} == {"Plan Ahead"} and today["names"] == {"Tomorrow I'll"}
     assert all(r["fields"][f]["confidence"] == "sure" for r in found for f in ("name", "stars", "stats", "ability"))
     assert first["psd"]["how"] == "same commit"
+
+
+def test_a_look_folds_only_when_every_field_is_sure_and_the_same(rows):
+    """A small look change folds as minor only when every field is sure on both rows and unchanged: a review or
+    unread field keeps the row shown (its text 'unknown', a new text run); a multi-creature card's stats compare
+    each creature's full reads; one picture is one card."""
+    sure = lambda v: {"value": v, "method": "psd", "confidence": "sure"}
+    review = lambda v: {"value": v, "method": "psd", "confidence": "review"}
+    pair = lambda a, b, blobs=("a", "b"): ({"blob": blobs[0], "fields": a}, {"blob": blobs[1], "fields": b})
+    base = {"name": sure("Kit"), "ability": sure("Heal a creature by 3 HP.")}
+    assert rows.settled(base, dict(base)) and rows.ability_change(*pair(base, dict(base))) == "same"
+    reworded = {**base, "ability": review("Heal a creature by 3 HP.")}       # the PSD's text, the print's unknown
+    assert not rows.settled(base, reworded)
+    assert rows.ability_change(*pair(base, reworded)) == "unknown"
+    assert rows.ability_change(*pair(base, reworded, ("a", "a"))) == "same"
+    assert not rows.settled(base, {**base, "ability": sure(None)})
+    assert not rows.settled(base, {"name": sure("Kit")})
+    two = lambda top: {"value": None, "confidence": "review", "creatures": {
+        "count": 2, "psd": None, "picture": [stats(7, 4, top, 6), stats(7, 10, 4, 4)]}}
+    assert rows.settled({**base, "stats": two(6)}, {**base, "stats": two(6)})
+    assert not rows.settled({**base, "stats": two(6)}, {**base, "stats": two(5)})
+    assert rows.changed({"stats": two(6)}, {"stats": two(5)}) == ["stats"]
+    unread = {"value": None, "confidence": "review", "creatures": {"count": 2, "psd": None, "picture": [None, None]}}
+    assert not rows.settled({**base, "stats": unread}, {**base, "stats": unread})
+
+
+def test_an_icon_at_a_line_end_the_psd_text_lacks_goes_to_review(rows):
+    """'can't affect' ending the text, or a line ending 'per' before a new sentence: an icon not read; today's text is
+    proposed when it is the same words with icons. A line running on is fine."""
+    line = lambda text, y: [text, 1.0, 0.1, y, 0.8, 0.03]
+    status = rows.check_ability({"ability": "2 DMG, can’t affect"}, [line("2 DMG, can't affect", 0.3)], "debuff", True,
+                                set(), "2 DMG, can't affect [fire]")
+    assert (status["confidence"], status["value"], status["psd"]) == ("review", "2 DMG, can't affect [fire]",
+                                                                      "2 DMG, can’t affect")
+    other = rows.check_ability({"ability": "-2 DEF\ncan't affect"}, [], "debuff", True, set(), "-1 DEF can't affect [undead]")
+    assert (other["confidence"], other["value"]) == ("review", "-2 DEF\ncan't affect")
+    assert rows.dangling("-1 Cost per\nTrickster: deals 2 damage") == ["per"]
+    assert rows.dangling("Deal 2 damage to\nevery creature.\n(OPT) Heal the") == ["the"]
+    assert rows.dangling("Summon an [undead] minion.") == []
