@@ -93,6 +93,20 @@ LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size
 LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
 LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
 MOTION = {6: 2}                 # Motion Blur at angle 0 proven on Photoshop 2023's pixels: distance px -> c in (S + c) // taps
+# Photoshop 2023's Image Interpolation (Preferences > General): its relink and Update draw a placed layer again with it,
+# not the pick a Free Transform made (probed 11-13). draw() modes past PIL's; PS_AUTO is Photoshop's default.
+PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_SMOOTHER, PS_SHARPER, PS_AUTO = range(10, 16)
+# Bicubic Sharper's kernel per reduction (fitted on Photoshop 2023's probes, effectsgaps 11-13): t = 0, 1/8 .. 2.25
+# output px; between two scales on log2, outside them the nearer one
+SHARPER = {
+    0.263: (1.0, .974, .922, .864, .784, .658, .5, .308, .09, -.155, -.295, -.347, -.333, -.266, -.193, -.1, -.045,
+            -.023, -.023),
+    0.369: (1.0, .963, .925, .868, .749, .629, .485, .295, .089, -.136, -.26, -.303, -.295, -.233, -.16, -.081, -.018,
+            -.008, -.012),
+    0.713: (1.0, .983, .936, .851, .716, .564, .405, .237, .066, -.094, -.186, -.216, -.206, -.169, -.113, -.057, -.015,
+            -.002, -.005),
+    0.931: (1.0, .989, .937, .841, .698, .534, .363, .198, .052, -.071, -.14, -.161, -.156, -.126, -.085, -.043, -.012,
+            .001, -.001)}
 # Photoshop 2023's draw of fork_draws_knockout's probe (kofix 11-11): tsly -> (left, right) pixel; None: alpha 0
 KNOCKOUT_PROBE = {None: ((127, 0, 128, 255), (255, 0, 0, 255)), 0: ((0, 0, 255, 128), None)}
 KNOCKOUT_TOL = 2                # levels off Photoshop's probe pixels
@@ -515,14 +529,91 @@ def place_trim(corners: list, old_size: tuple, new_size: tuple, old_box: tuple, 
     return [float(c) for c in out]
 
 
+def _keys(t: np.ndarray, a: float) -> np.ndarray:
+    t = np.abs(t)
+    return np.where(t < 1, (a + 2) * t ** 3 - (a + 3) * t ** 2 + 1,
+                    np.where(t < 2, a * t ** 3 - 5 * a * t ** 2 + 8 * a * t - 4 * a, 0.0))
+
+
+def _kernel(mode: int, scale: float, reduce: bool) -> tuple:
+    """A Photoshop mode's kernel at a side's scale: (weight of t, support); t in output px when reduced."""
+    if mode == PS_AUTO:
+        mode = PS_SHARPER if reduce else PS_SMOOTHER
+    if mode == PS_BILINEAR:
+        return (lambda t: np.clip(1 - np.abs(t), 0, None)), 1.0
+    if mode == PS_SMOOTHER:                     # Keys -0.6 widened 8/7
+        return (lambda t: _keys(np.asarray(t) * 7 / 8, -0.6)), 16 / 7
+    if mode == PS_SHARPER and scale < 1:
+        marks = sorted(SHARPER)
+        x = float(np.log2(np.clip(scale, marks[0], marks[-1])))
+        lo = max(m for m in marks if np.log2(m) <= x + 1e-9)
+        hi = min(m for m in marks if np.log2(m) >= x - 1e-9)
+        f = 0.0 if hi == lo else (x - np.log2(lo)) / (np.log2(hi) - np.log2(lo))
+        table = (1 - f) * np.array(SHARPER[lo]) + f * np.array(SHARPER[hi])
+        knots = np.arange(len(table)) / 8
+        return (lambda t: np.interp(np.abs(t), knots, table, right=0.0)), float(knots[-1])
+    return (lambda t: _keys(t, -0.75)), 2.0     # Bicubic (and Sharper enlarging)
+
+
+def _taps(start: int, count: int, edge0: float, edge1: float, size: int, mode: int, reduce: bool) -> tuple:
+    """Output pixels start .. start + count - 1 of a quad side [edge0, edge1] over size source pixels: (source index
+    and weight arrays, (count, taps): edges clamped, rows summing to 1; each pixel's coverage by the side)."""
+    scale = (edge1 - edge0) / size
+    x = start + np.arange(count, dtype=np.float64)
+    cover = np.clip(np.minimum(x + 1, edge1) - np.maximum(x, edge0), 0.0, 1.0)
+    u = (x + 0.5 - edge0) / scale                # source position, pixel corners at whole numbers
+    if mode == PS_NEAREST or (abs(scale - 1) < 1e-6 and abs(edge0 - round(edge0)) < 1e-6):
+        index = np.clip(np.floor(u).astype(int), 0, size - 1)[:, None]
+        return index, np.ones(index.shape), cover
+    kernel, support = _kernel(mode, scale, reduce)
+    shrink = min(scale, 1.0)
+    reach = int(np.ceil(support / shrink)) + 1
+    index = np.floor(u - 0.5).astype(int)[:, None] + np.arange(-reach, reach + 2)[None, :]
+    weight = kernel((index + 0.5 - u[:, None]) * shrink)
+    total = weight.sum(1, keepdims=True)
+    return np.clip(index, 0, size - 1), weight / np.where(np.abs(total) > 1e-12, total, 1.0), cover
+
+
+def _ps_resample(src: np.ndarray, corners: list, mode: int) -> tuple:
+    """Straight RGBA on an upright quad as Photoshop 2023 draws a placed layer (effectsgaps 11-13, its probes): colour
+    and alpha apart, a clear pixel taking the nearest inked one's colour, across, clipped, then down; Automatic sharper
+    when the quad is smaller than the picture, else smoother. Returns (premultiplied RGBA, the quad's edge coverage in
+    alpha; canvas box)."""
+    clear = src[..., 3] <= 0
+    if clear.any() and not clear.all():
+        from scipy.ndimage import distance_transform_edt
+        rows, cols = distance_transform_edt(clear, return_distances=False, return_indices=True)
+        src = np.dstack([src[rows, cols, :3], src[..., 3:]])
+    height, width = src.shape[:2]
+    left, top, right, bottom = corners[0], corners[1], corners[2], corners[5]
+    reduce = (right - left) * (bottom - top) < width * height
+    x0, y0, x1, y1 = int(np.floor(left)), int(np.floor(top)), int(np.ceil(right)), int(np.ceil(bottom))
+    xi, xw, xc = _taps(x0, x1 - x0, left, right, width, mode, reduce)
+    yi, yw, yc = _taps(y0, y1 - y0, top, bottom, height, mode, reduce)
+    across = np.zeros((height, x1 - x0, 4), np.float32)
+    for k in range(xi.shape[1]):
+        across += src[:, xi[:, k]] * xw[:, k, None].astype(np.float32)
+    np.clip(across, 0.0, 1.0, out=across)
+    out = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
+    for k in range(yi.shape[1]):
+        out += across[yi[:, k]] * yw[:, k, None, None].astype(np.float32)
+    np.clip(out, 0.0, 1.0, out=out)
+    out[..., :3] *= out[..., 3:]
+    out *= (yc[:, None] * xc[None, :]).astype(np.float32)[..., None]
+    return out, (x0, y0, x1, y1)
+
+
 def draw(rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A picture drawn on its quad as a placed layer's pixels: premultiplied, resampled by mode (Image.NEAREST, BILINEAR,
-    BICUBIC; an upright rectangle by resize over its exact box, any other quad by the inverse homography).
+    BICUBIC; an upright rectangle by resize over its exact box, any other quad by the inverse homography; a PS_ mode
+    on an upright rectangle as Photoshop 2023 draws it, _ps_resample, on any other quad PIL's nearest or bicubic).
 
     Returns:
         (straight RGBA float32 over the drawn pixels, their canvas box), or (None, (0, 0, 0, 0)) when nothing shows
     """
+    if mode >= PS_NEAREST and not upright(corners):
+        mode = Image.NEAREST if mode == PS_NEAREST else Image.BICUBIC
     src = rgba.astype(np.float32) / 255.0
     pre = np.dstack([src[..., :3] * src[..., 3:], src[..., 3]])
     height, width = pre.shape[:2]
@@ -533,21 +624,24 @@ def draw(rgba: np.ndarray, corners: list, mode: int) -> tuple:
     size = (x1 - x0, y1 - y0)
     sx, sy = (corners[2] - corners[0]) / width, (corners[5] - corners[1]) / height
     margin = 8 + (int(np.ceil(max(1 / abs(sx), 1 / abs(sy)))) if upright(corners) else 0)
-    padded = np.zeros((height + 2 * margin, width + 2 * margin, 4), np.float32)
-    padded[margin:margin + height, margin:margin + width] = pre
-    if upright(corners):
-        box = ((x0 - corners[0]) / sx + margin, (y0 - corners[1]) / sy + margin,
-               (x1 - corners[0]) / sx + margin, (y1 - corners[1]) / sy + margin)
-        out = np.dstack([np.asarray(Image.fromarray(np.ascontiguousarray(padded[..., k]), "F").resize(size, mode, box=box))
-                         for k in range(4)])
+    if mode >= PS_NEAREST:
+        out, (x0, y0, _, _) = _ps_resample(src, corners, mode)
     else:
-        inverse = np.linalg.inv(homography(width, height, corners))
-        shift = np.array([[1, 0, margin], [0, 1, margin], [0, 0, 1]], float) @ inverse @ \
-            np.array([[1, 0, x0], [0, 1, y0], [0, 0, 1]], float)
-        shift = shift / shift[2, 2]
-        coeffs = tuple(shift.flatten()[:8])
-        out = np.dstack([np.asarray(Image.fromarray(np.ascontiguousarray(padded[..., k]), "F").transform(
-            size, Image.Transform.PERSPECTIVE, coeffs, mode)) for k in range(4)])
+        padded = np.zeros((height + 2 * margin, width + 2 * margin, 4), np.float32)
+        padded[margin:margin + height, margin:margin + width] = pre
+        if upright(corners):
+            box = ((x0 - corners[0]) / sx + margin, (y0 - corners[1]) / sy + margin,
+                   (x1 - corners[0]) / sx + margin, (y1 - corners[1]) / sy + margin)
+            out = np.dstack([np.asarray(Image.fromarray(np.ascontiguousarray(padded[..., k]), "F").resize(
+                size, mode, box=box)) for k in range(4)])
+        else:
+            inverse = np.linalg.inv(homography(width, height, corners))
+            shift = np.array([[1, 0, margin], [0, 1, margin], [0, 0, 1]], float) @ inverse @ \
+                np.array([[1, 0, x0], [0, 1, y0], [0, 0, 1]], float)
+            shift = shift / shift[2, 2]
+            coeffs = tuple(shift.flatten()[:8])
+            out = np.dstack([np.asarray(Image.fromarray(np.ascontiguousarray(padded[..., k]), "F").transform(
+                size, Image.Transform.PERSPECTIVE, coeffs, mode)) for k in range(4)])
     alpha = np.clip(out[..., 3], 0.0, 1.0)
     rgb = np.where(alpha[..., None] > 0, np.clip(out[..., :3], 0.0, None) / np.maximum(alpha, 1e-6)[..., None], 0.0)
     ys_, xs_ = np.nonzero(np.round(alpha * 255) > 0)
@@ -1130,7 +1224,7 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
                 drawn = picture(psd, target, file_type(target, path)) if cls == REDRAW else None
                 for layer, corners in zip(layers, quads):
                     if cls == REDRAW:
-                        redraw(layer, drawn, corners, image_mode(layer, drawn, old))
+                        redraw(layer, drawn, corners, image_mode(layer, old, relink=True))
                         out.redrawn.append(layer.name)
                 quads = {tuple(corners_of(layer)): corners for layer, corners in zip(layers, quads)}
         else:
@@ -1479,7 +1573,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
                 dx, dy = (size[0] - w0) / 2, (size[1] - h0) / 2
                 quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
                 quads[tuple(corners)] = quad = snapped(quad) if upright(quad) and (dx or dy) else quad  # same size: kept
-                redraw(layer, drawn, quad, image_mode(layer, drawn, old_rgba))
+                redraw(layer, drawn, quad, image_mode(layer, old_rgba, relink=bool(dx or dy)))
                 pixels = True
         relink(psd, link.uuid, rel, link.path, len(new), blob, quads, size)
         set_ppi(layers, ppi(new, link.path))    # Photoshop's Update keeps the quad only at the file's ppi

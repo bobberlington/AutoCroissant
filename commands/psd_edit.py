@@ -54,7 +54,8 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
 from commands.psd_parser import AUX_ITEM_TYPES, FRAME_SHARE, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands import psd_links
-from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, undrawable, warped
+from commands.psd_links import (PS_AUTO, PS_BICUBIC, PS_BILINEAR, PS_NEAREST, corners_of, decode, draw, file_type,
+                                 link_pixels, undrawable, warped)
 from commands.psd_parts import ACTIVE_TEMPLATE, TEMPLATE_DIR, TEMPLATES, lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
@@ -120,7 +121,8 @@ HARD_SOFT = 0.005           # hard_edged: the share of a picture's pixels with i
 HARD_COLOURS = 256          # its colours at most
 HARD_SMALL = 128            # px: its pixels show at this size; a larger one must be blocky
 HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
-HARD_CLEAR = 4              # stored_mode, image_mode: times closer one mode must redraw the stored pixels
+HARD_CLEAR = 4              # stored_mode: times closer one mode must redraw the stored pixels
+IMAGE_CLEAR = 2             # image_mode: times fewer pixels one mode must leave off the stored ones
 GLYPH_TOL = 0.0001          # a restyled text layer's glyphs within this of where they were draw nothing new (canvas px)
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
@@ -3484,13 +3486,14 @@ def stored_mode(layer) -> Optional[int]:
     return Image.NEAREST if near * HARD_CLEAR < cubic else Image.BICUBIC if cubic * HARD_CLEAR < near else None
 
 
-def image_mode(layer, image: np.ndarray, drawn: Optional[np.ndarray] = None) -> int:
+def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) -> int:
     """
-    The resampling a placed picture (any image smart object; a bar's is stored_mode) is drawn again with, per object
-    as comp_render's: the mode its stored pixels show, when one mode redraws `drawn` (the picture they were drawn from:
-    by default the embedded one) on the layer's quad HARD_CLEAR times closer in alpha than every other; else nearest
-    for pixel art or a flat shape (hard_edged(image)); else bicubic (Photoshop's default; 227 of 740 pictures show no
-    mode, ../resize/evid.json).
+    The resampling a placed picture (any image smart object; a bar's is stored_mode) is drawn again with: one of
+    Photoshop 2023's (psd_links PS_ modes; its relink and Update draw with the Image Interpolation preference). The mode
+    its stored pixels show, when one redraws `drawn` (the picture they were drawn from: by default the embedded one) on
+    the layer's quad with IMAGE_CLEAR times fewer canvas pixels off by over 8 levels than every other (a relink, a file
+    of another size, takes only nearest so: the maker's Photoshop draws nearest); else Photoshop's default, Bicubic
+    Automatic (143 of 288 relinked layers stored it, 60 nearest; effectsgaps 11-13).
     """
     stored = layer.numpy()
     if drawn is None and layer.smart_object.kind == "data":
@@ -3499,22 +3502,28 @@ def image_mode(layer, image: np.ndarray, drawn: Optional[np.ndarray] = None) -> 
     corners = corners_of(layer)
     errors = {}
     if drawn is not None and stored is not None and stored.shape[2] >= 4 and len(corners) == 8:
-        box = tuple(layer.bbox)
-        for mode in (Image.NEAREST, Image.BILINEAR, Image.BICUBIC):
+        width, height = layer._psd.width, layer._psd.height
+
+        def on_canvas(rgba: np.ndarray, box: tuple) -> np.ndarray:
+            out = np.zeros((height, width, 4), np.float32)
+            x0, y0, x1, y1 = max(box[0], 0), max(box[1], 0), min(box[2], width), min(box[3], height)
+            if x1 > x0 and y1 > y0:
+                part = rgba[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]
+                out[y0:y1, x0:x1] = np.dstack([part[..., :3] * part[..., 3:4], part[..., 3:4]])
+            return out
+        own = on_canvas(stored, tuple(layer.bbox))
+        for mode in (PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_AUTO):
             rgba, where = draw(drawn, corners, mode)
             if rgba is None:
                 errors = {}
                 break
-            area = union_box([box, where])
-            plane = np.zeros((area[3] - area[1], area[2] - area[0]), np.float32)
-            plane[where[1] - area[1]:where[3] - area[1], where[0] - area[0]:where[2] - area[0]] = rgba[..., 3]
-            plane[box[1] - area[1]:box[3] - area[1], box[0] - area[0]:box[2] - area[0]] -= stored[..., 3]
-            errors[mode] = float(np.abs(plane).sum())
+            errors[mode] = int((np.abs(on_canvas(rgba, where) - own).max(-1) > 8 / 255).sum())
     if errors:
         best = min(errors, key=errors.get)
-        if all(errors[best] * HARD_CLEAR < error for mode, error in errors.items() if mode != best):
+        if all(errors[best] * IMAGE_CLEAR < error for mode, error in errors.items() if mode != best) \
+                and (not relink or best == PS_NEAREST):
             return best
-    return Image.NEAREST if hard_edged(image) else Image.BICUBIC
+    return PS_AUTO
 
 
 def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = True) -> tuple:

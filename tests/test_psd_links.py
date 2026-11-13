@@ -6,7 +6,9 @@ file with two users.
 """
 import json
 import subprocess
+from base64 import b64decode
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -223,23 +225,23 @@ def test_rslt_is_the_files_ppi():
 
 def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     """One MDW/Linked file, two users at two depths and scales (one PNG named in another case). A lossless re-save: their
-    sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic) on their own
-    quads (same size: no snap), their PNGs re-exported to the new drawing; card-sync.yml's due and redraw command lines
-    see both."""
+    sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again as their stored pixels show (nearest;
+    Bicubic Automatic) on their own quads (same size: no snap), their PNGs re-exported to the new drawing; a relink takes
+    nearest alone from them; card-sync.yml's due and redraw command lines see both."""
     repo = tmp_path / "cards"
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
     repo.mkdir()
     git("init", "-q")
-    art, users = _art(), {"Creatures/X/3 Stars/A.psd": (40.4, 60.3, 2.0), "Items/B.psd": (300, 200, 1.5)}
+    art, users = _art(), {"Creatures/X/3 Stars/A.psd": (40.4, 60.3, 2.0, pl.PS_NEAREST), "Items/B.psd": (300, 200, 1.5, pl.PS_AUTO)}
     pngs = {"Creatures/X/3 Stars/A.psd": "Creatures/X/3 Stars/A.png", "Items/B.psd": "Items/b.png"}
     data = _png(art, 9)
     (repo / "MDW/Linked").mkdir(parents=True)
     (repo / "MDW/Linked/art.png").write_bytes(data)
-    for rel, (x, y, s) in users.items():
+    for rel, (x, y, s, mode) in users.items():
         psd = PSDImage.new("RGB", (600, 500))
         PixelLayer.fromarray(np.full((500, 600, 4), (240, 240, 230, 255), np.uint8), psd, name="bg")
         corners = [x, y, x + 100 * s, y, x + 100 * s, y + 80 * s, x, y + 80 * s]
-        out, box = pl.draw(np.asarray(art), corners, Image.BICUBIC)
+        out, box = pl.draw(np.asarray(art), corners, mode)
         layer = PixelLayer.fromarray((out * 255 + 0.5).astype(np.uint8), psd, name="art", top=box[1], left=box[0])
         pl.link_pixels(layer, rel, "MDW/Linked/art.png", data, corners)
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -288,13 +290,31 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     assert json.loads((report / "redraw.json").read_text())["cards"] == sorted(users)
     done = pl.redraw_linked(str(repo), known)
     assert sorted(done.files) == sorted([*users, *pngs.values()]) and not done.notes
-    for rel, (x, y, s) in users.items():
+    for rel, (x, y, s, mode) in users.items():
+        assert pe.image_mode(PSDImage.open(repo / rel)[1], np.asarray(art), relink=True) == mode
         new = PSDImage.open(BytesIO(done.files[rel]))
-        want, box = pl.draw(np.asarray(edit), [x, y, x + 100 * s, y, x + 100 * s, y + 80 * s, x, y + 80 * s], Image.BICUBIC)
+        want, box = pl.draw(np.asarray(edit), [x, y, x + 100 * s, y, x + 100 * s, y + 80 * s, x, y + 80 * s], mode)
         assert tuple(new[1].bbox) == box and np.abs(new[1].numpy() - want).max() <= 1 / 255 and new[1].smart_object.filesize == len(pixels)
         render = np.asarray(new.composite(ignore_preview=True).convert("RGB"), np.int16)
         png = np.asarray(Image.open(BytesIO(done.files[pngs[rel]])).convert("RGB"), np.int16)
         assert np.abs(png - render).max() <= png_export.TOL
+
+
+def test_photoshop_resampling():
+    """draw's PS_ modes against Photoshop 2023's own pixels (fixtures/ps_resample.json: placed noise at its Image
+    Interpolation preference: Bicubic Automatic enlarging and reducing, straight alpha, nearest): within 6 levels,
+    nearest exact; PIL's bicubic is not."""
+    cases = json.loads((Path(__file__).parent / "fixtures/ps_resample.json").read_text())["cases"]
+    for case in cases:
+        source = np.asarray(Image.open(BytesIO(b64decode(case["source"]))).convert("RGBA"))
+        want = np.asarray(Image.open(BytesIO(b64decode(case["photoshop"]))).convert("RGBA"), np.int16)
+        x0, y0, x1, y1 = case["box"]
+
+        def off(mode) -> int:
+            rgba, box = pl.draw(source, case["corners"], mode)
+            return np.abs(np.round(rgba * 255).astype(np.int16)[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]] - want).max()
+        mode = getattr(pl, case["mode"])
+        assert off(mode) <= (0 if mode == pl.PS_NEAREST else 6) < off(Image.BICUBIC), case["what"]
 
 
 def test_a_linked_document_keeps_its_colours(clone):
