@@ -165,6 +165,7 @@ def test_ban_list(monkeypatch):
     from types import SimpleNamespace
     site = {"cards": [{"id": "marx", "png": "Creatures/Kirby/Marx.png"}, {"id": "marx2", "png": "Creatures/Kirby/Marx2.png",
                                                                           "dup": "marx"}],
+            "thumbs": {"240": "aaa111", "360": "bbb222"},
             "banlist": {"notes": ["One of each item."], "groups": [
                 {"title": "5 star creatures", "entries": [{"name": "Marx", "reason": "antifun", "id": "marx"}]},
                 {"title": "4 star items", "entries": [{"name": "Mimic", "reason": "", "id": None}]}]}}
@@ -173,6 +174,7 @@ def test_ban_list(monkeypatch):
     repo = qc.CardRepository()
     repo._populate_site_ids()
     assert repo.banned == {"marx": "antifun", "marx2": "antifun"}
+    assert repo.thumb_tag == "bbb222"                                          # card grids' pictures
     assert qc.ban_list_text(repo.banlist) == "One of each item.\n\n5 star creatures:\nMarx - antifun\n\n4 star items:\nMimic"
     repo.rulebook_dff = DataFrame({"ability": ["Use an item."]}, index=["13. Items"])
     monkeypatch.setattr(qc, "card_repo", repo)

@@ -76,22 +76,51 @@ def test_grids_go_as_the_website(repo, monkeypatch):
     repo.ability_search_engine = lambda ability: DataFrame(
         {"ability": ["fire"] * 3, "display_name": ["Zap", None, "Fire Ant"]}, index=["Bolt", "apple", "Ant Queen"])
     qc.query_ability(utils.make_simple_fake_interaction(1), "fire-ANT")
-    assert [(caption, url) for caption, url, _ in seen] == [
+    assert [(caption, url) for caption, url, *_ in seen] == [
         ("1. Fire Ant", "https://img/Ant_Queen.png"), ("2. apple", None), ("3. Zap", None)]
     assert utils.dispatch_queue[0][1]["content"].split("\n")[1:4] == ["**1.** Fire Ant", "**2.** apple", "**3.** Zap"]
 
 
 def test_grid_caches_only_pinned_pictures(repo, monkeypatch):
-    """A picture is cached by its blob only from a commit-pinned link; a branch link (CDN lag) is fetched uncached."""
+    """Each card's website thumb (named by its blob); its raw link is cached only when commit-pinned (CDN lag)."""
     import commands.card_grid as cg
     repo.git_files = {f"card_{i}.png": f"Items/Card_{i}.png" for i in range(2)}
     repo.blobs = {"Items/Card_0.png": "b0", "Items/Card_1.png": "b1"}
+    repo.thumb_tag = "t3"
     monkeypatch.setattr(qc, "pinned_ref", lambda _repo, path, blob: "c0" if blob == "b0" else None)
     seen = []
     monkeypatch.setattr(cg, "grids", lambda cards: seen.extend(cards) or [])
     monkeypatch.setattr(cg, "prune", lambda keep: None)
     qc.post_grids(utils.make_simple_fake_interaction(1), ["Card 0", "Card 1"], "", "")
-    assert [blob for _, _, blob in seen] == ["b0", ""]
+    assert [card[2:] for card in seen] == [("b0", f"{qc.SITE_URL}/thumbs/b0-360-t3.avif", True),
+                                           ("b1", f"{qc.SITE_URL}/thumbs/b1-360-t3.avif", False)]
+
+
+def test_grid_pictures_from_the_websites_thumbs(tmp_path, monkeypatch):
+    """The thumb first (cached even beside a branch link); a failed one: the PNG (cached if pinned); no AVIF: the PNG."""
+    import commands.card_grid as cg
+    from requests import HTTPError
+    served, asked = {"thumb": (360, (255, 0, 0)), "png": (1200, (0, 0, 255))}, []
+
+    def get(url, timeout):
+        asked.append(url)
+        if url not in served:
+            return SimpleNamespace(raise_for_status=lambda: (_ for _ in ()).throw(HTTPError("404")))
+        out = BytesIO()
+        Image.new("RGBA", (served[url][0], served[url][0] * 3 // 2), served[url][1]).save(out, "PNG")
+        return SimpleNamespace(raise_for_status=lambda: None, content=out.getvalue())
+    monkeypatch.setattr(cg, "get", get)
+    monkeypatch.setattr(cg, "CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(cg, "AVIF", True)
+    color = lambda pic: pic.getpixel((150, 200))
+    assert color(cg.picture("png", "b1", "thumb", pinned=False)) == (255, 0, 0) and asked == ["thumb"]
+    assert (tmp_path / "b1.jpg").is_file()
+    assert color(cg.picture("png", "b2", "gone", pinned=False)) == (0, 0, 255) and asked[1:] == ["gone", "png"]
+    assert not (tmp_path / "b2.jpg").exists()                                  # a branch link's: not cached
+    assert color(cg.picture("png", "b2", "gone")) == (0, 0, 255) and (tmp_path / "b2.jpg").is_file()   # pinned
+    monkeypatch.setattr(cg, "AVIF", False)
+    asked.clear()
+    assert color(cg.picture("png", "b3", "thumb")) == (0, 0, 255) and asked == ["png"]
 
 
 # ========================
