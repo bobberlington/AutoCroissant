@@ -949,7 +949,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
             row["minor"], row["data_change"], row["ability_change"] = False, [], "first"
         else:
             share = 0.0 if prev["blob"] == png["blob"] else data.shares.get((prev["blob"], png["blob"]))
-            diff = changed(prev["fields"], fields)
+            diff = [] if prev["blob"] == png["blob"] else changed(prev["fields"], fields)    # one picture prints one card
             row["share"] = share
             row["data_change"] = diff
             row["minor"] = not diff and share is not None and share < VISIBLE
