@@ -73,6 +73,7 @@ OLD_GIT = "~/Downloads/Old TTSCardMaker/.git"     # the pre-wipe repo: read only
 OLD_CUTOFF = 1699254922                           # TTSCardMaker's last 'init' (36d62e53): old commits after it unused
 OLDGIT = ("derived", "oldgit")                    # the old-git pass's outputs under the root
 CATALOGUE = ("derived", "catalogue", "channels.json")   # the channel pass's kinds (meme/joke: the morgue)
+SHEETS = ("derived", "catalogue", "pictures.jsonl")     # its sheets checked by eye: multi, pair (seam grid) or no
 MAP_SURE = 0.9                                    # an old card's map to today's card: at least this sure
 USER_AGENT = "AutoCroissant discord_match"
 IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "psd"}
@@ -144,6 +145,8 @@ GIT_EARLIER_DAYS = 14                             # Discord first post this much
 NOTES_PER_CARD = 12
 MORGUE = re_compile(r"meme|joke|cursed|graveyard")   # morgue channels: meme, joke and scrapped cards, never a live
 MORGUE_IDS = {"835450716947873823", "914367916676366406"}   # card's (owner 2026-11-13: meme-cards, joke-ideas)
+LEFT_OUT = {"1087297393403371550": "ai-images", "1092987235256766494": "patty-vault"}   # never read (owner Q1=C,
+                                                  # 11-13: AI copies of real cards; reaction pictures, no cards)
 MENTION_ROUND = 600                               # seconds: a poster's message this close to an image is its caption
 
 CREATION = re_compile(r"\b(new (card|creature|item|field|minion|status|buff|debuff)s?|introducing|made (a|this|another|my)|"
@@ -1359,7 +1362,7 @@ def load_posts(root: str) -> tuple:
                     record = loads(line)
                 except ValueError:
                     continue
-                if isinstance(record, dict) and record.get("id"):
+                if isinstance(record, dict) and record.get("id") and not left_out(record):
                     record["_container"] = container
                     records[record["id"]] = record
     for record in sorted(records.values(), key=lambda r: int(r["id"])):
@@ -1371,6 +1374,10 @@ def load_posts(root: str) -> tuple:
                            "file": stored, "sha256": entry["sha256"], "filename": entry.get("filename"),
                            "kind": kind})
     return records, images
+
+
+def left_out(record: dict) -> bool:
+    return record.get("channel_id") in LEFT_OUT or (record.get("thread") or {}).get("id") in LEFT_OUT
 
 
 def is_bot(record: dict) -> bool:
@@ -1703,6 +1710,20 @@ def sheet_grid(feat: dict, names: Names) -> Optional[tuple]:
     return (min(fits, key=lambda r: (abs(r - len(rows_seen)), r)), cols)
 
 
+def catalogue_sheets(root: str) -> dict:
+    """{sha256: (rows, columns), or None for never a sheet}: the channel pass's sheet candidates checked by eye (multi
+    and pair: their seam grid; no: one picture)."""
+    found = {}
+    for row in read_jsonl(join(root, *SHEETS)):
+        sha = splitext(basename(row.get("file") or ""))[0]
+        grid = row.get("seam_grid") or []
+        if row.get("sheet") in ("multi", "pair") and len(grid) == 2 and grid[0] * grid[1] > 1:
+            found[sha] = (int(grid[0]), int(grid[1]))
+        elif row.get("sheet") == "no":
+            found[sha] = None
+    return found
+
+
 def sheet_cells(path: str, grid: tuple) -> list:
     """A sheet's cells as cards: box (fractions of the trimmed image, as its OCR'd lines), size, shape, hashes."""
     img = trim(load_image(path))
@@ -1793,10 +1814,11 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr
         index = CardIndex(cards, versions_found)
         looks = index.looks()
         ctx = Context(records)
-        cell_cache, grids = Cache(join(paths.cache, "cells.jsonl")), {}
+        cell_cache, grids, checked = Cache(join(paths.cache, "cells.jsonl")), {}, catalogue_sheets(root)
         for image in images:                    # sheets of several cards: each cell scored as a card
             feat = image_cache.entries.get(image["sha256"]) or {}
-            grid = sheet_grid(feat, index.names) if not feat.get("error") else None
+            grid = checked[image["sha256"]] if image["sha256"] in checked else \
+                sheet_grid(feat, index.names) if not feat.get("error") else None
             if not grid or image["sha256"] in grids:
                 continue
             grids[image["sha256"]] = grid
