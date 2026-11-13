@@ -850,7 +850,7 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
 
 
-def _drawn_snack(github, clone, tmp_path, edit: dict) -> tuple:
+def _drawn_snack(github, clone, tmp_path, edit: dict, dup_edit: dict = {}) -> tuple:
     """Tagged A Snack whose picture 2 is Breakfast.png (dup_of A Snack: as Gust_of_Trees.png), with edit on the
     website: (PSD path, its stem, the duplicate's path)."""
     import sys
@@ -869,7 +869,8 @@ def _drawn_snack(github, clone, tmp_path, edit: dict) -> tuple:
     files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
                   stem + ".png": (clone / (stem + ".png")).read_bytes(), dup: (clone / (stem + "2.png")).read_bytes(),
                   stem + "3.png": (clone / (stem + "3.png")).read_bytes()})
-    files[cb.EDITS_PATH] = _edits({"Breakfast": {"dup_of": "A Snack"}, "A Snack": {**edit, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Breakfast": {"dup_of": "A Snack", **dup_edit},
+                                   "A Snack": {**edit, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: A Snack")
     return rel, stem, dup
 
@@ -907,6 +908,27 @@ def test_a_waiting_name_bakes_alone_once_the_rest_is_refused(github, clone, tmp_
     verdict = _verdict("A Snack")
     assert verdict["state"] == "refused" and verdict["for"] == {"hp": 3} and "own title" not in verdict["reason"], verdict
     assert cb.pending() == []
+
+
+def test_a_duplicates_name_bakes_into_its_picture_alone(github, clone, tmp_path):
+    """Owner 11-13: a duplicate's entry (Breakfast, its picture tagged 'Breakfast #2') bakes its name into Name #2 and
+    Breakfast.png alone, under its own key; beside its PSD's entry's bake it waits a run (one card per file)."""
+    from psd_tools import PSDImage
+    rel, stem, dup = _drawn_snack(github, clone, tmp_path, {"name": "A Snacks"},
+                                  {"name": "Second Breakfast", "_by": "web", "_at": AT})
+    for changed, left in (([stem + ".png"], {"name": "Second Breakfast"}), ([dup], {})):
+        before = github.files_at(github.head)
+        text, commits = cb.run()
+        assert len(commits) == 1, text
+        after = github.files_at(github.head)
+        assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
+        cards = _edits_at(github)["cards"]
+        assert "A Snack" not in cards and {k: v for k, v in cards["Breakfast"].items() if not k.startswith("_")} \
+            == {"dup_of": "A Snack", **left}, text
+        assert cb.pending() == (["Breakfast"] if left else [])
+    new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(after[rel])).descendants()}
+    assert new[1023].text.startswith("Second") and new[1023].name == "Name #2"
+    assert _verdict("Breakfast")["state"] == "baked"
 
 
 def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):

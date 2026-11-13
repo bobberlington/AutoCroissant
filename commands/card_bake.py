@@ -74,7 +74,7 @@ from commands.git_commit import (API_TIMEOUT, AUTHOR, GIT_TIMEOUT, NO_LAZY, Tran
                                  local_commit, plural)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from commands.psd_parser import name_key, picture_numbers, shown_in, variant_view
+from commands.psd_parser import layer_tag, name_key, picture_numbers, shown_in, variant_view
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, EDITS_PATH, FONT_DIRS_ENV,
                            ICON_MANIFEST_PATH, LOCAL_DIR_LOC, RATINGS_PATH, RULES_PATH, STARS_DIR, TYPES_DIR)
 
@@ -145,6 +145,7 @@ class Card:
     part_drop: list = field(default_factory=list)   # part keys the commit takes out of the entry
     pictures: dict = field(default_factory=dict)    # a PSD with variant tags: picture n -> its PNG repo path (§9)
     view: Optional[int] = None                  # bake this picture only (a preview of a variant's page)
+    dup: str = ""                               # a picture-only duplicate's PNG: its entry's name bakes there (dup_view)
     views: dict = field(default_factory=dict)   # picture n -> its Baked (the saved picture's is `baked`)
     moves: dict = field(default_factory=dict)   # a stars edit's move into its "N Stars" folder: old path -> new path
     moved_to: str = ""                          # that folder
@@ -551,6 +552,10 @@ def land(shares: list, message: Callable[[list], str], dry_run: bool, local: Sna
         if moved:
             share.out = Refusal("head-moved", f"{moved[0]} changed on {CARD_BRANCH} `{head[:8]}` meanwhile")
             continue
+        taken = [path for path in share.files if path in files]
+        if taken:                               # a duplicate's entry and its PSD's: the next run bakes the later one
+            share.out = Refusal("head-moved", f"{taken[0]} is in this run's commit already: the next run bakes it")
+            continue
         try:
             rewritten = share.rewrite(new_text)
         except Refused as refused:
@@ -635,7 +640,8 @@ def types_icons(snapshot: Snapshot, work: str, parser, names: list, printed: Opt
 
 def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> list:
     """
-    The cards the run looks at: every entry with a PSD-kind field not website only (one card with --card).
+    The cards the run looks at: every entry with a PSD-kind field not website only (one card with --card). A
+    picture-only duplicate's entry with a name alone (no `_rename`) takes its PSD (dup_view: Gust of Trees, 11-13).
 
     Args:
         edits: The parsed edits file
@@ -655,10 +661,14 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
         rel = snapshot.psds.get(key, "")
         if not rel and derived_picture(edits, snapshot, key, wanted):
             continue                            # its PSD's entry holds the parts: this picture's name and ability follow
-        name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
+        found = None if rel or set(wanted) != {"name"} or edits.renames(key) else next(
+            ((psd, png) for psd, pngs in snapshot.dup_pictures(edits.cards).items() for png in pngs
+             if CardAuthors.key(card_name(png)) == key), None)
+        rel, dup = found or (rel, "")
+        name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
         cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                           listed=list(fields["creatures"]) if isinstance(fields.get("creatures"), list) else [],
-                          by=edits.meta.get(key, {}).get("_by")))
+                          by=edits.meta.get(key, {}).get("_by"), dup=dup))
         cards[len(cards) - 1].rename = edits.renames(key)
     return cards
 
@@ -991,6 +1001,17 @@ def pictures_of(psd, card: Card, duplicates: list, dups=()) -> dict:
     return {1: card.png, **{n: found[n] for n in numbers if n != 1}}
 
 
+def dup_view(psd, card: Card) -> int:
+    """The picture a duplicate's entry bakes (select()): its PSD's one tagged '<entry name> #N', whose PNG is the
+    duplicate's (Gust of Trees #2: Gust_of_Trees.png, owner 11-13); else Refused("unsupported-card")."""
+    found = {n for layer in psd.descendants() for base, tags in [layer_tag(layer.name)]
+             if tags and name_key(base) == name_key(card.name) for n in tags}
+    if len(found) != 1 or card.pictures.get(min(found)) != card.dup:
+        raise Refused("unsupported-card", f"no picture of {basename(card.rel)} tagged '{card.name} #N' prints "
+                                          f"{basename(card.dup)} (PARTS_EDITOR.md §9)")
+    return found.pop()
+
+
 def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None, psd=None,
            titles: Optional[dict] = None) -> list:
     """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; colours, those showing
@@ -1002,7 +1023,8 @@ def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None,
             out |= psd_edit.color_views(psd, value, card.name, numbers)
             continue
         if name == "name" and titles:           # a picture with its own title (Stubborn Queen's) keeps it
-            out |= {n for n in numbers if name_key(titles.get(n) or "") == name_key(titles.get(1) or "")}
+            mine = name_key(titles.get(card.view if card.dup else 1) or "")     # a duplicate's entry: its picture's
+            out |= {n for n in numbers if name_key(titles.get(n) or "") == mine}
             continue
         if name != "parts":
             out |= every
@@ -1359,15 +1381,16 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png or duplicates:
             card.pngs = snapshot.pngs_key(card.rel, card.key)
-            if _printed_already(snapshot, card, parser, folder, chart):    # nothing to bake: dropped though no PNG can be
+            if not card.dup and _printed_already(snapshot, card, parser, folder, chart):    # nothing to bake: dropped
                 if card.rename:                 # its files still take the name
                     _rename_printed(snapshot, card, folder, duplicates, claimed)
                 return
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
         dups = snapshot.dup_pictures().get(card.rel, [])
-        old_psd, fetched = join(folder, "old", basename(card.rel)), bool(duplicates)    # _printed_already's fetch
-        if duplicates or dups:                  # a PSD with variant tags bakes each picture (§4.9); untagged, refused
+        old_psd = join(folder, "old", basename(card.rel))
+        fetched = bool(duplicates) and not card.dup     # _printed_already's fetch
+        if duplicates or dups or card.dup:      # a PSD with variant tags bakes each picture (§4.9); untagged, refused
             if not fetched:
                 snapshot.fetch(card.psd_sha, old_psd)
                 fetched = True
@@ -1377,6 +1400,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if not card.pictures and duplicates:
                 raise Refused("duplicate", "numbered PNGs share the PSD: " + ", ".join(basename(p) for p in duplicates)
                               + " (tag the variant layers: PARTS_EDITOR.md §9)")
+            if card.dup:                        # a duplicate's entry: its picture alone
+                card.view = dup_view(tagged, card)
         if card.view is not None and card.view not in (card.pictures or {1: card.png}):
             raise Refused("unsupported-card", f"no picture {card.view}")
         card.png_sha = snapshot.sha(card.png)
@@ -1390,10 +1415,11 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 snapshot.fetch(snapshot.sha(png), join(folder, "old", basename(png)))
 
         psd = psd_edit.frozen(PSDImage.open(old_psd))   # one open for the parse, classify and apply_jobs (it edits a copy)
-        parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-        template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
-        classified = psd_edit.classify(parsed, card.fields, psd, parser, template,
-                                       chart() if "colors" in card.fields else None)   # status words keep its colours
+        with variant_view(psd, card.view if card.dup else None):     # a duplicate's entry: as its picture
+            parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
+            template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
+            classified = psd_edit.classify(parsed, card.fields, psd, parser, template,
+                                           chart() if "colors" in card.fields else None)   # status words keep its colours
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
         card.site = dict(classified.site)       # the picture's title, a stat past its rows: website only (owner 10-26)
         card.parts = classified.parts
