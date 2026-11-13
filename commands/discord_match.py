@@ -833,24 +833,23 @@ def when(value) -> Optional[float]:
 
 def old_maps(data) -> dict:
     """{old card (its old_id, lineage or path; as written and folded): (today's card key, sure)} from the old-git
-    pass's map.json: {old: key}, {old: {key, sure|confidence|status}} or a list of such records."""
+    pass's map.json ({"cards": {old_id: {key, status: live|archived|lost, confidence: sure|unsure}}}; also {old: key}
+    or a list of records). Sure: a live card's map at "sure" (or a number at MAP_SURE)."""
     found = {}
-    rows = data.get("maps") or data.get("map") or data if isinstance(data, dict) else data
+    rows = next((data[k] for k in ("cards", "maps", "map") if isinstance(data, dict) and k in data), data)
     items = rows.items() if isinstance(rows, dict) else ((None, r) for r in rows or [])
     for old, value in items:
         if isinstance(value, dict):
-            old = old or first_of(value, "old", "old_key", "old_name", "old_path", "path", "name")
-            key = first_of(value, "today", "key", "today_key", "card", "new", "new_key", "to")
-            sure = value.get("sure")
+            old = old or first_of(value, "old_id", "old", "old_key", "old_name", "old_path", "path", "name")
+            key = first_of(value, "key", "today", "today_key", "card", "new_key")
+            sure, conf = value.get("sure"), first_of(value, "confidence", "conf", "score")
             if sure is None:
-                conf = first_of(value, "confidence", "conf", "score")
-                status = str(first_of(value, "status", "verdict", "how") or "").lower()
-                sure = (conf >= MAP_SURE) if isinstance(conf, (int, float)) else not any(
-                    w in status for w in ("unsure", "review", "ambiguous", "lost", "none"))
+                sure = conf >= MAP_SURE if isinstance(conf, (int, float)) else str(conf or "sure").lower() == "sure"
+            sure = bool(sure) and str(value.get("status") or "live").lower() == "live"
         else:
             key, sure = value, True
         if old and isinstance(key, str) and key:
-            found[old] = found[edit_key(file_name(old) if "/" in old else old)] = (key, bool(sure))
+            found[old] = found[edit_key(file_name(old) if "/" in old else old)] = (key, sure)
     return found
 
 

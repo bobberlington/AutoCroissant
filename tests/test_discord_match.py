@@ -545,7 +545,8 @@ def test_references_take_the_old_repo_first(tmp_path):
     (root / "derived" / "oldgit").mkdir(parents=True)
     (root / "derived" / "oldgit" / "versions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     (root / "derived" / "oldgit" / "map.json").write_text(json.dumps(
-        {"Wolf": "Alpha Wolf", "Beta": {"key": "Beta Bear", "sure": False}}))
+        {"about": "...", "cards": {"Wolf": {"key": "Alpha Wolf", "status": "live", "confidence": "sure"},
+                                   "Beta": {"key": "Beta Bear", "status": "live", "confidence": "unsure"}}}))
     cards = dm.load_cards(str(repo))
     assert cards["alpha-wolf"]["png"] == "Items/Alpha_Wolf.png" and cards["gamma-ray"]["aliases"] == ["Ray of Gamma"]
     plan = dm.plan_versions(cards, str(repo), str(root), "all", str(old / ".git"), log=lambda *a: None)
