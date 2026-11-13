@@ -661,16 +661,22 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
         rel = snapshot.psds.get(key, "")
         if not rel and derived_picture(edits, snapshot, key, wanted):
             continue                            # its PSD's entry holds the parts: this picture's name and ability follow
-        found = None if rel or set(wanted) != {"name"} or edits.renames(key) else next(
-            ((psd, png) for psd, pngs in snapshot.dup_pictures(edits.cards).items() for png in pngs
-             if CardAuthors.key(card_name(png)) == key), None)
-        rel, dup = found or (rel, "")
+        rel, dup = (rel, "") if rel else dup_entry(snapshot, key, wanted, edits.renames(key), edits.cards)
         name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
         cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                           listed=list(fields["creatures"]) if isinstance(fields.get("creatures"), list) else [],
                           by=edits.meta.get(key, {}).get("_by"), dup=dup))
         cards[len(cards) - 1].rename = edits.renames(key)
     return cards
+
+
+def dup_entry(snapshot: Snapshot, key: str, wanted: dict, renames: bool = False, cards: Optional[dict] = None) -> tuple:
+    """(its PSD, its PNG) for a picture-only duplicate's entry with a name alone, no `_rename` (dup_view bakes it; select
+    and card_preview.resolve), else ("", "")."""
+    if set(wanted) != {"name"} or renames:
+        return "", ""
+    return next(((psd, png) for psd, pngs in snapshot.dup_pictures(cards).items() for png in pngs
+                 if CardAuthors.key(card_name(png)) == key), ("", ""))
 
 
 def derived_picture(edits: CardEdits, snapshot: Snapshot, key: str, wanted: dict) -> bool:
@@ -1121,6 +1127,7 @@ def verdict_of(verdicts: Optional[dict], key: str) -> Optional[dict]:
 
 MOVED = r"name: moved ([+-]\d+) px to stay on the card"
 OWN_TITLE = "name: picture {n} prints its own title: the name bakes alone next run"     # never final (bake_pictures)
+DUP_NAME = "a duplicate's name, printed on its picture too"     # kept in its entry (bake_card)
 ANCHOR = "title_moved"                          # a baked verdict's: the px its bake moved the title on
 
 
@@ -1540,6 +1547,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 card.verdict[ANCHOR] = int(moved[len(moved) - 1])
         _relocate(card, folder)
         card.dropped = [f for f in list(card.jobs) + card.redundant if f not in ("parts", "colors")]   # a baked or printed name goes too
+        if card.dup and "name" in card.dropped and card.fields["name"] != card.name:
+            card.dropped.remove("name")         # but a duplicate's: only its entry names it (card_data, build_site)
+            card.site["name"] = DUP_NAME
         done = ("baked", "redundant") if "colors" in card.jobs and card.baked is not None else ("redundant",)
         card.colors_done = [one for one, how in card.colors if how in done]
         card.colors_kept = [one for one in card.fields.get("colors") or [] if one not in card.colors_done]
