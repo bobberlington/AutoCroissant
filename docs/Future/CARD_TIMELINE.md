@@ -113,9 +113,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    (never one the Morgue's eye took for a joke or lost card: `taken`); a stat-less card's picture reading no bar
    label has no stats field (not printed);
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
-   eye truth, then their sure reads), the rest name a review item (types with nothing read: unread). Each version is
+   eye truth, then their sure reads; a title read snapped to another live card's name, not one of this card's own
+   names, aliases or old repo titles, goes to review: P.A.N.D.A. Mk A read 'Panda'), the rest name a review item
+   (types with nothing read: unread). Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
-   40 not judged; formatting-only text is no change); a fact a later picture contradicts goes to review (a stated step,
+   40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change); a fact a later picture contradicts goes to review (a stated step,
    'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact
    that bounded its window goes), and a fact whose move the pictures around it show (the last sure value before, the
    next after, no other fact on that field between) is confirmed by that picture (counted once). **Created:**
@@ -148,7 +150,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
-   committed, approximate when the card had versions before that one; an MDW Morgue card's Discord pictures end at its
+   committed, approximate when the card had versions before that one (no rename when the last look is that first
+   git version and its title read is in that version's printed title: the data's name is its PSD layers', The
+   Bagel's 'Or... is it'); an MDW Morgue card's Discord pictures end at its
    first record in the old repo (oldgit `map.json`) or the card repo. A confirmed changelog fact names its version
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
    so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field, caption a covered photo, and leave out a

@@ -210,7 +210,7 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
     return out, jobs
 
 
-def leave_out(t: dict, ids) -> list:
+def leave_out(t: dict, ids, versions: list = ()) -> list:
     """A chain timeline without the entries the eye left out (ids: pictures that are no version of the card): the version
     after them is diffed again against the one before them (as the chain's diff), git_first too when the last ones went,
     and a fact they confirmed loses confirmed_by. Returns the entries taken out."""
@@ -230,14 +230,14 @@ def leave_out(t: dict, ids) -> list:
         if e["kind"] == "paper":
             continue
         if redo:
-            e["changes"] = dc.compare(before["fields"], e["fields"]) if before else \
+            e["changes"] = dc.compare(before["fields"], e["fields"], t.get("kind")) if before else \
                 ({"ability_change": "first"} if e["fields"].get("ability") else {})
             if e["kind"] == "discord":
                 e["minor"] = bool(before) and before["kind"] == "discord" and dc.settled(before["fields"], e["fields"])
             redo = False
         before = e
     if redo and t.get("git_first"):
-        t["git_first"]["changes"] = dc.compare(before["fields"], t["git_first"].get("fields") or {}) if before else {}
+        t["git_first"]["changes"] = git_first_changes(t, before, versions)
     t["entries"] = kept
     return gone
 
@@ -370,7 +370,14 @@ def lineage(commits: list, paths: dict, kind: str = ".png") -> dict:
     return dict(found)
 
 
-def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict]) -> Optional[dict]:
+def git_first_changes(t: dict, last: Optional[dict], versions: list) -> dict:
+    """git_first diffed again against the last version left (the chain's rule: discord_chain.first_changes)."""
+    changes = dc.first_changes(last, t["git_first"].get("fields") or {}, t.get("kind"), versions, t.get("stop"))
+    changes.pop("same_title", None)
+    return changes
+
+
+def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict], versions: list = ()) -> Optional[dict]:
     """A chain timeline cut at its card's first record in the card repo (pngs: its PNG's lineage), when that is earlier
     than the chain's stop: its Discord, changelog and first-repo entries from then on are left out, its stop moves back
     and its git_first is diffed again against the last version left. git_first is dated when its card-data version
@@ -388,7 +395,7 @@ def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict]) -> Option
         out = {"stop": t["stop"]["day"], "was": stop.get("day"), "dropped": dropped}
         if t.get("git_first") and dropped:
             last = next((e for e in reversed(t["entries"]) if e["kind"] in ("discord", "old repo")), None)
-            t["git_first"]["changes"] = dc.compare(last["fields"], t["git_first"].get("fields") or {}) if last else {}
+            t["git_first"]["changes"] = git_first_changes(t, last, versions)
     gf = t.get("git_first")
     if gf and (t.get("stop") or {}).get("source") == "git" and data:
         at = min((r[0] for r in psds if r[3] == data.get("blob_sha")), default=None)
@@ -531,7 +538,12 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
     reads = title_reads(root)
     # stop at git: each card's first record in the card repo, its moves followed as the website follows them
     commits = repo_log(expanduser(cards_repo)) if cards_repo else []
-    repo_cards = (dm.read_json(dm.Paths(root).pairs, {}) or {}).get("cards") or {} if commits else {}
+    pairs = dm.read_json(dm.Paths(root).pairs, {}) or {}
+    repo_cards = pairs.get("cards") or {} if commits else {}
+    versions = defaultdict(list)                 # the matcher's card versions (their printed titles: git_first)
+    for v in pairs.get("versions") or []:
+        versions[v["card"]].append(v)
+    del pairs
     pngs = lineage(commits, {cid: c.get("png") for cid, c in repo_cards.items()})
     psds = lineage(commits, {cid: c.get("psd") for cid, c in repo_cards.items()}, ".psd")
     data = dc.first_versions(dm.git_dir_of(expanduser(cards_repo))) if commits else {}
@@ -551,7 +563,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         if not t or not t.get("entries"):
             continue
         c = by_key.get(t["key"]) or {}
-        taken = leave_out(t, out_of.get(t["card"]) or ())
+        taken = leave_out(t, out_of.get(t["card"]) or (), versions[t["card"]])
         if taken:
             left[t["card"]] = len(taken)
             if (c.get("ours") or {}).get("picture") in {p["id"] for e in taken for p in e.get("pictures") or ()}:
@@ -561,7 +573,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
             if not t["entries"]:
                 continue
         if commits:
-            moved = stop_at_git(t, pngs.get(t["card"]) or [], psds.get(t["card"]) or [], data.get(t["key"]))
+            moved = stop_at_git(t, pngs.get(t["card"]) or [], psds.get(t["card"]) or [], data.get(t["key"]),
+                                versions[t["card"]])
             if moved:
                 cut.append((t["card"], moved))
             if not t["entries"]:

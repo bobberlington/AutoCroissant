@@ -463,3 +463,26 @@ def test_header_types_never_cross_to_a_picture_whose_header_misses():
         assert got["types"]["confidence"] == "review" and got["types"]["header_miss"]
     assert dc.merge_fields({"types": dc.unsure("icon+known", "x", ["light"])}, {"types": hit},
                            "repost P-1")["types"]["confidence"] == "sure"
+
+
+def test_names_of_other_cards_item_kinds_and_the_first_title():
+    """A title read snapped to another live card's name goes to review, unless it is this card's own (alias, old repo
+    title). An item's kinds are no types change. git_first keeps no rename when the last look is the first git
+    version's and its title read is in that version's printed title."""
+    inp = inputs([picture(5, T)], text={"attachments/5.png": {"title": {"sure": True, "value": "Pike", "conf": 1.0,
+                                                                         "method": "ocr+name", "ocr": "P1ke"}}})
+    got = dc.picture_fields(inp, inp.verdicts[0], "creature")["name"]
+    assert got["confidence"] == "review" and got["proposed"] == "Pike"
+    inp.old_rows["Bolt"].append({"old_id": "Pike", "fields": {}})
+    assert dc.picture_fields(inp, inp.verdicts[0], "creature")["name"]["value"] == "Pike"
+    item = lambda *ts: {"types": dc.sure(list(ts), "psd")}
+    assert "types" not in dc.compare(item("offense"), item("support"), "item")
+    assert dc.compare(item("offense", "nme"), item("support"), "nme")["types"] == {"add": [], "drop": ["nme"]}
+    assert dc.compare(item("offense"), item("support"), "creature")["types"]["add"] == ["support"]
+    stop = {"commit": "c9", "path": "N.M.E/Bun.png"}
+    last = {"kind": "discord", "look": {"git": dict(stop)}, "fields": {"name": dc.sure("Bun", "ocr+name")}}
+    data = {"name": dc.sure("Bun Or... is it", "psd (card data)")}
+    versions = [{"commit": "c9", "path": "N.M.E/Bun.png", "title": "Or... is it Bun"}]
+    assert dc.first_changes(last, data, "nme", versions, stop) == {"same_title": True}
+    assert dc.first_changes({**last, "look": {"draft": True}}, data, "nme", versions, stop)["name"] == ["Bun",
+                                                                                                    "Bun Or... is it"]

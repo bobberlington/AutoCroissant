@@ -25,7 +25,9 @@ build   Under derived/chain/:
                         backs: review, star_guard). Each is diffed with the version
                         before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
-                        (text_key; formatting alone is no change, owner 11-09). Discord looks fold as minor only when
+                        (text_key; formatting alone is no change, owner 11-09); an item's kinds are no types change
+                        (never collected). A title read that is another live card's name goes to review (other_name).
+                        Discord looks fold as minor only when
                         every field is sure on both sides and unchanged (as the old rows; their types are never sure,
                         so they never fold).
         created.json    Created = the earliest confident appearance (a named paper photo: "Before 2020", owner Q6; a
@@ -108,7 +110,9 @@ BACKED = ("eye", "psd", "git look", "owner")                  # star reads no ic
 APART_DAYS = 30                                               # two icon reads this far apart: read separately
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
 ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "attack", "infliction", "counter",
-              "negation", "deploy"}                           # an item's kind (its subtype): never a fact here
+              "negation", "deploy", "offense", "protective"}  # an item's kind (its subtype; the last two the old
+                                                              # repo's): never a fact or a version's change here
+ITEM_CARDS = ("item", "aux item", "nme")                      # cards whose types are item kinds
 PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"           # owner Q6: paper photos' date, sorting before every day
 ERA_RANK = {"A": 1, "B": 1, "C": 1, "A-item": 1, "B-item": 1, "C-item": 1, "D1": 2, "D2": 3, "D3": 3,
             "D-item": 3}                                      # template eras in time (A, B, C overlapped 2020-22)
@@ -196,10 +200,10 @@ def ability_change(a: dict, b: dict) -> str:
     return "changed"
 
 
-def compare(before: dict, after: dict) -> dict:
+def compare(before: dict, after: dict, kind: Optional[str] = None) -> dict:
     """What changed from one version's fields to the next: only fields sure on both sides; the rest are unknown.
     The buff/nerf verdict is the website's (build analytics.change): the stat total up or down, the same total
-    'shift', a total over OFF_SCALE not judged."""
+    'shift', a total over OFF_SCALE not judged. An item's kinds are no types change (kind: the card's)."""
     out, unknown = {}, []
     for key in ("name", "stars", "types", "stats"):
         a, b = before.get(key), after.get(key)
@@ -213,9 +217,11 @@ def compare(before: dict, after: dict) -> dict:
             out["name"] = [x, y]
         elif key == "stars" and x != y:
             out["stars"] = [x, y]
-        elif key == "types" and Counter(x or []) != Counter(y or []):
-            out["types"] = {"add": sorted((Counter(y) - Counter(x)).elements()),
-                            "drop": sorted((Counter(x) - Counter(y)).elements())}
+        elif key == "types":
+            x, y = ([t for t in v or [] if kind not in ITEM_CARDS or t not in ITEM_KINDS] for v in (x, y))
+            if Counter(x) != Counter(y):
+                out["types"] = {"add": sorted((Counter(y) - Counter(x)).elements()),
+                                "drop": sorted((Counter(x) - Counter(y)).elements())}
         elif key == "stats" and x != y:
             out["stats"] = [x, y]
             la, lb = stat_line(x), stat_line(y)
@@ -230,6 +236,23 @@ def compare(before: dict, after: dict) -> dict:
     if unknown:
         out["unknown"] = unknown
     return out
+
+
+def first_changes(last: Optional[dict], fields: dict, kind: Optional[str], versions: list, stop: dict) -> dict:
+    """git_first's changes: the last version before the card repo against its first card-data version. No name
+    change when that last version is a Discord look of the first git version (stop) whose title read is in that
+    version's printed title (the matcher's OCR of it): the data's name is its PSD layers' (The Bagel's 'Or... is
+    it'), not a rename; then same_title is set."""
+    changes = compare(last["fields"], fields, kind) if last else {}
+    git = ((last or {}).get("look") or {}).get("git") or {}
+    name = dm.squash(((last or {}).get("fields", {}).get("name") or {}).get("value") or "")
+    if "name" in changes and last["kind"] == "discord" and name and git.get("commit") and \
+            (git["commit"], git.get("path")) == ((stop or {}).get("commit"), (stop or {}).get("path")) and \
+            any(name in dm.squash(v.get("title") or "") for v in versions
+                if (v.get("commit"), v.get("path")) == (git["commit"], git.get("path"))):
+        del changes["name"]
+        changes["same_title"] = True
+    return changes
 
 
 def settled(before: dict, after: dict) -> bool:
@@ -352,6 +375,29 @@ def picture_lines(inputs: Inputs, row: dict) -> list:
     return image.get("lines") or []
 
 
+def other_name(inputs: Inputs, cid: Optional[str], value) -> bool:
+    """A title read snapped to another live card's name or key (P.A.N.D.A. Mk A read 'Panda'), none of this card's
+    own: its names, aliases and old repo titles (an eye truth comes first)."""
+    if not cid or not value:
+        return False
+    names = getattr(inputs, "name_cards", None)
+    if names is None:
+        names = inputs.name_cards = defaultdict(set)
+        for c, card in inputs.cards.items():
+            for n in (card.get("name"), card.get("key")):
+                if n:
+                    names[dm.squash(n)].add(c)
+    s = dm.squash(value)
+    if not names.get(s, set()) - {cid}:
+        return False
+    card = inputs.cards.get(cid) or {}
+    own = {card.get("name"), card.get("key"), *(card.get("aliases") or ())}
+    for r in (getattr(inputs, "old_rows", None) or {}).get(card.get("key"), ()):
+        name = (r.get("fields") or {}).get("name") or {}
+        own |= {r.get("old_id"), name.get("value") if name.get("confidence") == "sure" else None}
+    return s not in {dm.squash(n) for n in own if n}
+
+
 def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
     """A Discord picture's own reads: an eye truth first (the readers' by-eye files), else the readers' sure flags;
     a sheet's cell has no read of its own."""
@@ -365,6 +411,10 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
         if src in eye and eye[src] not in (None, ""):
             value = sorted(eye[src]) if key == "types" else eye[src]
             fields[key] = sure(value, "eye")
+        elif key == "name" and read.get("sure") and other_name(inputs, row.get("card"), read.get("value")):
+            ocr = f" (OCR '{read['ocr']}')" if read.get("ocr") else ""
+            fields[key] = unsure(read.get("method") or "ocr", f"its title read is another live card's name{ocr}",
+                                 read["value"], read.get("conf"))
         elif read.get("sure") and read.get("value") not in (None, ""):
             fields[key] = sure(sorted(read["value"]) if key == "types" else read["value"], read.get("method") or "ocr",
                                read.get("conf"))
@@ -1211,7 +1261,7 @@ class Chain:
             if when is None or when >= stop:
                 self.tally["facts: sure, after the card's first git record"] += 1
                 continue
-            if fact.get("field") == "type" and card.get("type") in ("item", "aux item") and \
+            if fact.get("field") == "type" and card.get("type") in ITEM_CARDS and \
                     str(fact.get("to")).lower() in ITEM_KINDS:
                 self.tally["facts: an item's kind (never collected)"] += 1
                 continue
@@ -1359,9 +1409,9 @@ class Chain:
                 self.tally["facts: confirmed by the move the pictures around it show"] += 1
         return [e for e in entries if e["id"] not in gone]
 
-    def diff(self, entries: list) -> None:
+    def diff(self, entries: list, kind: Optional[str] = None) -> None:
         """Each version against the one before (text rows aside; a paper photo, its name only read, is no before);
-        Discord looks fold when settled."""
+        Discord looks fold when settled. kind: the card's (an item's kinds are no change)."""
         before = None
         for e in entries:
             if e["kind"] in ("text", "first repo"):
@@ -1372,7 +1422,7 @@ class Chain:
             if before is None:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
             else:
-                e["changes"] = compare(before["fields"], e["fields"])
+                e["changes"] = compare(before["fields"], e["fields"], kind)
                 if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change"):
                     e["changes"]["ability_change"] = e["old_ability_change"]
             if e["kind"] == "discord":
@@ -1435,7 +1485,7 @@ class Chain:
         self.star_guard(entries)
         self.owner_fields(cid, entries)                  # a star the guard took to review, answered
         entries = self.check_facts(cid, entries)
-        self.diff(entries)
+        self.diff(entries, card.get("type"))
         self.field_reviews(cid, entries)
         stop = None
         if card.get("fs"):
@@ -1450,9 +1500,12 @@ class Chain:
         if stop and stop["source"] == "git" and data:      # the card repo's first version, for the last diff
             fields = data_fields(data)
             last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")), None)
+            changes = first_changes(last, fields, card.get("type"), self.inputs.versions.get(cid, []), stop)
+            if changes.pop("same_title", None):
+                self.tally["git_first: no rename (its last look is the first version's, the same printed title)"] += 1
             out["git_first"] = {"from": "card data (its first recorded version)",
                                 "date": dm.iso(data.get("timestamp")) if data.get("timestamp") else None,
-                                "fields": fields, "changes": compare(last["fields"], fields) if last else {}}
+                                "fields": fields, "changes": changes}
         return out
 
     # Created
