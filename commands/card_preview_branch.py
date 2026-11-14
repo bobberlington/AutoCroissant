@@ -36,6 +36,7 @@ from typing import Optional
 from unicodedata import category
 from urllib.parse import urlsplit
 from zipfile import BadZipFile, ZipFile
+from zlib import error as ZlibError
 
 from commands.repo_history import batch_env
 
@@ -354,7 +355,7 @@ def _unzip(data: bytes) -> dict:
                     if total > ZIP_CAP:
                         raise ValueError("past the size cap")
                     files[info.filename] = archive.read(info)
-    except (BadZipFile, OSError, EOFError) as error:
+    except (BadZipFile, OSError, EOFError, ZlibError) as error:
         raise ValueError(f"unreadable zip: {error}") from error
     return files
 
@@ -428,7 +429,7 @@ def take_over(out: str, repo: str, run: str, token: str, base: str = "https://ap
                         found = _found(*api.get(listing)) if valid else []     # a hand-over since the listing
                         state = "listed" if found else "ended" if valid else "invalid"
                         break
-            except (OSError, HTTPException, ValueError, AttributeError) as error:
+            except (OSError, HTTPException, ValueError, AttributeError, TypeError) as error:
                 print(f"card_preview_branch: a read failed ({clean(type(error).__name__)}): tried again", file=stderr)
                 pause = max(pause, 1)
             sleep(pause)

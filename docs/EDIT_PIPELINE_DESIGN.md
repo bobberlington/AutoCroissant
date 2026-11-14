@@ -1293,7 +1293,7 @@ warm read (it failed, or ran past its 10 s) those 5 tries are all there is. The 
 actions/download-artifact before): one HTTPS connection to the API lists the run's `card-preview` artifact every 0.25 s with
 If-None-Match (a 304 isn't counted) and the preview job every 15 s; once listed, its zip's 302 on that connection, the
 blob store's URL without the token, the digest checked, only result.json and the two AVIFs unzipped (16 MB cap);
-download-artifact stays as the fallback (`took` not set). Counted calls about 4 a preview (were about 10-13). When the
+download-artifact stays as the fallback (`took` not set). Counted calls about 2-4 a preview (about 3 before). When the
 branch would hold more than `KEEP` (200) previews or one older than `DAYS` (7 days, or of unknown age), the commit is a
 fresh orphan with this preview and the newest `KEEP_AFTER` (150) under `DAYS_AFTER` (6 days), pushed with
 `--force-with-lease` on the head it read (a run that landed meanwhile breaks the lease and the retry keeps its preview);
