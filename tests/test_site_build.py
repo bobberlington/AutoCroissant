@@ -173,6 +173,18 @@ def test_older_versions_copied_by_the_versions_job(bs, repo, tmp_path, monkeypat
     assert not listed.exists()
 
 
+def test_a_renamed_row_shows_its_old_name_and_when_the_card_was_made(bs):
+    """Archive rows: a renamed one has no title (its old name shows, as Discord's "renamed from") and the created date of
+    the card it became, its renamed_to chain followed; a deleted one keeps its title and its own date."""
+    from types import SimpleNamespace
+    old = lambda title, day, **tag: [SimpleNamespace(display_name=title, created={"date": day, "from": "git"}, archived={"at": 1.0, **tag})]
+    old_stats = {"Papyrus": old("The Great Papyrus", "2025-03-22", renamed_to="Papyrus 2"),
+                 "Papyrus 2": old("Papyrus 2", "2025-04-01", renamed_to="The Great Papyrus"), "Gone": old("Gone Card", "2024-01-01")}
+    rows = bs.archived_cards(old_stats, {"The Great Papyrus": "papyrus"}.get, created_of={"The Great Papyrus": "2020-07-22"}.get)
+    shown = {r["card"]: (r.get("title"), r["created"]) for r in rows}
+    assert shown == {"Papyrus": (None, "2020-07-22"), "Papyrus 2": (None, "2020-07-22"), "Gone": ("Gone Card", "2024-01-01")}
+
+
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
     """The editor (editing.js, with the sign-in: signin.js), Stats (charts.js), People (profile.js), the font box (tokens.js), the
     rulebook (rulebook.js, its editor rulebook-edit.js), the Changes tabs (changelog.js), the published decks (decks.js) and the
