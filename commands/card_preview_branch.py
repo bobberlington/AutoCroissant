@@ -64,7 +64,8 @@ BREAKS = ("Cc", "Zl", "Zp")                     # control characters and line or
 ARTIFACT = "card-preview"                       # the preview job's hand-over (card-preview.yml's Hand over)
 HANDED = (RESULT, SMALL, BEFORE)                # the only names taken from its zip
 ZIP_CAP = 16 << 20                              # bytes: the zip, and the files taken from it
-POLL, POLL_LATE, LATE = 0.25, 3, 55             # s between listings (a 304 isn't counted); POLL_LATE from LATE s on
+POLL, FAST = 0.25, 30                           # s between listings (a 304 isn't counted) for the first FAST s...
+POLL_LATE, LATE = 3, 55                         # ... then 1 s, POLL_LATE from LATE s on (as the gh loop before)
 JOB_FIRST, JOB_EVERY = 10, 15                   # s: the preview job looked at (ended without a hand-over?)
 WAIT = 715                                      # s at most (the step's 5 s before it: 12 minutes)
 LOW = 100                                       # rate limit left under which listings slow to POLL_LATE
@@ -406,8 +407,8 @@ def take_over(out: str, repo: str, run: str, token: str, base: str = "https://ap
     api, runs, start = _Api(base, token), f"/repos/{repo}/actions/runs/{run}", monotonic()
     listing, job_at, state = f"{runs}/artifacts?name={ARTIFACT}", JOB_FIRST, "late"
     try:
-        while monotonic() - start < limit:
-            pause = POLL if monotonic() - start < LATE and (api.left is None or api.left >= LOW) else POLL_LATE
+        while (now := monotonic() - start) < limit:
+            pause = POLL_LATE if now >= LATE or (api.left is not None and api.left < LOW) else POLL if now < FAST else 1
             try:
                 status, reply, body = api.get(listing, conditional=True)
                 found = _found(status, reply, body)
