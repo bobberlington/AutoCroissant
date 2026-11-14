@@ -171,9 +171,10 @@ def test_created_against_the_file_and_splits():
     pike, lorn = (chain.card(c, found.get(c, []), split.get(c, [])) for c in ("pike", "lorn"))
     assert [e.get("as") for e in lorn["entries"]] == ["Twin Pike", "Twin Pike", "Twin Pike"]
     assert [e.get("as") for e in pike["entries"]] == ["Twin Pike", None]
-    proposed = lambda t: chain.review[t["entries"][0]["fields"]["stats"]["review"]]["proposed"]    # each half's own
-    assert proposed(lorn) == {"hp": 4, "def": 2, "atk": 4, "spd": 5}
-    assert proposed(pike) == {"hp": 6, "def": 4, "atk": 6, "spd": 5}
+    told = lambda t: t["entries"][0]["fields"]["stats"]          # both halves told by eye: each half's own, sure
+    assert told(lorn)["value"] == {"hp": 4, "def": 2, "atk": 4, "spd": 5} and told(lorn)["confidence"] == "sure"
+    assert told(pike)["value"] == {"hp": 6, "def": 4, "atk": 6, "spd": 5} and "top half" in told(pike)["half"]
+    assert lorn["entries"][1]["fields"]["stats"]["confidence"] == "review"     # the old repo half read by no eye
     made = {c: chain.created(c, t, [r for r in verdicts if r.get("card") == c]) for c, t in
             (("pike", pike), ("lorn", lorn), ("bolt", chain.card("bolt", [], [])))}
     assert made["pike"]["status"] == "earlier" and made["pike"]["ours"]["as"] == "Twin Pike"
@@ -524,3 +525,15 @@ def test_an_item_cards_kinds_are_never_asked():
     assert then[0]["fields"]["types"]["confidence"] == "not collected" and then[1]["fields"]["types"]["value"] == ["fire"]
     assert dc.old_kinds_only({"field": "types", "proposed": ["food"], "reads": {"psd": ["support"]}}, "aux item")
     assert not dc.old_kinds_only({"field": "types", "proposed": ["food"]}, "creature")
+
+
+def test_two_creatures_told_by_eye_publish_each_half():
+    """A two-creature card's bar truth with both halves (stats, stats2) is sure, never summed; a split card's half
+    takes its own half's rows (owner Q3)."""
+    from commands import discord_chain as dc
+    top, bottom = {"hp": 5, "def": 4, "atk": 6, "spd": 5}, {"hp": 4, "def": 2, "atk": 4, "spd": 5}
+    got = dc.picture_stats({"two": True, "truth": {"stats": top, "stats2": bottom, "from": "eye"}}, "creature")
+    assert got["confidence"] == "sure" and got["value"] == {"creatures": [top, bottom]}
+    half = dc.picture_stats({"two": True, "truth": {"stats": top, "from": "eye"}}, "creature")
+    assert half["confidence"] == "review"
+    assert dc.read_key({"file": "a.png", "cell": 3}) == "a.png#c3" and dc.read_key({"file": "a.png"}) == "a.png"

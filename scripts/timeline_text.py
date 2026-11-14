@@ -48,6 +48,7 @@ OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
 TC = join(HOME, "Desktop/TTSCardMaker")
 OLD_ICONS = ("86cd22b2d86586d51464d7cfe4e59ca3dc0fca46", "268c2b12")   # the old repo's first and last Types/ trees
 CARD_CLASSES = ("ps1200", "gen400", "gen350", "shot", "cardshape")      # the catalogue's card-shaped pictures
+CELL_SURE = ("version_sure", "version_unsure", "draft")                 # sheet cells read: the card sure
 SWIFT = join(HERE, "timeline_text_ocr.swift")
 OCR_SIDE = 1600                                  # whole card OCR'd at this long side
 WORK_W = 360                                     # icons matched on the card at this width
@@ -75,6 +76,9 @@ BAR_TARGET = 0.985                               # bars are picked at this share
 BAR_TARGETS = (BAR_TARGET, 0.99, 0.995, 0.999)  # stricter fits while the 2-fold cross-check is under SURE_MIN
 SURE_MIN = 0.98
 EYE_POOL = 50                                    # eye-truth eras with fewer reads also meet the pooled eye bar
+EYE_GROUP = {"D2": "inline icons", "D3": "inline icons", "D-item": "inline icons", "F": "inline icons"}
+# ... pooled apart: OCR drops their icons and misreads their styled digits (gap round 3: at the 0.81 floor 24 of 33
+# right, the plain-text eras 88 of 88)
 UNSORTED = ("other", "bars-other")                # pictures no era fits (not all cards): no borrowed bars
 MIN_N = 8                                        # an era with less truth borrows its group's bar
 FIELDS = ("title", "ability", "stars", "types")
@@ -162,13 +166,20 @@ def type_name(stem):
 # Inputs
 # ========================
 def discord_inputs():
-    """The catalogue's card-shaped pictures: one row per stored picture (its first post; reposts share the file)."""
+    """The catalogue's card-shaped pictures: one row per stored picture (its first post; reposts share the file); and
+    each card-sure sheet cell (the match's verdicts) as a picture of its own: id and file end '#c<n>', cut by its box."""
     rows = {}
     for r in sorted(jsonl(join(ROOT, "derived/catalogue/pictures.jsonl")), key=lambda r: r["at"]):
-        if r.get("size_class") in CARD_CLASSES:
+        if r.get("size_class") in CARD_CLASSES or bar_eras().get(r["file"]) == "F":     # field cards of any size
             sha = splitext(basename(r["file"]))[0]
             rows.setdefault("d:" + sha, {"id": "d:" + sha, "src": "discord", "file": r["file"], "at": r["at"],
                                          "channel": r["channel"], "w": r["w"], "h": r["h"]})
+    for v in jsonl(join(ROOT, "derived/match/verdicts.jsonl")):
+        if v.get("cell") is not None and v.get("verdict") in CELL_SURE and v.get("first") and v.get("box"):
+            cell = f"#c{v['cell']}"
+            rows.setdefault("d:" + v["sha256"] + cell, {
+                "id": "d:" + v["sha256"] + cell, "src": "discord", "file": v["file"] + cell, "box": v["box"],
+                "at": v["first"]["date"], "channel": v["first"]["channel"], "w": v.get("w"), "h": v.get("h")})
     return list(rows.values())
 
 
@@ -232,12 +243,17 @@ def load(item):
     """The item's picture: RGB, borders trimmed (discord_match's own load and trim)."""
     from commands.discord_match import load_image, trim
     if item["src"] == "discord":
-        source = join(ROOT, item["file"])
+        source = join(ROOT, item["file"].split("#")[0])
     elif item["src"] == "old":
         source = BytesIO(_BLOBS.get(item["blob"]))
     else:
         source = join(TC, item["path"])
-    return trim(load_image(source))
+    img = load_image(source)
+    if item.get("box"):                          # a sheet's cell
+        w, h = img.size
+        x0, y0, x1, y1 = item["box"]
+        img = img.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
+    return trim(img)
 
 
 def shape(w, h):
@@ -548,7 +564,8 @@ def overlap(a, b):
 _NAMES = None
 _STAGE1 = None
 _BAR_ERAS = None
-BAR_ERAS = ("A", "B", "C", "D1", "D2", "D-item", "A-item", "B-item", "C-item")   # a bar reader's era taken over 'other'
+BAR_ERAS = ("A", "B", "C", "D1", "D2", "D-item", "A-item", "B-item", "C-item", "F")   # a bar reader's era over 'other'
+F_TOP = 0.4                                      # a field card's (era F) text: every line under this (share of height)
 
 
 def names_index():
@@ -621,8 +638,14 @@ def era_of(item, w, h, labels, look):
     """The card's template era: stage 1's for the card channels' pictures; else by size (old repo, today) or by the
     stat labels' place and the look (the stage-1 rules); a Discord picture no rule fits takes the bar readers' era."""
     era, how = era_rules(item, w, h, labels, look)
+    if item["src"] == "discord" and bar_eras().get(item["file"]) == "F":
+        return "F", "bars"                           # a field card (2021-12..2023-05: by eye or its quest text)
     if era in UNSORTED and item["src"] == "discord" and bar_eras().get(item["file"]):
         return bar_eras()[item["file"]], "bars"      # no text era fits: the bar readers' (labels, span, look)
+    if era == "bars-other" and w >= 1100 and 1.9 <= h / w <= 2.1:
+        return "D3", "size"                          # a 1200 px export whose labels sit off the template's: the alt one
+    if era == "bars-other" and w >= 1100 and 1.4 <= h / w <= 1.6:
+        return "D-item", "size"
     return era, how
 
 
@@ -759,7 +782,7 @@ def ability_block(lines, era, labels, band, kind):
         top = max(top, last[3])
         if "spd" not in labels:
             top = max(top, last[3] + 0.6 * pitch)
-    elif era in ("D1", "D2"):
+    elif era in ("D1", "D2", "D3"):
         top = max(top, 0.7)
     below = [l for l in lines if l[3] + l[5] / 2 >= top]
     lines = [l for l in below if latin(l[0])]
@@ -767,17 +790,20 @@ def ability_block(lines, era, labels, band, kind):
     rows = visual_lines(lines)
     if not rows:
         return [], None, 0
-    if kind == "card":                 # a creature or minion: everything under the bars
+    if era == "F":                     # a field card: its paragraphs under the art, gaps and icons between
+        block = [r for r in rows if min(l[3] + l[5] / 2 for l in r) >= F_TOP]
+        if not block:
+            return [], None, 0
+    elif kind == "card":               # a creature or minion: everything under the bars
         block = rows
     else:                              # items, fields, statuses: the bottom block of evenly spaced lines
         block = [rows[-1]]
         for row in reversed(rows[:-1]):
             prev = block[0]
-            hgt = max(l[5] for l in prev)
+            hgt, rh = max(l[5] for l in prev), max(l[5] for l in row)
             gap = min(l[3] for l in prev) - max(l[3] + l[5] for l in row)
-            hr = max(l[5] for l in row) / max(hgt, 1e-4)
-            if gap > 1.3 * hgt or not 0.6 <= hr <= 1.6:
-                break
+            if gap > 1.3 * max(hgt, rh) or not 0.5 <= rh / max(hgt, 1e-4) <= 2.0:
+                break                  # a short line ('same amount', '3 uses') is lower: the taller row's gap
             block.insert(0, row)
     cls = None
     if kind == "card" and class_like(block[-1]):
@@ -787,7 +813,7 @@ def ability_block(lines, era, labels, band, kind):
     # other-script lines among the ability's lines or right under them (a class line in capitals excepted)
     hgt = max(l[5] for r in block for l in r)
     end = max(l[3] + l[5] for l in block[-1])
-    y0 = top if kind == "card" else min(l[3] for l in block[0]) - 1.3 * hgt
+    y0 = top if kind == "card" else F_TOP if era == "F" else min(l[3] for l in block[0]) - 1.3 * hgt
     odd = sum(1 for l in others if y0 <= l[3] + l[5] / 2 <= end + 1.3 * hgt
               and not (kind == "card" and cls is None and l[3] >= end and l[0].isupper() and class_like([l])))
     return block, cls, odd
@@ -1370,7 +1396,7 @@ def read_one(item, rec):
     band = BAND[shp]
     title = read_title(rec.get("band"))
     tb = title_box(rec, title, band)
-    kind = "card" if (len(labels) >= 2 or era in ("A", "B", "C", "D1", "D2", "R", "bars-other")) else "other"
+    kind = "card" if (len(labels) >= 2 or era in ("A", "B", "C", "D1", "D2", "D3", "R", "bars-other")) else "other"
     out = {"id": item["id"], "src": item["src"], "era": era, "era_how": how, "w": W0, "h": H0, "kind": kind,
            "title": title}
     ability_icons(out, work, ability_reads(out, rec, labels, band, title), title)
@@ -1891,18 +1917,21 @@ def calibrate():
                                        "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None,
                                        "cv": cv}
             choices[(era, src, field)] = (how, bar)
-            eye_rows[field] += [(r[0], r[1], key) for r in res] if src == "discord" else []
-    # small eye samples: a bar under the pooled eye bar (every eye era's reads, each under its era's choice) is
-    # raised to it (stars excepted: each era counts by its own method)
+            eye_rows[(field, EYE_GROUP.get(era, ""))] += [(r[0], r[1], key) for r in res] if src == "discord" else []
+    # small eye samples: a bar under the pooled eye bar (every eye era's reads of its group, each under its era's
+    # choice) is raised to it (stars excepted: each era counts by its own method)
     for field in ("title", "ability", "types"):
-        pbar, pk, pok = pick_bar([(c, r) for c, r, k in eye_rows[field]])
-        cal["eye_pooled_" + field] = {"n": len(eye_rows[field]), "bar": pbar, "above": pk, "right_above": pok}
-        for (era, src, f), (how, bar) in list(choices.items()):
-            entry = cal["eras"][f"{era}/{src}"][f]
-            if f == field and src == "discord" and 0 < entry["n"] < EYE_POOL and bar is not None and pbar is not None \
-                    and pbar > bar:
-                entry["raised_from"] = bar
-                choices[(era, src, f)] = (how, pbar)
+        for group in sorted({g for f, g in eye_rows if f == field}):
+            rows = eye_rows[(field, group)]
+            pbar, pk, pok = pick_bar([(c, r) for c, r, k in rows])
+            cal["eye_pooled_" + field + (f" ({group})" if group else "")] = {"n": len(rows), "bar": pbar, "above": pk,
+                                                                            "right_above": pok}
+            for (era, src, f), (how, bar) in list(choices.items()):
+                entry = cal["eras"][f"{era}/{src}"][f]
+                if f == field and src == "discord" and EYE_GROUP.get(era, "") == group and 0 < entry["n"] < EYE_POOL \
+                        and bar is not None and pbar is not None and pbar > bar:
+                    entry["raised_from"] = bar
+                    choices[(era, src, f)] = (how, pbar)
     # pooled bars (every era's truth): a title's name likeness and an ability read equal to a known text mean
     # the same in every era; eras with no truth of their own take these
     pooled = {}

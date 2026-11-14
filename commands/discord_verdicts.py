@@ -98,6 +98,12 @@ TEXT_CAL, S_STARS_BAR = ("derived", "readers", "text", "calibration.json"), "S/t
 OLD_ROWS = ("derived", "oldrows", "rows.jsonl")     # old repo versions' fields (their stars)
 EYE = ("derived", "match", "eye.json")               # pictures told by eye: by_eye
 EYE_W, EYE_BOX, EYE_BLUR = 600, 15, 1.2              # eyekeys: compared this wide, windows this big, both blurred
+LOCAL = ("derived", "match", "local.jsonl")          # card-sure pictures' local differences from their stored versions
+LOCAL_SAME, LOCAL_KEEP, LOCAL_DRAFT = 5.0, 10.0, 30.0   # local diff: that version's look / over it a gate's look is
+LOCAL_AR = 0.01                                      # unsure / from every stored version a draft; aspect within 1%
+LOCAL_WIDE, LOCAL_DRAFT_NARROW = 800, 45.0          # a picture under this wide: drafted from this far (small copies)
+LOCAL_ALIGN, LOCAL_MARGIN = 2, 12                    # the nearest versions scored again aligned (a few px cropped or
+                                                     # padded: Miles Edgeworth's 598x1198 copy); the border left out
 STATS_FILE, OLD_STATS_FILE = dm.STATS_FILE, "db/old_stats.json"
 TAG = re_compile(r"\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\)|\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\b|\b([0-9/]*[A-Z][A-Z0-9/]{1,5})\)")
 NUMBER = re_compile(r"(?<![a-z0-9])(\d+(?:[.,]\d+)?%?)\s*([a-z]?)")   # a number and the next word's first letter
@@ -352,12 +358,14 @@ def text_reads(root: str) -> tuple:
     they read, its stars when read by eye or sure, or on a status card (era S, whose Discord reads have no truth to be
     sure by) at today's status cards' calibrated bar with no doubt."""
     eras, stars = {}, {}
-    eye = {r["id"][2:]: r.get("fields") or {} for r in dm.read_jsonl(join(root, *TEXT_TRUTH))
-           if str(r.get("id", "")).startswith("d:")}
+    eye = defaultdict(dict)                     # an id's fields from every eye file
+    for r in dm.read_jsonl(join(root, *TEXT_TRUTH)):
+        if str(r.get("id", "")).startswith("d:"):
+            eye[r["id"][2:]].update(r.get("fields") or {})
     cal = dm.read_json(join(root, *TEXT_CAL), {}) or {}
     s_bar = ((cal.get("eras") or {}).get(S_STARS_BAR) or {}).get("stars", {}).get("bar")
     for r in dm.read_jsonl(join(root, *TEXT_READS)):
-        if r.get("src") != "discord":
+        if r.get("src") != "discord" or "#" in (r.get("file") or ""):     # a sheet's cell: the chain's
             continue
         sha = splitext(basename(r.get("file") or ""))[0]
         eras[sha] = r.get("era")
@@ -549,6 +557,8 @@ def bar_reads(root: str, variant: str = "png") -> tuple:
     pictures, blobs, eras = {}, {}, {}
     for r in dm.read_jsonl(join(root, *BARS)):
         stats = sure_bars(r)
+        if r.get("src") == "discord" and "#" in (r.get("file") or ""):   # a sheet's cell: the chain's
+            continue
         if r.get("src") == "discord":
             sha = splitext(basename(r.get("file") or ""))[0]
             eras[sha] = r.get("era")
@@ -623,7 +633,18 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
     """version_of from the matcher's pick (members: the card's versions, {key, look, whole}). git: one look, the
     whole card within SURE_BITS of it, a text pick reading SURE_FIT of it, the hash saying no other look
     (look_clash). draft: the matcher's draft, or a text pick whose look is FAR_BITS from every git version and whose
-    text isn't theirs (FAR_RUN characters in a row, or under FAR_FIT of it). Else None: can't tell."""
+    text isn't theirs (FAR_RUN characters in a row, or under FAR_FIT of it). Else None: can't tell. The local gate
+    (local.jsonl, eyekeys' score, aspect within LOCAL_AR) comes first: LOCAL_SAME from a stored version is its look;
+    a gate's look over LOCAL_KEEP from that look's stored versions isn't told; LOCAL_DRAFT from every one a draft."""
+    local = image.get("local") or {}
+    best = min(local, key=local.get) if local else None
+    if best in versions and local[best] <= LOCAL_SAME:
+        same = versions[best].get("look", 0)
+        keys = sorted((k for k in local if local[k] <= LOCAL_SAME and versions.get(k, {}).get("look", 0) == same),
+                      key=local.get)
+        note = dm.version_note(("git", same), {"by": "local", "keys": keys}, versions)
+        note.update(keys=keys[:12], checked={"local": local[best]})
+        return "git", note
     look, pick = dm.shown_look({"why": {"pick": pick}}, image, versions)
     note = dm.version_note(look, pick, versions)
     note["keys"] = [k for k in pick.get("keys") or [] if k in versions][:12]
@@ -646,6 +667,9 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
             why, checked = look_check(image, members, look[1])
             if checked:
                 note["checked"] = checked
+        mine = [local[k] for k in local if versions.get(k, {}).get("look", 0) == look[1]]
+        if not why and mine and min(mine) > LOCAL_KEEP:
+            why = f"drawn otherwise in one area: {min(mine):.0f} from that look's stored versions (local)"
         if not why:
             return "git", note
         note.update(shows=None, unsure=why, near_look=look[1])
@@ -658,13 +682,36 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
         note.update(shows="draft", far=round(far, 2), commits=[], git_dates=[], keys=[])
         note.pop("unsure", None)
         return "draft", note
-    why = no_git_look(image, members, near) if image.get("shape") and near else None
+    why = local_draft(image, members) or (no_git_look(image, members, near) if image.get("shape") and near else None)
     if why:
-        note.update(shows="draft", far=round(min(near.values()), 2), commits=[], git_dates=[], keys=[], draft=why)
+        note.update(shows="draft", far=round(min(near.values()), 2) if near else None, commits=[], git_dates=[],
+                    keys=[], draft=why)
         for k in ("unsure", "near_look", "look"):
             note.pop(k, None)
         return "draft", note
     return None, note
+
+
+def local_seen(row: Optional[dict], members: list) -> dict:
+    """The local gate's view of a picture's local.jsonl row: {key: local diff} of its card's stored versions with its
+    aspect ratio (LOCAL_AR), and the times of the versions it wasn't compared with (unstored, not computed)."""
+    if not row:
+        return {}
+    got, keys = row.get("versions") or {}, {m["key"]: m for m in members}
+    return {"local": {k: s for k, (s, ar) in got.items() if k in keys and abs(ar - 1) <= LOCAL_AR},
+            "local_unread": [keys[k].get("ts") for k in keys if k not in got]}
+
+
+def local_draft(image: dict, members: list) -> Optional[str]:
+    """A draft by the local gate: LOCAL_DRAFT from every stored version with its aspect ratio (LOCAL_DRAFT_NARROW
+    under LOCAL_WIDE), none made before the post left uncompared (localtest: no Discord or small copy of a git
+    version gets there)."""
+    local, posted = image.get("local") or {}, image.get("posted")
+    bar = LOCAL_DRAFT if (image.get("w") or 0) >= LOCAL_WIDE else LOCAL_DRAFT_NARROW
+    if not local or min(local.values()) < bar or unstored_before(image, members) or \
+            any(t is None or posted is None or float(t) <= posted for t in image.get("local_unread") or ()):
+        return None
+    return f"drawn otherwise: {min(local.values()):.0f} or more from every stored git version (local)"
 
 
 def no_git_look(image: dict, members: list, near: dict) -> Optional[str]:
@@ -709,17 +756,19 @@ class Run:
         self.eras: dict = {}                                          # sha256 -> its era (bar readers, else text)
         self.stars: dict = {}                                         # sha256 -> its star count (eye or sure)
         self.git_stars: dict = {}                                     # card -> its git versions' star counts
+        self.local: dict = {}                                         # picture id -> its local.jsonl row
         self.tags = tag_words(versions.values())                      # the real timing tags
         self.members = defaultdict(list)            # card -> its versions {key, look, whole, ts, marks, bars}
         for v in versions.values():
             self.members[v["card"]].append(v)
 
-    def seen(self, sha: str, image: dict, posts: list, cid: str, cell: bool = False) -> dict:
+    def seen(self, sha: str, image: dict, posts: list, cid: str, cell: bool = False, pid: str = "") -> dict:
         """What a look check needs of a picture (or a sheet's cell: its bars unread)."""
         return {**image, **when_posted(posts, self.cards.get(cid)), "marks": read_marks(image.get("lines")),
                 "bars": None if cell else self.bars.get(sha), "tags": self.tags,
                 "era": None if cell else self.eras.get(sha), "stars": None if cell else self.stars.get(sha),
-                "git_stars": self.git_stars.get(cid), "size_class": None if cell else self.classes.get(sha)}
+                "git_stars": self.git_stars.get(cid), "size_class": None if cell else self.classes.get(sha),
+                **local_seen(self.local.get(pid), self.members.get(cid, []))}
 
     def twin(self, v: dict) -> Optional[dict]:
         """The post a verdict was made sure by (dm.same_image), if any."""
@@ -785,7 +834,8 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
         conf, v = found[cid]
         named = run.name_why(cid, v, text)
         why = gate(cid, conf, v, shape, family, run.close, whole_card(image)) or named
-        kind, note = version_of(v, cid, run.seen(sha, image, posts, cid), versions, members.get(cid, []))
+        kind, note = version_of(v, cid, run.seen(sha, image, posts, cid, pid=row["id"]), versions,
+                                members.get(cid, []))
         if meme_only and kind != "git":
             why = why or "posted only in meme channels, in no git look"
         if why is None:
@@ -917,7 +967,7 @@ def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
                (doubt if mixed else None)) if cid else None
         live = [cid] if cid and conf >= SURE and any(not p["morgue"] for p in posts) else []
         if cid and why is None:
-            kind, note = version_of(v, cid, run.seen(sha, part, posts, cid, cell=True), versions,
+            kind, note = version_of(v, cid, run.seen(sha, part, posts, cid, cell=True, pid=row["id"]), versions,
                                     members.get(cid, []))
             if doubt:                           # the card, its look not told
                 kind, note = None, {**note, "shows": None, "unsure": doubt}
@@ -1226,6 +1276,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     classes = catalogue_classes(root)
     run = Run(images, records, cards, versions, morgue, verdicts, raw, dm.catalogue_sheets(root), close)
     run.classes, run.bars = classes, pictures
+    run.local = {r["id"]: r for r in dm.read_jsonl(join(root, *LOCAL)) if not r.get("error")}
     text_eras, run.stars = text_reads(root)
     run.eras = {**text_eras, **{sha: e for sha, e in eras.items() if e}}
     run.git_stars = {cid: git_stars[c["key"]] for cid, c in cards.items() if git_stars.get(c.get("key"))}
@@ -1628,6 +1679,251 @@ def eye_keys(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
 
 
 # ========================
+# Local differences (eyekeys' score against every stored version of the card)
+# ========================
+class Store:
+    """A git store's blobs through one cat-file --batch (read only, never a lazy fetch); None for one it lacks."""
+    def __init__(self, git_dir: str):
+        self.git_dir, self.p = git_dir, None
+
+    def get(self, spec: str) -> Optional[bytes]:
+        from subprocess import PIPE, Popen
+        if self.p is None:
+            self.p = Popen(["git", "--git-dir", self.git_dir, "-c", "core.fsmonitor=false", "cat-file", "--batch"],
+                           stdin=PIPE, stdout=PIPE, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+        self.p.stdin.write(spec.encode() + b"\n")
+        self.p.stdin.flush()
+        head = self.p.stdout.readline().split()
+        if len(head) != 3 or not head[2].isdigit():
+            return None                        # missing or ambiguous
+        data = self.p.stdout.read(int(head[2]))
+        self.p.stdout.read(1)
+        return data if head[1] == b"blob" else None
+
+
+def eye_array(img, size: tuple):
+    """img at size, blurred as eyekeys compares it."""
+    from PIL import Image, ImageFilter
+    return dm._np().asarray(img.resize(size, Image.LANCZOS).filter(ImageFilter.GaussianBlur(EYE_BLUR)))
+
+
+def ref_arrays(specs: list) -> tuple:
+    """({key: (its size, its eye array at EYE_W)}, [keys no store holds]) of [(key, git dir, 'commit:path')]."""
+    from io import BytesIO
+    stores, refs, missing = {}, {}, []
+    for key, git_dir, spec in specs:
+        data = stores.setdefault(git_dir, Store(git_dir)).get(spec) if git_dir else None
+        if not data:
+            missing.append(key)
+            continue
+        ref = dm.load_image(BytesIO(data))
+        refs[key] = (ref.size, eye_array(ref, (EYE_W, round(EYE_W * ref.height / ref.width))))
+    for store in stores.values():
+        if store.p:
+            store.p.stdin.close()
+            store.p.wait()
+    return refs, missing
+
+
+def local_scores(pic, refs: dict, keys=None) -> dict:
+    """{key: [local diff, aspect ratio (picture / version)]} of a picture against refs (ref_arrays)."""
+    sized, out = {}, {}
+    for key in keys if keys is not None else refs:
+        if key not in refs:
+            continue
+        (w, h), arr = refs[key]
+        size = arr.shape[1], arr.shape[0]
+        if size not in sized:
+            sized[size] = eye_array(pic, size)
+        out[key] = [round(local_diff(sized[size], arr)[0], 1), round((pic.width / pic.height) / (w / h), 4)]
+    return out
+
+
+def aligned_diff(a, b, margin: int = LOCAL_MARGIN) -> Optional[float]:
+    """eyekeys' score after an affine alignment of a onto b (ECC at a quarter of the size; the border's margin left
+    out): a copy cropped or padded by a few pixels lines up, a drawn difference stays. None when ECC fails."""
+    import cv2
+    np = dm._np()
+    h, w = b.shape[:2]
+    small = (w // 4, h // 4)
+    ga, gb = (cv2.resize(x.astype(np.float32).mean(axis=2), small, interpolation=cv2.INTER_AREA) for x in (a, b))
+    warp = np.eye(2, 3, dtype=np.float32)
+    try:
+        _, warp = cv2.findTransformECC(gb, ga, warp, cv2.MOTION_AFFINE,
+                                       (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 60, 1e-5), None, 3)
+    except cv2.error:
+        return None
+    warp[:, 2] *= 4
+    moved = cv2.warpAffine(a.astype(np.float32), warp, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+                           borderMode=cv2.BORDER_REPLICATE)
+    return local_diff(moved[margin:-margin, margin:-margin], b[margin:-margin, margin:-margin].astype(np.float32))[0]
+
+
+def local_task(job: dict) -> list:
+    """A worker: one card's pictures against the versions they lack; the LOCAL_ALIGN nearest with the picture's
+    aspect ratio over LOCAL_SAME scored again aligned (the lower score kept)."""
+    refs, missing = ref_arrays(job["versions"])
+    rows = []
+    for p in job["pictures"]:
+        if not any(k in refs for k in [*p["keys"], *p.get("have", {})]):
+            rows.append({"id": p["id"], "card": job["card"], "versions": {}, "missing": p["keys"], "aligned": []})
+            continue
+        try:
+            pic = dm.load_image(join(job["root"], p["file"]))
+        except Exception as e:
+            rows.append({"id": p["id"], "card": job["card"], "error": f"{type(e).__name__}: {str(e)[:120]}"})
+            continue
+        if p.get("box"):
+            w, h = pic.size
+            x0, y0, x1, y1 = p["box"]
+            pic = pic.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
+        got = local_scores(pic, refs, p["keys"])
+        every = {**p.get("have", {}), **got}
+        near = sorted((k for k, (sc, ar) in every.items() if abs(ar - 1) <= LOCAL_AR and sc > LOCAL_SAME and k in refs
+                       and k not in p.get("aligned_before", [])), key=lambda k: every[k][0])[:LOCAL_ALIGN]
+        for k in near:
+            (w, h), arr = refs[k]
+            score = aligned_diff(eye_array(pic, (arr.shape[1], arr.shape[0])), arr)
+            if score is not None and score < every[k][0]:
+                got[k] = [round(score, 1), every[k][1]]
+            elif k not in got:
+                got[k] = every[k]
+        rows.append({"id": p["id"], "card": job["card"], "versions": got,
+                     "missing": [k for k in p["keys"] if k in missing], "aligned": near})
+    return rows
+
+
+def local(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, log: Callable = print) -> dict:
+    """local.jsonl: each card-sure picture of verdicts.jsonl against every stored git version of its card (old repo,
+    card repo: never a lazy fetch), eyekeys' local diff and the aspect ratio; cached (only new pairs computed, the
+    unstored tried again)."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from multiprocessing import get_context
+    from os.path import expanduser
+    root = dm.check_root(root)
+    paths = Paths(root)
+    members = defaultdict(list)
+    for v in (dm.read_json(paths.matcher.pairs, {}) or {}).get("versions") or []:
+        members[v["card"]].append(v)
+    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    path = join(root, *LOCAL)
+    have = {r["id"]: r for r in dm.read_jsonl(path)}
+    todo = defaultdict(list)
+    for row in dm.read_jsonl(paths.verdicts):
+        cid = row.get("card")
+        if row["verdict"] not in SURE_CLASSES or not cid:
+            continue
+        old = have.get(row["id"]) if (have.get(row["id"]) or {}).get("card") == cid else None
+        done = set((old or {}).get("versions") or {})
+        need = [v for v in members.get(cid, []) if v["key"] not in done]
+        if need or (old or {}).get("aligned") is None:
+            todo[cid].append((row, need, old or {}))
+    jobs = []
+    for cid, items in sorted(todo.items()):
+        keys = {v["key"]: v for v in members.get(cid, [])}       # every version: the nearest get aligned
+        jobs.append({"root": root, "card": cid, "versions": [(k, stores[bool(v.get("old"))],
+                                                              f"{v['commit']}:{v['path']}") for k, v in keys.items()],
+                     "pictures": [{"id": r["id"], "file": r["file"], "box": r.get("box"),
+                                   "keys": [v["key"] for v in need], "have": old.get("versions") or {},
+                                   "aligned_before": old.get("aligned") or []} for r, need, old in items]})
+    log(f"local: {sum(len(j['pictures']) for j in jobs)} pictures of {len(jobs)} cards to compare")
+    done = 0
+    with ProcessPoolExecutor(max_workers=max(1, workers), mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(local_task, j) for j in jobs]
+        for i, fut in enumerate(as_completed(futures), 1):
+            for r in fut.result():
+                old = have.get(r["id"]) if (have.get(r["id"]) or {}).get("card") == r["card"] else {}
+                if "error" in r:
+                    have[r["id"]] = {**old, **r} if old else r
+                    continue
+                have[r["id"]] = {"id": r["id"], "card": r["card"],
+                                 "versions": {**(old.get("versions") or {}), **r["versions"]},
+                                 "missing": sorted(r["missing"]),
+                                 "aligned": sorted({*(old.get("aligned") or []), *r["aligned"]})}
+                done += 1
+            if i % 50 == 0 or i == len(jobs):
+                log(f"local: {i}/{len(jobs)} cards")
+    dm.write_text(path, "".join(dm.dumps(have[k], ensure_ascii=False) + "\n" for k in sorted(have)))
+    rows = list(have.values())
+    tally = {"pictures": len(rows), "compared now": done, "with a missing version": sum(1 for r in rows if r.get(
+        "missing")), "errors": sum(1 for r in rows if r.get("error"))}
+    log(f"local: {tally} -> {path}")
+    return tally
+
+
+def localtest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, log: Callable = print,
+              sample: int = 0) -> dict:
+    """The local gate on discord_match selftest's Discord and small copies (dm.degrade) of every stored version of
+    the cards with 2+ looks, against every stored version of the card: how many land at LOCAL_SAME on another look
+    (wrong), on their own (right), in between, and at LOCAL_DRAFT from every one (drafted: must be 0); the cut
+    copies' aspect check. Into derived/match/local_selftest.json (+ the copies between the bars, for the eye)."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from multiprocessing import get_context
+    from os.path import expanduser
+    root = dm.check_root(root)
+    paths = Paths(root)
+    pairs = dm.read_json(paths.matcher.pairs, {}) or {}
+    members = defaultdict(list)
+    for v in pairs.get("versions") or []:
+        members[v["card"]].append(v)
+    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    jobs = [{"card": cid, "looks": {v["key"]: v.get("look", 0) for v in vs},
+             "versions": [(v["key"], stores[bool(v.get("old"))], f"{v['commit']}:{v['path']}") for v in vs]}
+            for cid, vs in sorted(members.items()) if len({v.get("look", 0) for v in vs}) > 1]
+    if sample:                                 # a seeded share of the cards, every copy's row kept
+        jobs = Random(1113).sample(jobs, min(sample, len(jobs)))
+    out, between, every, worst = {name: Counter() for name in ("discord", "small", "cut")}, [], [], {}
+    with ProcessPoolExecutor(max_workers=max(1, workers), mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(localtest_task, j) for j in jobs]
+        for i, fut in enumerate(as_completed(futures), 1):
+            for r in fut.result():
+                out[r["variant"]][r["outcome"]] += 1
+                if r["best"] is not None:                # the farthest a copy got from every stored version
+                    worst[r["variant"]] = max(worst.get(r["variant"], 0.0), r["best"])
+                if r["outcome"] == "between" and r["variant"] != "cut":
+                    between.append(r)
+                if sample:
+                    every.append(r)
+            if i % 50 == 0 or i == len(jobs):
+                log(f"localtest: {i}/{len(jobs)} cards")
+    between.sort(key=lambda r: -r["own"])
+    report = {"generated": dm.now_iso(), "bars": {"same": LOCAL_SAME, "keep": LOCAL_KEEP, "draft": LOCAL_DRAFT,
+                                                  "draft_narrow": LOCAL_DRAFT_NARROW, "aspect": LOCAL_AR},
+              "copies": {k: dict(c) for k, c in out.items()}, "farthest": worst, "between": between[:400]}
+    if sample:
+        report["every"] = every
+    dm.write_json(join(paths.out, "local_selftest" + ("_sample" if sample else "") + ".json"), report)
+    log(dm.dumps({"copies": report["copies"], "farthest": worst}, indent=1))
+    return report
+
+
+def localtest_task(job: dict) -> list:
+    """A worker: one card's versions as Discord, small and cut copies, each against every stored version."""
+    from io import BytesIO
+    refs, _ = ref_arrays(job["versions"])
+    stores, rows = {}, []
+    for key, git_dir, spec in job["versions"]:
+        if key not in refs:
+            continue
+        img = dm.load_image(BytesIO(stores.setdefault(git_dir, Store(git_dir)).get(spec)))
+        for name in ("discord", "small", "cut"):
+            got = local_scores(dm.degrade(img, **dm.VARIANTS[name]), refs)
+            comp = {k: s for k, (s, ar) in got.items() if abs(ar - 1) <= LOCAL_AR}
+            own, look = got[key][0], job["looks"][key]
+            best = min(comp, key=comp.get) if comp else None
+            bar = LOCAL_DRAFT if dm.VARIANTS[name]["width"] >= LOCAL_WIDE else LOCAL_DRAFT_NARROW
+            outcome = "no aspect" if not comp else "drafted" if comp[best] >= bar else \
+                ("right" if job["looks"][best] == look else "wrong") if comp[best] <= LOCAL_SAME else "between"
+            rows.append({"card": job["card"], "key": key, "variant": name, "outcome": outcome, "own": own,
+                         "best": comp.get(best), "best_key": best, "w": img.width})
+    for store in stores.values():
+        if store.p:
+            store.p.stdin.close()
+            store.p.wait()
+    return rows
+
+
+# ========================
 # Self-test (the sure gates on the matcher's degraded copies)
 # ========================
 def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = print) -> dict:
@@ -1750,11 +2046,15 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.discord_verdicts", description="One verdict per Discord picture.")
     subs = parser.add_subparsers(dest="command", required=True)
-    for name in ("build", "checks", "selftest", "eyekeys"):
+    for name in ("build", "checks", "selftest", "eyekeys", "local", "localtest"):
         p = subs.add_parser(name)
         p.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
         if name != "checks":
             p.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC)
+        if name in ("local", "localtest"):
+            p.add_argument("--workers", type=int, default=3)
+        if name == "localtest":
+            p.add_argument("--sample", type=int, default=0, help="this many cards (seeded), every copy kept")
         if name == "checks":
             p.add_argument("--seed", type=int, default=1113)
             p.add_argument("--sure", type=int, default=50)
@@ -1769,6 +2069,10 @@ def main(argv: Optional[list] = None) -> int:
         selftest(args.root, args.cards_repo, log)
     elif args.command == "eyekeys":
         eye_keys(args.root, args.cards_repo, log)
+    elif args.command == "local":
+        local(args.root, args.cards_repo, args.workers, log)
+    elif args.command == "localtest":
+        localtest(args.root, args.cards_repo, args.workers, log, args.sample)
     else:
         checks(args.root, args.seed, args.sure, args.lost, log=log)
     return 0

@@ -51,7 +51,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    a number (1-2 digits) or timing tag no read of any git version has, over 3 bits from all; a status card's star
    count no git version has; a whole card export (the 1200 px and 400 px template sizes) 8+ bits from every git
    version (Discord copies of git versions stay under 7.5). The last three need no git version unstored before the
-   post. The selftest's held-out check holds: no copy of a git version becomes a draft.
+   post. The selftest's held-out check holds: no copy of a git version becomes a draft. A local gate comes before
+   all of these (`discord_verdicts local`: each card-sure picture against every stored version of its card, eyekeys'
+   score, the two nearest scored again after an affine alignment, cached in `derived/match/local.jsonl`; only
+   versions with the picture's aspect ratio within 1% count): 5 or less from a version is that version's look; a
+   gate-made look over 10 from that look's stored versions isn't told (one area drawn otherwise: the eye decides);
+   30 or more from every stored version (45 under 800 px wide), none made before the post left out, is a draft.
+   `discord_verdicts localtest` sets those bars on every stored version's Discord (800 px) and small (360 px)
+   copies: none that far from every version, none at 5 from another look.
    Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
    round 2's pictures on a card's Created day, single-candidate pictures before git and near-git looks of the cards
    with no Discord entry) override the gates. A version key is taken only when the picture is that version by eye:
@@ -92,7 +99,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    version dated by its post. Card-sure pictures
    the card channels' pass missed are bar-read too (`era_bars add`: era from the text readers, sure by the
    calibration as it stands). The text readers take the bar readers' era for a picture no rule of theirs fits
-   ('other'), read again with it, the bars not fitted again. On the template (D1-D3) a picture's types are its git version's when the header's icon
+   ('other'), read again with it, the bars not fitted again; a field card (the bar readers' era F, 2021-12..2023-05)
+   is read in a text era of its own (every paragraph under the art, calibrated on eye truths), and a 1200 px export
+   whose labels sit off the template's ('bars-other') by its size as the alt template (D3) or the item template
+   (D-item). A card-sure sheet
+   cell is a picture of its own to both readers (cut by its box; its key in their outputs ends '#c<n>'). A
+   two-creature card whose two halves' bars are told (eye truth: stats, stats2) publishes both, never summed; a split
+   card's halves (owner Q3) each take their own rows (Twin Princes: Lorian's orange top rows, Lothric's blue bottom
+   ones, as their cards' bars today). On the template (D1-D3) a picture's types are its git version's when the header's icon
    band matches that version's (`commands/header_types.py`: NCC per icon cell, the bar calibrated on old repo PNGs'
    400 px JPEGs against the card's versions with other icons; method 'git header'; icons the version's PSD puts
    below the band, under a two-line title, are compared in their own boxes, and a version with types whose icon
@@ -105,7 +119,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    sure on few of the status and B-item cards: 11-13, S 4 of 97, B-item 8 of 94, C-item 0 of 3, A-item 174 of
    228). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
-   of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
+   of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set (an item's or
+   status card's ability: the bottom block of evenly spaced lines, a short last line too; each Discord era sure at
+   the 0.81 OCR floor only on 18-22 eye truths of its own, 11-13: A-item, B-item, C-item, S at 0.81; the eras
+   whose abilities print icons and styled digits (D2, D3, D-item, F) pool their eye bar apart, 1.0: their 0.81 reads
+   lose an icon or a digit); stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
    picture's right edge: `scripts/timeline_text.py edges`). Every field keeps its method (psd, picture, ocr, text) and a
    confidence.

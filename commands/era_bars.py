@@ -730,6 +730,10 @@ def read_task(job: dict) -> list:
     try:
         if job["src"] == "discord":
             img = dm.load_image(job["path"])
+            if job.get("box"):                       # a sheet's cell
+                w, h = img.size
+                x0, y0, x1, y1 = job["box"]
+                img = img.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
             rec = job["rec"] or look(img, job["row"]["ts"])
             lines = job["lines"] if job["lines"] is not None else _ocr(img)
             got = read_card(img, lines, rec, job.get("era"), title_of(lines), job["row"].get("match_card"))
@@ -826,8 +830,8 @@ def read_all(root: str, old_git: str, workers: int, only: Optional[str] = None):
 
 
 def add_jobs(root: str) -> list:
-    """The card-sure Discord pictures (whole, not a sheet's cell) reads.jsonl lacks, at their first post: era and OCR
-    lines from the text readers when they read them."""
+    """The card-sure Discord pictures reads.jsonl lacks, at their first post: era and OCR lines from the text readers
+    when they read them; a sheet's cell cut by its box (its file and the text readers' id end '#c<n>')."""
     done = {r.get("file") for r in map(loads, open(join(root, *OUT, "reads.jsonl"))) if r.get("src") == "discord"}
     eras = {r["file"]: r.get("era") for r in map(loads, open(join(root, *TEXT, "reads.jsonl")))
             if r.get("src") == "discord" and r.get("file")}
@@ -839,16 +843,19 @@ def add_jobs(root: str) -> list:
     jobs, seen = [], set()
     for line in open(join(root, *VERDICTS)):
         r = loads(line)
-        f = r.get("file")
-        if r.get("verdict") not in CARD_SURE or r.get("cell") or not f or f in done or f in seen or not r.get("first"):
+        cell = f"#c{r['cell']}" if r.get("cell") else ""
+        f = (r.get("file") or "") + cell
+        if r.get("verdict") not in CARD_SURE or not r.get("file") or f in done or f in seen or not r.get("first") or \
+                (cell and not r.get("box")):
             continue
         seen.add(f)
-        sha = r["sha256"]
+        sha = r["sha256"] + cell
         era = eras.get(f) if eras.get(f) not in (None, "other", "not-card") else None
-        jobs.append({"src": "discord", "path": join(root, f), "lines": ocr.get(sha), "rec": None, "era": era,
-                     "era_how": "text" if era else None,
+        jobs.append({"src": "discord", "path": join(root, r["file"]), "lines": ocr.get(sha), "rec": None, "era": era,
+                     "era_how": "text" if era else None, **({"box": r["box"]} if cell else {}),
                      "row": {"src": "discord", "file": f, "ts": r["first"]["date"][:19], "ch": r["first"]["channel"],
-                             "w": r.get("w"), "h": r.get("h"), "match_card": r.get("card"), "added": True}})
+                             "w": r.get("w"), "h": r.get("h"), "match_card": r.get("card"), "added": True,
+                             **({"cell": r["cell"]} if cell else {})}})
     return jobs
 
 

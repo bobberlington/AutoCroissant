@@ -328,3 +328,31 @@ def test_an_eye_keys_local_difference_finds_a_small_drawn_change():
     score, (x, y), _ = dv.local_diff(a, b)
     assert score > 90 and 27 <= x <= 42 and 37 <= y <= 52
     assert dv.local_diff(a, a.copy())[0] == 0
+
+
+def test_the_local_gate_tells_a_stored_versions_look_and_drafts_far_ones():
+    """local.jsonl (eyekeys' score against every stored version, aspect within 1%): at LOCAL_SAME a version's look
+    whatever the gates say; a gate's look over LOCAL_KEEP from its look not told; LOCAL_DRAFT from every stored
+    version a draft, unless a version made before the post wasn't compared."""
+    versions = {"a": {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T},
+                "b": {"key": "b", "card": "c", "look": 1, "whole": FAR, "ts": T}}
+    members = list(versions.values())
+    pick = {"by": "text", "keys": ["a"], "fit": 0.95, "novel": 2}
+    image = {"shape": "2:3", "whole": H, "posted": T + 10, "w": 1200, "h": 1800}
+
+    def kind(scores, unread=(), how=pick):
+        local = dv.local_seen({"versions": scores}, members)
+        return dv.decide(how, {**image, **local, "local_unread": [*local["local_unread"], *unread]}, versions,
+                         members)
+    got = kind({"a": [40.0, 1.0], "b": [2.0, 1.0]})
+    assert got[0] == "git" and got[1]["look"] == 1 and got[1]["checked"] == {"local": 2.0}
+    assert kind({"a": [0.0, 1.0], "b": [99.0, 1.0]})[0] == "git"
+    assert kind({"a": [14.0, 1.0], "b": [99.0, 1.0]})[0] is None                    # one area drawn otherwise
+    assert kind({"a": [14.0, 1.06], "b": [99.0, 1.06]})[0] == "git"                 # cut: the gates decide
+    drawn = kind({"a": [31.0, 1.0], "b": [80.0, 1.0]})
+    assert drawn[0] == "draft" and "local" in drawn[1]["draft"]
+    assert kind({"a": [31.0, 1.0], "b": [80.0, 1.0]}, unread=[T + 5])[0] is None    # a version not compared
+    assert kind({"a": [31.0, 1.0]})[0] is None                                      # b not computed yet
+    image["w"] = 400                                                                # a small picture: further
+    assert kind({"a": [31.0, 1.0], "b": [80.0, 1.0]})[0] is None and kind({"a": [50.0, 1.0], "b": [80.0, 1.0]})[0] == "draft"
+    assert dv.local_seen(None, members) == {}

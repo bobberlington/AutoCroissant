@@ -319,7 +319,10 @@ class Inputs:
             raise SystemExit("no verdicts: run python -m commands.discord_verdicts build first")
         self.lost = (dm.read_json(p.at(LOST), {}) or {}).get("groups") or []
         self.text = {r["file"]: r for r in dm.read_jsonl(p.at(TEXT_READS)) if r.get("src") == "discord"}
-        self.text_truth = {r["id"]: r["fields"] for r in dm.read_jsonl(p.at(TEXT_TRUTH)) if r.get("src") == "discord"}
+        self.text_truth = defaultdict(dict)      # an id's fields from every eye file
+        for r in dm.read_jsonl(p.at(TEXT_TRUTH)):
+            if r.get("src") == "discord":
+                self.text_truth[r["id"]].update(r["fields"])
         self.bars = {r["file"]: r for r in dm.read_jsonl(p.at(BAR_READS)) if r.get("src") == "discord"}
         self.old_rows = defaultdict(list)
         for row in dm.read_jsonl(p.at(OLD_ROWS)):
@@ -430,14 +433,17 @@ def other_name(inputs: Inputs, cid: Optional[str], value) -> bool:
     return s not in {dm.squash(n) for n in own if n}
 
 
+def read_key(row: dict) -> str:
+    """A picture's key in the readers' outputs: its file; a sheet's cell's ends '#c<n>' (read cut by its box)."""
+    return row["file"] + (f"#c{row['cell']}" if row.get("cell") else "")
+
+
 def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
-    """A Discord picture's own reads: an eye truth first (the readers' by-eye files), else the readers' sure flags;
-    a sheet's cell has no read of its own."""
-    if row.get("cell"):
-        return {k: unsure("none", "a sheet's cell: not read") for k in FIELDS if k != "stats" or kind not in NO_BARS}
+    """A Discord picture's own reads (a sheet's cell's too): an eye truth first (the readers' by-eye files), else the
+    readers' sure flags."""
     fields = {}
-    text = inputs.text.get(row["file"]) or {}
-    eye = inputs.text_truth.get("d:" + row["sha256"]) or {}
+    text = inputs.text.get(read_key(row)) or {}
+    eye = inputs.text_truth.get("d:" + row["sha256"] + (f"#c{row['cell']}" if row.get("cell") else "")) or {}
     for key, src in (("name", "title"), ("stars", "stars"), ("types", "types"), ("ability", "ability")):
         read = text.get(src) or {}
         if src in eye and eye[src] not in (None, ""):
@@ -467,8 +473,8 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
             if key == "types" and miss.get("card") == row.get("card") and miss.get("ncc", 1) < HEADER_MISS:
                 fields[key].update(header_miss=True, why=why + "; its header icons match no git version's")
         else:
-            fields[key] = unsure("none", "not read (no card era)")
-    read = inputs.bars.get(row["file"])
+            fields[key] = unsure("none", "a sheet's cell: not read" if row.get("cell") else "not read (no card era)")
+    read = inputs.bars.get(read_key(row))
     card = inputs.cards.get(row.get("card")) or {}
     if kind not in NO_BARS and not (read and not read.get("labels") and card.get("key") in
                                     getattr(inputs, "statless", ())):
@@ -484,6 +490,9 @@ def picture_stats(read: Optional[dict], kind: Optional[str]) -> dict:
     if truth.get("stats2") or read.get("two"):
         top = truth.get("stats") or {k: (v or {}).get("v") for k, v in (read.get("stats") or {}).items()}
         bottom = truth.get("stats2") or {k: (v or {}).get("v") for k, v in (read.get("stats2") or {}).items()}
+        if all(isinstance((h or {}).get(k), int) for h in (truth.get("stats"), truth.get("stats2")) for k in STATS):
+            return sure({"creatures": [{k: top[k] for k in STATS}, {k: bottom[k] for k in STATS}]},
+                        truth.get("from") or "eye")             # both halves told (eye, psd): each its own, never summed
         return unsure(truth.get("from") or "picture", "two creatures: each half to review",
                       {"creatures": [top, bottom]})
     if truth.get("stats"):
@@ -504,7 +513,8 @@ def old_fields(row: dict, review_of: dict) -> dict:
     out = {}
     for key, field in (row.get("fields") or {}).items():
         if field.get("confidence") == "sure":
-            out[key] = sure(field.get("value"), field.get("method") or "psd", None, check=field.get("check"))
+            out[key] = sure(field.get("value"), field.get("method") or "psd", None, check=field.get("check"),
+                            half=field.get("half"))     # a split card's half (owner Q3)
             continue
         out[key] = {"method": field.get("method") or "psd", "confidence": "review", "why": field.get("why")}
         rid = review_of.get((row["id"], key))
@@ -1013,7 +1023,7 @@ class Chain:
 
     def joint_of(self, cid: str, row: dict) -> Optional[dict]:
         """The split a card is a half of, when the picture's title reads the old card's name (sure)."""
-        title = ((self.inputs.text.get(row["file"]) or {}).get("title") or {}) if not row.get("cell") else {}
+        title = (self.inputs.text.get(read_key(row)) or {}).get("title") or {}
         if not (title.get("sure") and title.get("value")):
             return None
         return next((g for g in self.splits.values() if cid in g["split_of"]["into"] and
@@ -1067,7 +1077,7 @@ class Chain:
                                              f"review ({fields[key].get('why')}); the picture reads it", mine["value"])
                 fields = merge_fields(fields, {k: v for k, v in own.items() if is_sure(fields.get(k))}, "the picture")
         lines = picture_lines(self.inputs, row)
-        ability = (self.inputs.text.get(row["file"]) or {}).get("ability") or {} if not row.get("cell") else {}
+        ability = (self.inputs.text.get(read_key(row)) or {}).get("ability") or {}
         return {"row": row, "fields": fields, "git": git, "when": dm.epoch((row.get("first") or {}).get("date")),
                 "marks": mark_counts(lines), "words": ocr_words(lines), "labels": ocr_words(lines, labels=True),
                 "class": None if row.get("cell") else class_line(self.ocr_lines(row["sha256"])),
@@ -1116,12 +1126,13 @@ class Chain:
                 halves = item["split"]["halves"]
         name = self.inputs.cards[cid]["key"]
         stats = group["fields"].get("stats") or {}
-        creatures = (stats.get("proposed") or {}).get("creatures") if isinstance(stats.get("proposed"), dict) else None
+        whole = stats.get("value") if is_sure(stats) else stats.get("proposed")
+        creatures = whole.get("creatures") if isinstance(whole, dict) else None
         half = halves.get(name)
         value = creatures[0 if half == "top" else 1] if creatures and half in ("top", "bottom") else None
-        group["fields"]["stats"] = unsure(stats.get("method") or "picture",
-                                          f"{half or 'which'} half of {group['as']}'s rows (owner Q3)",
-                                          value)
+        where = f"{half or 'which'} half of {group['as']}'s rows (owner Q3)"
+        group["fields"]["stats"] = sure(value, stats.get("method") or "eye", stats.get("conf"), half=where) if \
+            is_sure(stats) and value else unsure(stats.get("method") or "picture", where, value)
 
     def discord_entries(self, cid: str, rows: list, split: list) -> list:
         out, card, seen = [], self.inputs.cards[cid], {}

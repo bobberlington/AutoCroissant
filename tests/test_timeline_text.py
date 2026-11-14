@@ -176,3 +176,22 @@ def test_template_eras_by_labels_and_size(tt):
     tt._BAR_ERAS = None
     arr = np.zeros((10, 10, 3), np.uint8)
     assert tt.look_of(arr)["low_black"] == 1.0
+
+
+def test_field_cards_and_template_exports_have_their_own_text_eras(tt):
+    """A field card (the bar readers' era F) reads every paragraph under the art; a 1200 px export whose labels sit
+    off the template's (bars-other) reads as the alt template (D3) or the item template (D-item) by its size."""
+    look = {"frame_white": 0.1, "low_black": 0.0, "low_white": 0.0}
+    item = {"src": "discord", "file": "attachments/f.png"}
+    tt._STAGE1, tt._BAR_ERAS = {}, {"attachments/f.png": "F"}
+    assert tt.era_of(item, 880, 1130, {}, look) == ("F", "bars")
+    tt._BAR_ERAS = {}
+    lab = {s: (0.02, y, 0.4, y + 0.02) for s, y in zip(("hp", "def", "atk", "spd"), (0.5, 0.55, 0.6, 0.65))}
+    assert tt.era_of(item, 1200, 2400, lab, look) == ("D3", "size")
+    assert tt.era_of(item, 600, 950, lab, look)[0] == "bars-other"
+    tt._BAR_ERAS = None
+    lines = [line("Cloud Soiree", 0.2, 0.02, 0.6, 0.05), line("Quest: Have less than 10 stars,", 0.0, 0.5, 0.9, 0.03),
+             line(": +1 ATK.", 0.1, 0.62, 0.3, 0.03), line("Nature: +2 SPD.", 0.0, 0.70, 0.4, 0.03),
+             line("Industrial: -2 DEF.", 0.0, 0.92, 0.4, 0.03)]
+    rows, cls, odd = tt.ability_block(lines, "F", {}, 0.2, "other")
+    assert tt.ability_text(rows) == "Quest: Have less than 10 stars, : +1 ATK. Nature: +2 SPD. Industrial: -2 DEF."

@@ -452,11 +452,13 @@ class Data:
                 self.rereads.setdefault(r["blob"], r)          # the same PSD under another path (Unused/)
         self.icons = {r["blob"]: r["icons"] for r in oi.read_jsonl(join(OUT, "icons.jsonl")) if "error" not in r}
         self.drawn = {r["blob"]: r["drawn"] for r in oi.read_jsonl(join(OUT, "stars.jsonl")) if "drawn" in r}
-        self.eye_bars = {}                                     # PNG blob -> stats by eye (None: not readable)
+        self.eye_bars, self.eye_bars2 = {}, {}                 # PNG blob -> stats by eye (None: not readable)
         for name in sorted(os.listdir(BAR_TRUTH)) if exists(BAR_TRUTH) else ():
             if name.startswith("eye_") and name.endswith(".json"):
                 for blob, t in json.load(open(join(BAR_TRUTH, name)))["items"].items():
                     self.eye_bars[blob] = t.get("stats")
+                    if t.get("stats2"):                        # two creatures: the bottom half's rows
+                        self.eye_bars2[blob] = t["stats2"]
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
         self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
         for r in list(self.psd.values()) + list(self.rereads.values()):
@@ -676,12 +678,18 @@ def field(value, method: str, sure: bool, check: str = "", why: str = "") -> dic
     return out
 
 
-def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False) -> dict:
+def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, eye2=None) -> dict:
     """The printed stats (keys: an item's HP/DEF bars): the bar readers' eye truth for the PNG first (eye: its
     stats, None when not readable by eye, False: none), else the picture's read (two readers), the PSD's digit rows
-    where they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart."""
+    where they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart
+    (two creatures read by eye, eye2 the bottom half's rows: both halves sure, never summed)."""
     def only(stats):
         return {k: stats[k] for k in keys} if stats and all(isinstance(stats.get(k), int) for k in keys) else None
+    if two and int(two) <= 2 and eye and only(eye) and only(eye2):
+        halves = [only(eye), only(eye2)]
+        out = field({"creatures": halves}, "eye", True, "bar truth")
+        out["creatures"] = {"count": 2, "psd": (read or {}).get("creatures"), "picture": halves, "eye": True}
+        return out
     if eye is not False and not two:
         seen = only(eye)
         return field(seen, "eye", True, "bar truth") if seen else \
@@ -753,7 +761,7 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
     if kind in STAT_KINDS or len(keys) >= 2:                   # an item's HP/DEF bars too
         size = (data.png.get(png["blob"]) or {}).get("size") or [0, 0]
         fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys,
-                                      data.eye_bars.get(png["blob"], False))
+                                      data.eye_bars.get(png["blob"], False), data.eye_bars2.get(png["blob"]))
     if kind in ABILITY_KINDS:
         fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,
@@ -1073,9 +1081,10 @@ def review_items(rows: list, kind: str = "field") -> list:
 
 
 def split_rows(data: Data, old_id: str, rows: list) -> dict:
-    """STAGE1 Q3 (provisional A): each half's rows 'as <old name>', its half's stats; the halves matched to the
-    live cards by today's stats (else their last old versions'). Every reading is kept for the owner: the first
-    versions after the split read the other way round (Twin Princes 10-16)."""
+    """STAGE1 Q3 (owner A): each half's rows 'as <old name>', its half's stats; the halves matched to the live cards
+    by today's stats (else their last old versions'). Every reading is kept for the owner: the first versions after
+    the split read the other way round (Twin Princes 10-16), but the bar colours follow today's (Lorian's orange
+    top rows, Lothric's blue bottom ones: gap round 3 by eye)."""
     cards = SPLITS[old_id]
     refs = {"today": {}, "last old version": {}, "first old version": {}}
     for key in cards:
@@ -1101,12 +1110,22 @@ def split_rows(data: Data, old_id: str, rows: list) -> dict:
     out = {}
     for half, key in enumerate(order):
         out[key] = [{**r, "card": key, "old_name": old_id, "split_from": old_id,
-                     "fields": {**r["fields"], "stats": field(((r["fields"].get("stats") or {}).get("creatures") or {})
-                                                              .get("picture", [None, None])[half], "picture", False,
-                                                              why=f"{'top' if half == 0 else 'bottom'} half of {old_id}'s rows")}}
+                     "fields": {**r["fields"], "stats": half_stats(r["fields"].get("stats") or {}, half, old_id)}}
                     for r in rows]
     return {"halves": {k: ("top" if i == 0 else "bottom") for i, k in enumerate(order)}, "matched_by": by,
             "readings": readings, "rows": out}
+
+
+def half_stats(stats: dict, half: int, old_id: str) -> dict:
+    """A split card's row: one half's stats (owner Q3), sure when both halves were read by eye."""
+    creatures = stats.get("creatures") or {}
+    value = (creatures.get("picture") or [None, None])[half]
+    where = f"{'top' if half == 0 else 'bottom'} half of {old_id}'s rows"
+    if creatures.get("eye") and value:
+        out = field(value, "eye", True, "bar truth")
+        out["half"] = where
+        return out
+    return field(value, "picture", False, why=where)
 
 
 def rows_main():

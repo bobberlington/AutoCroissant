@@ -95,6 +95,8 @@ def published(fields: Optional[dict], drop=()) -> dict:
         if isinstance(f, dict) and f.get("confidence") == "sure" and "value" in f and name not in drop \
                 and isinstance(f["value"], KINDS_OF.get(name, object)) and not isinstance(f["value"], bool):
             out[name] = {"value": f["value"], "method": f.get("method"), "confidence": "sure"}
+            if f.get("half"):                      # a split card's half (owner Q3): which rows it took
+                out[name]["half"] = f["half"]
     return out
 
 

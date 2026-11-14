@@ -113,9 +113,13 @@ def check_one(job: dict) -> dict:
             lines = [line[:6] for line in rec.get("fix") or []]
             got = era_bars.read_card(img, lines, era=era if era in era_bars.CREATURE_ERAS + ("D-item",) else "D2",
                                      title=f.get("name") or "", card=job["card"])
-            read = {k: (got.get("stats") or {}).get(k, {}).get("v") for k in f["stats"]}
+            halves = [got.get("stats") or {}, got.get("stats2") or {}]
+            want = {f"{k}{i or ''}": c[k] for i, c in enumerate(f["stats"]["creatures"][:2]) for k in c} if \
+                isinstance(f["stats"].get("creatures"), list) else {k: v for k, v in f["stats"].items()}
+            read = {k: (halves[1 if k[-1] == "2" else job.get("half", 0)].get(k.rstrip("2")) or {}).get("v")
+                    for k in want}         # two creatures: the bottom half's keys end '2'; a split half its own rows
             seen = {k: v for k, v in read.items() if v is not None}
-            diff = {k: [f["stats"][k], v] for k, v in seen.items() if v != f["stats"][k]}
+            diff = {k: [want[k], v] for k, v in seen.items() if v != want[k]}
             res["stats"] = {"r": result(not diff, seen), "read": read, **({"diff": diff} if diff else {})}
         if f.get("types") == []:                 # none published: for the eye (an absent icon can't be read again)
             res["types"] = {"r": "eye"}
@@ -159,7 +163,8 @@ def jobs_of(root: str) -> list:
             rule = stars.get("how", {}).get("rule")
             jobs.append({"card": cid, "id": e["id"], "image": e["image"], "path": join(hist, row["dir"], e["image"]),
                          "era": era, "star_rule": rule, "kind": e["kind"],
-                         "fields": {k: v["value"] for k, v in e["fields"].items()}})
+                         "fields": {k: v["value"] for k, v in e["fields"].items()},
+                         "half": 1 if str((e["fields"].get("stats") or {}).get("half", "")).startswith("bottom") else 0})
     return jobs
 
 
@@ -177,7 +182,8 @@ def check(root: str, workers: int = 3, redo: bool = False):
                 last[(r["card"], r["id"], r["image"])] = r
     key = lambda j: (j["card"], j["id"], j["image"])
     fresh = lambda r, j: all(k in r.get("fields", {}) and r["published"].get(k) == v
-                             for k, v in j["fields"].items() if isinstance(v, READ_KINDS.get(k, ())))
+                             for k, v in j["fields"].items() if isinstance(v, READ_KINDS.get(k, ()))) and \
+        r.get("half", 0) == j.get("half", 0)                  # a split half read from the other rows: again
     kept = {i: last[key(j)] for i, j in enumerate(jobs) if key(j) in last and fresh(last[key(j)], j)}
     todo = [j for i, j in enumerate(jobs) if i not in kept]
     print(f"check: {len(jobs)} versions with sure fields, {len(todo)} to read", flush=True)
@@ -191,7 +197,8 @@ def check(root: str, workers: int = 3, redo: bool = False):
     for i, job in enumerate(jobs):
         r = kept.get(i) or done[(job["card"], job["id"], job["image"])]
         r = {**r, "fields": {k: v for k, v in r.get("fields", {}).items() if k in job["fields"]}}
-        rows.append({**r, "kind": job["kind"], "published": job["fields"]})
+        rows.append({**r, "kind": job["kind"], "published": job["fields"],
+                     **({"half": job["half"]} if job.get("half") else {})})
     with open(join(out, "check.jsonl"), "w") as fh:
         for r in rows:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")

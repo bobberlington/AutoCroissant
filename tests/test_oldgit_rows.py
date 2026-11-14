@@ -90,7 +90,7 @@ class FakeData:
         self.versions, self.psd, self.rereads, self.pictures, self.shares = versions, reads, {}, pictures, shares
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
-        self.eye_bars = {}
+        self.eye_bars, self.eye_bars2 = {}, {}
 
     def ocr_of(self, blob):
         return self._ocr.get(blob, {})
@@ -236,3 +236,14 @@ def test_the_bar_readers_eye_truth_wins(rows):
     assert (eye["value"], eye["method"], eye["confidence"]) == (printed, "eye", "sure")
     blind = rows.check_stats({"stats": printed}, {"best": printed}, False, False, eye=None)
     assert blind["confidence"] == "review"
+
+
+def test_two_creatures_told_by_eye_are_sure_halves(rows):
+    """Both halves of a two-creature card read by eye (stats, stats2): sure creatures, a split half its own rows."""
+    top, bottom = stats(5, 4, 6, 5), stats(4, 2, 4, 5)
+    got = rows.check_stats(None, {}, True, False, eye=top, eye2=bottom)
+    assert got["confidence"] == "sure" and got["value"] == {"creatures": [top, bottom]}
+    assert rows.half_stats(got, 1, "Twin Princes")["value"] == bottom
+    assert rows.half_stats(got, 1, "Twin Princes")["confidence"] == "sure"
+    alone = rows.check_stats(None, {"halves": {"top": top, "bottom": bottom}}, True, False)
+    assert alone["confidence"] == "review" and rows.half_stats(alone, 0, "Twin Princes")["confidence"] == "review"
