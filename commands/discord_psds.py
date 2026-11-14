@@ -13,9 +13,9 @@ parse   Each distinct stored PSD (attachments.jsonl; left-out channels' posts dr
 read    Each composite's stat bars by the era bar readers (OCR'd labels, the era's reader, calibration.json's bars),
         as for the old repo's PNGs: the printed picture's stats.
 -> the archive's derived/psds/psds.jsonl (one row per PSD: posts, card, fields with method 'psd' or 'picture'),
-pictures/ (the composites). The chain attaches a PSD's fields to the look posted with it (the same message, or
-the whole card within ATTACH_BITS) or adds the PSD as its own version, dated by its post. No message text or
-posters.
+pictures/ (the composites). The chain attaches a PSD's fields to the look posted in its own message, else to the
+nearest within ATTACH_BITS that no PSD read otherwise holds, or adds the PSD as its own version, dated by its post.
+No message text or posters.
 """
 from argparse import ArgumentParser
 from json import load, loads
@@ -40,7 +40,8 @@ FIELDS = ("name", "stars", "types", "ability", "stats")
 STAT_WORDS = {"health", "defense", "defence", "attack", "speed", "hp", "def", "atk", "spd"}
 NOT_ABILITY = {"name", "title", "attribute", "class", "type", "types", "stars"}    # layer names that are no ability
 ITEM_KINDS = {"item", "aux item", "nme"}             # their PSD types are item subtypes
-RECALL = 0.8                                        # an ability's words the composite's OCR reads: sure
+RECALL = 0.8                                        # an ability's words the composite's OCR reads in order: sure
+ALIKE = 0.6                                         # an OCR'd word this like a text word: a misread of it
 
 
 def log(text: str):
@@ -194,6 +195,7 @@ def read(root: str) -> list:
             seen = set(dm.words(" ".join(line[0] for line in lines)).split())
             mine = [w for w in dm.words(ability).split() if len(w) >= 3]
             row["ability_recall"] = round(sum(w in seen for w in mine) / len(mine), 3) if mine else None
+            row["ability_check"] = printed_in_order(ability, [line[0] for line in lines])
     for row in rows:
         row["fields"] = fields_of(row)
     dm.write_text(join(out_dir, "psds.jsonl"), "".join(dm.dumps(r, ensure_ascii=False) + "\n" for r in rows))
@@ -201,10 +203,44 @@ def read(root: str) -> list:
     return rows
 
 
+def _alike(word: str, ocr: str) -> bool:
+    """An OCR'd word that is this word misread or run together with its neighbours ('caatxopt')."""
+    return word in ocr or (len(ocr) >= 2 and ocr in word) or dm.ratio(word, ocr) >= ALIKE
+
+
+def printed_in_order(ability: str, lines: list) -> dict:
+    """The ability's words against the composite's OCR in reading order: order, the share matched in order;
+    unprinted, its words with nothing like them opposite (moved or overflowed: Twin Emperors' labels, Old Chica's
+    last 'attack'); inner, real words the composite prints inside the matched span that the text lacks there."""
+    from difflib import SequenceMatcher
+    mine, ocr = dm.words(ability).split(), dm.words(" ".join(lines)).split()
+    if not mine:
+        return {"order": None, "unprinted": [], "inner": []}
+    sm = SequenceMatcher(None, mine, ocr, autojunk=False)
+    blocks = [b for b in sm.get_matching_blocks() if b.size]
+    first, last = (min(b.b for b in blocks), max(b.b + b.size for b in blocks)) if blocks else (0, 0)
+    unprinted, inner = [], []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("delete", "replace"):
+            unprinted += [w for w in mine[i1:i2] if not any(_alike(w, o) for o in ocr[j1:j2])]
+        if tag in ("insert", "replace") and first <= j1 and j2 <= last:
+            inner += [o for o in ocr[j1:j2] if len(o) >= 3 and not any(_alike(w, o) for w in mine[i1:i2])]
+    return {"order": round(sum(b.size for b in blocks) / len(mine), 3), "unprinted": unprinted, "inner": inner}
+
+
+def ability_sure(row: dict) -> bool:
+    """A text-layer ability is sure when the composite prints it: RECALL of its words in order, none unprinted,
+    nothing else inside it (printed_in_order). A parser-read Ability layer is."""
+    if row.get("ability_from") is None:
+        return True
+    check = row.get("ability_check") or {}
+    return (check.get("order") or 0) >= RECALL and not check.get("unprinted") and not check.get("inner")
+
+
 def fields_of(row: dict) -> dict:
     """A PSD's fields as the chain keeps them: name, ability and types as the PSD has them (method 'psd'; an
-    ability from text layers named after their text sure when the composite's OCR reads RECALL of its words; an
-    item's types are its subtypes: never collected, owner 11-13; 'unknown': review), stats as its composite prints
+    ability from text layers named after their text sure when the composite prints it in that order: ability_sure;
+    an item's types are its subtypes: never collected, owner 11-13; 'unknown': review), stats as its composite prints
     them (method 'picture'; every printed row sure). Stars are left out (2022 PSDs keep hidden star layers the
     count takes in: 5 for Golden Freddy's 3). A PSD of the art alone (no ability, stats or types) has none."""
     r = row.get("read") or {}
@@ -217,9 +253,8 @@ def fields_of(row: dict) -> dict:
     if r.get("name"):
         out["name"] = {"value": r["name"], "method": "psd", "confidence": "sure"}
     if (r.get("ability") or "").strip():
-        recall = row.get("ability_recall")
-        out["ability"] = {"value": r["ability"], "method": "psd", "confidence": "sure" if row.get(
-            "ability_from") is None or (recall or 0) >= RECALL else "review", "recall": recall}
+        out["ability"] = {"value": r["ability"], "method": "psd", "confidence": "sure" if ability_sure(row) else
+                          "review", "recall": row.get("ability_recall"), "check": row.get("ability_check")}
     if types:
         out["types"] = {"value": sorted(types), "method": "psd", "confidence": "review" if "unknown" in types
                         else "sure"}

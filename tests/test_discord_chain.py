@@ -428,3 +428,38 @@ def test_named_only_after_created_psds_and_header_types():
     assert entries[0]["fields"]["ability"]["method"] == "psd (posted PSD)" and entries[0]["psds"] == ["S-1"]
     assert entries[1]["pictures"][0]["file"].endswith("S-2.webp") and entries[1]["fields"]["stats"]["confidence"] \
         == "review"
+
+
+def test_a_posted_psd_s_look():
+    """A posted PSD goes on its own message's look before a nearer one, by bits only onto a look no PSD read
+    otherwise holds; a field another PSD set is never overwritten (two that differ: review)."""
+    near = {"p": "0" * 15 + "1", "d": "0" * 16, "q": "0" * 64}
+    entries = [{"id": f"D-{n}", "kind": "discord", "fields": {}} for n in (1, 2)]
+    seen = {"D-1": ({"11"}, [H]), "D-2": ({"22"}, [near])}
+    r = {"id": "S-9", "read": {"name": "Bolt", "types": ["fire"], "ability": "Zap"}}
+    assert dc.psd_home(r, {"22"}, H, entries, seen, {}) == (entries[1], "message")
+    assert dc.psd_home(r, {"33"}, H, entries, seen, {}) == (entries[0], "bits")
+    other = {"id": "S-8", "read": {"name": "Bolt", "types": [], "ability": "Zap"}}
+    assert dc.psd_home(r, {"33"}, H, entries, seen, {"D-1": [other], "D-2": [other]}) == (None, None)
+    rows = [{**picture(4, T, posts=[{"message": "44"}]), "whole": H}]
+    psd = lambda n, ability: {"id": f"S-{n}", "card": "bolt", "picture": f"derived/psds/pictures/S-{n}.webp",
+                              "look": {"whole": FAR}, "read": {"name": "Bolt", "ability": ability},
+                              "posts": [{"message": "44", "date": iso(T + n), "channel": "new-cards", "bot": False}],
+                              "fields": {"name": {"value": "Bolt", "confidence": "sure"},
+                                         "ability": {"value": ability, "confidence": "sure"}}}
+    inp = inputs(rows)
+    inp.psds = {"bolt": [psd(1, "Zap"), psd(2, "Zap twice")]}
+    got = dc.Chain(inp).discord_entries("bolt", rows, [])[0]
+    assert got["psds"] == ["S-1", "S-2"] and got["fields"]["name"]["psd"] == "S-1"
+    assert got["fields"]["ability"]["confidence"] == "review" and got["fields"]["ability"]["proposed"] == "Zap"
+
+
+def test_header_types_never_cross_to_a_picture_whose_header_misses():
+    """A repost whose header icons match no git version keeps a git header's types out of the look (review)."""
+    miss = {**dc.unsure("icon+known", "x", ["light"]), "header_miss": True}
+    hit = dc.sure(["light"], "git header", 0.95)
+    for a, b in ((miss, hit), (hit, miss)):
+        got = dc.merge_fields({"types": a}, {"types": b}, "repost P-1")
+        assert got["types"]["confidence"] == "review" and got["types"]["header_miss"]
+    assert dc.merge_fields({"types": dc.unsure("icon+known", "x", ["light"])}, {"types": hit},
+                           "repost P-1")["types"]["confidence"] == "sure"

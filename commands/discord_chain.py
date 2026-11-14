@@ -81,6 +81,7 @@ FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
 PSDS = ("derived", "psds", "psds.jsonl")                    # card PSDs posted on Discord (commands/discord_psds.py)
 HEADER = ("derived", "readers", "types", "header.jsonl")    # types by the git versions' header (header_types.py)
+HEADER_MISS = 0.6                                           # a header this unlike every git version's: other icons
 MORGUE = ("derived", "morgue", "candidates.json")          # the Morgue's eye: pictures it took from a live card
 PSD_BITS = 3.0                                              # a look this near a posted PSD's composite shows it
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
@@ -274,7 +275,8 @@ class Inputs:
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
         self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
         self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
-        self.header = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER)) if r.get("sure")}
+        self.header_rows = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER))}
+        self.header = {k: r for k, r in self.header_rows.items() if r.get("sure")}
         taken = {t["picture"]: t.get("entry") for t in (dm.read_json(p.at(MORGUE), {}) or {}).get("taken") or []}
         for row in self.verdicts:                # a joke or lost card's picture by the Morgue's eye: never a live card's
             if row["id"] in taken and row["verdict"] in SURE_CLASSES:
@@ -374,6 +376,9 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
             why = "Discord types are never sure (icons outside Types/)" if key == "types" else \
                 f"stars: {read['doubt']}" if read.get("doubt") else "read under its bar"
             fields[key] = unsure(read.get("method") or "ocr", why, read.get("value"), read.get("conf"))
+            miss = (getattr(inputs, "header_rows", {}) or {}).get(row["id"]) or {}
+            if key == "types" and miss.get("card") == row.get("card") and miss.get("ncc", 1) < HEADER_MISS:
+                fields[key].update(header_miss=True, why=why + "; its header icons match no git version's")
         else:
             fields[key] = unsure("none", "not read (no card era)")
     read = inputs.bars.get(row["file"])
@@ -437,6 +442,31 @@ def differs(key: str, a, b) -> bool:
     return a != b
 
 
+def same_read(a: dict, b: dict) -> bool:
+    """Two posted PSDs read alike (one look): name, types, ability words and composite stats."""
+    ra, rb = a.get("read") or {}, b.get("read") or {}
+    sa, sb = (((x.get("fields") or {}).get("stats") or {}).get("value") for x in (a, b))
+    return dm.squash(ra.get("name") or "") == dm.squash(rb.get("name") or "") and \
+        sorted(ra.get("types") or []) == sorted(rb.get("types") or []) and \
+        dm.words(ra.get("ability") or "") == dm.words(rb.get("ability") or "") and (sa is None or sb is None or sa == sb)
+
+
+def psd_home(r: dict, mine: set, whole: Optional[dict], entries: list, seen: dict, held: dict) -> tuple:
+    """(the entry a posted PSD's fields go on, how): its own message's look; else the nearest whole card within
+    PSD_BITS that holds no PSD read otherwise (another look); else (None, None)."""
+    looks = [e for e in entries if e["kind"] == "discord" and e["id"] in seen]
+    near = []
+    for e in looks:
+        bits = min((dm.hash_distance(whole, w) for w in seen[e["id"]][1]), default=None) if whole else None
+        own = bool(seen[e["id"]][0] & mine)
+        if own or (bits is not None and bits <= PSD_BITS and all(same_read(r, o) for o in held.get(e["id"], ()))):
+            near.append((not own, 99.0 if bits is None else bits, e))
+    if not near:
+        return None, None
+    best = min(near, key=lambda t: t[:2])
+    return best[2], "bits" if best[0] else "message"
+
+
 def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict:
     """fields filled from another picture of the same look: a sure value its own unsure read agrees with; one it
     didn't read (a sheet's cell, unread bars, no era, nothing read) is only proposed, one its read contradicts stays
@@ -445,6 +475,11 @@ def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict
     out = dict(fields)
     for key, field in other.items():
         mine = out.get(key)
+        if header_apart(key, mine, field) or header_apart(key, field, mine):
+            sure_one = mine if is_sure(mine) else field
+            out[key] = {**unsure("git header", f"a picture of this look has other header icons ({how})",
+                                 sure_one["value"]), "header_miss": True}
+            continue
         if not is_sure(field):
             if fill and contrary(key, mine, field):
                 out[key] = unsure(mine["method"], f"a picture of this look reads otherwise ({how})", mine["value"])
@@ -465,6 +500,13 @@ def merge_fields(fields: dict, other: dict, how: str, fill: bool = True) -> dict
         else:
             out[key] = {**field, "method": f"{field['method']} ({how})"}
     return out
+
+
+def header_apart(key: str, a: Optional[dict], b: Optional[dict]) -> bool:
+    """Types one picture takes from a git version's header while another's header matches no git version's (an
+    icon added or gone: Warcraftian Priest's light icon)."""
+    return key == "types" and is_sure(a) and str(a["method"]).startswith("git header") and bool((b or {}).get(
+        "header_miss"))
 
 
 def contrary(key: str, mine: Optional[dict], other: Optional[dict]) -> bool:
@@ -1034,9 +1076,11 @@ class Chain:
 
     def psd_entries(self, cid: str, entries: list, seen: dict) -> list:
         """The card's PSDs posted on Discord before its first git record: their exact fields onto the look posted
-        with them (the same message, or the whole card within PSD_BITS), else a version of their own dated by the
-        post (its composite as the picture)."""
+        with them (its own message's first; else the nearest whole card within PSD_BITS that no PSD read otherwise
+        holds), else a version of their own dated by the post (its composite as the picture). A field another PSD
+        set is never overwritten (two that differ: review)."""
         card = self.inputs.cards[cid]
+        held = defaultdict(list)                       # entry id -> the PSDs on it
         for r in sorted(getattr(self.inputs, "psds", {}).get(cid) or (), key=lambda r: int(r["posts"][0]["message"])):
             post = next((q for q in r["posts"] if not q.get("bot")), r["posts"][0])
             when = dm.epoch(post["date"])
@@ -1045,20 +1089,27 @@ class Chain:
                 continue
             mine = {q["message"] for q in r["posts"]}
             whole = (r.get("look") or {}).get("whole")
-            home = next((e for e in entries if e["kind"] == "discord" and e["id"] in seen and (
-                seen[e["id"]][0] & mine or (whole and any(dm.hash_distance(whole, w) <= PSD_BITS
-                                                          for w in seen[e["id"]][1])))), None)
+            home, how = psd_home(r, mine, whole, entries, seen, held)
             fields = {k: sure(v["value"], "psd (posted PSD)") if v.get("confidence") == "sure" else
-                      unsure("psd (posted PSD)", "a posted PSD's " + k + ": its text layers' words aren't all read "
-                             "on its composite" if k == "ability" else "a posted PSD's unknown type icon", v["value"])
+                      unsure("psd (posted PSD)", "a posted PSD's " + k + ": its text layers' words aren't all printed "
+                             "in that order on its composite" if k == "ability" else
+                             "a posted PSD's unknown type icon", v["value"])
                       for k, v in r["fields"].items()}
             if home is not None:
                 for k, v in fields.items():
-                    if is_sure(v) and not (is_sure(home["fields"].get(k)) and
-                                           home["fields"][k].get("method") in ("eye", "owner")):
+                    old = home["fields"].get(k)
+                    if (old or {}).get("psd"):         # another PSD's: kept
+                        if is_sure(v) and is_sure(old) and differs(k, v["value"], old["value"]):
+                            home["fields"][k] = {**unsure("psd (posted PSD)", f"two PSDs posted with this look differ "
+                                                          f"in {k}", old["value"]), "psd": old["psd"]}
+                        continue
+                    if is_sure(old) and old.get("method") in ("eye", "owner"):
+                        continue
+                    if is_sure(v) or not is_sure(old):
                         home["fields"][k] = {**v, "psd": r["id"]}
                 home.setdefault("psds", []).append(r["id"])
-                self.tally["psd: fields onto the look posted with it"] += 1
+                held[home["id"]].append(r)
+                self.tally[f"psd: fields onto the look posted with it ({how})"] += 1
                 continue
             for k in FIELDS:
                 if k not in fields and (k != "stats" or (card.get("type") not in NO_BARS and card.get("key") not in
@@ -1068,9 +1119,10 @@ class Chain:
                      "channel": post["channel"], "look": {"draft": True}, "psds": [r["id"]],
                      "pictures": [{"id": r["id"], "date": post["date"], "channel": post["channel"],
                                    "file": r["picture"], "thumb": None, "cell": None, "box": None, "verdict": "psd"}],
-                     "fields": fields}
+                     "fields": {k: {**v, "psd": r["id"]} if k in r["fields"] else v for k, v in fields.items()}}
             entries.append(entry)
             seen[entry["id"]] = (mine, [whole] if whole else [])
+            held[entry["id"]].append(r)
             self.tally["psd: a version of its own"] += 1
         return entries
 

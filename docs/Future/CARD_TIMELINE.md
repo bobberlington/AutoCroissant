@@ -78,12 +78,17 @@ the card's Image versions on the website before the git versions. Cards that nev
    printed card (eye `not_paper`) has no day. Candidates go only to the website's Morgue list (cards.json morgue),
    never cards[], decks, Unused, the default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact: `commands/discord_psds.py`, its name, ability and types, stats
-   off its composite; stars left out, 2022 PSDs keep hidden star layers); the chain puts its fields on the look
-   posted with it (the same message, or within 3 bits) or adds it as a version dated by its post. Card-sure pictures
+   off its composite; stars left out, 2022 PSDs keep hidden star layers; an ability kept in layers named after their
+   text is sure only when the composite prints its words in that order, none left out: a moved label or an overflowed
+   word goes to review); the chain puts its fields on the look posted in its own message, else on the nearest look
+   within 3 bits that no PSD read otherwise holds (a field another PSD set is never overwritten), or adds it as a
+   version dated by its post. Card-sure pictures
    the card channels' pass missed are bar-read too (`era_bars add`: era from the text readers, sure by the
    calibration as it stands). On the template (D1-D3) a picture's types are its git version's when the header's icon
    band matches that version's (`commands/header_types.py`: NCC per icon cell, the bar calibrated on old repo PNGs'
-   400 px JPEGs against the card's versions with other icons; method 'git header'). A picture by era: today's template through the card checks' bar reader
+   400 px JPEGs against the card's versions with other icons; method 'git header'; icons the version's PSD puts
+   below the band, under a two-line title, are compared in their own boxes, and a version with types whose icon
+   boxes aren't known never matches; a repost whose header matches no git version keeps them off the look). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
