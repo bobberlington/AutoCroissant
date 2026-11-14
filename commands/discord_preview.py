@@ -635,7 +635,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         else:
             index["mdw"].append({**row, "card": entry.get("card") or entry["name"]})
     # webps: made where missing (or all with --force); none left that no entry names
-    todo = [j for j in jobs if force or not exists(j[0])]
+    todo = list({j[0]: j for j in jobs if force or not exists(j[0])}.values())   # one job a webp (a blob twice)
     for path, *_ in todo:
         makedirs(path.rsplit("/", 1)[0], exist_ok=True)
     failed = []
