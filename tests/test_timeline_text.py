@@ -134,6 +134,22 @@ def test_star_counts_in_doubt_are_never_sure(tt):
     assert tt.star_doubt({"stars": small, "star_edge": {"x_from": x_from, "words": word}}, rule) == \
         "a title letter counted"
     assert tt.star_doubt({"stars": st, "star_edge": {"x_from": x_from, "words": [[240, 10, 330, 60]]}}, rule) is None
+    # a blob count under its strong copies (Spice: two on top, one below); the same star twice, a frame's column of
+    # copies, a title word's letters or a weak bank match are no star
+    row = {"kind": "row", "tol": 1.43, "rows": 1.6}
+    spice = {"icon": "star", "bank": 0.965, "size": 0.117,
+             "copies": [[1.0, 0.0, 121, 58], [0.982, 2.9, 143, 19], [0.968, 1.6, 96, 19], [0.48, 68.6, 151, 120]]}
+    assert tt.star_doubt({"stars": spice, "star_edge": {"x_from": x_from}}, row, 2) == "more stars copied than counted"
+    assert tt.star_doubt({"stars": spice, "star_edge": {"x_from": x_from}}, row, 3) is None
+    assert tt.star_doubt({"stars": dict(spice, bank=0.81)}, row, 2) is None
+    twice = dict(spice, copies=[[1.0, 0.0, 96, 19], [0.97, 2.0, 105, 19], [0.98, 1.0, 143, 19]])
+    assert tt.star_doubt({"stars": twice}, row, 2) is None
+    column = dict(spice, size=0.05, copies=[[1.0, 0.0, 120, 20], [1.0, 0.0, 177, 0], [1.0, 0.0, 177, 30],
+                                            [1.0, 0.0, 177, 60]])
+    assert tt.star_doubt({"stars": column}, row, 1) is None
+    letters = dict(spice, size=0.042, copies=[[1.0, 0.0, 62, 18], [0.99, 1.0, 77, 18]])
+    assert tt.star_doubt({"stars": letters, "star_edge": {"x_from": x_from, "words": [[84, 16, 274, 36]]}}, row, 1) \
+        is None
 
 
 def test_types_are_the_one_known_set_the_picture_shows(tt, monkeypatch):

@@ -127,7 +127,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    whose abilities print icons and styled digits (D2, D3, D-item, F) pool their eye bar apart, 1.0: their 0.81 reads
    lose an icon or a digit); stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
-   picture's right edge: `scripts/timeline_text.py edges`; a count of 1 never in A, C, B-item and F, whose copies
+   picture's right edge: `scripts/timeline_text.py edges`, nor a blob count under its strong copies, a star in a
+   second row: Spice 2023-04-10; a count of 1 never in A, C, B-item and F, whose copies
    read overlapped or unlike stars as one; a star bar with under 8 truths at or above it is none: F, D3. B-item's
    overlapped clusters, 93 eye truths: no bar, its stars publish only as 'eye'). Every field keeps its method (psd, picture, ocr, text) and a
    confidence.

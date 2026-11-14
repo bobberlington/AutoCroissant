@@ -14,7 +14,8 @@ makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (mac
                                            above it) and reads.jsonl (each read with method, confidence, sure)
     python timeline_text.py stars [-j N]   the stars read again (stars.jsonl; calibrate takes them over raw.jsonl's)
     python timeline_text.py edges [-j N]   the star reads' doubts (edges.jsonl: the title's words, a star cut by the
-                                           right edge; calibrate never takes such a count, nor shurikens, as sure)
+                                           right edge; calibrate never takes such a count, nor shurikens, nor
+                                           a blob count under its strong copies, as sure)
     python timeline_text.py types [-j N]   the title and the types read again, every bank type's places kept
                                            (types.jsonl; calibrate takes them over raw.jsonl's)
     python timeline_text.py abilities [-j N]   the abilities in raw.jsonl read again from the stored OCR (in place)
@@ -25,6 +26,7 @@ PNGs are read for calibration only. Output under ~/Documents/Tools/discord-archi
 no message text is read or written. Fork Python from AC's scripts/ (cv2, numpy, PIL).
 """
 import json
+import math
 import os
 import re
 import subprocess
@@ -69,6 +71,7 @@ ONE_STAR_UNSURE = KNOWN_STARS_ONLY + ("B-item", "F")   # copies read 1 for overl
 SHURIKENS = ("ninja star",)                      # stars turned and staggered over the art (PoD): copies miss them
 EDGE_FROM, EDGE_SEEN = 0.3, 0.5                  # a star cut by the right edge: this share shows; copies this alike seen
 LETTER_SIZE = 0.6                                # a copy under this share of a title word's height inside it: a letter
+STRONG_COPY, STRONG_BANK = (0.95, 10), 0.9       # a copy this alike (ncc, mad) of a star the bank knows this well: a star
 NMS_STAR, NMS_TYPE = 0.45, 0.6                   # peaks nearer than this share of the icon are one
 INLINE_FLOOR = 0.6                               # an icon inside the ability's lines
 CLASS_Y = 0.96                                   # a creature's class line sits under this (share of height)
@@ -1069,11 +1072,36 @@ def read_edge(a, st, band_h, x_from):
     return sorted(out, key=lambda e: -e[0])
 
 
-def star_doubt(rd, rule):
+def strong_copies(rd):
+    """The stars a blob count can't overlook: STRONG_COPY copies, off the title's words, not in a column of three
+    (a frame's edge), one per star (centres 3/4 of a star apart), at most two stars below the top one."""
+    st = rd.get("stars") or {}
+    if (st.get("bank") or 0) < STRONG_BANK:
+        return []
+    geo = rd.get("star_edge") or {}
+    side, x_from = (st.get("size") or 0) * WORK_W, geo.get("x_from") or 0
+    good = [c for c in st.get("copies") or [] if c[0] >= STRONG_COPY[0] and c[1] <= STRONG_COPY[1]]
+    kept = []
+    for c in good:
+        x, y = c[2], c[3]
+        if sum(abs(x - d[2]) <= 2 for d in good) >= 3 or any(
+                x0 - 1 <= x_from + x and x_from + x + side <= x1 + 1 and y0 - 1 <= y and y + side <= y1 + 1
+                for x0, y0, x1, y1 in geo.get("words") or []):
+            continue
+        if all(math.hypot(x - a, y - b) >= 0.75 * side for a, b in kept):
+            kept.append((x, y))
+    top = min((b for _, b in kept), default=0)
+    return [k for k in kept if k[1] <= top + 2 * side]
+
+
+def star_doubt(rd, rule, n=None):
     """Why an icon star count can't be sure: SHURIKENS (turned and staggered over the art: the copies aren't the
     stars), a counted copy on a title letter (an 'o' taken for a star), or a star cut by the picture's right edge in
-    a counted copy's row (one more may print). None: no doubt."""
+    a counted copy's row (one more may print); a blob count n under its strong copies (a star in a second row,
+    Spice). None: no doubt."""
     st = rd.get("stars") or {}
+    if rule.get("kind"):
+        return "more stars copied than counted" if n is not None and len(strong_copies(rd)) > n else None
     if st.get("icon") in SHURIKENS:
         return "shuriken stars"
     geo = rd.get("star_edge") or {}
@@ -2010,8 +2038,8 @@ def calibrate():
             sure = bool(bar is not None and val is not None and conf >= bar and not why)
             if not card and not sure and field in ("title", "ability") and method in ("ocr", "ocr+icons"):
                 val = None              # OCR of a picture no era confirms (screenshots): never kept
-            doubt = star_doubt(rd, how.get("rule") or STAR_RULES[0]) if field == "stars" and val is not None and \
-                not (how.get("rule") or {}).get("kind") else None
+            doubt = star_doubt(rd, how.get("rule") or STAR_RULES[0], val) if field == "stars" and val is not None \
+                else None
             row[field] = {"value": val, "method": method, "conf": conf, "sure": sure and not doubt}
             if doubt:
                 row[field]["doubt"] = doubt     # never sure (the bars stay as fitted)
