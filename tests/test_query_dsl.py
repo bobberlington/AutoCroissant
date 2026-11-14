@@ -1,9 +1,12 @@
 """/query_ability's query language on a table of website-shaped cards, and /query_rulebook's lines."""
 
+import re
+
 import pytest
 
 import commands.card_models as cm
 import commands.query_card as qc
+from conftest import SITE_SRC
 
 
 # website-shaped cards: name (as shown), aliases, ability, fields
@@ -19,7 +22,7 @@ CARDS = [
     dict(name="Fire Bomb", type="item", subtype="attack", stars=2, ability="Deal 3 damage to a [fire] creature."),
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
     dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="(2U)(OYT) Pop: heal 2 health."),
-    dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]."),
+    dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]. On the PF: 1 CDMG, lose 1 SP."),
     dict(name="Power Ring", type="item", ability="+1 ATK to every friendly minion."),
     dict(name="Enfeebled", type="debuff", ability="-1 ATK."),
 ]
@@ -30,6 +33,7 @@ QUERIES = [                                              # query, the cards foun
     ("dmg", {"Kirby", "Burning", "Meta Knight", "Fire Bomb"}),
     ("defense", {"Panda Shield", "Mettaton EX"}),
     ("health", {"Bloon"}), ("speed", {"sans."}),
+    ("counter damage", {"Burning"}), ("primary field: 1 cdmg, lose 1 star points", {"Burning"}),   # SP, PF, CDMG
     ('"damage"', {"Meta Knight", "Fire Bomb"}), ('"(2u)"', {"Bloon"}),
     ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning", "Power Ring", "Enfeebled"}),
     ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
@@ -85,6 +89,13 @@ def test_bot(repo):
                 repo.ability_search_engine(query)
             continue
         assert _shown(repo, repo.ability_search_engine(query).index) == bot, query
+
+
+def test_website_synonyms_are_the_bots():
+    """search.js's SYNONYMS is the bot's table."""
+    js = (SITE_SRC / "site" / "assets" / "search.js").read_text(encoding="utf-8")
+    table = re.search(r"const SYNONYMS = \{(.*?)\};", js, re.S).group(1)
+    assert dict(re.findall(r'"?([a-z][a-z ]*)"?: "([a-z ]+)"', table)) == qc.SYNONYMS
 
 
 def test_space_finds_line_break(repo, monkeypatch):

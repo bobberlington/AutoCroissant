@@ -41,8 +41,9 @@ URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
-            "health": "hp", "hp": "health"}                       # a text term finds both words (the card's own terms)
-SYNONYM_WORDS = compile(r"\b(" + "|".join(SYNONYMS) + r")\b")
+            "health": "hp", "hp": "health", "star points": "sp", "sp": "star points", "primary field": "pf",
+            "pf": "primary field", "counter damage": "cdmg", "cdmg": "counter damage"}   # either finds both (rulebook)
+SYNONYM_WORDS = compile(r"\b(" + "|".join(sorted(SYNONYMS, key=len, reverse=True)) + r")\b")   # longest key first
 BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
 MAX_CONTENT = 2000                                       # Discord's message length limit
@@ -437,7 +438,7 @@ class CardRepository:
 
     @staticmethod
     def _text_pattern(text: str) -> str:
-        """A regex for a text term: the text, with damage also finding DMG, DEF defense, SPD speed, HP health and back."""
+        """A regex for a text term: the text, each SYNONYMS word also finding its other (damage DMG, SP star points...)."""
         parts = SYNONYM_WORDS.split(text)
         out = []
         for i, part in enumerate(parts):
