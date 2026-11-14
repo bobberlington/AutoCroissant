@@ -160,7 +160,7 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
     each one's files (app.js early()). Share pages preload the chunks app.js imports, index.html doesn't; its head script
-    names the rulebook's for a Rulebook link."""
+    names the rulebook's for a Rulebook link. A card page preloads the picture size its own picture picks (one download)."""
     exe = bs.esbuild()
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -169,6 +169,9 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     app = (assets / "app.js").read_text(encoding="utf-8")
     assert all(re.search(rf'import\("\./{re.escape(m)}\?v=\w+"\)', app) for m in lazy)
     assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance|decks|pick|signin|changelog)\.js', page)
+    alpha = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
+    pre = re.search(r'<link rel="preload" as="image" imagesrcset="([^"]+)" imagesizes="([^"]+)"', alpha)
+    assert pre and pre.groups() == re.search(r'<img id="detail-img" [^>]*srcset="([^"]+)" sizes="([^"]+)"', alpha).groups() and " 480w, " in pre[1]
     if not exe:
         pytest.skip("no esbuild: the local build only")
     monkeypatch.setattr(bs, "esbuild", lambda: exe)
