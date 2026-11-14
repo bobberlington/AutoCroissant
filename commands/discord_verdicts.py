@@ -39,6 +39,7 @@ text, posters or authors anywhere (owner 2026-11-13).
 """
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
+from json import loads
 from os import environ, makedirs
 from os.path import basename, dirname, join, splitext
 from random import Random
@@ -47,6 +48,7 @@ from sys import stderr
 from typing import Callable, Optional
 
 from commands import discord_match as dm
+from global_config import DATA_BRANCH
 
 # ========================
 # Configuration
@@ -80,7 +82,17 @@ EXACT_RUN = 2                                   # a git look posted before its f
                                                 # commit; Halo, Glued: short texts a hash picked)
 STATS = ("hp", "def", "atk", "spd")             # the bars, top to bottom
 BARS = ("derived", "readers", "bars", "reads.jsonl")   # the era bar readers' reads: Discord pictures, old repo PNGs
-NO_BARS = {"field", "buff", "debuff"}           # card types that print no stat bars
+NO_BARS = {"field", "buff", "debuff"}           # card types that print no stat bars (and any card whose data
+                                                # stats are all -1: no_stats)
+OLD_ERAS = {"A", "B", "C", "A-item", "B-item", "C-item"}   # templates before the card template (2022-06)
+OLD_BITS = 8.0                                  # an older template's picture this far from every git version: a draft
+CARD_ASPECTS, WHOLE_ASPECT = (1 / 2, 2 / 3, 1.0), 0.03   # card exports' w/h; a cut screenshot is 5%+ off
+TEXT_READS = ("derived", "readers", "text", "reads.jsonl")  # the text readers' era and stars per Discord picture
+TEXT_TRUTH = ("derived", "readers", "text", "truth.jsonl")
+TEXT_CAL, S_STARS_BAR = ("derived", "readers", "text", "calibration.json"), "S/today"   # status cards' star bar
+OLD_ROWS = ("derived", "oldrows", "rows.jsonl")     # old repo versions' fields (their stars)
+EYE = ("derived", "match", "eye.json")               # pictures told by eye: by_eye
+STATS_FILE, OLD_STATS_FILE = dm.STATS_FILE, "db/old_stats.json"
 TAG = re_compile(r"\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\)|\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\b|\b([0-9/]*[A-Z][A-Z0-9/]{1,5})\)")
 NUMBER = re_compile(r"(?<![a-z0-9])(\d+(?:[.,]\d+)?%?)\s*([a-z]?)")   # a number and the next word's first letter
 SHOT_LOOK = 0.5                                 # a screenshot: its hash or art anchor at least this
@@ -262,15 +274,18 @@ def unrelated(found: dict, cards: dict) -> list:
     return kept
 
 
-def gate(cid: str, conf: float, v: dict, shape: Optional[str], family: dict, close=()) -> Optional[str]:
-    """Why a confident card isn't sure (None: sure): under SURE; a screenshot with nothing of the card's look;
+def gate(cid: str, conf: float, v: dict, shape: Optional[str], family: dict, close=(), whole: bool = False) -> \
+        Optional[str]:
+    """Why a confident card isn't sure (None: sure): under SURE (a whole card export named only goes to name_check
+    instead: a title read's weight is under SURE; a cut copy's title can lose a word, Ancient Stopwatch);
+    a screenshot with nothing of the card's look;
     a look-alike family's card without its own title (the same image as a sure post will do, unless another card's
     git versions look the same: close)."""
     if v["status"] == "ruled":
         return None
-    if conf < SURE:
-        return f"confidence {conf:.3f}"
     s = (scored_of(v, cid) or {}).get("s") or {}
+    if conf < SURE and not (whole and s and set(s) <= NAME_METHODS):
+        return f"confidence {conf:.3f}"
     if not shape and max(s.get("hash", 0), s.get("anchor", 0)) < SHOT_LOOK:
         return "a screenshot: only its text names the card"
     twin = v.get("twin") and v["twin"]["bits"][0] <= dm.TWIN_BITS and cid not in close
@@ -299,7 +314,72 @@ def when_posted(posts: list, card: Optional[dict]) -> dict:
     made = [dm.epoch(p["date"]) or 0 for p in posts if not p["bot"] and not p.get("embed")]
     return {"posted": min((dm.epoch(p["date"]) or 0 for p in posts), default=None),
             "made": min(made) if made else None, "unstored": (card or {}).get("unstored") or [],
-            "no_bars": (card or {}).get("type") in NO_BARS}
+            "no_bars": prints_no_bars(card)}
+
+
+def prints_no_bars(card: Optional[dict]) -> bool:
+    """A card that prints no stat bars: its type (NO_BARS) or its data's stats all -1 (no_stats: most items)."""
+    return (card or {}).get("type") in NO_BARS or bool((card or {}).get("no_stats"))
+
+
+def card_data(cards_repo: str) -> tuple:
+    """({card key} whose data stats are all -1, {card key: every star count its data versions have}) from the
+    card repo's data branch (empty without one)."""
+    git_dir = dm.git_dir_of(cards_repo) if cards_repo else None
+    if not git_dir:
+        return set(), {}
+    stats, old = ((loads(dm.git_out(git_dir, "show", f"origin/{DATA_BRANCH}:{f}") or b"{}") or {}).get("cards") or {}
+                  for f in (STATS_FILE, OLD_STATS_FILE))
+    none, stars = set(), defaultdict(set)
+    for key, entry in stats.items():
+        line = [(entry.get("stats") or {}).get(s) for s in ("hp", "defense", "attack", "speed")]
+        if not any(isinstance(v, int) and v >= 0 for v in line):
+            none.add(key)
+        for e in [entry, *(old.get(key) or [])]:
+            if isinstance(e, dict) and isinstance(e.get("stars"), int):
+                stars[key].add(e["stars"])
+    return none, dict(stars)
+
+
+def text_reads(root: str) -> tuple:
+    """({picture sha256: era}, {picture sha256: star count}) from the text readers: the era of every Discord picture
+    they read, its stars when read by eye or sure, or on a status card (era S, whose Discord reads have no truth to be
+    sure by) at today's status cards' calibrated bar with no doubt."""
+    eras, stars = {}, {}
+    eye = {r["id"][2:]: r.get("fields") or {} for r in dm.read_jsonl(join(root, *TEXT_TRUTH))
+           if str(r.get("id", "")).startswith("d:")}
+    cal = dm.read_json(join(root, *TEXT_CAL), {}) or {}
+    s_bar = ((cal.get("eras") or {}).get(S_STARS_BAR) or {}).get("stars", {}).get("bar")
+    for r in dm.read_jsonl(join(root, *TEXT_READS)):
+        if r.get("src") != "discord":
+            continue
+        sha = splitext(basename(r.get("file") or ""))[0]
+        eras[sha] = r.get("era")
+        read = r.get("stars") or {}
+        given = (eye.get(sha) or {}).get("stars")
+        if isinstance(given, int):
+            stars[sha] = given
+        status = r.get("era") == "S" and s_bar is not None and (read.get("conf") or 0) >= s_bar
+        if isinstance(read.get("value"), int) and (read.get("sure") or (status and not read.get("doubt"))):
+            stars.setdefault(sha, read["value"])
+    return eras, stars
+
+
+def old_stars(root: str) -> dict:
+    """{card key: star counts its old repo versions show (any read)}."""
+    out = defaultdict(set)
+    for r in dm.read_jsonl(join(root, *OLD_ROWS)):
+        f = (r.get("fields") or {}).get("stars") or {}
+        for v in [f.get("value"), *((f.get("reads") or {}).values())]:
+            if isinstance(v, int):
+                out[r.get("card")].add(v)
+    return dict(out)
+
+
+def old_eras(root: str) -> dict:
+    """{old repo blob[:20]: era} of the era bar readers' old repo PNGs (an older template kept in git: Hellmari)."""
+    return {r["blob"][:20]: r.get("era") for r in dm.read_jsonl(join(root, *BARS))
+            if r.get("src") == "oldgit" and r.get("variant") == "png" and r.get("blob")}
 
 
 def marks(lines) -> set:
@@ -431,6 +511,17 @@ def mark_diff(seen: set, known: tuple, tags: Optional[frozenset] = None) -> tupl
     return novel, lacks
 
 
+def short_marks(found: set) -> set:
+    """Marks without numbers of 3+ characters or with a point (OCR joins '10 154', splits '0 5')."""
+    return {m for m in found if not m.startswith("n:") or (len(m.split(":")[1]) <= 2 and "." not in m.split(":")[1])}
+
+
+def whole_card(image: dict) -> bool:
+    """A picture shaped as a whole card export (1:2, 2:3 or square within WHOLE_ASPECT), not a cut screenshot."""
+    w, h = image.get("w"), image.get("h")
+    return bool(w and h) and any(abs(w / h - r) / r <= WHOLE_ASPECT for r in CARD_ASPECTS)
+
+
 def _known(mark: str, found: set) -> bool:
     """A mark among others: a number's next letter may be missing on either side."""
     if mark in found or not mark.startswith("n:"):
@@ -560,7 +651,35 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
         note.update(shows="draft", far=round(far, 2), commits=[], git_dates=[], keys=[])
         note.pop("unsure", None)
         return "draft", note
+    why = no_git_look(image, members, near) if image.get("shape") and near else None
+    if why:
+        note.update(shows="draft", far=round(min(near.values()), 2), commits=[], git_dates=[], keys=[], draft=why)
+        for k in ("unsure", "near_look", "look"):
+            note.pop(k, None)
+        return "draft", note
     return None, note
+
+
+def no_git_look(image: dict, members: list, near: dict) -> Optional[str]:
+    """Why a card picture whose look isn't told can be no git version (None: it may be one): an older template
+    (OLD_ERAS) where no git version of the card is one, OLD_BITS from every git version; a whole card (not cut:
+    whole_card) printing a number or timing tag no read of any git version has (mark_diff's novel, numbers of 1-2
+    digits: OCR joins and splits longer ones); a status card's star count no git version has. The last two also need
+    the whole card over SURE_BITS from every git version and no git version unstored before the post. (Selftest:
+    no copy of a git version turns into a draft; a version's own marks missing from a cut or small copy did.)"""
+    far = min(near.values())
+    if image.get("era") in OLD_ERAS and far >= OLD_BITS and not any(m.get("era") in OLD_ERAS for m in members):
+        return f"an older template ({image['era']}) than every git version's"
+    if far <= SURE_BITS or unstored_before(image, members):
+        return None
+    seen, known = image.get("marks"), [m["marks"] for m in members if m.get("marks")]
+    if seen and known and whole_card(image) and all(
+            mark_diff(short_marks(seen), tuple(map(short_marks, k)), image.get("tags"))[0] for k in known):
+        return "numbers or timing tags no git version has"
+    stars, git = image.get("stars"), image.get("git_stars")
+    if image.get("era") == "S" and isinstance(stars, int) and git and stars not in git:
+        return f"{stars} stars, no git version's ({', '.join(map(str, sorted(git)))})"
+    return None
 
 
 # ========================
@@ -576,6 +695,9 @@ class Run:
         self.checked, self.names = checked or {}, dm.Names(cards)     # sheets checked by eye; names for cells
         self.classes: dict = {}                                       # sha256 -> the catalogue's size class
         self.bars: dict = {}                                          # sha256 -> its bars read (sure stats)
+        self.eras: dict = {}                                          # sha256 -> its era (bar readers, else text)
+        self.stars: dict = {}                                         # sha256 -> its star count (eye or sure)
+        self.git_stars: dict = {}                                     # card -> its git versions' star counts
         self.tags = tag_words(versions.values())                      # the real timing tags
         self.members = defaultdict(list)            # card -> its versions {key, look, whole, ts, marks, bars}
         for v in versions.values():
@@ -584,7 +706,9 @@ class Run:
     def seen(self, sha: str, image: dict, posts: list, cid: str, cell: bool = False) -> dict:
         """What a look check needs of a picture (or a sheet's cell: its bars unread)."""
         return {**image, **when_posted(posts, self.cards.get(cid)), "marks": read_marks(image.get("lines")),
-                "bars": None if cell else self.bars.get(sha), "tags": self.tags}
+                "bars": None if cell else self.bars.get(sha), "tags": self.tags,
+                "era": None if cell else self.eras.get(sha), "stars": None if cell else self.stars.get(sha),
+                "git_stars": self.git_stars.get(cid)}
 
     def twin(self, v: dict) -> Optional[dict]:
         """The post a verdict was made sure by (dm.same_image), if any."""
@@ -649,7 +773,7 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
         cid = kept[0]
         conf, v = found[cid]
         named = run.name_why(cid, v, text)
-        why = gate(cid, conf, v, shape, family, run.close) or named
+        why = gate(cid, conf, v, shape, family, run.close, whole_card(image)) or named
         kind, note = version_of(v, cid, run.seen(sha, image, posts, cid), versions, members.get(cid, []))
         if meme_only and kind != "git":
             why = why or "posted only in meme channels, in no git look"
@@ -778,8 +902,8 @@ def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
             run.checked.get(sha) else "a sheet found by names only (its cells may be cut wrong)"
         text = picture_text(part)
         named = run.name_why(cid, v, text) if cid else None
-        why = (gate(cid, conf, v, cell.get("shape"), family, run.close) or named or (doubt if mixed else None)) \
-            if cid else None
+        why = (gate(cid, conf, v, cell.get("shape"), family, run.close, whole_card(cell)) or named or
+               (doubt if mixed else None)) if cid else None
         live = [cid] if cid and conf >= SURE and any(not p["morgue"] for p in posts) else []
         if cid and why is None:
             kind, note = version_of(v, cid, run.seen(sha, part, posts, cid, cell=True), versions,
@@ -1067,11 +1191,19 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     kinds = channel_kinds(root)
     pictures, blobs, eras = bar_reads(root)
     texts = dm.Cache(paths.matcher.card_cache).entries
-    for v in versions_list:                     # each version's marks and bars, for the look checks
+    blob_eras = old_eras(root)
+    for v in versions_list:                     # each version's marks, bars and era, for the look checks
         feat = v["key"].split("-")[0]
         v.update(marks=version_marks(texts.get(feat) or {}), bars=blobs.get(feat[1:]),
-                 reads=version_reads(texts.get(feat) or {}))
+                 reads=version_reads(texts.get(feat) or {}), era=blob_eras.get(feat[1:]))
         v["grams"] = version_grams(v)
+    statless, data_stars = card_data(cards_repo)
+    git_stars = {k: set(v) for k, v in data_stars.items()}
+    for key, found in old_stars(root).items():
+        git_stars.setdefault(key, set()).update(found)
+    for c in cards.values():
+        if c.get("key") in statless:
+            c["no_stats"] = True
     close = lookalikes(cards, versions_list)
     family = families(cards, close)
     verdicts, raw = post_verdicts(images, records, cards, dm.read_json(paths.matcher.rulings, {}) or {},
@@ -1083,6 +1215,9 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     classes = catalogue_classes(root)
     run = Run(images, records, cards, versions, morgue, verdicts, raw, dm.catalogue_sheets(root), close)
     run.classes, run.bars = classes, pictures
+    text_eras, run.stars = text_reads(root)
+    run.eras = {**text_eras, **{sha: e for sha, e in eras.items() if e}}
+    run.git_stars = {cid: git_stars[c["key"]] for cid, c in cards.items() if git_stars.get(c.get("key"))}
     rows = []
     for sha, keys in by_sha.items():
         image = images[keys[0]]
@@ -1090,6 +1225,10 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
             rows += judge_cells(sha, keys, sha in jokes, run)
         else:
             rows.append(judge_picture(sha, keys, sha in jokes, run))
+    eye = (dm.read_json(join(root, *EYE), {}) or {}).get("pictures") or {}
+    for row in rows:
+        if row["id"] in eye:
+            by_eye(row, eye[row["id"]] or {}, versions, cards)
     reposts = repost_groups(rows, images, by_sha)
     for row in rows:
         image = images[by_sha[row["sha256"]][0]]
@@ -1122,8 +1261,8 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
                          cards_repo)
     makedirs(paths.out, exist_ok=True)
     order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "name_only", "created_review",
-             "joke", "meme_repost", "meme_live", "paper", "family", "version", "methods", "maybe", "looks_like",
-             "lost_group", "reason", "repost_of", "twin_of",
+             "eye", "joke", "meme_repost", "meme_live", "paper", "family", "version", "methods", "maybe",
+             "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
              "title_read", "card_evidence", "joke_draft", "posts"]
     rows.sort(key=lambda r: (min(int(p["message"]) for p in r["posts"]), r.get("cell") or 0))
@@ -1135,6 +1274,36 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     dm.write_json(join(paths.out, "summary.json"), tally)
     log(dm.dumps(tally, indent=1))
     return tally
+
+
+def by_eye(row: dict, ruling: dict, versions: dict, cards: dict) -> None:
+    """A picture told by eye (derived/match/eye.json: {pictures: {id: {card, look, why}}}): card a live card's id
+    ('none': no card), look 'draft' or the git version key it shows (none: not told). Applied over the gates'
+    verdict; never to a joke picture's Morgue verdict."""
+    cid, look = ruling.get("card", row.get("card")), ruling.get("look")
+    if row["verdict"] in ("morgue", "lost") and cid not in cards:
+        return
+    why = "eye: " + (ruling.get("why") or "told by eye")
+    if cid == "none":
+        for k in ("card", "cards", "conf", "methods", "version", "name_only"):
+            row.pop(k, None)
+        row.update(verdict="none", reason=why)
+        return
+    if cid not in cards:
+        return
+    v = versions.get(look) if look not in (None, "draft") else None
+    if v is not None and v.get("card") != cid:
+        v = None
+    note = {"shows": "draft", "by": "eye", "commits": [], "git_dates": [], "keys": []} if look == "draft" else \
+        {"shows": "current" if v.get("look", 0) == 0 else "older", "by": "eye", "look": v.get("look", 0),
+         "keys": [look], "commits": [v["commit"]] if v.get("commit") else [],
+         "git_dates": [dm.iso(v["ts"])[:10]] if v.get("ts") else []} if v else \
+        {**(row.get("version") or {}), "shows": None, "unsure": "the card told by eye, not its look"}
+    row.pop("name_only", None)
+    row.update(verdict="draft" if look == "draft" else "version_sure" if v else "version_unsure", card=cid,
+               cards=[cid], conf=1.0, version=note, eye=why, reason=why)
+    for k in ("maybe", "meme_live", "looks_like"):
+        row.pop(k, None)
 
 
 def created_reviews(rows: list, cards: dict):
@@ -1380,6 +1549,10 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
     root = dm.check_root(root)
     paths = Paths(root)
     cards, found = dm.references(root, cards_repo, "all", bool(dm._vision()), 1, log=log)
+    statless = card_data(cards_repo)[0]
+    for c in cards.values():
+        if c.get("key") in statless:
+            c["no_stats"] = True
     index = dm.CardIndex(cards, found)
     looks = index.looks()
     _, blobs, _ = bar_reads(root)
@@ -1405,8 +1578,8 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
         if v["status"] != "confident" or len(v["cards"]) != 1:
             return None, v, v["status"]
         cid = v["cards"][0]
-        why = gate(cid, (scored_of(v, cid) or {}).get("conf", 0.0), v, feat.get("shape"), family, close) or \
-            name_check(cid, v, dm.read_text(feat.get("lines")), members, cards)
+        why = gate(cid, (scored_of(v, cid) or {}).get("conf", 0.0), v, feat.get("shape"), family, close,
+                   whole_card(feat)) or name_check(cid, v, dm.read_text(feat.get("lines")), members, cards)
         return (cid, v, "sure") if why is None else (None, v, "gated")
 
     def held_out(pick: dict, image: dict, others: list) -> tuple:
@@ -1442,10 +1615,11 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
             if cid is None or not dm.related(cards, cid, truth):
                 looks_out[name]["card " + ("wrong" if cid else status)] += 1
                 continue
-            seen = {"shape": feat.get("shape"), "whole": feat.get("whole"), "marks": read_marks(feat.get("lines")),
+            seen = {"shape": feat.get("shape"), "w": feat.get("w"), "h": feat.get("h"), "whole": feat.get("whole"),
+                    "marks": read_marks(feat.get("lines")),
                     "text": dm.read_text(feat.get("lines")),
                     "bars": copies.get(v["key"].split("-")[0][1:]), "made": v.get("ts"), "tags": tags,
-                    "no_bars": cards.get(truth, {}).get("type") in NO_BARS}
+                    "no_bars": prints_no_bars(cards.get(truth))}
             kind, note = version_of(judged, cid, seen, versions, members[cid])
             outcome = "draft" if kind == "draft" else "unsure" if kind != "git" else \
                 "right" if note.get("look") == looks[v["key"]] else "wrong"

@@ -79,6 +79,10 @@ OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrow
 FACTS, FACT_SWITCHES = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "switches.json")
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
+PSDS = ("derived", "psds", "psds.jsonl")                    # card PSDs posted on Discord (commands/discord_psds.py)
+HEADER = ("derived", "readers", "types", "header.jsonl")    # types by the git versions' header (header_types.py)
+MORGUE = ("derived", "morgue", "candidates.json")          # the Morgue's eye: pictures it took from a live card
+PSD_BITS = 3.0                                              # a look this near a posted PSD's composite shows it
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
@@ -270,6 +274,15 @@ class Inputs:
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
         self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
         self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
+        self.header = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER)) if r.get("sure")}
+        taken = {t["picture"]: t.get("entry") for t in (dm.read_json(p.at(MORGUE), {}) or {}).get("taken") or []}
+        for row in self.verdicts:                # a joke or lost card's picture by the Morgue's eye: never a live card's
+            if row["id"] in taken and row["verdict"] in SURE_CLASSES:
+                row.update(morgue_taken=taken[row["id"]], verdict="unsure")
+        self.psds = defaultdict(list)
+        for r in dm.read_jsonl(p.at(PSDS)):
+            if r.get("card") and r.get("fields"):
+                self.psds[r["card"]].append(r)
         self.rulings = (dm.read_json(p.at(RULINGS), {}) or {}).get("rulings") or {}
         git_dir = dm.git_dir_of(cards_repo)
         if not git_dir:
@@ -277,6 +290,19 @@ class Inputs:
         made = loads(dm.git_out(git_dir, "show", f"origin/{CARD_BRANCH}:{CREATED_PATH}") or b"{}")
         self.created_file = made.get("cards") or {}
         self.first_data = first_versions(git_dir)
+        self.statless = statless(git_dir)
+
+
+def statless(git_dir: str) -> set:
+    """The card keys whose data stats are all -1 (most items, N.M.E. cards): no bars printed today."""
+    stats = loads(dm.git_out(git_dir, "show", f"origin/{DATA_BRANCH}:{STATS_FILE}") or b"{}")
+    out = set()
+    for key, e in (stats.get("cards") or stats).items():
+        line = [(e.get("stats") or {}).get(s) for s in ("hp", "defense", "attack", "speed")] if isinstance(e, dict) \
+            else [0]
+        if not any(isinstance(v, int) and v >= 0 for v in line):
+            out.add(key)
+    return out
 
 
 def first_versions(git_dir: str) -> dict:
@@ -340,14 +366,21 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
         elif read.get("sure") and read.get("value") not in (None, ""):
             fields[key] = sure(sorted(read["value"]) if key == "types" else read["value"], read.get("method") or "ocr",
                                read.get("conf"))
+        elif key == "types" and row["id"] in getattr(inputs, "header", {}) and \
+                inputs.header[row["id"]].get("card") == row.get("card"):
+            got = inputs.header[row["id"]]                 # the header's icons as a git version's (same template)
+            fields[key] = sure(got["types"], "git header", got["ncc"], version=got["version"])
         elif text:
             why = "Discord types are never sure (icons outside Types/)" if key == "types" else \
                 f"stars: {read['doubt']}" if read.get("doubt") else "read under its bar"
             fields[key] = unsure(read.get("method") or "ocr", why, read.get("value"), read.get("conf"))
         else:
             fields[key] = unsure("none", "not read (no card era)")
-    if kind not in NO_BARS:
-        fields["stats"] = picture_stats(inputs.bars.get(row["file"]), kind)
+    read = inputs.bars.get(row["file"])
+    card = inputs.cards.get(row.get("card")) or {}
+    if kind not in NO_BARS and not (read and not read.get("labels") and card.get("key") in
+                                    getattr(inputs, "statless", ())):
+        fields["stats"] = picture_stats(read, kind)    # a card with no stats today, no bar label read: not printed
     return fields
 
 
@@ -711,6 +744,21 @@ def owner_rows(inputs) -> Counter:
     return done
 
 
+def named_on_or_after(inputs) -> int:
+    """A named-only picture (created_review) posted on or after the card's Created day in the file (or a hand
+    date) can't move Created: it enters as a card-sure picture. Only one that would move Created earlier stays for
+    review."""
+    n = 0
+    for row in inputs.verdicts:
+        file = inputs.created_file.get((inputs.cards.get(row.get("card")) or {}).get("key")) or {}
+        if row.get("created_review") and row.get("first") and file.get("date") and (
+                file.get("from") == "hand" or day(dm.epoch(row["first"]["date"])) >= file["date"]):
+            row.pop("created_review")
+            row["named_after_created"] = True
+            n += 1
+    return n
+
+
 def created_sort(date: Optional[str]) -> str:
     return PAPER_SORT if date == PAPER_DAY else date or "9999"
 
@@ -946,7 +994,7 @@ class Chain:
                                           value)
 
     def discord_entries(self, cid: str, rows: list, split: list) -> list:
-        out, card = [], self.inputs.cards[cid]
+        out, card, seen = [], self.inputs.cards[cid], {}
         for group in self.looks(cid, rows) + self.looks(cid, split):
             first = group["pictures"][0]["row"]
             if group["as"]:
@@ -980,7 +1028,51 @@ class Chain:
             if era:
                 entry["era"] = era
             out.append(entry)
-        return self.reposted_eras(cid, out)
+            seen[entry["id"]] = ({q["message"] for p in group["pictures"] for q in p["row"].get("posts") or ()},
+                                 [p["row"]["whole"] for p in group["pictures"] if p["row"].get("whole")])
+        return self.reposted_eras(cid, self.psd_entries(cid, out, seen))
+
+    def psd_entries(self, cid: str, entries: list, seen: dict) -> list:
+        """The card's PSDs posted on Discord before its first git record: their exact fields onto the look posted
+        with them (the same message, or the whole card within PSD_BITS), else a version of their own dated by the
+        post (its composite as the picture)."""
+        card = self.inputs.cards[cid]
+        for r in sorted(getattr(self.inputs, "psds", {}).get(cid) or (), key=lambda r: int(r["posts"][0]["message"])):
+            post = next((q for q in r["posts"] if not q.get("bot")), r["posts"][0])
+            when = dm.epoch(post["date"])
+            if card.get("fs") and when >= card["fs"]:
+                self.tally["psd: after the card's first git record"] += 1
+                continue
+            mine = {q["message"] for q in r["posts"]}
+            whole = (r.get("look") or {}).get("whole")
+            home = next((e for e in entries if e["kind"] == "discord" and e["id"] in seen and (
+                seen[e["id"]][0] & mine or (whole and any(dm.hash_distance(whole, w) <= PSD_BITS
+                                                          for w in seen[e["id"]][1])))), None)
+            fields = {k: sure(v["value"], "psd (posted PSD)") if v.get("confidence") == "sure" else
+                      unsure("psd (posted PSD)", "a posted PSD's " + k + ": its text layers' words aren't all read "
+                             "on its composite" if k == "ability" else "a posted PSD's unknown type icon", v["value"])
+                      for k, v in r["fields"].items()}
+            if home is not None:
+                for k, v in fields.items():
+                    if is_sure(v) and not (is_sure(home["fields"].get(k)) and
+                                           home["fields"][k].get("method") in ("eye", "owner")):
+                        home["fields"][k] = {**v, "psd": r["id"]}
+                home.setdefault("psds", []).append(r["id"])
+                self.tally["psd: fields onto the look posted with it"] += 1
+                continue
+            for k in FIELDS:
+                if k not in fields and (k != "stats" or (card.get("type") not in NO_BARS and card.get("key") not in
+                                                         getattr(self.inputs, "statless", ()))):
+                    fields[k] = unsure("psd (posted PSD)", f"a posted PSD's {k}: not read")
+            entry = {"id": "D-" + r["id"], "kind": "discord", "date": dm.iso(when), "day": day(when),
+                     "channel": post["channel"], "look": {"draft": True}, "psds": [r["id"]],
+                     "pictures": [{"id": r["id"], "date": post["date"], "channel": post["channel"],
+                                   "file": r["picture"], "thumb": None, "cell": None, "box": None, "verdict": "psd"}],
+                     "fields": fields}
+            entries.append(entry)
+            seen[entry["id"]] = (mine, [whole] if whole else [])
+            self.tally["psd: a version of its own"] += 1
+        return entries
 
     def era(self, row: dict) -> Optional[str]:
         """A picture's template era (the era readers'): none for a sheet's cell."""
@@ -1465,6 +1557,7 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
     paths = Paths(root)
     inputs = Inputs(root, cards_repo)
     owned = owner_rows(inputs)
+    owned["discord: named only on or after the file's Created day (enters)"] = named_on_or_after(inputs)
     chain = Chain(inputs)
     chain.tally.update(owned)
     found, split = chain.discord_rows()

@@ -396,3 +396,35 @@ def test_facts_by_a_step_and_by_the_pictures_around_them():
     widened = [pic(6, 0, {"hp": 4}), fact("g", 10, field="hp", to=5), fact("h", 11, field="hp", to=7),
                pic(7, 12, {"hp": 9})]
     assert [e["id"] for e in chain.check_facts("bolt", widened)] == ["D-6", "D-7"]    # h gone, g's window reaches D-7
+
+
+def test_named_only_after_created_psds_and_header_types():
+    """A named-only picture on or after the file's Created day enters; an earlier one stays for review. A stat-less
+    card's picture reading no bar label has no stats. A posted PSD's exact fields go onto the look posted with it,
+    else it is a version of its own. A git header match gives the types."""
+    verdicts = [picture(1, T, created_review="named only, before its first picture evidence (x)"),
+                picture(2, T - 30 * DAY, created_review="named only, before its first picture evidence (x)")]
+    inp = inputs(verdicts, created={"Bolt": {"date": dc.day(T), "from": "discord"}})
+    assert dc.named_on_or_after(inp) == 1 and "created_review" not in verdicts[0] and verdicts[1]["created_review"]
+    inp = inputs([picture(3, T)], bars={"attachments/3.png": {"labels": 0, "stats": None}})
+    inp.statless = {"Bolt"}
+    assert "stats" not in dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")
+    inp.statless = set()
+    assert dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")["stats"]["confidence"] == "review"
+    inp.header = {"P-000000000003": {"card": "bolt", "types": ["fire"], "ncc": 0.97, "version": "k"}}
+    inp.text = {"attachments/3.png": {"types": {"sure": False}}}
+    assert dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")["types"]["method"] == "git header"
+    rows = [{**picture(4, T, posts=[{"message": "44"}]), "whole": H}]
+    psd = lambda n, msg, whole: {"id": f"S-{n}", "card": "bolt", "picture": f"derived/psds/pictures/S-{n}.webp",
+                                 "look": {"whole": whole}, "posts": [{"message": msg, "date": iso(T + n), "channel":
+                                                                      "new-cards", "bot": False}],
+                                 "fields": {"name": {"value": "Bolt", "confidence": "sure"},
+                                            "ability": {"value": "Zap", "confidence": "sure"}}}
+    inp = inputs(rows)
+    inp.psds = {"bolt": [psd(1, "44", FAR), psd(2, "99", FAR)]}
+    chain = dc.Chain(inp)
+    entries = chain.discord_entries("bolt", rows, [])
+    assert [e["id"] for e in entries] == ["D-P-000000000004", "D-S-2"]
+    assert entries[0]["fields"]["ability"]["method"] == "psd (posted PSD)" and entries[0]["psds"] == ["S-1"]
+    assert entries[1]["pictures"][0]["file"].endswith("S-2.webp") and entries[1]["fields"]["stats"]["confidence"] \
+        == "review"

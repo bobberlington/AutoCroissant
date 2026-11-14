@@ -6,6 +6,7 @@ with a Python that has Pillow and numpy (OCR of old-repo pictures needs pyobjc's
     python -m commands.era_bars truth     [--root <dir>] [--old-git <dir>] [--workers <n>]
     python -m commands.era_bars read      [--root <dir>] [--old-git <dir>] [--workers <n>] [--only discord|oldgit]
     python -m commands.era_bars calibrate [--root <dir>]
+    python -m commands.era_bars add       [--root <dir>] [--workers <n>]
 
 truth      truth/psd.json: each old-repo creature or minion PNG version's stats as its same-commit PSD gives them
            (today's parser on digit rows and comp bars; the rows' own layers on the alt template and masked rows).
@@ -20,6 +21,10 @@ calibrate  Each era's truth (truth/*.json: old-repo PSD stats where its digit ro
            elsewhere) against reads.jsonl: per era the lowest confidence bar whose reads at or above it are SURE right,
            with per stat n, accuracy at the bar and the share above it (and on Discord pictures alone, with a Wilson
            bound) -> calibration.json; reads.jsonl's 'sure' marks follow it (never on a held row or a NEVER_SURE group).
+add        The card-sure Discord pictures (derived/match/verdicts.jsonl) read nowhere above (other channels, posts after
+           2023-11-06): their era from the text readers (derived/readers/text/reads.jsonl), else era_of; their OCR lines
+           the text readers' (ocr.jsonl), else Vision's; read as above and made sure by calibration.json as it stands
+           (its bars are not fitted again) -> appended to reads.jsonl.
 Outputs go to the archive root's derived/readers/bars/ (never a repo). Nothing here talks to Discord.
 """
 from argparse import ArgumentParser
@@ -45,6 +50,7 @@ OUT = ("derived", "readers", "bars")                # under the archive root
 ERAS = ("derived", "eras")                          # the eras pass's outputs
 OLDGIT = ("derived", "oldgit")
 VERDICTS = ("derived", "match", "verdicts.jsonl")   # the matcher's card per Discord picture (when there)
+TEXT = ("derived", "readers", "text")               # the text readers: eras (reads.jsonl) and OCR lines (ocr.jsonl)
 CARD_SURE = ("version_sure", "version_unsure", "draft")
 ORDER = ("hp", "def", "atk", "spd")                 # the bar rows, top to bottom
 LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|def",
@@ -718,9 +724,10 @@ def read_task(job: dict) -> list:
         if job["src"] == "discord":
             img = dm.load_image(job["path"])
             rec = job["rec"] or look(img, job["row"]["ts"])
-            got = read_card(img, job["lines"], rec, job.get("era"), title_of(job["lines"]), job["row"].get("match_card"))
+            lines = job["lines"] if job["lines"] is not None else _ocr(img)
+            got = read_card(img, lines, rec, job.get("era"), title_of(lines), job["row"].get("match_card"))
             if job.get("era"):
-                got["era_how"] = "eye"
+                got["era_how"] = job.get("era_how") or "eye"
             return [{**job["row"], **got}]
         img = dm.load_image(dm.open_source(("git", job["git_dir"], job["row"]["blob"])))
         rows = []
@@ -809,6 +816,66 @@ def read_all(root: str, old_git: str, workers: int, only: Optional[str] = None):
             f.write(dumps(r) + "\n")
     replace(path + ".tmp", path)
     log(f"read: {len(rows)} rows; eras {Counter(r.get('era') for r in rows)}")
+
+
+def add_jobs(root: str) -> list:
+    """The card-sure Discord pictures (whole, not a sheet's cell) reads.jsonl lacks, at their first post: era and OCR
+    lines from the text readers when they read them."""
+    done = {r.get("file") for r in map(loads, open(join(root, *OUT, "reads.jsonl"))) if r.get("src") == "discord"}
+    eras = {r["file"]: r.get("era") for r in map(loads, open(join(root, *TEXT, "reads.jsonl")))
+            if r.get("src") == "discord" and r.get("file")}
+    ocr = {}
+    for line in open(join(root, *TEXT, "ocr.jsonl")):
+        r = loads(line)
+        if str(r.get("id", "")).startswith("d:"):
+            ocr[r["id"][2:]] = [x[:6] for x in r.get("fix") or []]
+    jobs, seen = [], set()
+    for line in open(join(root, *VERDICTS)):
+        r = loads(line)
+        f = r.get("file")
+        if r.get("verdict") not in CARD_SURE or r.get("cell") or not f or f in done or f in seen or not r.get("first"):
+            continue
+        seen.add(f)
+        sha = r["sha256"]
+        era = eras.get(f) if eras.get(f) not in (None, "other", "not-card") else None
+        jobs.append({"src": "discord", "path": join(root, f), "lines": ocr.get(sha), "rec": None, "era": era,
+                     "era_how": "text" if era else None,
+                     "row": {"src": "discord", "file": f, "ts": r["first"]["date"][:19], "ch": r["first"]["channel"],
+                             "w": r.get("w"), "h": r.get("h"), "match_card": r.get("card"), "added": True}})
+    return jobs
+
+
+def add_reads(root: str, workers: int):
+    """add: read add_jobs' pictures, mark them sure by calibration.json as it stands, append to reads.jsonl."""
+    base = join(root, *OUT)
+    jobs = add_jobs(root)
+    log(f"add: {len(jobs)} pictures ({sum(1 for j in jobs if j['lines'] is None)} need OCR)")
+    cal = load(open(join(base, "calibration.json")))
+    sample = cal["classes"]["rule_on_random_sample"]
+    rows = []
+    with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(read_task, j) for j in jobs]
+        for i, fut in enumerate(as_completed(futures), 1):
+            rows.extend(fut.result())
+            if i % 50 == 0 or i == len(jobs):
+                log(f"add: {i}/{len(jobs)}")
+    for r in rows:
+        bar = cal["groups"].get(group_of(r), {}).get("discord_truth", {}).get("bar")
+        for key in ("stats", "stats2"):
+            for st in (r.get(key) or {}).values():
+                st["sure"] = bar is not None and st["conf"] >= bar and not st.get("hold")
+        got = sample.get(r.get("era_rule") if r.get("era_how") == "rule" else None, {})
+        r["era_conf"] = round(got["right"] / got["n"], 3) if got.get("n", 0) >= 10 else None
+    old = [loads(line) for line in open(join(base, "reads.jsonl"))]
+    every = old + rows
+    every.sort(key=lambda r: (r["src"], r.get("ts") or r.get("date") or "", r.get("file") or r.get("blob"),
+                              r.get("variant", "")))
+    with open(join(base, "reads.jsonl.tmp"), "w") as f:
+        for r in every:
+            f.write(dumps(r) + "\n")
+    replace(join(base, "reads.jsonl.tmp"), join(base, "reads.jsonl"))
+    log(f"add: {len(rows)} rows; eras {Counter(r.get('era') for r in rows)}; with stats "
+        f"{sum(1 for r in rows if r.get('stats'))}")
 
 
 # ========================
@@ -1002,7 +1069,7 @@ def calibrate(root: str):
 
 def main(argv=None):
     ap = ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("truth", "read", "calibrate"))
+    ap.add_argument("step", choices=("truth", "read", "calibrate", "add"))
     ap.add_argument("--root", default=dm.DEFAULT_ROOT)
     ap.add_argument("--old-git", default=dm.OLD_GIT)
     ap.add_argument("--workers", type=int, default=2)
@@ -1013,6 +1080,8 @@ def main(argv=None):
         build_truth(root, old_git, a.workers)
     elif a.step == "read":
         read_all(root, old_git, a.workers, a.only)
+    elif a.step == "add":
+        add_reads(root, a.workers)
     else:
         calibrate(root)
 

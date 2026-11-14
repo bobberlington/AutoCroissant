@@ -277,3 +277,38 @@ def test_named_only_needs_its_text_and_live_cards_are_never_morgue(tmp_path):
     assert seven["verdict"] == "unsure" and seven["meme_live"] == "fang"
     groups = json.loads((root / "derived/match/lost_groups.json").read_text())["groups"]
     assert [g["pictures"] for g in groups] == [[six["id"]]]
+
+
+def test_looks_no_git_version_has_are_drafts_and_named_only_picks_reach_the_name_check():
+    """An older template than every git version's, far from them; numbers no git version prints on a whole card; a
+    status card's star count: drafts. A cut screenshot's or a lost digit's marks never are. A title-only pick under
+    SURE goes to the name check on a whole card only. Stat-less cards print no bars. An eye ruling tells card and
+    look."""
+    tags = dv.marks(["(2CD) summon it for 2 turns"])
+    v = {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T, "marks": (tags, tags), "era": "D2"}
+    pick = {"by": "hash", "keys": ["a"], "bits": 9.0}
+    far = {"p": "0" * 15 + "f", "d": "0" * 14 + "ff", "q": "0" * 62 + "ff"}     # 4-5 bits: not that look
+
+    def kind(**image):
+        return dv.decide(pick, {"shape": "1:2", "w": 400, "h": 800, "whole": far, **image}, {"a": v}, [v])
+    assert kind()[0] is None
+    old = {**FAR}
+    got = dv.decide(pick, {"shape": "1:2", "w": 400, "h": 800, "whole": old, "era": "B"}, {"a": v}, [v])
+    assert got[0] == "draft" and got[1]["draft"].startswith("an older template")
+    assert dv.decide(pick, {"shape": "1:2", "whole": old, "era": "B"}, {"a": v}, [{**v, "era": "C"}])[0] is None
+    assert kind(marks={"t:2cd", "n:2:c", "n:3:t"})[0] == "draft"                 # 3 turns: no git version's
+    assert kind(marks={"t:2cd", "n:2:c"})[0] is None                             # a number unread: maybe that look
+    assert kind(marks={"t:2cd", "n:2:c", "n:234:t"})[0] is None                  # OCR joins digits: never counted
+    assert kind(marks={"t:2cd", "n:2:c", "n:3:t"}, w=420, h=760)[0] is None      # cut: a screenshot
+    assert kind(era="S", stars=2, git_stars={1})[0] == "draft" and kind(era="S", stars=1, git_stars={1})[0] is None
+    named = {"status": "confident", "cards": ["c"], "scored": [{"card": "c", "conf": 0.93, "s": {"title": 1.0}}]}
+    assert dv.gate("c", 0.93, named, "1:2", {}, whole=True) is None
+    assert dv.gate("c", 0.93, named, "1:2", {}).startswith("confidence")
+    mixed = {**named, "scored": [{"card": "c", "conf": 0.93, "s": {"title": 1.0, "ocr": 0.4}}]}
+    assert dv.gate("c", 0.93, mixed, "1:2", {}, whole=True).startswith("confidence")
+    assert dv.prints_no_bars({"type": "item", "no_stats": True}) and not dv.prints_no_bars({"type": "item"})
+    row = {"id": "P-1", "verdict": "unsure", "maybe": ["c"], "reason": "x"}
+    dv.by_eye(row, {"card": "c", "look": "a", "why": "same"}, {"a": {**v, "commit": "k"}}, {"c": {}})
+    assert (row["verdict"], row["card"], row["version"]["look"], row["version"]["by"]) == ("version_sure", "c", 0, "eye")
+    dv.by_eye(row, {"card": "none"}, {}, {"c": {}})
+    assert row["verdict"] == "none" and "card" not in row

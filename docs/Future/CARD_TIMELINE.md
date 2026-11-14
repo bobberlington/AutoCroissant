@@ -44,11 +44,19 @@ the card's Image versions on the website before the git versions. Cards that nev
    pictures grouped into lost cards; contact sheets for the checks by eye. A git look is claimed only when the picture's
    timing tags and numbers are that version's; made before the look's first git version, its text exactly that
    version's at any length, whatever picked the look (no text read: unsure); more than 3 days before, its bars read
-   (`derived/readers/bars`) the same too (the hash can't see a bar or a typo).
+   (`derived/readers/bars`) the same too (the hash can't see a bar or a typo; a card whose data stats are all -1
+   prints none). A look the gates can't tell is a draft when no git version can be it: an older template (eras A-C
+   and their items) than every git version's, 8+ bits from all; a whole card export (not a cut screenshot) printing
+   a number (1-2 digits) or timing tag no read of any git version has, over 3 bits from all; a status card's star
+   count no git version has. The selftest's held-out check holds: no copy of a git version becomes a draft.
+   Pictures told by eye (`derived/match/eye.json`: card and look, the status pairs and port pictures of gap round 1)
+   override the gates.
    A card named only (its title, file name or chat; nothing of its look or text) is sure only when the picture's text
-   fits it (version fit 0.25) and no card the matcher saw in that text fits better (a reused name: 2019's joke Potato,
+   fits it (version fit 0.25; a title read alone, weight 0.93, goes to this check on a whole card export) and no
+   card the matcher saw in that text fits better (a reused name: 2019's joke Potato,
    Blooper Tentacle's and Flame Bomb's first versions under Tentacle's and Firebomb's names); one dated before the card's
-   first picture evidence sets Created only through review. A joke picture that is a live card's (named so by its posts
+   first picture evidence sets Created only through review (the chain lets one dated on or after the file's Created
+   day in: it can't move Created). A joke picture that is a live card's (named so by its posts
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
    Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
    Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
@@ -69,7 +77,13 @@ the card's Image versions on the website before the git versions. Cards that nev
    card's Created). A paper card's photo (owner Q6) is dated "Before 2020" and comes first; a later photo of a
    printed card (eye `not_paper`) has no day. Candidates go only to the website's Morgue list (cards.json morgue),
    never cards[], decks, Unused, the default search or Mentioned by.
-3. **Read:** a posted PSD through `PSDParser` (exact). A picture by era: today's template through the card checks' bar reader
+3. **Read:** a posted PSD through `PSDParser` (exact: `commands/discord_psds.py`, its name, ability and types, stats
+   off its composite; stars left out, 2022 PSDs keep hidden star layers); the chain puts its fields on the look
+   posted with it (the same message, or within 3 bits) or adds it as a version dated by its post. Card-sure pictures
+   the card channels' pass missed are bar-read too (`era_bars add`: era from the text readers, sure by the
+   calibration as it stands). On the template (D1-D3) a picture's types are its git version's when the header's icon
+   band matches that version's (`commands/header_types.py`: NCC per icon cell, the bar calibrated on old repo PNGs'
+   400 px JPEGs against the card's versions with other icons; method 'git header'). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
@@ -90,7 +104,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    never), the first repo's push notices naming the card alone as text-only rows (Q5: date, mapped author, commit
    message, badge "first repo"; no picture or link), the old repo's rows, a split card's versions "as <old name>" on
    both halves (Q3), and first a paper card's photo named as the card (by the matcher or by eye,
-   `derived/readers/paper/eye.json`), dated "Before 2020" with no day (Q6). Only card- and look-sure pictures enter;
+   `derived/readers/paper/eye.json`), dated "Before 2020" with no day (Q6). Only card- and look-sure pictures enter
+   (never one the Morgue's eye took for a joke or lost card: `taken`); a stat-less card's picture reading no bar
+   label has no stats field (not printed);
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
    eye truth, then their sure reads), the rest name a review item (types with nothing read: unread). Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over

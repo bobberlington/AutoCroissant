@@ -43,6 +43,7 @@ import oldgit_index as oi                                      # noqa: E402  (AC
 DERIVED = dirname(oi.OUT)
 OUT = join(DERIVED, "oldrows")
 CARD_CACHE = join(DERIVED, "matcher", "match", "cache", "cards.jsonl")
+BAR_TRUTH = join(DERIVED, "readers", "bars", "truth")   # the bar readers' by-eye stats (eye_*.json, by PNG blob)
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
@@ -451,6 +452,11 @@ class Data:
                 self.rereads.setdefault(r["blob"], r)          # the same PSD under another path (Unused/)
         self.icons = {r["blob"]: r["icons"] for r in oi.read_jsonl(join(OUT, "icons.jsonl")) if "error" not in r}
         self.drawn = {r["blob"]: r["drawn"] for r in oi.read_jsonl(join(OUT, "stars.jsonl")) if "drawn" in r}
+        self.eye_bars = {}                                     # PNG blob -> stats by eye (None: not readable)
+        for name in sorted(os.listdir(BAR_TRUTH)) if exists(BAR_TRUTH) else ():
+            if name.startswith("eye_") and name.endswith(".json"):
+                for blob, t in json.load(open(join(BAR_TRUTH, name)))["items"].items():
+                    self.eye_bars[blob] = t.get("stats")
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
         self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
         for r in list(self.psd.values()) + list(self.rereads.values()):
@@ -670,11 +676,16 @@ def field(value, method: str, sure: bool, check: str = "", why: str = "") -> dic
     return out
 
 
-def check_stats(read, pic, two, square: bool, keys: tuple = ORDER) -> dict:
-    """The printed stats (keys: an item's HP/DEF bars): the picture's read (two readers), the PSD's digit rows where
-    they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart."""
+def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False) -> dict:
+    """The printed stats (keys: an item's HP/DEF bars): the bar readers' eye truth for the PNG first (eye: its
+    stats, None when not readable by eye, False: none), else the picture's read (two readers), the PSD's digit rows
+    where they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart."""
     def only(stats):
         return {k: stats[k] for k in keys} if stats and all(isinstance(stats.get(k), int) for k in keys) else None
+    if eye is not False and not two:
+        seen = only(eye)
+        return field(seen, "eye", True, "bar truth") if seen else \
+            field(None, "none", False, why="the bars are not readable by eye")
     psd = only((read or {}).get("stats"))
     psd = psd if psd and all(0 <= v <= (40 if square else 10) for v in psd.values()) else None
     if two:                                                    # True or the creature count
@@ -741,7 +752,8 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
         k in (pic.get("labels") or ()) or ((read or {}).get("stats") or {}).get(k, -1) >= 0))
     if kind in STAT_KINDS or len(keys) >= 2:                   # an item's HP/DEF bars too
         size = (data.png.get(png["blob"]) or {}).get("size") or [0, 0]
-        fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys)
+        fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys,
+                                      data.eye_bars.get(png["blob"], False))
     if kind in ABILITY_KINDS:
         fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,

@@ -90,6 +90,7 @@ class FakeData:
         self.versions, self.psd, self.rereads, self.pictures, self.shares = versions, reads, {}, pictures, shares
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
+        self.eye_bars = {}
 
     def ocr_of(self, blob):
         return self._ocr.get(blob, {})
@@ -225,3 +226,13 @@ def test_a_line_starting_with_punctuation_goes_to_review(rows):
     assert freezer["confidence"] == "review"
     assert rows.leading("Heal 2 HP\r/ turn") == "/"
     assert rows.leading("(1CD) Deal 2 damage: twice.\n-1 ATK") is None
+
+
+def test_the_bar_readers_eye_truth_wins(rows):
+    """An eye reading of the PNG's bars wins over the readers and the PSD; one the eye couldn't read goes to review."""
+    printed = stats(7, 4, 4, 3)
+    eye = rows.check_stats({"stats": stats(10, 10, 10, 10)}, {"best": stats(1, 1, 1, 1)}, False, False,
+                           eye=printed)
+    assert (eye["value"], eye["method"], eye["confidence"]) == (printed, "eye", "sure")
+    blind = rows.check_stats({"stats": printed}, {"best": printed}, False, False, eye=None)
+    assert blind["confidence"] == "review"
