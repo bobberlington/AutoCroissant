@@ -550,15 +550,21 @@ def test_linked_star_icons_outside_the_group(clone, parser, tmp_path, monkeypatc
 
 @pytest.mark.header_stars
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
-    """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
-    instead (Flower of Decay); with no room on the banner the stars sit on, every star shrinks until the new one fits
-    there (Thunder Thighs; owner 11-10, option B); the website's header lays out the stars outside the group as the bake
-    does (Massive Moss Charger), whose fifth steps down clear of the moss (owner 11-08); Tyler's six, laid out again off
-    the canvas, step down together."""
+    """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3), and Nightmare's 4 at 5 shows it again, no copy; a
+    moved star under a shadow is copied on top instead (Flower of Decay); with no room on the banner the stars sit on,
+    every star shrinks until the new one fits there (Thunder Thighs; owner 11-10, option B); the website's header lays
+    out the stars outside the group as the bake does (Massive Moss Charger), whose fifth steps down clear of the moss
+    (owner 11-08); Tyler's six, laid out again off the canvas, step down together."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
-        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
+        psd, parsed = _open(parser, clone, rel, tmp_path)
+        plan = pe.plan_stars(psd, parsed, 4, parser)
         assert [layer.name for layer in plan.hide] == [gone] and not plan.moves, rel
+        if gone == "Warpstar copy 4":                       # the bake's 4, back to 5
+            plan.hide[0].visible = False
+            rel = rel.replace("5 Stars", "4 Stars")
+            five = pe.plan_stars(psd, pe.parse_card(parser, rel, rel, psd), 5, parser)
+            assert five.show == plan.hide and not five.copies and not five.moves
     rel = "Items/Infliction/3 Stars/Flower_Of_Decay.psd"
     plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
     assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves

@@ -7988,8 +7988,9 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
                                    for x, y in spots):
                 continue                        # Shadow Queen's spare art: shown only where the layout puts a star
             if any(_covers(unit.core, other.core) > SPARE_OVERLAP or _covers(other.core, unit.core) > SPARE_OVERLAP
-                   for other in shown):
-                continue                        # on a shown star (Hornet's spare flower): a star is copied instead
+                   for other in shown) and not _dice_five(shown + [unit], size):
+                continue                        # on a shown star (Hornet's spare flower): a star is copied instead;
+                #                                 a die's own middle is shown (5 -> 4 -> 5)
             if any(not size[k] / 2 <= unit.size[k] <= size[k] * 2 for k in (0, 1)):
                 continue                        # another size: no star of the row (Toy Freddy's hidden 'star test')
             trial = {**show, **{id(layer): True for layer in unit.layers}}
