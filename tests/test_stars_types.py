@@ -66,10 +66,11 @@ def _types_dir(tmp_path) -> str:
     return str(folder)
 
 
-def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),), name="Fixture") -> tuple:
+def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),), name="Fixture",
+             row="Types") -> tuple:
     """
     A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones) and a Types group
-    of icons ((name, top-left[, size])).
+    of icons ((name, top-left[, size]); row "Stars": in the Stars group, as Mangle's).
 
     Returns:
         (PSD path, PNG path): the PNG is the PSD's own render (the official export)
@@ -87,7 +88,7 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire",
         layer = PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x)
         group.append(layer)
         layer.visible = False
-    row = psd.create_group(name="Types")
+    row = group if row == "Stars" else psd.create_group(name=row)
     for icon, (x, y), *size in types:
         row.append(PixelLayer.fromarray(np.asarray(_icon((200, 40 + 30 * len(icon), 60), *size)), psd, name=icon, top=y,
                                         left=x))
@@ -1072,3 +1073,18 @@ def test_a_closed_row_slides_only_to_make_room(parser, tmp_path):
     assert pe._inks_touch(pe._ink(layers["water"]), pe._ink(layers["Star"]))         # the graze it had
     plan = _plan(parser, grazed, REL, "types", ["water", "ice"])
     assert [(layer.name, dx, dy) for layer, dx, dy in plan.moves] == [("ice", -520, 0)] and not _touching(plan)
+
+
+def test_a_bakes_own_hidden_icon_comes_back(parser, tmp_path):
+    """A made icon, fitted by its ink and smaller than its spot, hidden when its type went, is shown again when the type
+    comes back, its row in a Types group or in the Stars group (Mangle's)."""
+    types_dir = _types_dir(tmp_path)
+    for row in ("Types", "Stars"):
+        paths = _fixture(tmp_path, types=(("Fire", (30, 30), (120, 200)),), name=row, row=row)
+        _, baked = _bake(parser, paths, {"types": ["fire", "water"]}, tmp_path, types_dir=types_dir)
+        again = tmp_path / f"again {row}"
+        again.mkdir()
+        paths = copy(baked.psd_path, again / f"{row}.psd"), copy(baked.png_path, again / f"{row}.png")
+        _, baked = _bake(parser, paths, {"types": ["fire"]}, tmp_path, types_dir=types_dir)
+        plan = _plan(parser, baked.psd_path, REL, "types", ["fire", "water"])
+        assert [layer.name for layer in plan.show] == ["water"] and not plan.icons, row

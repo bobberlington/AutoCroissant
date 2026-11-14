@@ -8270,6 +8270,14 @@ def _fits(core: tuple, spot: tuple) -> bool:
     return abs(mine - theirs) <= 2 * LAYOUT_TOL * theirs
 
 
+def _on_spot(core: tuple, spot: tuple) -> bool:
+    """Whether a hidden icon sits centred on the spot, from half its size up (one an earlier bake made, fitted by its
+    Types/ ink: Shadow Miner's 145 px in a 196 px spot)."""
+    mine, theirs = max(core[2] - core[0], core[3] - core[1]), max(spot[2] - spot[0], spot[3] - spot[1])
+    (cx, cy), (sx, sy) = _centre(core), _centre(spot)
+    return theirs / 2 <= mine <= theirs * (1 + 2 * LAYOUT_TOL) and max(abs(cx - sx), abs(cy - sy)) <= _tol(theirs)
+
+
 def _close_row(psd: PSDImage, slots: list, spots: list, holders: list, height: float, others: list,
                made: Optional[dict] = None) -> tuple:
     """
@@ -8399,8 +8407,9 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
     end moves into the first free spot, centre on centre, and the icons after it slide just clear of it (_close_row);
     a new icon takes the next free spot, from the card's own hidden layer of that type (the templates keep one per
-    type) or made from its Types/ PNG, fitted to the spot and styled like the icon it replaces (else the row's last);
-    with icons removed too it goes through the same closing (_close_row; a made one's ink needs types_dir).
+    type; the spot's size, or on it: _on_spot) or made from its Types/ PNG, fitted to the spot and styled like the
+    icon it replaces (else the row's last); with icons removed too it goes through the same closing (_close_row; a
+    made one's ink needs types_dir).
     Spots past the last icon carry the row on at its spacing, or go under a lone icon (Item_Template's column), or wrap
     clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). Refused per
     field: a token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up
@@ -8479,9 +8488,11 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     row_ids = {id(layer) for _, layer in images}       # the row's own icons are no stars (Pike Beam)
     stars = [layer for layer in badge_layers(psd, parser.all_types)[0] if id(layer) not in row_ids]
     texts = _texts(psd)
+    homes = {id(layer.parent) for _, layer in row}     # the row's own groups (Mangle's in its Stars group)
     library = [layer for layer in psd.descendants() if not layer.is_group() and not layer.visible
                and layer.kind in ("pixel", "smartobject") and layer.name.lower() in parser.all_types and layer.has_pixels()
-               and all(parent.visible for parent in layer_parents(layer)) and not _in_stars(layer)]
+               and all(parent.visible for parent in layer_parents(layer))
+               and (not _in_stars(layer) or id(layer.parent) in homes)]
 
     def picks(spots: list) -> list:             # the new icons: (spot index, own hidden layer or None, stem, reference)
         shelf, out = list(library), []
@@ -8490,7 +8501,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             replaced = slots[i] if i < len(slots) and slots[i] in removed else None
             reference = (replaced or (kept[len(kept) - 1] if kept else slots[len(slots) - 1])).layers[0]
             own = next((layer for layer in shelf if canonical_type(parser, layer.name) == name and not _shiftable(layer)
-                        and _fits(_core(layer) or tuple(layer.bbox), spot)), None)
+                        and (_fits(_core(layer) or tuple(layer.bbox), spot)
+                             or _on_spot(_core(layer) or tuple(layer.bbox), spot))), None)
             if own is not None:
                 shelf.remove(own)
                 out.append((i, own, None, reference))
