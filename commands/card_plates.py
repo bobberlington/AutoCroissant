@@ -139,9 +139,12 @@ def layout(layer, fonts_dir: str) -> Optional[dict]:
     faces = psd_edit.font_map(fonts_dir, layer)
     model = TextModel.from_layer(layer)
     xx, xy, yx, yy, tx, ty = model.transform
-    if xx <= 0 or yy <= 0 or max(abs(xy), abs(yx)) > TILT * xx or _ink_off(layer, faces) > LAYOUT_OFF:
+    if xx <= 0 or yy <= 0 or max(abs(xy), abs(yx)) > TILT * xx:
         return None
-    geo, lay = text_geometry(layer, faces), lay_out(model, faces)
+    geo = text_geometry(layer, faces)
+    if _ink_off(layer, faces, geo) > LAYOUT_OFF:
+        return None
+    lay = lay_out(model, faces)
     if (geo["missing_fonts"] or not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
             or [g["i"] for g in geo["glyphs"]] != [g.cluster for g in lay.glyphs]):
         return None

@@ -4,6 +4,7 @@ off the layer's ink (an FX layer's word in a second crop) with the layer's own l
 added, kept, dropped with the PSDs.
 """
 import base64
+import dataclasses
 import io
 import json
 import subprocess
@@ -52,6 +53,29 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+
+
+def test_an_icons_drawing_keeps_the_layout(clone, monkeypatch):
+    """The layout gate leaves icon glyphs' ink boxes out (card_standards._ink_off): Masked Dedede's two icons drawn
+    otherwise (here: not at all) keep its Ability's layout, though counting them is past LAYOUT_OFF."""
+    import psd_tools.composite.text as text
+    from psd_tools.composite.text.geometry import text_geometry
+    import commands.card_standards as cs
+    layer = next(x for x in PSDImage.open(clone / DEDEDE).descendants() if x.kind == "type" and x.name.strip() == "Ability")
+    fonts = str(clone / "MDW" / "Fonts")
+    faces, kept, real = psd_edit.font_map(fonts, layer), cp.layout(layer, fonts), text.render
+    icons = [g["ink"] for g in text_geometry(layer, faces)["glyphs"] if g["font"].startswith("stoogedings") and g["ink"]]
+
+    def undrawn(layer, **kw):
+        got = real(layer, **kw)
+        rgba = got.rgba.copy()
+        for x0, y0, x1, y1 in icons:
+            rgba[max(round(y0) - got.bbox[1], 0):max(round(y1) - got.bbox[1], 0),
+                 max(round(x0) - got.bbox[0], 0):max(round(x1) - got.bbox[0], 0)] = 0
+        return dataclasses.replace(got, rgba=rgba)
+    monkeypatch.setattr(text, "render", undrawn)
+    assert len(icons) == 2 and kept and cs._ink_off(layer, faces, {"glyphs": []}) > cp.LAYOUT_OFF
+    assert cp.layout(layer, fonts) == kept
 
 
 def test_a_tagged_cards_other_pictures_titles(clone):

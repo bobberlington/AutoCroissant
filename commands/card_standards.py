@@ -955,6 +955,7 @@ OLD_GLYPH_LEVEL = 24 / 255  # a pixel is off past this in a premultiplied channe
 OLD_GLYPH_SHIFT = 2         # px the render may sit off Photoshop's glyph
 OLD_GLYPH_INK = 0.05        # alpha that counts as ink
 OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
+ICON_SLACK = 2              # px around an icon glyph's ink _ink_off leaves out
 STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
 FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
 WHOLE_OFF = 0.01            # relay_badges: the share of a layer's ink the fork's render may have off its stored pixels
@@ -1359,9 +1360,11 @@ def _recut_fx(psd: PSDImage, layer, moved: set, faces) -> list:
     return out
 
 
-def _ink_off(layer, faces) -> float:
+def _ink_off(layer, faces, geo: dict) -> float:
     """The share of the layer's ink (stored or drawn) off the fork's render of it as it stands, unshifted: how far the
-    fork's layout is from Photoshop's (1.0 when either has none)."""
+    fork's layout is from Photoshop's (1.0 when either has none). Off pixels within ICON_SLACK px of an icon glyph's ink
+    (geo: the layer's text_geometry) aren't counted, its ink is: how an icon is drawn isn't the layout."""
+    from math import ceil, floor
     from psd_tools.composite.text import capture, render
     stored, drawn = capture(layer, faces), render(layer, fonts=faces)
     if stored.rgba is None or stored.bbox is None or drawn.rgba is None or drawn.bbox is None:
@@ -1371,6 +1374,11 @@ def _ink_off(layer, faces) -> float:
     a, b = _premultiplied(stored.rgba, stored.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
     ink = (a[..., 3] > OLD_GLYPH_INK) | (b[..., 3] > OLD_GLYPH_INK)
     off = (np.abs(a - b).max(axis=2) > OLD_GLYPH_LEVEL) & ink
+    for g in geo["glyphs"]:
+        if g["ink"] and g["font"].lower().startswith(ICON_FONT_PREFIX):
+            x0, y0, x1, y1 = g["ink"]
+            off[max(floor(y0) - ICON_SLACK - window[1], 0):max(ceil(y1) + ICON_SLACK - window[1], 0),
+                max(floor(x0) - ICON_SLACK - window[0], 0):max(ceil(x1) + ICON_SLACK - window[0], 0)] = False
     return float(off.sum()) / int(ink.sum()) if ink.any() else 1.0
 
 
