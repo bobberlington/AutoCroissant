@@ -6101,8 +6101,8 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     """
     classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
     Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
-    that colour already, or none is left to it; a phrase an effect layer cuts (its own pixels show) is refused, as one
-    of badges and icons alone. retyped: the fields a text edit of the entry sets
+    that colour already, or none is left to it; an Ability FX layer's words keep their look (its own pixels show), as
+    status words do: a phrase of them alone is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set) unless an overlay
     paints over the layers it lands in (boxes: the parts job's {str(layer id): new text}). chart: status_fills(); the
     Ability's capitalised status words keep its colours (a phrase of them alone refused). A whole field's colour turns
@@ -6143,9 +6143,10 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
             why = PICTURE_TITLE                  # the website's alone, as a name edit there (owner 2026-10-26)
         cut = [name for layer, a, b in spans for s, e, name in _fx_words(psd, layer) if s < b and a < e] \
             if phrase and not why else []
-        why = why or (f"{phrase!r} is drawn by its effect layer {cut[0]!r}, which keeps its own pixels" if cut else "")
         mine = [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, _fx_words(psd, layer), _status_kept(layer, field, chart))] \
             if not why else []
+        why = why or (f"{phrase!r} is drawn by its effect layer {cut[0]!r}, which keeps its own pixels"
+                      if cut and all(layer.text[i].isspace() for layer, i in mine) else "")
         if not why and not mine and phrase and [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, [])]:
             why = STATUS_KEPT.format(phrase)
         if not why and not mine:
