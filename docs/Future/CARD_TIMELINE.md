@@ -97,8 +97,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    A-C (no git version prints them) one picture per card and era is typed by eye (`derived/readers/types/eye.json`)
    and carried to the card's other pictures of that era by the same score (`header_types eye`, method 'eye header';
    the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Item and
-   status eras count stars as yellow blobs in a row, calibrated on eye truths (a blob as wide as a yellow wall: no
-   count). A picture by era: today's template through the card checks' bar reader
+   status eras count stars as yellow blobs in a row that fill their box as stars do, calibrated on eye truths (a
+   yellow wall or backdrop: no count). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
