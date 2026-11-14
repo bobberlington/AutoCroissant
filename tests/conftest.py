@@ -29,7 +29,9 @@ PINNED = Path(expanduser("~/.cache/autocroissant-tests"))                   # th
 PINNED_BASE = ("Types", "MDW/Fonts", "MDW/Croissant's Special Folder/Satus Effect Colors.psd", "site/Card Edits.json")
 LIVE = (REMIND_JSON, FORUM_JSON)                         # the checkout's live stores, never written by a test
 GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
-              "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
+              "core.looseCompression": "0",               # fixture repos of real PSDs: no zlib on every add
+              "maintenance.auto": "false"}                # no detached maintenance: its lock breaks a local clone
+GIT_SYSTEM = PINNED / "gitconfig"                         # the system config + maintenance off (receive-pack drops GIT_CONFIG_*)
 POOLED = ("commands.card_guards",)                          # process pools capped per worker
 QUEUES = ("dispatch_queue", "edit_queue", "command_queue")                         # utils' deques, empty per test
 TOOLS = {"node": "node", "jq": "jq", "timeout": "coreutils", "git": "git", "oxipng": "oxipng",   # CLIs the tests run:
@@ -44,6 +46,13 @@ def _git_config():
     for i, (key, value) in enumerate(GIT_CONFIG.items(), start):
         environ[f"GIT_CONFIG_KEY_{i}"], environ[f"GIT_CONFIG_VALUE_{i}"] = key, value
     environ["GIT_CONFIG_COUNT"] = str(start + len(GIT_CONFIG))
+    if environ.get("GIT_CONFIG_SYSTEM") != str(GIT_SYSTEM):   # xdist workers inherit it
+        import subprocess
+        system = subprocess.run(["git", "var", "GIT_CONFIG_SYSTEM"], capture_output=True, text=True).stdout.strip()
+        GIT_SYSTEM.parent.mkdir(parents=True, exist_ok=True)
+        temp = GIT_SYSTEM.with_name(f".gitconfig.{getpid()}")   # runs at once write the same bytes
+        temp.write_text(f'[include]\n\tpath = "{system}"\n[maintenance]\n\tauto = false\n')
+        environ["GIT_CONFIG_SYSTEM"] = str(temp.replace(GIT_SYSTEM))
 
 
 _git_config()
