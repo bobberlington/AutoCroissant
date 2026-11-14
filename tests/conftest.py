@@ -102,6 +102,7 @@ def pytest_configure(config):
         raise pytest.UsageError(f"no card repo clone at {CLONE} (AUTOCROISSANT_LOCAL_DIR)")
     config.addinivalue_line("filterwarnings", "ignore::DeprecationWarning:discord")
     config.addinivalue_line("markers", "oxipng: runs the real oxipng (no_oxipng's stub off)")
+    config.addinivalue_line("markers", "header_stars: psd_details' header plans all 10 star counts (few_header_stars' 3 off)")
 
 
 # ========================
@@ -330,6 +331,25 @@ def no_oxipng(request, monkeypatch):
     if png_export and not request.node.get_closest_marker("oxipng"):
         monkeypatch.setattr(png_export, "optimize", lambda data: None)
         monkeypatch.setattr(png_export, "band", lambda data: None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def few_header_stars():
+    """psd_details' header plans star counts 1-3 for the run, module fixtures' too (4-10 cost most of a gather).
+    Yields the real count."""
+    from commands import psd_details
+    every = psd_details.HEADER_STARS
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(psd_details, "HEADER_STARS", 3)
+        yield every
+
+
+@pytest.fixture(autouse=True)
+def header_stars(request, monkeypatch, few_header_stars):
+    """A test marked header_stars plans every count (its own gathers; module fixtures keep 3)."""
+    if request.node.get_closest_marker("header_stars"):
+        from commands import psd_details
+        monkeypatch.setattr(psd_details, "HEADER_STARS", few_header_stars)
 
 
 @pytest.fixture(scope="session")

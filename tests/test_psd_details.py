@@ -144,11 +144,14 @@ def test_text_layers_and_template(records):
     assert [e[:3] for e in lazarus["tree"]] == [["images", "group", True], ["Laz", "group", True], ["Dead Laz", "group", True]]
 
 
-def test_header_boxes(records, clone):
+@pytest.mark.header_stars
+def test_header_boxes(clone):
     """The mock-up's header: Mini Doomer's two stars in reading order, rows of two past them, no count refused; its three
     type icons in slot order with spots carrying the row on (a second row for eight); a folder card's counts planned as
     its move (card_bake's), a card without a Stars group too (its loose stars: The Freezer's Patrick Star)."""
-    stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
+    vocab = _types(clone)                               # records' header plans 3 counts (conftest's few_header_stars)
+    doomer = pd.gather(str(clone / DOOMER), DOOMER, "Mini Doomer", None, vocab)["header"]
+    stars, types = doomer["stars"], doomer["types"]
     assert [u["core"] for u in stars["units"]] == [[1049, 13, 1164, 115], [936, 15, 1051, 117]] and stars["icon"] == "warpstar"
     assert stars["at"]["2"] == [[1106, 64], [994, 66]] and stars["at"]["3"] == [[1106, 64], [994, 66], [1050, 167]]
     assert stars["at"]["6"][4:] == [[1106, 269], [994, 269]] and sorted(stars["at"], key=int) == [str(n) for n in range(1, 11)]
@@ -156,7 +159,6 @@ def test_header_boxes(records, clone):
     assert [t["name"] for t in types["row"]] == ["light", "defensive_minion", "wind"] and types["tokens"] is False
     assert types["spots"]["4"] == [[414, 208, 556, 356]] and [len(types["row"]) + len(types["spots"][n]) for n in types["spots"]] == [4, 5, 6, 7, 8]
     assert types["spots"]["8"][0] == [81, 378, 241, 537] and types["fixed"] == [] and types["refused"] is None
-    vocab = _types(clone)
     lich = pd.gather(str(clone / LICH_KING), LICH_KING, "The Lich King", None, vocab)["header"]
     assert lich["stars"]["refused"] == {} and sorted(lich["stars"]["at"], key=int) == [str(n) for n in range(1, 11)]
     assert lich["stars"]["at"]["6"][4:] == [[1130, 317], [998, 317]] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]

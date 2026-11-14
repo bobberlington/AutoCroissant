@@ -515,6 +515,7 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
     assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
 
 
+@pytest.mark.header_stars
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
     instead (Flower of Decay); with no room on the banner the stars sit on, every star shrinks until the new one fits
