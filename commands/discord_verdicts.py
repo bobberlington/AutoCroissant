@@ -6,6 +6,8 @@ step (docs/Future/CARD_TIMELINE.md, stage 2). Run after `discord_match score`, w
     python -m commands.discord_verdicts checks [--root <dir>] [--seed <n>] [--sure <n>] [--lost <n>]
     python -m commands.discord_verdicts selftest [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_verdicts eyekeys [--root <dir>] [--cards-repo <dir>]
+    python -m commands.discord_verdicts local [--root <dir>] [--cards-repo <dir>] [--workers <n>]
+    python -m commands.discord_verdicts localtest [--root <dir>] [--cards-repo <dir>] [--workers <n>] [--sample <n>]
 
 build   A picture is one stored file (its sha256: every post of it, reposts in other channels too; the earliest post
         dates it); a sheet's cells are pictures of their own. Each gets one verdict:
@@ -37,6 +39,9 @@ selftest The sure error of these gates on discord_match selftest's degraded copi
 eyekeys Every eye ruling naming a git version beside that version's whole blob (the old repo's, the card repo's when
         stored, else its thumb): the largest local difference and zooms of the 3 most different areas, for the eye
         before a version key is accepted (a word, an icon or a medal hides in a whole-card score). checks/eye-keys/.
+local   Each card-sure picture against every stored version of its card (eyekeys' local diff, the nearest two again
+        aligned; aspect ratios kept): derived/match/local.jsonl, cached; build's local gate reads it (decide).
+localtest The local gate's bars on Discord and small copies of every stored version: derived/match/local_selftest.json.
 Outputs under the archive's derived/match/ (never a repo): verdicts.jsonl, lost_groups.json, sheets/ (sheets.json and
 each sheet's cells drawn), checks/. Ids are stable: P-<sha256 12> (a cell: -c<n>), LC-<sha256 10> (-c<n>). No message
 text, posters or authors anywhere (owner 2026-11-13).
