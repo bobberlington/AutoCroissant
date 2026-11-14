@@ -22,7 +22,7 @@ from psd_tools.constants import Tag
 from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
-from commands import ability_place
+from commands import ability_place, font_check
 from commands.card_models import card_name
 from commands.psd_regions import badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
 from conftest import BADGED, PLAIN_DOOMER, at_rev, card_blob, painted
@@ -2875,6 +2875,7 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path):
     added = [layer for layer in added if layer.layer_id not in pe.lyid_index(psd)]
     assert [(layer.name, layer.parent.name, layer.text) for layer in added] == [("Ability", "Text", "Attacks inflict 1T Afraid.")]
     assert pe.stale_stories(saved) == [] and "ability: ability layer created from Creature_Template: check its place" in baked.fx_notes
+    assert font_check.layer_fonts(added[0]) == ["EBGaramond-Regular"]      # its closing \r too: no Andy-Bold
     stats = ability_place.elements(psd, parser.all_types)["stats"]     # below the stats, on the canvas (owner 10-25)
     ink, first = ability_place.ink_rows(added[0])
     assert first > max(b[3] for b in stats) and ink[3] <= saved.height and 0 <= ink[0] < ink[2] <= saved.width

@@ -11696,7 +11696,7 @@ def set_text_font(layer, font: str, size: float, leading: float) -> None:
     if not model.runs[0].style.auto_leading:
         keys["Leading"] = round(leading / scale, 4)
     layer.add_font(font)
-    layer.set_span_style(0, len(layer.text), **keys)
+    layer.set_span_style(0, len(layer.text) + 1, **keys)    # the closing \r too: else the template's font stays listed
 
 
 def set_text_box(layer, box: tuple) -> None:
