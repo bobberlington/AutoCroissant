@@ -36,7 +36,7 @@ def _user(user_id=ADMIN):
 def _jetson_store():
     """Shaped like the jetson's reminders: a legacy weekly message (no creator) and two daily commands, all v3."""
     def at(day, hour, minute=0):
-        return datetime(2027, 1, day, hour, minute, tzinfo=TIMEZONE)
+        return datetime(2099, 1, day, hour, minute, tzinfo=TIMEZONE)
     data = defaultdict(list)
     data[GUILD] = [
         {"id": "134e3b24", "channel_id": CHANNEL, "msg": "Game night!", "when": at(10, 18), "frequency": timedelta(weeks=1),
@@ -56,7 +56,7 @@ def test_store_reads_back_as_written(monkeypatch):
     doc = json.loads(Path(an.STORE_PATH).read_text())
     entries = doc["guilds"][str(GUILD)]
     assert [e["id"] for e in entries] == ["134e3b24", "d2664752", "054b5933"]
-    assert entries[1] == {"id": "d2664752", "channel_id": str(CHANNEL), "msg": "", "when": "2027-01-10T05:00:00-08:00",
+    assert entries[1] == {"id": "d2664752", "channel_id": str(CHANNEL), "msg": "", "when": "2099-01-10T05:00:00-08:00",
                           "frequency": 86400, "command": "/update_stats", "enabled": True,
                           "creator_id": "123456789012345678", "creator_name": "owner", "v": 3, "problem": None}
     assert entries[0]["creator_id"] is None and entries[0]["frequency"] == 604800
@@ -64,7 +64,7 @@ def test_store_reads_back_as_written(monkeypatch):
     loaded = an.snapshot(GUILD)
     for before, after in zip(original[GUILD], loaded):
         assert {k: after[k] for k in before} == before and after["when"].tzinfo is TIMEZONE
-    assert loaded[1]["when"] + timedelta(days=180) == datetime(2027, 7, 9, 5, tzinfo=TIMEZONE)   # wall time across DST
+    assert loaded[1]["when"] + timedelta(days=180) == datetime(2099, 7, 9, 5, tzinfo=TIMEZONE)   # wall time across DST
 
     _reload(monkeypatch)
     assert an.snapshot(GUILD) == loaded and an.ReminderStore(an.STORE_PATH).serialize(an.reminders) == \
