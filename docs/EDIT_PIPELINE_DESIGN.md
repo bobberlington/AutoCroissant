@@ -425,8 +425,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    body's grey), the edited text's before the other text's (the other read off the card before the bake: a title
    edit after the Ability's sees none the Ability typed); none on the card: the surrounding text's, as before; its
    kind in as many of one colour as of another (a [fire:sticker] on Palace) refuses `unsupported-card`. Text typed after a badge that the font
-   draws no badge of ("(2 points)") takes the body style; letters left in the icon font that it draws no badge of
-   (a badge replaced by "(abc)", or one cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
+   draws no badge of ("(2 points)") takes the body style, as do letters typed in place of a whole badge or token
+   ("[unknown]" made "Unknown", "(1CD)" made "Once per turn:" or "(abc)": edit_styles, 2026-11-13); letters left in the
+   icon font that it draws no badge of (a badge cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
    `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font has no glyph
    for (gid 0, `no_glyph`: a box in the engine and in Photoshop) refuses `font`. A `[token]` the website draws as an
    icon that the font prints as letters (`unlettered_icons`: text.js takes the base before the first colon, `norm()`ed,

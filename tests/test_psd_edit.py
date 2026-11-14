@@ -1745,16 +1745,14 @@ def test_a_badge_edited_in_place_keeps_its_size(clone, parser, chart):
 
 def test_typed_icons_that_print_wrong_are_flagged(clone, parser, chart):
     """Baked and told (owner 2026-10-24): a colour icon typed under the Ability's colour or gradient overlay (Cat; a badge
-    or sticker takes the one-colour alternates there, owner 2026-10-25), a [type] token on a card whose type icons are image layers in the ability's gaps
-    (Nebulous Precipice's darkmatter: the website's text holds their tokens), and a badge replaced by letters the icon
-    font draws plainly ("(abc)")."""
+    or sticker takes the one-colour alternates there, owner 2026-10-25) and a [type] token on a card whose type icons are
+    image layers in the ability's gaps (Nebulous Precipice's darkmatter: the website's text holds their tokens)."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit, why in (
             ("Auxiliary/Minions/Cat.psd", lambda t: t + " [fire] Die.", r"^unsupported-card: ability: \[fire\]: the Ability's "
                                                                        r"look \(its Color Overlay\) changes the typed icon's "
                                                                        r"colours$"),
-            ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
-            (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'\(abc\)' set in the icon font, which draws no badge")):
+            ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons")):
         psd = PSDImage.open(_card(clone, rel)[0])
         text = edit(pe.normalize_ability(pe.ability_layer(psd).text))
         flagged(pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).notes, why)
@@ -1764,6 +1762,25 @@ def test_typed_icons_that_print_wrong_are_flagged(clone, parser, chart):
     assert not any("look" in note for note in notes)
     layer = pe.ability_layer(psd)
     assert [layer.text[a:b] for a, b in pe.stylistic_alternates(layer)][-2:] == ["(1CD)", "[fire:sticker]"]
+
+
+def test_words_typed_for_a_badge_or_token_print_in_the_ability_font(clone, parser, chart):
+    """Words typed in place of a badge or token take the Ability's own font and colour, not the icon font's plain
+    letters (Blazing's "[fire]" made "Fire"; Barry's printed "U n k n o w n"); a mistyped badge as the website shows
+    it."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, old, new in (("Auxiliary/Status Effects/Debuffs/2 Stars/Blazing.psd", "[fire]", "Fire"),
+                          (MINI_DOOMER, "(BOT)", "(abc)")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        text = pe.normalize_ability(pe.ability_layer(psd).text).replace(old, new)
+        notes = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).notes
+        layer = pe.ability_layer(psd)
+        fills, icons, styles, _ = pe._char_styles(layer)
+        at = layer.text.index(new)
+        body = next(i for i in range(at - 1, -1, -1) if not icons[i] and layer.text[i] != " ")
+        assert not any("icon font" in note for note in notes)
+        assert not any(icons[at:at + len(new)]) and styles[at]["Font"] == styles[body]["Font"]
+        assert fills[at] == fills[body]
 
 
 TURTLE = "Auxiliary/Minions/Turtle.psd"               # '(1GCD)' under a Color Overlay, 'Ability FX: (1GCD)' over it

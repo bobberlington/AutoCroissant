@@ -419,7 +419,8 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   HorizontalScale set so it prints as the font draws it under the layer's scales, as designers set theirs; Monster
   Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): another badge or icon under a tinted Ability
   (an overlay for a colour icon, a Pin Light or other non-Normal blend for any: the Pin Light Isaac items), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
-  Precipice), letters left in the icon font it draws no badge of ("(abc)", "(GCD)"), a token the website shows as an
+  Precipice), letters left in the icon font it draws no badge of ("(1GCD)" cut to "(GCD)"; words typed in place of a
+  whole badge or token, "Unknown" or "(abc)", take the Ability's own font and colour), a token the website shows as an
   icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
   keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as

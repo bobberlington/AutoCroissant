@@ -1987,8 +1987,10 @@ def splice_text(layer, text: str, parts: list) -> None:
 def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) -> list:
     """
     The style of each changed part (edit_parts) of an ability edit, from the old text: a part replacing text takes the
-    commonest fill of what it replaces outside status words and blanks (set in the icon font only if all of it is: a
-    badge edit); an insertion, or a part replacing only those, the nearest character before it in its line (\\r or
+    commonest fill of what it replaces outside status words and blanks; one replacing only icon-font ink (a badge or
+    token) keeps its fill for the badges and tokens it types, its letters taking an insertion's style and fill, as a
+    title's do ("[unknown]" made "Unknown", "(1CD)" made "Once per turn:"); an insertion, or a part replacing only
+    status words and blanks, the nearest character before it in its line (\\r or
     \\x03), else after, that is no status word, blank or badge and shares no run with a status word (Astr's "3" of its
     red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the body's (body_fill)
     when typed between two runs or at a line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took
@@ -2004,12 +2006,14 @@ def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) ->
         moves: text_align.moves() of the old and new text
 
     Returns:
-        [(new start, new end, RGB 0..1 or None, the source's STYLE_KEYS or None when it is a badge character)]
+        [(new start, new end, RGB 0..1 or None, the source's STYLE_KEYS or None when it is a badge character)]; a
+        badge's or token's letters' STYLE_KEYS carry their own "fill"
     """
     old = layer.text
     fills, icons, styles, runs = _char_styles(layer)
     status = {i for s, e, _ in (status_spans(old, chart, icon_spans(layer)) if chart else []) for i in range(s, e)}
     tied = {runs[i] for i in status}
+    drawn = icon_text(old, None)
 
     def source(i: int, icon: bool = False) -> bool:
         return fills[i] is not None and i not in status and old[i] not in " \t\r\x03" and (icon or not icons[i])
@@ -2054,7 +2058,12 @@ def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) ->
         else:
             spans = []
         for start, end, i, fill in spans:
-            out.append((start, end, fill or (body if i is None else fills[i]), None if i is None or icons[i] else styles[i]))
+            like = None if i is None or icons[i] else styles[i]
+            j = near(a0, a1) if i is not None and icons[i] and not any(
+                s < a < e for s, e in drawn for a in (a0, a1)) else None    # whole ones: "(1GCD)" made "(GCD)" stays
+            if j is not None and styles[j]:     # typed in place of a badge or token: its letters as an insertion's
+                like = {**styles[j], "fill": typed(a0, a1) or fills[j]}
+            out.append((start, end, fill or (body if i is None else fills[i]), like))
     changed = {i for _, _, b0, b1, kept in parts if not kept for i in range(b0, b1)}
     for (s0, e0), (t0, t1), kept_letters in moves:
         found = [i for i in range(s0, e0) if source(i)]
@@ -5744,9 +5753,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
         now = _char_styles(layer)[1]
         for part_start, part_end, fill, like in styles:
+            layer.set_span_style(part_start, part_end, fill=fill)
             for a, b in _stretches([i for i in range(part_start, part_end) if like and now[i] and i not in glyphs]):
                 layer.set_span_style(a, b, **like)
-            layer.set_span_style(part_start, part_end, fill=fill)
     if restyle:         # likewise in a title: the title's own style
         now = _char_styles(layer)[1]
         for part_start, part_end, fill, like in restyle:
