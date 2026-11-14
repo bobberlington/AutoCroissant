@@ -91,6 +91,19 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
     assert out[1] is True and out[2] is True and out[3] == 1
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function lineSplices"), reason="no lineSplices in this mockup.js")
+def test_words_changed_on_several_lines_splice_each_line(tmp_path):
+    """geoPlan on the card's own lines: changes on two lines or in two paragraphs give one splice per line (a paragraph's
+    trailing spaces left out); one line: the single splice; a new line break: neither."""
+    out = node(tmp_path, """
+const was = "Hit an Evil foe and the Cookie dies.\\nHeal 2.";
+const R = { was, lines: [[0, 19, 0], [20, 36, 0], [37, 44, 1]].map(([s, e, para]) => ({ s, e, para })), x: new Map([...was].map((_, i) => [i, i])) };
+const plan = t => { const p = m.geoPlan(R, t); return [p.splice && p.splice.run, p.splices && p.splices.map(s => [s.i, s.a, s.b, s.at, s.run])]; };
+out(["Hit an evil foe and the cookie dies.\\nHeal 2.", "Hit an Evil fee and the Cookie dies. \\nHeal 3.", "Hit an Evil fee and the Cookie dies.\\nHeal 2.",
+  "Hit an Evil fee and the Cookie dies.\\nHeal 2.\\nNew."].map(plan));""")
+    assert out == [[None, [[0, 7, 8, 7, "e"], [1, 24, 25, 24, "c"]]], [None, [[0, 13, 14, 13, "e"], [2, 42, 43, 43, "3"]]], ["e", None], [None, None]]
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
