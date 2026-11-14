@@ -67,7 +67,7 @@ PNG_LEVEL = 1                                   # preview.png's zlib level: neve
 WAIT_ENV = "CARD_PREVIEW_WAIT"                  # files card-preview.yml makes once the reads and fonts are in (pathsep)
 READS_ENV = "CARD_PREVIEW_READS"                # its files once the reads are in: the bake goes on up to its first font
 WAIT_S = 420                                    # then try again
-WARM = ("scipy.ndimage", "PIL.ImageCms")        # every bake's lazy imports (not scipy.interpolate: few bakes use it)
+WARM = ("PIL.ImageCms",)                        # every bake's lazy imports (scipy: at first use, few bakes need it)
 
 
 # ========================
