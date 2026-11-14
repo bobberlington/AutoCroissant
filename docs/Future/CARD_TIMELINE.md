@@ -115,7 +115,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
    eye truth, then their sure reads; a title read snapped to another live card's name, not one of this card's own
    names, aliases or old repo titles, goes to review: P.A.N.D.A. Mk A read 'Panda'), the rest name a review item
-   (types with nothing read: unread). Each version is
+   (types with nothing read: unread; an item card's kinds read alone: not collected, no item, and its other types
+   to review without its kinds). Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
    40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change); a fact a later picture contradicts goes to review (a stated step,
    'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact
@@ -129,7 +130,8 @@ the card's Image versions on the website before the git versions. Cards that nev
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
    local, never published): the owner's answers Q1-Q6 (read only, Q5's first-repo rows listed), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
-   templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields, Created dates (earlier,
+   templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
+   never asked), Created dates (earlier,
    new, later, and earlier hints: only those earlier than the Created date in use), the Morgue list (candidates, ideas
    never ported, the rest) and splits; stable ids, the archive's thumbnails, radio answers kept in the browser and
    exported as JSON. `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores
@@ -151,8 +153,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
    committed, approximate when the card had versions before that one (no rename when the last look is that first
-   git version and its title read is in that version's printed title: the data's name is its PSD layers', The
-   Bagel's 'Or... is it'); an MDW Morgue card's Discord pictures end at its
+   git version and its title read is in the printed title of every version from it up to the card-data version's
+   date: the data's name is its PSD layers', The Bagel's 'Or... is it'; Grape Juice, retitled in between, keeps
+   its rename); an MDW Morgue card's Discord pictures end at its
    first record in the old repo (oldgit `map.json`) or the card repo. A confirmed changelog fact names its version
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
    so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field, caption a covered photo, and leave out a

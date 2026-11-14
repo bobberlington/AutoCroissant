@@ -482,7 +482,28 @@ def test_names_of_other_cards_item_kinds_and_the_first_title():
     stop = {"commit": "c9", "path": "N.M.E/Bun.png"}
     last = {"kind": "discord", "look": {"git": dict(stop)}, "fields": {"name": dc.sure("Bun", "ocr+name")}}
     data = {"name": dc.sure("Bun Or... is it", "psd (card data)")}
-    versions = [{"commit": "c9", "path": "N.M.E/Bun.png", "title": "Or... is it Bun"}]
+    versions = [{"commit": "c9", "path": "N.M.E/Bun.png", "title": "Or... is it Bun", "ts": T}]
     assert dc.first_changes(last, data, "nme", versions, stop) == {"same_title": True}
     assert dc.first_changes({**last, "look": {"draft": True}}, data, "nme", versions, stop)["name"] == ["Bun",
                                                                                                     "Bun Or... is it"]
+    versions = [{"commit": "c9", "path": "N.M.E/Bun.png", "title": "Or... is it Bun", "ts": T},
+                {"commit": "d1", "path": "N.M.E/Bun.png", "title": "BAGEL", "ts": T + 9 * DAY}]
+    assert dc.first_changes(last, data, "nme", versions, stop, T + 5 * DAY) == {"same_title": True}
+    assert "name" in dc.first_changes(last, data, "nme", versions, stop, T + 9 * DAY)     # retitled before git_first
+
+
+def test_an_item_cards_kinds_are_never_asked():
+    """Types read as an item card's kinds alone get no review item (not collected); mixed reads lose the kinds."""
+    inp = inputs([], old_review=[{"id": "o-1", "kind": "types unsure", "card": "Bolt", "row": "r1", "field": "types",
+                                  "proposed": ["food"]}])
+    inp.cards["bolt"]["type"] = "item"
+    entries = [{"id": "D-1", "kind": "discord", "fields": {"types": dc.unsure("icon", "x", ["food", "heal"])}},
+               {"id": "D-2", "kind": "discord", "fields": {"types": dc.unsure("icon", "x", ["nme", "support"])}},
+               {"id": "O-r1", "kind": "old repo", "fields": {"types": {"confidence": "review", "review": "o-1"}}}]
+    chain = dc.Chain(inp)
+    chain.no_kinds("bolt", entries)
+    chain.field_reviews("bolt", entries)
+    assert [e["fields"]["types"]["confidence"] for e in entries] == ["not collected", "review", "not collected"]
+    assert [i["proposed"] for i in chain.review.values()] == [["nme"]]
+    assert dc.old_kinds_only({"field": "types", "proposed": ["food"], "reads": {"psd": ["support"]}}, "aux item")
+    assert not dc.old_kinds_only({"field": "types", "proposed": ["food"]}, "creature")

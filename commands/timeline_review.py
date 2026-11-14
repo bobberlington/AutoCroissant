@@ -29,6 +29,7 @@ from os.path import exists, join
 from re import search
 from typing import Callable, Optional
 
+from commands import discord_chain as dc
 from commands import discord_match as dm
 
 # ========================
@@ -395,12 +396,21 @@ def field_item(inputs: Inputs, r: dict) -> dict:
 
 
 def psd_items(inputs: Inputs) -> list:
-    """The old repo rows' fields to review (oldrows): the PSD against the picture."""
+    """The old repo rows' fields to review (oldrows): the PSD against the picture. An item card's kinds are not
+    asked (owner: not collected; the chain's no_kinds): none when every read is its kinds alone."""
     out = []
     for r in inputs.old_review:
         if not r.get("field"):
             continue
         cid, field = inputs.cid(r.get("card")), r["field"]
+        kind = (inputs.cards.get(cid) or {}).get("type")
+        if field == "types":
+            if dc.old_kinds_only(r, kind):
+                continue
+            r = {**r, "proposed": None if dc.kinds_only(r.get("proposed"), kind) else
+                 dc.without_kinds(r.get("proposed"), kind),
+                 "reads": {k: dc.without_kinds(v, kind) for k, v in (r.get("reads") or {}).items()
+                           if not dc.kinds_only(v, kind)}}
         it = item("old field", r["id"], "psd", None, f"{r.get('card')}: {field} on {when(r.get('date'))} (old repo)",
                   card=cid, field=field, date=r.get("date"))
         it["meta"] = [r.get("why") or "", f"file {r.get('row', '').split(':', 1)[-1]}"]

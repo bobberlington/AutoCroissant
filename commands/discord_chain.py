@@ -21,8 +21,9 @@ build   Under derived/chain/:
                                       first_repo_rows on): date, mapped author, commit subject; no picture or link
                           old repo    the old pre-wipe repo's PNG versions (derived/oldrows), with their fold
                         Each version's fields keep their method and confidence; only sure values are kept, the rest
-                        name their review item (types with nothing read: 'unread'; an icon-read star change nothing
-                        backs: review, star_guard). Each is diffed with the version
+                        name their review item (types with nothing read: 'unread'; an item card's kinds read alone:
+                        'not collected', no item, its other types to review without them; an icon-read star change
+                        nothing backs: review, star_guard). Each is diffed with the version
                         before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
                         (text_key; formatting alone is no change, owner 11-09); an item's kinds are no types change
@@ -238,21 +239,42 @@ def compare(before: dict, after: dict, kind: Optional[str] = None) -> dict:
     return out
 
 
-def first_changes(last: Optional[dict], fields: dict, kind: Optional[str], versions: list, stop: dict) -> dict:
-    """git_first's changes: the last version before the card repo against its first card-data version. No name
-    change when that last version is a Discord look of the first git version (stop) whose title read is in that
-    version's printed title (the matcher's OCR of it): the data's name is its PSD layers' (The Bagel's 'Or... is
-    it'), not a rename; then same_title is set."""
+def first_changes(last: Optional[dict], fields: dict, kind: Optional[str], versions: list, stop: dict,
+                  until: Optional[float] = None) -> dict:
+    """git_first's changes: the last version before the card repo against its first card-data version (until: its
+    epoch, git_first's date; None: every later version). No name change when that last version is a Discord look of
+    the first git version (stop) whose title read is in the printed title (the matcher's OCR) of every version from
+    the stop up to until: the data's name is its PSD layers' (The Bagel's 'Or... is it'), not a rename; then
+    same_title is set. A version retitled in between (Grape Juice) keeps it."""
     changes = compare(last["fields"], fields, kind) if last else {}
     git = ((last or {}).get("look") or {}).get("git") or {}
     name = dm.squash(((last or {}).get("fields", {}).get("name") or {}).get("value") or "")
     if "name" in changes and last["kind"] == "discord" and name and git.get("commit") and \
-            (git["commit"], git.get("path")) == ((stop or {}).get("commit"), (stop or {}).get("path")) and \
-            any(name in dm.squash(v.get("title") or "") for v in versions
-                if (v.get("commit"), v.get("path")) == (git["commit"], git.get("path"))):
-        del changes["name"]
-        changes["same_title"] = True
+            (git["commit"], git.get("path")) == ((stop or {}).get("commit"), (stop or {}).get("path")):
+        start = min((v["ts"] for v in versions if (v.get("commit"), v.get("path")) == (git["commit"], git.get("path"))
+                     and v.get("ts") is not None), default=None)
+        span = [v for v in versions if start is not None and v.get("ts") is not None and start - 1 <= v["ts"] and
+                (until is None or v["ts"] <= max(until, start) + 1)]
+        if span and all(name in dm.squash(v.get("title") or "") for v in span):
+            del changes["name"]
+            changes["same_title"] = True
     return changes
+
+
+def without_kinds(value, kind: Optional[str]):
+    """Types read on an item card without its kinds (owner: item subtypes are not collected); else as read."""
+    return [t for t in value if t not in ITEM_KINDS] if kind in ITEM_CARDS and isinstance(value, list) else value
+
+
+def kinds_only(value, kind: Optional[str]) -> bool:
+    """Types read on an item card that are its kinds alone: nothing to collect, so nothing to review."""
+    return bool(value) and isinstance(value, list) and without_kinds(value, kind) == []
+
+
+def old_kinds_only(item: dict, kind: Optional[str]) -> bool:
+    """An old row's types item whose every read (proposed, the reads) is an item card's kinds alone."""
+    values = [v for v in [item.get("proposed"), *(item.get("reads") or {}).values()] if v is not None]
+    return item.get("field") == "types" and bool(values) and all(kinds_only(v, kind) for v in values)
 
 
 def settled(before: dict, after: dict) -> bool:
@@ -869,6 +891,7 @@ class Chain:
         self.rulings = getattr(inputs, "rulings", None) or {}
         self.used = getattr(inputs, "used", None) or set()   # rulings acted on (owner_rows' too): ruled.json
         self.old_proposed = {i["id"]: i.get("proposed") for i in inputs.old_review}
+        self.old_items = {i["id"]: i for i in inputs.old_review}
         self.not_applied: set = set()            # field answers whose value is no longer the one proposed
         self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
@@ -1431,6 +1454,28 @@ class Chain:
         for e in entries:
             e.pop("old_ability_change", None)
 
+    def no_kinds(self, cid: str, entries: list) -> None:
+        """An item card's types to review lose its kinds (owner: item subtypes are not collected); read as its kinds
+        alone (an old row's: every read), they get no review item ('not collected')."""
+        kind = self.inputs.cards[cid].get("type")
+        for e in entries if kind in ITEM_CARDS else ():
+            field = e["fields"].get("types") if e["kind"] in ("discord", "paper", "old repo") else None
+            if not field or field.get("confidence") != "review":
+                continue
+            rid = field.get("review")
+            read = self.old_proposed.get(rid) if rid else field.get("proposed")
+            if old_kinds_only(self.old_items[rid], kind) if rid in self.old_items else kinds_only(read, kind):
+                e["fields"]["types"] = {"method": field.get("method"), "confidence": "not collected",
+                                        "why": "an item's kinds alone (not collected)"}
+                self.tally[f"{e['kind']} types not collected (an item's kinds alone)"] += 1
+            elif read != without_kinds(read, kind):
+                left = None if kinds_only(read, kind) else without_kinds(read, kind)
+                if rid:
+                    self.old_proposed[rid] = left
+                else:
+                    field["proposed"] = left
+                self.tally[f"{e['kind']} types to review without an item's kinds"] += 1
+
     def owner_fields(self, cid: str, entries: list) -> None:
         """The owner's answers on fields to review: yes takes the value it confirmed while that is still the one
         proposed (else not applied: the page asks again), a value given takes that (both sure, method 'owner'); no
@@ -1481,6 +1526,7 @@ class Chain:
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
                                     {"paper": 0, "discord": 1, "text": 2, "first repo": 3, "old repo": 4}[e["kind"]],
                                     e["id"]))
+        self.no_kinds(cid, entries)
         self.owner_fields(cid, entries)
         self.star_guard(entries)
         self.owner_fields(cid, entries)                  # a star the guard took to review, answered
@@ -1500,7 +1546,8 @@ class Chain:
         if stop and stop["source"] == "git" and data:      # the card repo's first version, for the last diff
             fields = data_fields(data)
             last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")), None)
-            changes = first_changes(last, fields, card.get("type"), self.inputs.versions.get(cid, []), stop)
+            changes = first_changes(last, fields, card.get("type"), self.inputs.versions.get(cid, []), stop,
+                                    data.get("timestamp"))
             if changes.pop("same_title", None):
                 self.tally["git_first: no rename (its last look is the first version's, the same printed title)"] += 1
             out["git_first"] = {"from": "card data (its first recorded version)",
@@ -1759,6 +1806,9 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
                  if f.get("confidence") == "unread")
     lines.append("discord ability changes: " + ", ".join(f"{k} {n}" for k, n in ab.most_common()))
     lines.append(f"fields unread (types, nothing read to confirm): {unread}")
+    lines.append("fields not collected (an item's kinds alone): " + str(sum(
+        1 for t in timelines.values() for e in t["entries"] for f in (e.get("fields") or {}).values()
+        if f.get("confidence") == "not collected")))
     status = Counter(c["status"] for c in created.values())
     sources = Counter(c["ours"]["source"] for c in created.values())
     lines += ["", "CREATED: " + ", ".join(f"{k} {n}" for k, n in status.most_common()),

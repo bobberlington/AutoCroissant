@@ -372,7 +372,8 @@ def lineage(commits: list, paths: dict, kind: str = ".png") -> dict:
 
 def git_first_changes(t: dict, last: Optional[dict], versions: list) -> dict:
     """git_first diffed again against the last version left (the chain's rule: discord_chain.first_changes)."""
-    changes = dc.first_changes(last, t["git_first"].get("fields") or {}, t.get("kind"), versions, t.get("stop"))
+    changes = dc.first_changes(last, t["git_first"].get("fields") or {}, t.get("kind"), versions, t.get("stop"),
+                               dm.epoch(t["git_first"].get("date")))
     changes.pop("same_title", None)
     return changes
 
