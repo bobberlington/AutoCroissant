@@ -497,7 +497,8 @@ def test_names_of_other_cards_item_kinds_and_the_first_title():
 
 
 def test_an_item_cards_kinds_are_never_asked():
-    """Types read as an item card's kinds alone get no review item (not collected); mixed reads lose the kinds."""
+    """Types read as an item card's kinds alone get no review item (not collected); mixed reads lose the kinds. Sure
+    types lose them too (owner 14:30: Hiveblood's 'equip'), compared as no types when nothing else was read."""
     inp = inputs([], old_review=[{"id": "o-1", "kind": "types unsure", "card": "Bolt", "row": "r1", "field": "types",
                                   "proposed": ["food"]}])
     inp.cards["bolt"]["type"] = "item"
@@ -509,5 +510,17 @@ def test_an_item_cards_kinds_are_never_asked():
     chain.field_reviews("bolt", entries)
     assert [e["fields"]["types"]["confidence"] for e in entries] == ["not collected", "review", "not collected"]
     assert [i["proposed"] for i in chain.review.values()] == [["nme"]]
+    sure = [{"id": f"D-{n}", "kind": k, "fields": {"types": dc.sure(v, "git look: psd")}}
+            for n, k, v in ((3, "discord", ["equip"]), (4, "old repo", ["active", "field"]), (5, "discord", ["fire"]))]
+    chain.no_kinds("bolt", sure)
+    assert [e["fields"]["types"].get("value") for e in sure] == [None, ["field"], ["fire"]]
+    assert sure[0]["fields"]["types"]["confidence"] == "not collected"
+    assert dc.compare(sure[0]["fields"], sure[2]["fields"], "item")["types"] == {"add": ["fire"], "drop": []}
+    assert dc.settled(sure[0]["fields"], {"types": {**sure[0]["fields"]["types"]}})
+    inp.cards["bolt"]["type"] = "field"                  # an item then (Rock Bottom's 2023 'equip')
+    then = [{"id": "D-6", "kind": "discord", "fields": {"types": dc.sure(["equip"], "eye")}},
+            {"id": "D-7", "kind": "discord", "fields": {"types": dc.sure(["fire"], "eye")}}]
+    chain.no_kinds("bolt", then)
+    assert then[0]["fields"]["types"]["confidence"] == "not collected" and then[1]["fields"]["types"]["value"] == ["fire"]
     assert dc.old_kinds_only({"field": "types", "proposed": ["food"], "reads": {"psd": ["support"]}}, "aux item")
     assert not dc.old_kinds_only({"field": "types", "proposed": ["food"]}, "creature")

@@ -54,7 +54,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    post. The selftest's held-out check holds: no copy of a git version becomes a draft.
    Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
    round 2's pictures on a card's Created day, single-candidate pictures before git and near-git looks of the cards
-   with no Discord entry) override the gates.
+   with no Discord entry) override the gates. A version key is taken only when the picture is that version by eye:
+   `discord_verdicts eyekeys` puts each beside the version's whole blob (its thumb when the clone lacks it) with the
+   3 most different areas zoomed; a picture drawn otherwise in any way (a word, the title's spelling or colour, an
+   icon, a medal, the text's layout or outline, the art) is a draft.
    A card named only (its title, file name or chat; nothing of its look or text) is sure only when the picture's text
    fits it (version fit 0.25; a title read alone, weight 0.93, goes to this check on a whole card export) and no
    card the matcher saw in that text fits better (a reused name: 2019's joke Potato,
@@ -98,7 +101,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    and carried to the card's other pictures of that era by the same score (`header_types eye`, method 'eye header';
    the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Item and
    status eras count stars as yellow blobs in a row that fill their box as stars do, calibrated on eye truths (a
-   yellow wall or backdrop: no count). A picture by era: today's template through the card checks' bar reader
+   yellow wall or backdrop: no count; the truths publish as 'eye'. On pictures with no truth the readers alone are
+   sure on few of the status and B-item cards: 11-13, S 4 of 97, B-item 8 of 94, C-item 0 of 3, A-item 174 of
+   228). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
@@ -125,8 +130,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
    eye truth, then their sure reads; a title read snapped to another live card's name, not one of this card's own
    names, aliases or old repo titles, goes to review: P.A.N.D.A. Mk A read 'Panda'), the rest name a review item
-   (types with nothing read: unread; an item card's kinds read alone: not collected, no item, and its other types
-   to review without its kinds). Each version is
+   (types with nothing read: unread). An item card's kinds (its subtypes) are never kept: read alone, sure or not,
+   they are not collected (no item; a sure read compares as no types; so is another card's version read sure as
+   kinds alone, an item then: Rock Bottom's 2023 equip); its other types stay, or go to review, without them. Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
    40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change); a fact a later picture contradicts goes to review (a stated step,
    'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact

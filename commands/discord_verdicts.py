@@ -5,6 +5,7 @@ step (docs/Future/CARD_TIMELINE.md, stage 2). Run after `discord_match score`, w
     python -m commands.discord_verdicts build  [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_verdicts checks [--root <dir>] [--seed <n>] [--sure <n>] [--lost <n>]
     python -m commands.discord_verdicts selftest [--root <dir>] [--cards-repo <dir>]
+    python -m commands.discord_verdicts eyekeys [--root <dir>] [--cards-repo <dir>]
 
 build   A picture is one stored file (its sha256: every post of it, reposts in other channels too; the earliest post
         dates it); a sheet's cells are pictures of their own. Each gets one verdict:
@@ -33,6 +34,9 @@ build   A picture is one stored file (its sha256: every post of it, reposts in o
 checks  Contact sheets for the by-eye checks: random sure matches, every match of the look-alike families, random lost
         pictures (post | the matched version).
 selftest The sure error of these gates on discord_match selftest's degraded copies (cards and looks).
+eyekeys Every eye ruling naming a git version beside that version's whole blob (the old repo's, the card repo's when
+        stored, else its thumb): the largest local difference and zooms of the 3 most different areas, for the eye
+        before a version key is accepted (a word, an icon or a medal hides in a whole-card score). checks/eye-keys/.
 Outputs under the archive's derived/match/ (never a repo): verdicts.jsonl, lost_groups.json, sheets/ (sheets.json and
 each sheet's cells drawn), checks/. Ids are stable: P-<sha256 12> (a cell: -c<n>), LC-<sha256 10> (-c<n>). No message
 text, posters or authors anywhere (owner 2026-11-13).
@@ -93,6 +97,7 @@ TEXT_TRUTH = ("derived", "readers", "text", "truth.jsonl")
 TEXT_CAL, S_STARS_BAR = ("derived", "readers", "text", "calibration.json"), "S/today"   # status cards' star bar
 OLD_ROWS = ("derived", "oldrows", "rows.jsonl")     # old repo versions' fields (their stars)
 EYE = ("derived", "match", "eye.json")               # pictures told by eye: by_eye
+EYE_W, EYE_BOX, EYE_BLUR = 600, 15, 1.2              # eyekeys: compared this wide, windows this big, both blurred
 STATS_FILE, OLD_STATS_FILE = dm.STATS_FILE, "db/old_stats.json"
 TAG = re_compile(r"\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\)|\(([0-9/]*[A-Z][A-Z0-9/]{1,5})\b|\b([0-9/]*[A-Z][A-Z0-9/]{1,5})\)")
 NUMBER = re_compile(r"(?<![a-z0-9])(\d+(?:[.,]\d+)?%?)\s*([a-z]?)")   # a number and the next word's first letter
@@ -1545,6 +1550,83 @@ def checks(root: str, seed: int = 1113, sure: int = 50, lost: int = 25, versions
     return picked
 
 
+def local_diff(a, b, box: int = EYE_BOX) -> tuple:
+    """(the largest mean of |a - b| over a box x box window, grey levels; that window's (x, y)) of two same-size RGB
+    arrays."""
+    np = dm._np()
+    d = np.abs(a.astype(float) - b.astype(float)).mean(axis=2)
+    ii = np.pad(d, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    m = (ii[box:, box:] - ii[:-box, box:] - ii[box:, :-box] + ii[:-box, :-box]) / box ** 2
+    y, x = np.unravel_index(int(np.argmax(m)), m.shape)
+    return float(m.max()), (int(x), int(y)), m
+
+
+def eye_keys(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = print) -> list:
+    """Every eye ruling naming a git version: picture | version | difference, the 3 most different windows zoomed,
+    into checks/eye-keys/ (+ eye_keys.json, largest local difference first)."""
+    from io import BytesIO
+    from os.path import expanduser
+    from PIL import Image, ImageDraw, ImageFilter
+    np = dm._np()
+    root = dm.check_root(root)
+    paths = Paths(root)
+    eye = (dm.read_json(join(root, *EYE), {}) or {}).get("pictures") or {}
+    keys = {pid: r["look"] for pid, r in eye.items() if r.get("look") not in (None, "draft")}
+    versions = {v["key"]: v for v in (dm.read_json(paths.matcher.pairs, {}) or {}).get("versions") or []}
+    rows = {r["id"]: r for r in dm.read_jsonl(paths.verdicts) if r["id"] in keys}
+    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    out = join(paths.checks, "eye-keys")
+    makedirs(out, exist_ok=True)
+    found = []
+    for n, (pid, key) in enumerate(sorted(keys.items())):
+        v, row = versions.get(key), rows.get(pid)
+        if not v or not row:
+            found.append({"id": pid, "key": key, "missing": "version" if not v else "verdict row"})
+            continue
+        data = dm.git_out(stores[bool(v.get("old"))], "cat-file", "blob", f"{v['commit']}:{v['path']}") \
+            if stores[bool(v.get("old"))] else None
+        ref = dm.load_image(BytesIO(data) if data else join(root, *dm.OUT, v["thumb"])).convert("RGB")
+        pic = dm.load_image(join(root, row["file"])).convert("RGB")
+        if row.get("box"):
+            w, h = pic.size
+            x0, y0, x1, y1 = row["box"]
+            pic = pic.crop((round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)))
+        size = (EYE_W, round(EYE_W * ref.height / ref.width))
+        a, b = (im.resize(size, Image.LANCZOS) for im in (pic, ref))
+        score, _, m = local_diff(*(np.asarray(im.filter(ImageFilter.GaussianBlur(EYE_BLUR))) for im in (a, b)))
+        windows, m = [], m.copy()
+        for _ in range(3):
+            y, x = np.unravel_index(int(np.argmax(m)), m.shape)
+            windows.append((int(x), int(y)))
+            m[max(0, y - 80):y + 80, max(0, x - 80):x + 80] = -1
+        diff = np.clip(np.abs(np.asarray(a).astype(int) - np.asarray(b).astype(int)).mean(axis=2) * 4, 0, 255)
+        z, w, h = 290, *size
+        sheet = Image.new("RGB", (3 * w + 20, h + 40 + z), "white")
+        for i, im in enumerate((a, b, Image.fromarray(diff.astype("uint8")).convert("RGB"))):
+            sheet.paste(im, (i * (w + 10), 30))
+        draw = ImageDraw.Draw(sheet)
+        draw.text((4, 4), f"{pid} {row.get('card')} {(row.get('first') or {}).get('date', '')[:16]} | {key[:8]} "
+                          f"{'old repo' if v.get('old') else 'card repo'} {v['commit'][:7]} "
+                          f"({'blob' if data else 'thumb'}) | local {score:.1f} | zooms: picture, version", fill="red")
+        for i, (x, y) in enumerate(windows):
+            x0 = max(0, min(w - 145, x + EYE_BOX // 2 - 72))
+            y0 = max(0, min(h - 145, y + EYE_BOX // 2 - 72))
+            draw.rectangle((2 * w + 20 + x0, 30 + y0, 2 * w + 165 + x0, 175 + y0), outline="red", width=2)
+            for j, im in enumerate((a, b)):
+                sheet.paste(im.crop((x0, y0, x0 + 145, y0 + 145)).resize((z, z), Image.LANCZOS),
+                            ((2 * i + j) * (z + 6), h + 36))
+        name = f"{n:03d}-{pid}.jpg"
+        sheet.save(join(out, name), quality=85)
+        found.append({"id": pid, "card": row.get("card"), "key": key, "ref": "blob" if data else "thumb",
+                      "local": round(score, 1), "sheet": name})
+    found.sort(key=lambda f: -f.get("local", 1e9))
+    dm.write_json(join(paths.checks, "eye_keys.json"), found)
+    log(f"eyekeys: {len(found)} eye rulings naming a git version ({sum(f.get('ref') == 'thumb' for f in found)} "
+        f"against a thumb); largest local differences: " +
+        ", ".join(f"{f.get('card')} {f.get('local')}" for f in found[:6]) + f" -> {out}")
+    return found
+
+
 # ========================
 # Self-test (the sure gates on the matcher's degraded copies)
 # ========================
@@ -1668,7 +1750,7 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.discord_verdicts", description="One verdict per Discord picture.")
     subs = parser.add_subparsers(dest="command", required=True)
-    for name in ("build", "checks", "selftest"):
+    for name in ("build", "checks", "selftest", "eyekeys"):
         p = subs.add_parser(name)
         p.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
         if name != "checks":
@@ -1685,6 +1767,8 @@ def main(argv: Optional[list] = None) -> int:
         build(args.root, log, args.cards_repo)
     elif args.command == "selftest":
         selftest(args.root, args.cards_repo, log)
+    elif args.command == "eyekeys":
+        eye_keys(args.root, args.cards_repo, log)
     else:
         checks(args.root, args.seed, args.sure, args.lost, log=log)
     return 0

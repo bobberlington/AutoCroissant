@@ -317,3 +317,14 @@ def test_looks_no_git_version_has_are_drafts_and_named_only_picks_reach_the_name
     assert (row["verdict"], row["card"], row["version"]["look"], row["version"]["by"]) == ("version_sure", "c", 0, "eye")
     dv.by_eye(row, {"card": "none"}, {}, {"c": {}})
     assert row["verdict"] == "none" and "card" not in row
+
+
+def test_an_eye_keys_local_difference_finds_a_small_drawn_change():
+    """eyekeys' score: a 12 px icon missing on a 600 px card stands out (a whole-card mean would hide it)."""
+    import numpy as np
+    a = np.full((900, 600, 3), 90, dtype=np.uint8)
+    b = a.copy()
+    b[40:52, 30:42] = 250
+    score, (x, y), _ = dv.local_diff(a, b)
+    assert score > 90 and 27 <= x <= 42 and 37 <= y <= 52
+    assert dv.local_diff(a, a.copy())[0] == 0

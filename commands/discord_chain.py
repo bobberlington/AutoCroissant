@@ -21,9 +21,9 @@ build   Under derived/chain/:
                                       first_repo_rows on): date, mapped author, commit subject; no picture or link
                           old repo    the old pre-wipe repo's PNG versions (derived/oldrows), with their fold
                         Each version's fields keep their method and confidence; only sure values are kept, the rest
-                        name their review item (types with nothing read: 'unread'; an item card's kinds read alone:
-                        'not collected', no item, its other types to review without them; an icon-read star change
-                        nothing backs: review, star_guard). Each is diffed with the version
+                        name their review item (types with nothing read: 'unread'; an item card's kinds read alone,
+                        sure or not: 'not collected', no item; its other types kept or to review without them; an
+                        icon-read star change nothing backs: review, star_guard). Each is diffed with the version
                         before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
                         (text_key; formatting alone is no change, owner 11-09); an item's kinds are no types change
@@ -209,6 +209,8 @@ def compare(before: dict, after: dict, kind: Optional[str] = None) -> dict:
     out, unknown = {}, []
     for key in ("name", "stars", "types", "stats"):
         a, b = before.get(key), after.get(key)
+        if key == "types":
+            a, b = kinds_read(a), kinds_read(b)
         if not a and not b:
             continue
         if not (is_sure(a) and is_sure(b)):
@@ -267,6 +269,11 @@ def without_kinds(value, kind: Optional[str]):
     return [t for t in value if t not in ITEM_KINDS] if kind in ITEM_CARDS and isinstance(value, list) else value
 
 
+def kinds_read(field: Optional[dict]) -> Optional[dict]:
+    """A types field read sure as an item card's kinds alone (no_kinds: not collected) compares as no types."""
+    return {**field, "confidence": "sure", "value": []} if field and field.get("kinds_alone") else field
+
+
 def kinds_only(value, kind: Optional[str]) -> bool:
     """Types read on an item card that are its kinds alone: nothing to collect, so nothing to review."""
     return bool(value) and isinstance(value, list) and without_kinds(value, kind) == []
@@ -280,6 +287,7 @@ def old_kinds_only(item: dict, kind: Optional[str]) -> bool:
 
 def settled(before: dict, after: dict) -> bool:
     """Every field either version has is sure on both and unchanged (the old rows' fold rule)."""
+    before, after = ({**f, "types": kinds_read(f["types"])} if f.get("types") else f for f in (before, after))
     keys = {k for k in FIELDS if before.get(k) or after.get(k)}
     if not keys or any(not (is_sure(before.get(k)) and is_sure(after.get(k))) for k in keys):
         return False
@@ -1462,11 +1470,27 @@ class Chain:
             e.pop("old_ability_change", None)
 
     def no_kinds(self, cid: str, entries: list) -> None:
-        """An item card's types to review lose its kinds (owner: item subtypes are not collected); read as its kinds
-        alone (an old row's: every read), they get no review item ('not collected')."""
-        kind = self.inputs.cards[cid].get("type")
-        for e in entries if kind in ITEM_CARDS else ():
+        """An item card's types lose its kinds (owner: item subtypes are not collected): sure ones keep the rest, or
+        are 'not collected' when only kinds were read (kinds_alone: no types in diffs; so is another card's version
+        read sure as kinds alone, an item then: Rock Bottom's 2023 'equip'); to review, read as its kinds alone (an
+        old row's: every read), they get no review item ('not collected')."""
+        card_kind = self.inputs.cards[cid].get("type")
+        for e in entries:
             field = e["fields"].get("types") if e["kind"] in ("discord", "paper", "old repo") else None
+            kind = card_kind if card_kind in ITEM_CARDS else \
+                "item" if is_sure(field) and kinds_only(field["value"], "item") else None
+            if kind is None:
+                continue
+            if is_sure(field) and isinstance(field["value"], list) and field["value"] != without_kinds(field["value"],
+                                                                                                     kind):
+                if kinds_only(field["value"], kind):
+                    e["fields"]["types"] = {"method": field.get("method"), "confidence": "not collected",
+                                            "why": "an item's kinds alone (not collected)", "kinds_alone": True}
+                    self.tally[f"{e['kind']} types not collected (sure, an item's kinds alone)"] += 1
+                else:
+                    field["value"] = without_kinds(field["value"], kind)
+                    self.tally[f"{e['kind']} types sure without an item's kinds"] += 1
+                continue
             if not field or field.get("confidence") != "review":
                 continue
             rid = field.get("review")
