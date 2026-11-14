@@ -1005,8 +1005,8 @@ def art_text(text: str) -> str:
 
 
 def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None) -> None:
-    """The card's image (an embed when it has a website name, subseries, note, artwork source, original or ban) and
-    any ambiguity; url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
+    """The card's image (in an embed with its series, created date, notes... when it has data) and any ambiguity;
+    url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
     url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
@@ -1019,7 +1019,7 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
              getattr(card, "note", None) or "" if card else ""]
     arts = art_list(getattr(card, "art", None)) if card else []   # a card's artwork sources
     extra += [f"Artwork source{f' #{i}' if len(arts) > 1 else ''}: {art_text(source)}" for i, source in enumerate(arts, 1)]
-    if card and (shown or subseries or any(extra)):     # website name, subseries, note, art, duplicate or ban: an embed
+    if card:                                            # every card with data: an embed
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)
         if created:

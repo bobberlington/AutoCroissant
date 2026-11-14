@@ -144,16 +144,19 @@ def test_query_embed_says_created(monkeypatch):
     sent = []
     monkeypatch.setattr(qc, "queue_message", lambda inter, content, **kw: sent.append((content, kw)))
     monkeypatch.setattr(qc.card_repo, "git_files", {"goombella.png": "Creatures/Mario/2 Stars/Goombella.png",
-                                                    "kirby.png": "Creatures/Kirby/2 Stars/Kirby.png"})
+                                                    "kirby.png": "Creatures/Kirby/2 Stars/Kirby.png",
+                                                    "nodata.png": "Creatures/Kirby/2 Stars/Nodata.png"})
     monkeypatch.setattr(qc.card_repo, "site_ids", {})
     monkeypatch.setattr(qc.card_repo, "ambiguous_names", {})
-    goombella = _dated("Goombella", "2023-10-13")
-    goombella.series, goombella.subseries = "mario", "Paper Mario"
-    monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": goombella, "Kirby": _dated("Kirby", "2020-07-22")})
+    goombella, kirby = _dated("Goombella", "2023-10-13"), _dated("Kirby", "2020-07-22")
+    goombella.series, goombella.subseries, kirby.series = "mario", "Paper Mario", "kirby"
+    monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby})
     qc.query_name(SimpleNamespace(), "Goombella")
     assert sent[0][1]["embed"].description == "mario · Paper Mario\nCreated 2023-10-13"
-    qc.query_name(SimpleNamespace(), "Kirby")                   # a plain link stays one
-    assert "embed" not in sent[1][1]
+    qc.query_name(SimpleNamespace(), "Kirby")                   # series and created only: an embed too
+    assert sent[1][1]["embed"].description == "kirby\nCreated 2020-07-22"
+    qc._post_card(SimpleNamespace(), "nodata.png")              # no data: the plain link
+    assert "embed" not in sent[2][1] and sent[2][0].endswith("/Nodata.png")
 
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):

@@ -196,7 +196,8 @@ def test_morgue_and_unfinished_cards_say_so(monkeypatch):
     at = 1792658876.0                                   # 2026-10-22, Pacific
     moved = lambda psd, **kw: [SimpleNamespace(display_name=None, archived={"at": at, "commit": "b633073" + "0" * 33,
                                                                             "moved_to": psd, **kw})]
-    monkeypatch.setattr(cm.stats_db, "stats", {"Spice": SimpleNamespace(display_name=None, hidden=False, duplicate_of=None)})
+    monkeypatch.setattr(cm.stats_db, "stats", {"Spice": SimpleNamespace(name="Spice", series=None, display_name=None, hidden=False,
+                                                                  duplicate_of=None)})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list, {
         "White Palace": moved("MDW/The Morgue/White_Palace.psd"),
         "Pandiety": moved("MDW/Unfinished/6 Stars/Pandeity.psd", backfill=True)}))
@@ -222,6 +223,7 @@ def test_morgue_and_unfinished_cards_say_so(monkeypatch):
             ("cardback", "https://img/cardback.png", None)]:
         utils.dispatch_queue.clear()
         qc.query_name(utils.make_simple_fake_interaction(1), query)
-        assert [(kw["content"], kw.get("links")) for _, kw in utils.dispatch_queue] == [(content, links)], query
+        assert [(kw["content"] or kw["embed"].image.url, kw.get("links")) for _, kw in utils.dispatch_queue] == \
+            [(content, links)], query
     assert repo.name_choices("pandi") == []                      # not offered
     utils.dispatch_queue.clear()

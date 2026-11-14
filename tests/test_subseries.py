@@ -94,8 +94,8 @@ def test_query_embed_shows_series_and_subseries(monkeypatch):
     monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": FAKE["Goombella"], "Kirby": FAKE["Kirby"]})
     qc.query_name(SimpleNamespace(), "Goombella")
     assert sent[0][0] is None and sent[0][1]["embed"].description == "mario · Paper Mario: The Thousand-Year Door"
-    qc.query_name(SimpleNamespace(), "Kirby")                   # no subseries, no website data: plain link as before
-    assert "embed" not in sent[1][1] and sent[1][0].endswith("/Kirby.png")
+    qc.query_name(SimpleNamespace(), "Kirby")                   # series only: an embed too
+    assert sent[1][1]["embed"].description == "kirby" and sent[1][1]["embed"].image.url.endswith("/Kirby.png")
     kirby = copy(FAKE["Kirby"])
     kirby.art = ["Drawn by *Ann*: https://www.pixiv.net/en/artworks/1.", "Kirby Super Star"]
     monkeypatch.setitem(cm.stats_db.stats, "Kirby", kirby)

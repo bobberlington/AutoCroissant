@@ -66,7 +66,8 @@ def _ask(query, as_of):
 
 
 def _texts(query, as_of):
-    return [kw["content"] for kw in _ask(query, as_of)]
+    """Each message's text, or its embed's picture."""
+    return [kw["embed"].image.url if kw.get("embed") else kw["content"] for kw in _ask(query, as_of)]
 
 
 HEAD = f"(end of day, {TIMEZONE.key}): "
@@ -123,8 +124,7 @@ def test_an_old_version_says_what_its_reading_could_not_know(db):
 
 
 def test_the_current_card_posts_its_image(db):
-    sent = _ask("Tainted Bethany", "2026-10-21")
-    assert [kw["content"] for kw in sent] == [
+    assert _texts("Tainted Bethany", "2026-10-21") == [
         f"**Tainted Bethany** as of 2026-10-21 {HEAD}the current card (version 5 of 5), from 2026-10-21.\n{qc.AS_OF_EDITS_NOTE}",
         "https://img/tainted_bethany.png"]
 
@@ -255,8 +255,8 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     assert sent[0]["content"].endswith("the current card (version 2 of 2), from 2026-02-07.\n"
                                        f"{qc.AS_OF_EDITS_NOTE}\nImage: as of 2026-01-30 (it has changed since).")
     png = BETHANY.replace(" ", "%20") + ".png"
-    assert sent[1]["content"] == f"https://raw.githubusercontent.com/{qc.card_repo.repository}/{first}/{png}"
-    assert [kw["content"] for kw in _ask("Tainted Bethany", "2026-10-22")][1:] == ["https://img/tainted_bethany.png"]
+    assert sent[1]["embed"].image.url == f"https://raw.githubusercontent.com/{qc.card_repo.repository}/{first}/{png}"
+    assert _texts("Tainted Bethany", "2026-10-22")[1:] == ["https://img/tainted_bethany.png"]
     assert "Image:" not in _ask("Tainted Bethany", "2026-10-22")[0]["content"]
     old = _ask("Tainted Bethany", "2026-02-01")[0]
     assert old["links"][1] == ("Image (2026-01-30)", f"https://raw.githubusercontent.com/{qc.card_repo.repository}/"
