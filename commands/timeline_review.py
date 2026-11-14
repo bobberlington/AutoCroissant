@@ -617,11 +617,9 @@ def morgue_items(inputs: Inputs) -> list:
 
 
 def owner_answer(inputs: Inputs, iid: str, e: Optional[dict] = None) -> Optional[dict]:
-    """The owner's answer (owner.json) an item is shown with read only: listed by its id, an entry the owner's
-    ruling made, or a joke edit of a live card (a joke candidate with its nearest live card named by eye)."""
+    """The owner's answer (owner.json) an item is shown with read only: listed by its id (the joke edits of live
+    cards too, each by eye), or an entry the owner's ruling made."""
     aid = (inputs.owner.get("read_only") or {}).get(iid) or (e or {}).get("owner")
-    if not aid and e and e.get("kind") == "joke" and (e.get("nearest") or {}).get("by") == "eye":
-        aid = inputs.owner.get("joke_edits")
     return inputs.answers.get(aid) if aid else None
 
 

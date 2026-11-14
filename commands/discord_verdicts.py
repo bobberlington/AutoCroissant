@@ -103,7 +103,8 @@ TEXT_CAL, S_STARS_BAR = ("derived", "readers", "text", "calibration.json"), "S/t
 OLD_ROWS = ("derived", "oldrows", "rows.jsonl")     # old repo versions' fields (their stars)
 EYE = ("derived", "match", "eye.json")               # pictures told by eye: by_eye
 OWNER = ("derived", "review", "owner.json")          # the owner's rulings outside the review page (its pictures:
-                                                     # by_eye's shape, applied after the eye; kept apart from eye.json)
+                                                     # by_eye's shape, applied after the eye; kept apart from eye.json;
+                                                     # ruled_out: {picture: {cards}} left out of its maybe list)
 EYE_W, EYE_BOX, EYE_BLUR = 600, 15, 1.2              # eyekeys: compared this wide, windows this big, both blurred
 LOCAL = ("derived", "match", "local.jsonl")          # card-sure pictures' local differences from their stored versions
 LOCAL_SAME, LOCAL_KEEP, LOCAL_DRAFT = 5.0, 10.0, 30.0   # local diff: that version's look / over it a gate's look is
@@ -1297,12 +1298,11 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         else:
             rows.append(judge_picture(sha, keys, sha in jokes, run))
     eye = (dm.read_json(join(root, *EYE), {}) or {}).get("pictures") or {}
-    owner = (dm.read_json(join(root, *OWNER), {}) or {}).get("pictures") or {}
+    owner = dm.read_json(join(root, *OWNER), {}) or {}
     for row in rows:
         if row["id"] in eye:
             by_eye(row, eye[row["id"]] or {}, versions, cards)
-        if row["id"] in owner:                  # the owner's identity rulings (11-13): over the eye's
-            by_eye(row, owner[row["id"]] or {}, versions, cards, by="owner")
+        by_owner(row, owner, versions, cards)
     reposts = repost_groups(rows, images, by_sha)
     for row in rows:
         image = images[by_sha[row["sha256"]][0]]
@@ -1384,6 +1384,16 @@ def by_eye(row: dict, ruling: dict, versions: dict, cards: dict, by: str = "eye"
                cards=[cid], conf=1.0, version=note, reason=why, **({"eye": why} if by == "eye" else {}))
     for k in ("maybe", "meme_live", "looks_like"):
         row.pop(k, None)
+
+
+def by_owner(row: dict, owner: dict, versions: dict, cards: dict) -> None:
+    """The owner's rulings on a picture (owner.json): its card and look (pictures, over the eye's) and the cards a
+    ruling rules out of an untold picture's maybe list (ruled_out)."""
+    if row["id"] in (owner.get("pictures") or {}):
+        by_eye(row, owner["pictures"][row["id"]] or {}, versions, cards, by="owner")
+    out = (owner.get("ruled_out") or {}).get(row["id"])
+    if out and row.get("maybe"):
+        row["maybe"] = [c for c in row["maybe"] if c not in out.get("cards", ())]
 
 
 def created_reviews(rows: list, cards: dict):

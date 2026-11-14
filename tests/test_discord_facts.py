@@ -209,7 +209,7 @@ def test_internal_old_names_and_their_time_limit():
 
 def test_changelog_picture_entries():
     line = lambda text, y, h=0.02: [text, 1.0, 0.05, y, 0.8, h]
-    lines = [line("April Balance Changes", 0.0, 0.07), line("Iron Golem (Rework) ATK -1 DEF -1 No longer", 0.08),
+    lines = [line("Some Changes", 0.0, 0.07), line("Iron Golem (Rework) ATK -1 DEF -1 No longer", 0.08),
              line("explodes on death", 0.105), line("Sun Cookie (Buff) Heals more", 0.15), line("Items", 0.22),
              line("Old Relic (Nerf/Rework) Is now a 2 star item Cannot target", 0.26)]
     assert F.picture_entries(lines) == [("Iron Golem", "Rework", "ATK -1 DEF -1 No longer explodes on death"),
@@ -221,5 +221,9 @@ def test_changelog_picture_entries():
         ("Iron Golem", "atk", -1, True), ("Iron Golem", "def", -1, True), ("Iron Golem", "ability changed", None, True)]
     got = F.picture_line("Sun Cookie", "Heals more", n, n, TYPES)    # the tag says it changed: the ability
     assert [(f["card"], f["kind"], f["sure"]) for f in got["facts"]] == [("Sun Cookie", "ability changed", True)]
-    got = F.picture_line("Golems", "Damage 6 -> 6.5", n, n, TYPES)   # no card has this name: review
+    got = F.picture_line("Sun Cookie", "Back to its old effect, Is now a 3 star item", n, n, TYPES)
+    assert [f.get("field") or f["kind"] for f in got["facts"]] == ["stars", "ability changed"]   # more than stated
+    got = F.picture_line("Iron Golem", "Is now a 2 star creature, ATK -1", n, n, TYPES)
+    assert [f.get("field") or f["kind"] for f in got["facts"]] == ["stars", "atk"]
+    got = F.picture_line("Golems", "Damage 2 -> 3", n, n, TYPES)   # no card has this name: review
     assert got["facts"] == [] and "Golems" in got["head"]

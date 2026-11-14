@@ -65,7 +65,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    with no Discord entry; `titled`: a renamed first look's printed title) override the gates. The owner's rulings
    given outside the review page (`derived/review/owner.json`, kept apart from the eye's files; 11-13: the 2020
    'PIZZA' item is Pepperoni Pizza's draft, the 2020 item 'Frozen in time' Standstill's, Wind's Blessing's five
-   pictures Second Wind's, which set no Created: `no_created`) come after the eye.
+   pictures Second Wind's, which set no Created: `no_created`; `ruled_out`: cards a ruling rules out of an untold
+   picture's maybe list, e.g. the creature Pizza for a 2023 Pepperoni Pizza look) come after the eye.
    A version key is taken only when the picture is that version by eye:
    `discord_verdicts eyekeys` puts each beside the version's whole blob (its thumb when the clone lacks it) with the
    3 most different areas zoomed; a picture drawn otherwise in any way (a word, the title's spelling or colour, an
@@ -183,8 +184,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    check.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
    local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only, Q5's
-   first-repo rows listed; Morgue items the owner answered show read only, an open item a later answer bears on
-   says so), the unsure old maps,
+   first-repo rows listed; Morgue items the owner answered show read only, listed by id, the joke edits of live
+   cards each by eye; an open item a later answer bears on says so), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
    templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
    never asked), Created dates (earlier,

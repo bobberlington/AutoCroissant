@@ -321,6 +321,9 @@ def test_looks_no_git_version_has_are_drafts_and_named_only_picks_reach_the_name
     dv.by_eye(lost, {"card": "c", "look": "draft", "why": "11-13", "no_created": "weak"}, {}, {"c": {}}, by="owner")
     assert (lost["verdict"], lost["card"], lost["owner"], lost["no_created"]) == ("draft", "c", "owner: 11-13", "weak")
     assert "eye" not in lost and lost["version"]["by"] == "owner"
+    row = {"id": "P-3", "verdict": "unsure", "maybe": ["c", "d"]}                # a card the owner's ruling rules out
+    dv.by_owner(row, {"ruled_out": {"P-3": {"cards": ["c"]}}}, {}, {"c": {}, "d": {}})
+    assert (row["verdict"], row["maybe"]) == ("unsure", ["d"])
 
 
 def test_an_eye_keys_local_difference_finds_a_small_drawn_change():

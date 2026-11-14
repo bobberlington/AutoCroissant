@@ -186,8 +186,8 @@ HEAD = re_compile(r"^(?P<head>[A-Za-z][^()]{0,48}?)\s*\(\s*(?P<tag>(?:buff|nerf|
 GAP = 1.65                                                # a wrapped line sits within this many line heights
 HEAD_REVIEW = {                                           # heads naming a card that isn't sure (by eye): review
     "Frozen in Time": "the item (Standstill, as the owner ruled the 2020 item) or the status Frozen In Time?",
-    "Blockade": "today's The Wall By Ech (its 2023 picture still prints Blockade)? 'HP -10%' is a share, not bars"}
-HEAD_ABILITY = {"Metal General": "the 5 ATK is the summoned probe's"}   # by eye: its numbers are the ability's
+    "Blockade": "today's The Wall By Ech (its 2023 picture still prints Blockade)? its HP change is a share"}
+HEAD_ABILITY = {"Metal General": "its numbers are the summoned minion's"}   # by eye: the numbers are the ability's
 BREAK = re_compile(r"(?<=\d)\s+(?=[A-Z][a-z])(?!(?:Health|Defen[cs]e|Attack|Speed|Bars?)\b)"
                    r"|(?:(?<=\bitem)|(?<=\bcreature))\s+(?=[A-Z])")   # a picture entry's next sentence (no stop)
 
@@ -969,7 +969,7 @@ def picture_entries(lines: list) -> list:
 def picture_line(head: str, rest: str, names: Names, base: Names, vocabulary: set) -> dict:
     """One entry of a changelog picture: parsed as 'Head: change' when the head is exactly one card's name (today's,
     an old one) and not a head the eye doubts (HEAD_REVIEW); else review (the cards it may name). The head's tag
-    states a change, so a change with no stated field is the ability's."""
+    states a change, so a change no stated field explains is the ability's."""
     form = squash(head)
     keys = sorted({k for k, _ in names.by.get(form, set())})
     doubt = {squash(h): why for h, why in HEAD_REVIEW.items()}.get(form)
@@ -985,11 +985,19 @@ def picture_line(head: str, rest: str, names: Names, base: Names, vocabulary: se
     for f in got["facts"]:
         if f.get("doubt") == DOUBT["field"]:
             f.update(doubt=None, sure=True)
-    if not got["facts"] and not got["unsure"]:    # the tag says it changed: no field stated, the ability
-        minion = key in names.no_ability
-        got.update(why=None, facts=[{"card": key, "kind": "ability changed", "sure": not minion,
-                                     "doubt": DOUBT["minion"] if minion else None}])
+    marked = any(f.get("kind") == "ability changed" for f in got["facts"])
+    if not got["unsure"] and not marked and (not got["facts"] or not only and unexplained(rest, vocabulary)):
+        minion = key in names.no_ability          # the tag says it changed: what no field states is the ability's
+        got.update(why=None, facts=got["facts"] + [{"card": key, "kind": "ability changed", "sure": not minion,
+                                                    "doubt": DOUBT["minion"] if minion else None}])
     return got
+
+
+def unexplained(rest: str, vocabulary: set) -> bool:
+    """A picture entry has a clause no stated field (stats, stars, types) explains."""
+    body = sub(r"\([^()]*\)", " ", BREAK.sub("; ", rest))
+    return any(not (stat_facts(FORM.sub(" ", c), 0) or star_facts(c, 0) or type_facts(c, vocabulary))
+               and any(w not in FILLER for w in words_of(c)) for part in split_parts(body) for c in split_clauses(part))
 
 
 def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> Iterable[tuple]:
