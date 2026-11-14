@@ -132,6 +132,8 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
         out["channel"] = e.get("channel")
     if kind in ("old repo", "first repo"):
         out.update(author=e.get("author"), subject=e.get("subject"))
+    if kind == "old repo" and e.get("repo") == "first":
+        out.update(badge=BADGE["first repo"], repo="first")      # the first repo's file (2022-08..2023-04)
     if e.get("as"):
         out["as"] = e["as"]
     if kind in PICTURE_KINDS:
@@ -698,7 +700,7 @@ def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.discord_preview", description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("build", "check"))
     parser.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
-    parser.add_argument("--old-git", default=dm.OLD_GIT)
+    parser.add_argument("--old-git", default=dm.old_store())
     parser.add_argument("--cards-repo", default=LOCAL_DIR_LOC, help="build: the card repo clone (its history, read only)")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--force", action="store_true")

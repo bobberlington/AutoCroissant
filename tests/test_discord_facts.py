@@ -227,3 +227,32 @@ def test_changelog_picture_entries():
     assert [f.get("field") or f["kind"] for f in got["facts"]] == ["stars", "atk"]
     got = F.picture_line("Golems", "Damage 2 -> 3", n, n, TYPES)   # no card has this name: review
     assert got["facts"] == [] and "Golems" in got["head"]
+
+
+def test_eye_told_short_forms_and_the_february_document(tmp_path):
+    root = tmp_path
+    (root / "messages").mkdir()
+    (root / "derived" / "facts").mkdir(parents=True)
+    msg = {"id": "900", "timestamp": "2020-08-01T10:00:00+00:00", "channel_name": "update-02",
+           "content": "golem: +1 ATK\ngolem: +1 DEF", "author": {"id": "1"}}
+    channel = sorted(F.UPDATE_IDS)[0]
+    (root / "messages" / f"{channel}.jsonl").write_text(json.dumps(msg) + "\n")
+    (root / "derived" / "facts" / "eye_lines.json").write_text(json.dumps(
+        {"lines": {"900:0": {"card": "Iron Golem", "form": "golem"}}}))
+    got = [(g["facts"], g.get("eye")) for *_, g in F.changelog_lines(str(root), names(), TYPES, chat=False)]
+    assert [(f["card"], f["field"], f["by"]) for f in got[0][0]] == [("Iron Golem", "atk", 1)] and got[0][1]
+    assert got[1][0] == [] and not got[1][1]                          # only the told line, never a loose match
+    import zipfile                                                   # a docx changelog: its heads, no text kept
+    doc = root / "attachments" / "6655b62e4972ff.docx"
+    doc.parent.mkdir()
+    with zipfile.ZipFile(doc, "w") as z:
+        z.writestr("word/document.xml", "<w:p><w:r><w:t>Some changes</w:t></w:r></w:p>"
+                                        "<w:p><w:r><w:t>Iron Golem (Nerf) ATK 5 -&gt; 4</w:t></w:r></w:p>")
+    (root / "attachments.jsonl").write_text(json.dumps({"sha256": "6655b62e4972ff", "file": "attachments/" + doc.name,
+                                                        "message_id": "901", "container_id": channel}) + "\n")
+    with (root / "messages" / f"{channel}.jsonl").open("a") as f:
+        f.write(json.dumps({**msg, "id": "901", "content": ""}) + "\n")
+    lines = list(F.document_lines(str(root), names(), TYPES, Counter()))
+    assert [(n, [(f["card"], f["field"], f["to"]) for f in g["facts"]]) for *_, n, _t, g in lines] == [
+        ("doc0", [("Iron Golem", "atk", 4)])]
+    assert F.line_order("901:doc3") == 3

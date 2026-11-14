@@ -661,7 +661,7 @@ def old_pairs(root: str) -> list:
     out, seen = [], set()
     for (_commit, stem), d in sorted(by.items(), key=lambda kv: kv[1].get("png", {}).get("ts", 0)):
         png = d.get("png")
-        if not png or png["blob"] in seen or not stem.startswith(("Creatures/", "Auxillary/Minions/")):
+        if not png or png["blob"] in seen or not stem.startswith(("Creatures/", "Auxillary/Minions/", "Cards/")):
             continue
         seen.add(png["blob"])
         psd = d.get("psd")
@@ -741,11 +741,13 @@ def read_task(job: dict) -> list:
                 got["era_how"] = job.get("era_how") or "eye"
             return [{**job["row"], **got}]
         img = dm.load_image(dm.open_source(("git", job["git_dir"], job["row"]["blob"])))
-        rows = []
+        rows, era = [], job["era"]
         for variant, pic in (("png", img), (f"jpeg{JPEG[0]}", dm.degrade(img, *JPEG))):
             lines = _ocr(pic)
-            rows.append({**job["row"], "variant": variant,
-                         **read_card(pic, lines, era=job["era"], title=job["row"]["card"])})
+            rec = look(img, job["row"]["date"][:19]) if job.get("classify") and era is None else None
+            got = read_card(pic, lines, rec, era, title=job["row"]["card"])
+            era = got.get("era")                     # the JPEG copy: the PNG's era
+            rows.append({**job["row"], "variant": variant, **got})
         return rows
     except Exception as e:
         return [{**job["row"], "error": f"{type(e).__name__}: {str(e)[:160]}"}]
@@ -797,23 +799,31 @@ def old_jobs(root: str, old_git: str) -> list:
         t = psd.get(png["blob"], {})
         era = t.get("era") or ("R" if size and size[0] >= 2000 else "D2" if size == (1200, 2400)
                                else "C" if size and 1.8 <= size[1] / size[0] <= 2.2 else None)
-        if era is None:
+        first = png.get("repo") == "first" and not t.get("era")      # the first repo (2022-23): its era by its look
+        if era is None and not first:
             continue
-        jobs.append({"src": "oldgit", "git_dir": old_git, "era": era,
+        jobs.append({"src": "oldgit", "git_dir": old_git, "era": None if first else era, "classify": first,
                      "row": {"src": "oldgit", "blob": png["blob"], "card": png["old_id"], "path": png["path"],
                              "commit": png["commit"], "date": png["date"], "w": size[0] if size else None,
-                             "h": size[1] if size else None, "era_from": "psd" if t.get("era") else "size"}})
+                             "h": size[1] if size else None,
+                             "era_from": "psd" if t.get("era") else "picture" if first else "size"}})
     return jobs
 
 
 def read_all(root: str, old_git: str, workers: int, only: Optional[str] = None):
-    """reads.jsonl: every picture (only: 'discord' or 'oldgit' read again, the other's rows kept)."""
+    """reads.jsonl: every picture (only: 'discord' or 'oldgit' read again, the other's rows kept; 'oldgit-new': the
+    old repo's versions not read yet, every row kept: the first repo's added)."""
     out_dir = join(root, *OUT)
     makedirs(out_dir, exist_ok=True)
     path = join(out_dir, "reads.jsonl")
-    jobs = (discord_jobs(root) if only != "oldgit" else []) + (old_jobs(root, old_git) if only != "discord" else [])
+    jobs = (discord_jobs(root) if only not in ("oldgit", "oldgit-new") else []) + \
+        (old_jobs(root, old_git) if only != "discord" else [])
+    if only == "oldgit-new":
+        done = {r.get("blob") for r in map(loads, open(path)) if r["src"] == "oldgit"} if exists(path) else set()
+        jobs = [j for j in jobs if j["row"]["blob"] not in done]
     log(f"read: {len(jobs)} pictures")
-    rows = [r for r in map(loads, open(path)) if r["src"] != only] if only and exists(path) else []
+    rows = [r for r in map(loads, open(path)) if only == "oldgit-new" or r["src"] != only] if only and exists(path) \
+        else []
     with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
         futures = [pool.submit(read_task, j) for j in jobs]
         for i, fut in enumerate(as_completed(futures), 1):
@@ -1015,11 +1025,12 @@ def load_truth(root: str) -> dict:
             if t.get("stats"):
                 out[blob] = {"stats": t["stats"], "from": "psd"}
     for name in sorted(n for n in listdir(base) if n.startswith("eye_") and n.endswith(".json")):
-        for key, t in load(open(join(base, name)))["items"].items():
+        data = load(open(join(base, name)))
+        for key, t in data["items"].items():
             if t.get("stats") is None:
                 out.pop(key, None)                           # no truth: the PSD's would publish wrong stats
             else:
-                out[key] = {**t, "from": "eye"}
+                out[key] = {**t, "from": "eye", **({"fit": False} if data.get("calibrate") is False else {})}
     return out
 
 
@@ -1133,8 +1144,8 @@ def calibrate(root: str):
         r.pop("truth", None)
         if t:
             r["truth"] = {**{k: t[k] for k in ("stats", "stats2") if t.get(k)}, "from": t["from"]}
-    pts = scored(rows, truth)
-    cal = {"about": f"Per era (two: two-creature cards, icons: icon rows; {' and '.join(NEVER_SURE)}: never sure) the "
+    pts = scored(rows, {k: t for k, t in truth.items() if t.get("fit", True)})   # a picked set (the reads in review,
+    cal = {"about":                                                                # eye_gap5): truth, never a bar f"Per era (two: two-creature cards, icons: icon rows; {' and '.join(NEVER_SURE)}: never sure) the "
                     f"confidence bar whose reads at or above it are at least {SURE:.0%} right on that era's truth, the "
                     f"{WINDOW} least sure of them too; per stat n, accuracy at the bar, share above it; 'discord_truth': "
                     f"the group's Discord pictures alone: their bar (the higher of the group's and their own truth's "
@@ -1194,9 +1205,10 @@ def main(argv=None):
     ap = ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("step", choices=("truth", "read", "calibrate", "add", "versions"))
     ap.add_argument("--root", default=dm.DEFAULT_ROOT)
-    ap.add_argument("--old-git", default=dm.OLD_GIT)
+    ap.add_argument("--old-git", default=dm.old_store())
     ap.add_argument("--workers", type=int, default=2)
-    ap.add_argument("--only", choices=("discord", "oldgit"), help="read: these pictures again, the others' rows kept")
+    ap.add_argument("--only", choices=("discord", "oldgit", "oldgit-new"),
+                    help="read: these pictures again, the others' rows kept (oldgit-new: unread old repo versions)")
     ap.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC, help="versions: the card repo clone (stored blobs only)")
     a = ap.parse_args(argv)
     root, old_git = expanduser(a.root), expanduser(a.old_git)

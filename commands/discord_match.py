@@ -70,6 +70,13 @@ PAIRS_VERSION = 4
 STATS_FILE = "db/stats.json"                      # the data branch's card data
 CARD_TOPS = ("Creatures", "Items", "Field", "N.M.E", "Auxiliary")   # tts_save.CARD_FOLDERS
 OLD_GIT = "~/Downloads/Old TTSCardMaker/.git"     # the pre-wipe repo: read only
+FIRST_GIT = "~/Documents/Tools/firstrepo.git"      # the first repo (read only; its alternates: the old .git's objects)
+
+
+def old_store() -> str:
+    """The store of the old repo's blobs: the first repo's (both repos' objects) when fetched, else the old .git."""
+    first = expanduser(FIRST_GIT)
+    return first if exists(join(first, "objects", "info", "alternates")) else OLD_GIT
 OLD_CUTOFF = 1699254922                           # TTSCardMaker's last 'init' (36d62e53): old commits after it unused
 OLDGIT = ("derived", "oldgit")                    # the old-git pass's outputs under the root
 CATALOGUE = ("derived", "catalogue", "channels.json")   # the channel pass's kinds (meme/joke: the morgue)
@@ -864,7 +871,9 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
     rows = read_jsonl(join(base, "versions.jsonl"))
     if not rows:
         return []
-    maps = old_maps(read_json(join(base, "map.json"), {}) or {})
+    raw = read_json(join(base, "map.json"), {}) or {}
+    maps = old_maps(raw)
+    known = set((raw.get("cards") or {}) if isinstance(raw, dict) else ())   # old cards the map holds, lost ones too
     by_key = {edit_key(c.get("key")): cid for cid, c in cards.items()}
     found, skipped = [], Counter()
     for row in rows:
@@ -880,20 +889,20 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
         key, sure = first_of(row, "today", "today_key", "key"), True
         if not key or edit_key(key) not in by_key:
             old = first_of(row, "old_id", "card", "old_key", "name") or file_name(path)
-            key, sure = next((maps[k] for k in (path, row.get("lineage"), old, edit_key(old)) if k and k in maps),
-                             (None, False))
+            tries = (old,) if old in known else (path, row.get("lineage"), old, edit_key(old))   # a lost old card
+            key, sure = next((maps[k] for k in tries if k and k in maps), (None, False))  # never another's name
         cid = by_key.get(edit_key(key or ""))
         if cid is None or not sure:
             skipped["unsure map" if cid else "no card today"] += 1
             continue
         found.append({"card": cid, "path": path, "blob": blob, "commit": first_of(row, "commit", "sha1", "rev"),
-                      "ts": ts, "old": True})
+                      "ts": ts, "old": True, "repo": row.get("repo") or "old"})
     log(f"old repo: {len(found)} versions of {len({v['card'] for v in found})} cards"
         + (" (left out: " + ", ".join(f"{k} {n}" for k, n in skipped.items()) + ")" if skipped else ""))
     return found
 
 
-VERSION_KEYS = ("key", "feat", "card", "commit", "ts", "current", "path", "old", "source")
+VERSION_KEYS = ("key", "feat", "card", "commit", "ts", "current", "path", "old", "source", "repo")
 
 
 def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", old_git: str = OLD_GIT,
@@ -902,14 +911,16 @@ def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", ol
     first record): {key, feat (the features' cache key: the blob), card, path, blob, commit, ts, current, old, source};
     source None: in neither store and not downloaded. Sets each card's fs, its first record: its oldest old-repo
     version, else its oldest TTSCardMaker one. mode: all; oldest (and the current); none (the current only)."""
+    old_git = old_store() if old_git == OLD_GIT else old_git
     tc = tc_versions(cards_repo, cards)
     old = old_versions(root, cards, log)
     for found, source in ((tc, "git"), (old, "old git")):     # the old repo's first, else TTSCardMaker's
         first: dict = {}
         for v in found:
-            first[v["card"]] = min(v["ts"], first.get(v["card"], v["ts"]))
-        for cid, ts in first.items():
-            cards[cid]["fs"], cards[cid]["fs_from"] = ts, source
+            if v["card"] not in first or v["ts"] < first[v["card"]]["ts"]:
+                first[v["card"]] = v
+        for cid, v in first.items():                           # the first repo's: 'first git'
+            cards[cid]["fs"], cards[cid]["fs_from"] = v["ts"], "first git" if v.get("repo") == "first" else source
     per: dict = {}
     for v in sorted(old + tc, key=lambda v: v["ts"]):     # each blob dated by its first record
         per.setdefault((v["card"], v["blob"]), v)
@@ -1379,6 +1390,13 @@ def load_posts(root: str) -> tuple:
             images.append({"key": f"{record['id']}:{mid}", "message": record["id"], "media": mid,
                            "file": stored, "sha256": entry["sha256"], "filename": entry.get("filename"),
                            "kind": kind})
+    from commands.discord_documents import document_pictures    # card documents' pictures (docx cells, pdn)
+    for row in document_pictures(root):
+        if row["message"] in records:
+            mid = f"{row['doc']}-c{row['n']}"
+            images.append({"key": f"{row['message']}:{mid}", "message": row["message"], "media": mid,
+                           "file": row["file"], "sha256": row["sha256"], "filename": row.get("filename"),
+                           "kind": "document"})
     return records, images
 
 
@@ -1875,6 +1893,7 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr
         pairs = {"version": PAIRS_VERSION, "generated": now_iso(), "ocr": ocr, "versions_mode": versions,
                  "cards": cards, "versions": [{**{k: v[k] for k in ("key", "card", "commit", "ts", "current", "path",
                                                                      "old", "whole", "art", "shape")},
+                                               **({"repo": v["repo"]} if v.get("repo") == "first" else {}),
                                                "title": " ".join(t for t, c in v.get("title") or [] if c >= 0.3),
                                                "look": looks.get(v["key"], 0),
                                                "thumb": thumbs[v["key"]]} for v in versions_found],

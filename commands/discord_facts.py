@@ -29,21 +29,23 @@ build   Under the archive root's derived/facts/:
 sample  Prints n random lines that gave facts, with their facts, for an eye check (terminal only).
 A card is named by today's names (stats.json keys, titles, display and website names, file names) or by an old name
 through the old repo's sure renames (derived/oldgit/map.json) or the Discord-era names the timelines settled (the
-Morgue's renamed entries, eye.json 'titled', the owner's owner.json old_names, some with a time limit); never through
-an alias, and no alias is written. The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too:
+Morgue's renamed entries, eye.json 'titled', the owner's owner.json old_names, some with a time limit), or a line's
+short form told by eye (derived/facts/eye_lines.json: line id -> card, form; the general matcher is not loosened); never
+through an alias, and no alias is written. The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too:
 OCR'd, each 'Name (Buff/Nerf/Rework)' entry a changelog line '<message>:img<n>' (no text kept).
 Facts stop at the card repo's population (2023-11-05 23:15 PST); push notices at the old repo's first commit.
 """
 from argparse import ArgumentParser
 from collections import Counter
 from copy import copy
+from html import unescape
 from itertools import chain
 from datetime import datetime, timezone
 from hashlib import sha1
 from json import dumps, loads
 from os.path import basename, exists, expanduser, join, splitext
 from random import Random
-from re import IGNORECASE, compile as re_compile, finditer, fullmatch, match, sub
+from re import IGNORECASE, compile as re_compile, escape, finditer, fullmatch, match, sub
 from typing import Iterable, Optional
 from unicodedata import normalize
 
@@ -177,7 +179,11 @@ BAR_WORD = re_compile(r"\bbars?\b", IGNORECASE)
 MORGUE = ("derived", "morgue", "candidates.json")         # the Morgue's renamed entries: old names (evidence only)
 MATCH_EYE = ("derived", "match", "eye.json")              # renamed first looks told by eye ('titled')
 OWNER_FILE = ("derived", "review", "owner.json")          # the owner's rulings outside the review page (old_names)
+EYE_LINES = ("derived", "facts", "eye_lines.json")        # lines naming a card by a short form, told by eye
 CHANGELOG_PICTURES = ("325fb3259b34", "5ba4057218a4", "39ea31046541")   # 2019 balance changes posted as pictures
+CHANGELOG_DOCUMENTS = ("6655b62e4972",)     # 2019-03-22 February balance changes (docx); by eye, not changelogs: the
+                                            # 2021 'Low priority changes' (a to-do list of class lines), the .txt files
+                                            # (an encounter's rules, git-sizer reports)
                                                           # (general-discussion; an OCR scan of every pre-git none, art,
                                                           # unsure and lost picture found no others: critic round 4)
 OCR_BIN = ("derived", "readers", "text", "bin", "ocr")    # the text readers' Vision CLI (timeline_text.ocr_bin)
@@ -931,6 +937,7 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True)
     if chat:
         titles = chat_channels(root)
         channels += [(c, "chat") for c in sorted(titles)]
+    told = (read_json(join(root, *EYE_LINES), {}) or {}).get("lines") or {}
     for channel, source in channels:
         for m in messages(root, channel):
             if iso(m["timestamp"]) >= TC_CUT or not human(m) or not (m.get("content") or "").strip():
@@ -942,7 +949,12 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True)
             for n, line in enumerate(m["content"].split("\n")):
                 if not line.strip():
                     continue
+                eye = told.get(f"{m['id']}:{n}")
+                if eye and source == "changelog":               # a short form told by eye: the card's name read
+                    line = sub(r"(?i)(?<![\w])" + escape(eye["form"]) + r"(?![\w])", lambda _: eye["card"], line, count=1)
                 got = parse_line(line, at, vocabulary, source, carry)
+                if eye and source == "changelog":
+                    got["eye"] = True
                 carry = got["heading"] or (carry if got.get("carried") or got["why"] == "no card" else None)
                 yield source, channel, m.get("channel_name") or titles.get(channel, (channel,))[0], m, n, line, got
 
@@ -1039,10 +1051,40 @@ def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> 
         p.wait()
 
 
+def document_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> Iterable[tuple]:
+    """(source, channel id, channel name, message, 'doc<n>', entry text, parse) of the changelog documents
+    (CHANGELOG_DOCUMENTS: docx, its 'Name (Buff|Nerf|Rework) change' paragraphs; read in memory, no text stored)."""
+    import zipfile
+    files = {a["sha256"][:12]: a for a in read_jsonl(join(root, "attachments.jsonl"))
+             if str(a.get("sha256", ""))[:12] in CHANGELOG_DOCUMENTS and a.get("file")}
+    for pid in CHANGELOG_DOCUMENTS:
+        a = files.get(pid)
+        m = next((m for m in messages(root, a["container_id"]) if m["id"] == a["message_id"]), None) if a else None
+        if not m:
+            counts["changelog documents: not in the archive"] += 1
+            continue
+        with zipfile.ZipFile(join(root, a["file"])) as z:
+            xml = z.read("word/document.xml").decode("utf-8", "replace")
+        paras = ["".join(t for t in finditer_text(p)) for p in xml.split("</w:p>")]
+        counts["changelog documents"] += 1
+        at, n = names.at(iso(m["timestamp"])), 0
+        for text in (unescape(p).strip() for p in paras):
+            got = HEAD.match(text)
+            if got:
+                yield ("changelog", a["container_id"], m.get("channel_name") or a["container_id"], m, f"doc{n}",
+                       text, picture_line(got["head"].strip(), got["rest"].strip(), at, names, vocabulary))
+                n += 1
+
+
+def finditer_text(xml: str) -> Iterable[str]:
+    """A docx paragraph's text runs."""
+    return (m.group(1) for m in finditer(r"<w:t(?:\s[^>]*)?>([^<]*)</w:t>", xml))
+
+
 def line_order(line_id: str) -> int:
-    """A line id's place in its message ('<message>:<n>', a picture's '<message>:img<n>')."""
+    """A line id's place in its message ('<message>:<n>', a picture's '<message>:img<n>', a document's ':doc<n>')."""
     part = line_id.split(":")[1]
-    return int(part[3:]) if part.startswith("img") else int(part)
+    return int(part[3:]) if part.startswith(("img", "doc")) else int(part)
 
 
 def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True, log=print) -> dict:
@@ -1051,7 +1093,8 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True
     kinds = {c: kind for c, (_, kind) in chat_channels(root).items()}
     messages_seen = set()
     seen = set()
-    lines = chain(changelog_lines(root, names, vocabulary), picture_lines(root, names, vocabulary, counts))
+    lines = chain(changelog_lines(root, names, vocabulary), picture_lines(root, names, vocabulary, counts),
+                  document_lines(root, names, vocabulary, counts))
     for source, channel, cname, m, n, line, got in lines:
         counts[f"{source} lines"] += 1
         if m["id"] not in messages_seen:
@@ -1068,6 +1111,8 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True
                     "card": f["card"], "date": iso(m["timestamp"]), "channel": cname, "channel_id": channel,
                     "source": source, "message": m["id"], "line": line_id,
                     **{k: v for k, v in f.items() if k != "card" and v is not None}, "confidence": confidence}
+            if got.get("eye"):
+                fact["named"] = "eye"                          # the card told by eye (EYE_LINES)
             if source == "chat":
                 fact["channel_kind"] = kinds.get(channel)
             if f["card"] and f["card"].startswith(("archived:", "morgue:")):

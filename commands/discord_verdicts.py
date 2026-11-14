@@ -70,6 +70,11 @@ MORGUE_DIR = "MDW/The Morgue/"                   # build_site MORGUE: retired ca
 PAPER_IDS = {"1331913819563360288"}            # 'Old stuff' thread: photos of paper cards (owner Q6=A: never dates)
 PLAYED_KINDS = {"port", "update"}               # the catalogue's kinds whose pictures were played (owner Q2=A)
 PLAYED_NAMES = {"card-classification", "minion classification"}
+SHOWN_FIRST = re_compile(r"port|update-\d+-port|card-classification|ideas-discussion|new-cards")   # a look shown
+                                                # there before its meme repost is the card's look, not a joke
+MORGUE_EYE = ("derived", "morgue", "eye.json")
+JOKE_ASKED = {"zero-two": "the Morgue's anime Zero Two", "fireball": "Fireball (Mario)",
+              "mr-softener": "the joke edit Mrs. Softener", "nme-stock2": "NME Stock"}   # open owner questions: kept
 CHANGELOG_KINDS = {"update"}
 CARD_CLASSES = {"ps1200", "gen400", "gen350", "shot", "cardshape", "photo"}   # the catalogue's card picture sizes
 SURE_CLASSES = ("version_sure", "version_unsure", "draft")
@@ -1017,6 +1022,38 @@ def joke_pictures(images: dict, by_sha: dict, records: dict, morgue: set) -> set
     return found
 
 
+def meme_dates(images: dict, by_sha: dict, records: dict, morgue: set) -> dict:
+    """{sha256: its first post in a meme channel, or a twin's (whole within TWIN_BITS)} (message ids: in time)."""
+    own = {}
+    for sha, keys in by_sha.items():
+        ids = [int(images[k]["message"]) for k in keys if dm.in_morgue(records[images[k]["message"]], morgue)]
+        if ids:
+            own[sha] = min(ids)
+    sha_of = {k: i["sha256"] for k, i in images.items()}
+    found = {}
+    for sha, keys in by_sha.items():
+        near = [own[sha_of[t]] for t, whole, _ in images[keys[0]].get("twins") or []
+                if sha_of.get(t) in own and whole <= dm.TWIN_BITS]
+        dates = ([own[sha]] if sha in own else []) + near
+        if dates:
+            found[sha] = min(dates)
+    return found
+
+
+def shown_first(row: dict, image: dict, memes: dict) -> None:
+    """A card's picture (a draft, or a look not told) shown in a played or card channel (SHOWN_FIRST) before any meme
+    repost of it is the card's, dated by its other posts: no joke picture (JOKE_ASKED: kept for the owner's open
+    questions)."""
+    if not row.get("joke") or row["verdict"] not in ("draft", "version_unsure") or not row.get("card") or \
+            row["card"] in JOKE_ASKED:
+        return
+    posts = sorted((p for p in row["posts"] if dating(p)), key=lambda p: int(p["message"]))
+    meme = memes.get(row["sha256"])
+    if posts and meme and SHOWN_FIRST.fullmatch(posts[0]["channel"] or "") and int(posts[0]["message"]) < meme:
+        row.update(joke=False, shown_first={"channel": posts[0]["channel"], "date": posts[0]["date"]})
+        row.pop("joke_draft", None)
+
+
 def repost_groups(rows: list, images: dict, by_sha: dict) -> dict:
     """{picture id: the earliest picture id of its reposts}: pictures the same image (whole within TWIN_BITS) that
     show one card's one git look (version_sure both): another version or a look-alike card is never a repost."""
@@ -1304,8 +1341,13 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
             by_eye(row, eye[row["id"]] or {}, versions, cards)
         by_owner(row, owner, versions, cards)
     reposts = repost_groups(rows, images, by_sha)
+    memes = meme_dates(images, by_sha, records, morgue)
+    morgue_eye = {k for k, e in (dm.read_json(join(root, *MORGUE_EYE), {}) or {}).items()   # the Morgue eye's own
+                  if isinstance(e, dict) and e.get("status") not in ("renamed", "live")}   # lost cards
     for row in rows:
         image = images[by_sha[row["sha256"]][0]]
+        if group_id(row["sha256"], row.get("cell")) not in morgue_eye:      # its eye's entry: stays the Morgue's
+            shown_first(row, image, memes)
         row["size_class"] = classes.get(row["sha256"])
         if row.get("cell") is None:
             row.update(whole=image.get("whole"), art=image.get("art"))
@@ -1339,7 +1381,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
              "methods", "maybe",
              "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
-             "title_read", "card_evidence", "joke_draft", "posts"]
+             "title_read", "card_evidence", "joke_draft", "shown_first", "posts"]
     rows.sort(key=lambda r: (min(int(p["message"]) for p in r["posts"]), r.get("cell") or 0))
     dm.write_text(paths.verdicts, "".join(dm.dumps({k: r[k] for k in order if r.get(k) not in (None, [], "")} |
                                                    {"joke": r["joke"]}, ensure_ascii=False) + "\n" for r in rows))
@@ -1653,7 +1695,7 @@ def eye_keys(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
     keys = {pid: r["look"] for pid, r in eye.items() if r.get("look") not in (None, "draft")}
     versions = {v["key"]: v for v in (dm.read_json(paths.matcher.pairs, {}) or {}).get("versions") or []}
     rows = {r["id"]: r for r in dm.read_jsonl(paths.verdicts) if r["id"] in keys}
-    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    stores = {True: expanduser(dm.old_store()), False: dm.git_dir_of(cards_repo)}
     out = join(paths.checks, "eye-keys")
     makedirs(out, exist_ok=True)
     found = []
@@ -1821,25 +1863,31 @@ def local_task(job: dict) -> list:
     return rows
 
 
-def local(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, log: Callable = print) -> dict:
+def local(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, log: Callable = print,
+          before_git: bool = False) -> dict:
     """local.jsonl: each card-sure picture of verdicts.jsonl against every stored git version of its card (old repo,
     card repo: never a lazy fetch), eyekeys' local diff and the aspect ratio; cached (only new pairs computed, the
-    unstored tried again)."""
+    unstored tried again). before_git: only pictures posted before their card's first git record (the timelines'
+    part; a picture left with a version uncompared is never a local draft)."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
     from multiprocessing import get_context
     from os.path import expanduser
     root = dm.check_root(root)
     paths = Paths(root)
     members = defaultdict(list)
-    for v in (dm.read_json(paths.matcher.pairs, {}) or {}).get("versions") or []:
+    pairs = dm.read_json(paths.matcher.pairs, {}) or {}
+    for v in pairs.get("versions") or []:
         members[v["card"]].append(v)
-    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    first = {cid: c.get("fs") for cid, c in (pairs.get("cards") or {}).items()}
+    stores = {True: expanduser(dm.old_store()), False: dm.git_dir_of(cards_repo)}
     path = join(root, *LOCAL)
     have = {r["id"]: r for r in dm.read_jsonl(path)}
     todo = defaultdict(list)
     for row in dm.read_jsonl(paths.verdicts):
         cid = row.get("card")
         if row["verdict"] not in SURE_CLASSES or not cid:
+            continue
+        if before_git and first.get(cid) and (dm.epoch((row.get("first") or {}).get("date")) or 0) >= first[cid]:
             continue
         old = have.get(row["id"]) if (have.get(row["id"]) or {}).get("card") == cid else None
         done = set((old or {}).get("versions") or {})
@@ -1869,8 +1917,9 @@ def local(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, log: 
                                  "missing": sorted(r["missing"]),
                                  "aligned": sorted({*(old.get("aligned") or []), *r["aligned"]})}
                 done += 1
-            if i % 50 == 0 or i == len(jobs):
+            if i % 25 == 0 or i == len(jobs):
                 log(f"local: {i}/{len(jobs)} cards")
+                dm.write_text(path, "".join(dm.dumps(have[k], ensure_ascii=False) + "\n" for k in sorted(have)))
     dm.write_text(path, "".join(dm.dumps(have[k], ensure_ascii=False) + "\n" for k in sorted(have)))
     rows = list(have.values())
     tally = {"pictures": len(rows), "compared now": done, "with a missing version": sum(1 for r in rows if r.get(
@@ -1894,7 +1943,7 @@ def localtest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, workers: int = 3, l
     members = defaultdict(list)
     for v in pairs.get("versions") or []:
         members[v["card"]].append(v)
-    stores = {True: expanduser(dm.OLD_GIT), False: dm.git_dir_of(cards_repo)}
+    stores = {True: expanduser(dm.old_store()), False: dm.git_dir_of(cards_repo)}
     jobs = [{"card": cid, "looks": {v["key"]: v.get("look", 0) for v in vs},
              "versions": [(v["key"], stores[bool(v.get("old"))], f"{v['commit']}:{v['path']}") for v in vs]}
             for cid, vs in sorted(members.items()) if len({v.get("look", 0) for v in vs}) > 1]
@@ -2081,6 +2130,8 @@ def main(argv: Optional[list] = None) -> int:
             p.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC)
         if name in ("local", "localtest"):
             p.add_argument("--workers", type=int, default=3)
+        if name == "local":
+            p.add_argument("--before-git", action="store_true", help="only pictures before their card's first git record")
         if name == "localtest":
             p.add_argument("--sample", type=int, default=0, help="this many cards (seeded), every copy kept")
         if name == "checks":
@@ -2098,7 +2149,7 @@ def main(argv: Optional[list] = None) -> int:
     elif args.command == "eyekeys":
         eye_keys(args.root, args.cards_repo, log)
     elif args.command == "local":
-        local(args.root, args.cards_repo, args.workers, log)
+        local(args.root, args.cards_repo, args.workers, log, args.before_git)
     elif args.command == "localtest":
         localtest(args.root, args.cards_repo, args.workers, log, args.sample)
     else:

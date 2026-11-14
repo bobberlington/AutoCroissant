@@ -436,6 +436,18 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     for x in entries.values():
         drop = set(x["eye"].get("drop") or [])
         x["pictures"] = [p for p in dict.fromkeys(x["pictures"] + list(x["eye"].get("add") or [])) if p not in drop]
+    first_files = {plain(f["name"]): f for f in (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("first_repo") or []}
+    for x in entries.values():                  # a file of that name in the first repo: played (owner Q2: a repo file)
+        if x["status"] not in (CANDIDATE, IDEA):
+            continue
+        names = {x["eye"].get("name"), x.get("title"), (x["group"] or {}).get("title"), (x["old"] or {}).get("old_id")}
+        hit = next((first_files[plain(n)] for n in sorted(names - {None, ""}) if plain(n) in first_files), None)
+        if hit:
+            x["first_repo"] = hit
+            if x["status"] == IDEA and not hit.get("mdw"):     # MDW/: unfinished then, no proof it was played
+                x.update(status=CANDIDATE, was_idea=True)
+                if any("/Meme/" in p for p in hit["paths"]):     # the repo's meme folder: a joke card (Q1)
+                    x["eye"] = {**x["eye"], "kind": x["eye"].get("kind") or "joke"}
     twins = twin_finder(rows)
     for x in entries.values():                  # twins of listed rows: taken by eye, else review
         if x["status"] not in (CANDIDATE, IDEA):
@@ -531,6 +543,10 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
         why += [f"{'an' if c[:1] in 'aeiou' else 'a'} {c} picture ({d})" for c, d in played]
         if kind == "played" and g.get("changelog_days"):
             why.append(f"named in update changelogs on {', '.join(g['changelog_days'][:6])}")
+        if x.get("first_repo"):
+            f = x["first_repo"]
+            why.append(f"the first repo's file {f['paths'][0]} ({f['first']['date'][:10]})" +
+                       (", an idea until this was found" if x.get("was_idea") else ""))
         if old:
             end = (old.get("deleted") or {}).get("date") or (old.get("last") or {}).get("date")
             why.append(f"the old repo's file {old['paths'][0]} ({old['first']['date'][:10]} .. {(end or '')[:10]}"
@@ -578,7 +594,10 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "pictures": pics, "thumb": pics[0]["thumb"] if pics else None,
              "nearest": nearest, "nearest_look": near_look, "nearest_name": near_name,
              "played": [{"channel": c, "date": d} for c, d in played], "changelog_days": g.get("changelog_days") or [],
-             "card_evidence": g.get("card_evidence") or ("the old repo's file" if old else None),
+             "card_evidence": g.get("card_evidence") or ("the old repo's file" if old else None) or
+             ("the first repo's file" if x.get("first_repo") else None),
+             "first_repo": {"paths": x["first_repo"]["paths"][:3], "date": x["first_repo"]["first"]["date"],
+                            "mdw": bool(x["first_repo"].get("mdw"))} if x.get("first_repo") else None,
              "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
              if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
              "weak": True if e.get("weak") else None, "twins": x.get("twins"), "made": bool(x.get("made")) or None,

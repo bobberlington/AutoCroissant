@@ -420,7 +420,7 @@ def main(argv: Optional[list] = None) -> int:
     ap = ArgumentParser(prog="python -m commands.header_types", description="Types by the git versions' header.")
     ap.add_argument("step", choices=("calibrate", "read", "eye"))
     ap.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
-    ap.add_argument("--old-git", default=dm.OLD_GIT)
+    ap.add_argument("--old-git", default=dm.old_store())
     ap.add_argument("--n", type=int, default=400)
     a = ap.parse_args(argv)
     root = dm.check_root(a.root)

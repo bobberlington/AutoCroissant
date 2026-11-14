@@ -47,6 +47,7 @@ BAR_TRUTH = join(DERIVED, "readers", "bars", "truth")   # the bar readers' by-ey
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
+FIRST_BADGE = "first repo"  # the first repo's versions (oldgit_index: 2022-08-24..2023-04-21, refound on GitHub)
 STAT_KINDS = ("creature", "minion")
 ITEM_KINDS = ("item", "aux item", "nme")      # some print HP/DEF bars (Blockade)
 ABILITY_KINDS = ("creature", "minion", "item", "aux item", "field", "buff", "debuff", "nme")
@@ -121,7 +122,7 @@ def kind_of(path: str) -> str:
     p = path.lower()
     for part, kind in (("/minions/", "minion"), ("debuffs/", "debuff"), ("buffs/", "buff"), ("auxillary/items/", "aux item"),
                        ("auxiliary/items/", "aux item"), ("creatures/", "creature"), ("items/", "item"), ("field/", "field"),
-                       ("n.m.e/", "nme")):
+                       ("n.m.e/", "nme"), ("cards/", "creature")):     # Cards/: the first repo's creatures
         if part in p or p.startswith(part):
             return kind
     return "unknown"
@@ -423,7 +424,7 @@ _W: dict = {}
 
 def w_picture_init():
     import subprocess
-    oi._W["cat"] = subprocess.Popen(oi.OG + ["cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    oi._W["cat"] = subprocess.Popen(oi.STORE + ["cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 
 # ========================
@@ -1034,7 +1035,7 @@ def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
     first = psds[0]
     off = picture_off(data, first["blob"], pngs[0]["blob"])
     found = {"ts": first["ts"], "date": first["date"], "commit": first["commit"], "blob": first["blob"],
-             "path": first["path"], "author": data.authors.get(first["author"], first["author"]),
+             "path": first["path"], "author": first.get("author_mapped") or data.authors.get(first["author"], first["author"]),
              "subject": first["subject"], "off": off}
     return found, first if off is not None and off > SAME_PICTURE else None
 
@@ -1060,7 +1061,8 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
             psd, pick, off = pick_psd(data, png, psds, until)
         fields, kind, two, note = check_fields(data, png, psd, pick, off, today)
         row = {"id": png["id"], "card": key, "old_id": png["old_id"], "date": png["date"], "ts": png["ts"],
-               "author": data.authors.get(png["author"], png["author"]), "subject": png["subject"], "badge": BADGE,
+               "author": png.get("author_mapped") or data.authors.get(png["author"], png["author"]), "subject": png["subject"],
+               "badge": FIRST_BADGE if png.get("repo") == "first" else BADGE, "repo": png.get("repo") or "old",
                "link": None, "commit": png["commit"], "path": png["path"], "blob": png["blob"], "kind": png["kind"],
                "new_look": png["new_look"], "thumb": f"oldgit/thumbs/{png['blob']}.webp", "card_kind": kind,
                "fields": fields, "psd": note}
@@ -1096,11 +1098,14 @@ def unsure(row: dict) -> list:
 
 
 def review_items(rows: list, kind: str = "field") -> list:
-    """One item per row and field that is not sure."""
+    """One item per row and field that is not sure (a first-repo row with no PSD: only fields its picture proposes)."""
     items = []
     for row in rows:
         for name in unsure(row):
             f = row["fields"][name]
+            if row.get("repo") == "first" and (row.get("psd") or {}).get("read", "unread") == "unread" and \
+                    f.get("value") in (None, ""):
+                continue                                       # nothing read to confirm (its PSD not fetched)
             items.append({"id": "oldrows-" + stable_id(kind, row["id"], name), "kind": f"{name} unsure", "card": row["card"],
                           "row": row["id"], "date": row["date"], "thumb": row["thumb"], "field": name,
                           "proposed": f.get("value"), "why": f.get("why"),
@@ -1299,7 +1304,7 @@ def sample_main(n: int, seed: int = SEED):
     font = ImageFont.load_default(size=17)
     tiles = []
     for i, row in enumerate(picked):
-        with Image.open(BytesIO(oi.git(oi.OG, "cat-file", "blob", row["blob"]))) as im:
+        with Image.open(BytesIO(oi.git(oi.STORE, "cat-file", "blob", row["blob"]))) as im:
             card = im.convert("RGBA")
         flat = Image.new("RGBA", card.size, (0, 0, 0, 255))
         flat.alpha_composite(card)

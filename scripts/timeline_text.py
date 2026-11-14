@@ -47,6 +47,8 @@ if AC not in sys.path:
 ROOT = join(HOME, "Documents/Tools/discord-archive")
 OUT = join(ROOT, "derived/readers/text")
 OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
+if exists(join(HOME, "Documents/Tools/firstrepo.git/objects/info/alternates")):   # both repos' objects (read only)
+    OLD_GIT = join(HOME, "Documents/Tools/firstrepo.git")
 TC = join(HOME, "Desktop/TTSCardMaker")
 OLD_ICONS = ("86cd22b2d86586d51464d7cfe4e59ca3dc0fca46", "268c2b12")   # the old repo's first and last Types/ trees
 CARD_CLASSES = ("ps1200", "gen400", "gen350", "shot", "cardshape")      # the catalogue's card-shaped pictures

@@ -18,8 +18,8 @@ import re
 from collections import Counter, defaultdict
 from os.path import basename, dirname, join, splitext
 
-from oldgit_index import (OG, OUT, TC_INIT, TENV, TG, alnum, ext_of, folder_stem, git, log, ls_tree, read_jsonl,
-                          stem_key, today_cards, write_json)
+from oldgit_index import (FG, OG, OUT, STORE, TC_INIT, TENV, TG, alnum, ext_of, folder_stem, git, log, ls_tree,
+                          read_jsonl, stem_key, today_cards, write_json)
 
 REPORT = os.path.expanduser("~/Documents/Tools/wt/scratch/s1110/timelines/oldgit.txt")
 CARD_EXTS = ("*.png", "*.PNG", "*.psd", "*.PSD")
@@ -30,6 +30,7 @@ PICTURE_NEAR = 9.0          # bits: near enough to back a name or a path
 PICTURE_GAP = 4.0           # bits: a picture match with nothing else behind it (an unsure one) beats the runner-up by
 OLD_WORD = re.compile(r"(^|_| )old(_| |$)", re.IGNORECASE)
 BACKUP = re.compile(r"(^|[_ -])(copy|bak|backup)([_ -]|$)", re.IGNORECASE)
+SECOND = re.compile(r"^(.*?\D)[ _]?([2-9])$")   # 'Grapes2', 'Bag_of_Good 2': a card's second picture file
 
 
 # ========================
@@ -323,6 +324,9 @@ def map_main():
     cards, by_key, review = {}, defaultdict(list), []
     for oid, old in index["old_cards"].items():
         mine = sorted(by_old[oid], key=lambda v: position[v["commit"]])
+        first_only = all(v.get("repo") == "first" for v in mine)
+        if not first_only:                                     # the old repo's evidence alone, as before the first repo
+            mine = [v for v in mine if v.get("repo") != "first"]
         stems = sorted({splitext(basename(p))[0] for p in old["paths"]})
         looks, thumbs = [], []
         for v in reversed(mine):
@@ -436,6 +440,9 @@ def map_main():
             if old_copy and not path_target:
                 why.append("an old copy ('Old' in the file name)")
             confidence = "unsure" if why else "sure"
+        if first_only and confidence == "unsure" and any("/Meme/" in p for p in old["paths"]):
+            target, confidence, why = None, None, []           # a meme folder's copy (a joke on a live card): evidence
+            evidence["meme_copy"] = True                       # for the Morgue's joke cards, never a live card's map
         if not target:                                         # moved into MDW/The Morgue: today's Morgue card
             for blob in [d["blob"] for d in old["deleted"]] + list(old["at_end"].values()):
                 for p in morgue_old.get(blob, ()):
@@ -465,6 +472,13 @@ def map_main():
         if last_read:
             record["read"] = {k: last_read.get(k) for k in ("title", "type", "stars", "types", "stats")}
         cards[oid] = record
+        if not target and first_only:                         # the first repo's 'Grapes2': a second picture of a card
+            base = SECOND.match(stems[0]) if len(stems) == 1 else None
+            hit = names.get(alnum(base.group(1))) if base else None
+            if hit and len(hit) == 1 and next(iter(hit))[0] == "live":
+                record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
+        if first_only:
+            record["repo"] = "first"
         if target:
             by_key[f"{target[1]}" if target[0] == "live" else f"{target[0]}:{target[1]}"].append(oid)
         if confidence == "unsure":
@@ -489,9 +503,13 @@ def map_main():
                  "Picture distances in bits of 64 (discord_match.hash_distance).",
         "today": {"main": head, "cards": len(stats)}, "summary": summary, "review": sorted(review),
         "by_key": {k: sorted(v) for k, v in sorted(by_key.items())}, "cards": cards})
-    lost = []
+    lost, first_lost = [], []
     for oid, c in sorted(cards.items(), key=lambda kv: kv[1]["first"]["date"]):
         if c["status"] != "lost":
+            continue
+        if c.get("repo") == "first":                          # evidence only (played files): no candidate of its own
+            first_lost.append({"old_id": oid, "name": oid, "paths": c["paths"], "first": c["first"],
+                               "last": c["last"], "note": c.get("note"), "thumb": c["thumb"]})
             continue
         mine = sorted(by_old[oid], key=lambda v: position[v["commit"]])
         lost.append({"id": picture_id("OL", mine), "old_id": oid, "paths": c["paths"], "first": c["first"],
@@ -501,9 +519,33 @@ def map_main():
     write_json(join(OUT, "lost.json"), {
         "about": "Old cards with no counterpart among today's, archived or Morgue cards: Morgue candidates "
                  "(owner 11-13). id: stable, from the oldest picture's blob (OL-<10 hex>). "
-                 "nearest: the closest pictures, for the owner's check.", "cards": lost})
+                 "nearest: the closest pictures, for the owner's check. first_repo: the first repo's card files "
+                 "(and its MDW/ files) of no live card, by name: evidence that a Morgue candidate of that name was "
+                 "played (a file in the game's repo), never a candidate of its own.",
+        "cards": lost, "first_repo": first_lost + first_mdw(index, {c["old_id"] for c in first_lost}, names)})
     log(f"map: {json.dumps(summary)}")
     return cards
+
+
+def first_mdw(index: dict, seen: set, names: dict) -> list:
+    """The first repo's MDW/ card files (pictures and PSDs) by name, a live card's name left out (an old copy of it):
+    {name, paths, first}, oldest first."""
+    if STORE is not FG:
+        return []
+    found = {}
+    for c in index["order"]:
+        meta = index["commits"][c]
+        if meta.get("repo") != "first":
+            continue
+        out = git(STORE, "ls-tree", "-r", "--name-only", "-z", c, "--", "MDW").decode("utf-8", "surrogateescape")
+        for path in out.split("\0"):
+            if ext_of(path) in ("png", "psd", "jpg") and "/" in path:
+                name = splitext(basename(path))[0].replace("_", " ")
+                got = found.setdefault(name, {"name": name, "paths": [], "first": {"commit": c, "date": meta["date"]},
+                                              "mdw": True})
+                if path not in got["paths"]:
+                    got["paths"].append(path)
+    return [f for n, f in found.items() if n not in seen and not any(t[0] == "live" for t in names.get(alnum(n), ()))]
 
 
 # ========================

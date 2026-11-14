@@ -560,6 +560,12 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     assert bs.history_shown({"field": "type", "to": "dark", "op": "remove"}, {"types": {"add": [], "drop": ["dark"]}})
     assert not [r for r in changes if r["ts"] == 1681948800]                         # confirmed: the old repo's nerf says it
     assert {"ts": 1685577600, "stats": [[3, 2, 4, 1], [3, 2, 3, 1]], "bal": "nerf", "early": "git", "approx": True} in changes
+    # the first repo's versions: old repo rows marked r 'first', their changes from 'first repo'
+    first = {"id": "O-0", "kind": "old repo", "repo": "first", "date": "2022-08-24T00:00:00+00:00", "author": "Maker",
+             "subject": "Initial commit", "fields": {}, "changes": {"stars": [2, 3]}}
+    assert bs.history_rows("alpha", {"entries": [first]})[0]["r"] == "first"
+    assert bs.history_stats({"entries": [first]}, "creature")["rows"][0]["early"] == "first repo"
+    assert bs.HISTORY_FROM["first repo"] == "first repo" and bs.HISTORY_FROM["changelog"] == "changelog"
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")

@@ -240,6 +240,22 @@ def owner_answers(inputs: Inputs) -> list:
     return out
 
 
+def premise_items(inputs: Inputs) -> list:
+    """Owner answers whose premise changed (the first repo's files found): open, in the answers section."""
+    out = []
+    for r in (r for r in inputs.chain if r["kind"] == "first repo premise"):
+        it = item(r["kind"], r["id"], "answers", None, "Q5 changed premise: the first repo's files were found",
+                  order=-1)
+        it["meta"] = [r.get("why") or "", f"{r.get('rows')} first-repo picture rows on {r.get('cards')} cards; "
+                      f"{r.get('stops')} timelines now stop at the first repo; of the {r.get('notices')} Q5 text rows, "
+                      f"{r.get('pictured')} became picture rows and {r.get('text_rows')} stay text rows (the rest come "
+                      "after a card's first first-repo record: its git history)"]
+        it["choices"] = [choice("yes", "keep: picture rows from the first repo (as built)"),
+                         choice("no", "no: text-only rows, as answered on 11-13")]
+        out.append(it)
+    return out
+
+
 def old_maps(inputs: Inputs) -> list:
     out = []
     for r in (r for r in inputs.old_review if r["kind"] == "unsure map"):
@@ -515,7 +531,8 @@ def created_item(inputs: Inputs, r: dict) -> dict:
     elif ours.get("commit"):
         e = next((e for e in (inputs.timelines.get(cid) or {}).get("entries") or [] if e.get("commit") ==
                   ours["commit"] and e.get("thumb")), None)
-        it["pics"].append(pic("../" + e["thumb"], f"ours {ours.get('day')} (old repo)") if e else None)
+        it["pics"].append(pic("../" + e["thumb"], f"ours {ours.get('day')} ({e.get('badge') or 'old repo'})")
+                          if e else None)
     hint = r.get("earlier_unsure")
     if hint:
         it["meta"].append(f"an earlier picture the matcher wasn't sure names it: {when(hint.get('date'))} "
@@ -641,7 +658,7 @@ def offered(it: dict, r: dict) -> bool:
 
 
 def gather(inputs: Inputs) -> list:
-    items = owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
+    items = premise_items(inputs) + owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]

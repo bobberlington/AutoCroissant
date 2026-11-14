@@ -1,6 +1,6 @@
 # Card timelines from Discord
 
-**Status:** stage 2 in progress (2026-11-13, gap round 4 11-14): mined, old repo indexed, matcher run over every
+**Status:** stage 2 in progress (2026-11-13, gap round 5 11-14: the first repo found on GitHub): mined, old repo indexed, matcher run over every
 post, fields read, chains and Created built, review page built; a local preview built (`discord_preview`, the
 website's `HISTORY_DIR`). Nothing published (preview first, owner 11-13).
 
@@ -28,10 +28,27 @@ the card's Image versions on the website before the git versions. Cards that nev
 
 ## Pipeline
 
+0. **The first repo** (2022-08-24..2023-04-21): the same GitHub repo's history before the old .git, cut by the
+   force-pushes of 2023-04-02 and 2023-04-21, still served by GitHub by commit id. Fetched read only (blobless, then its
+   card PNGs in one batched fetch) into a bare repo outside every repo (`~/Documents/Tools/firstrepo.git`; its
+   alternates read the old .git's objects, so one store holds both; its remote URL disabled: no lazy fetch).
+   `scripts/oldgit_index.py` indexes its main history before the old repo's as one history (its rows: repo 'first';
+   'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
+   2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old
+   card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
+   shared commit e-mail. Its PSDs are fetched only where needed (not yet: its rows read their fields off the picture).
+   Its rows carry the badge "first repo"; each card's timeline stops at its first first-repo record; a Q5 text row
+   whose commit now has a picture row is that row (the review page asks the owner to confirm the changed premise).
+   Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
+   (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card).
 1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads with Waxwell
    (the Mac's bot token, not production; owner 11-13), resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:
-   check free disk first.
+   check free disk first. `--files <json>` stores named non-image attachments of a few messages (documents, Paint.NET
+   files, zips), each message read again for a fresh URL. `commands/discord_documents.py` turns the card documents into
+   pictures dated by their post (a docx's page 1 drawn by QuickLook in `~/std-work-1107`, cut into its card cells as
+   `derived/documents/boxes.json` says; a .pdn's own composite), posts the matcher reads like any other (kind
+   'document').
 2. **Match** (`commands/discord_match.py`, restored 2026-11-13): each picture to a card by perceptual hashes of the card and
    its art against every version (`refs`: today's cards from the data branch, every git version of their PNGs in
    TTSCardMaker's history and the old pre-wipe repo's versions from `derived/oldgit`, else TTSCardMaker's alone), OCR'd title
@@ -58,7 +75,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    gate-made look over 10 from that look's stored versions isn't told (one area drawn otherwise: the eye decides);
    30 or more from every stored version (45 under 800 px wide), none made before the post left out and one of the
    look the matcher picked compared, is a draft.
-   `discord_verdicts localtest` sets those bars on every stored version's Discord (800 px) and small (360 px)
+   (`--before-git`: only pictures posted before their card's first git record, the timelines' part; one left with a
+   version uncompared is never a local draft.) `discord_verdicts localtest` sets those bars on every stored version's Discord (800 px) and small (360 px)
    copies: none that far from every version, none at 5 from another look.
    Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
    round 2's pictures on a card's Created day, single-candidate pictures before git and near-git looks of the cards
@@ -78,7 +96,10 @@ the card's Image versions on the website before the git versions. Cards that nev
    first picture evidence sets Created only through review (the chain lets one dated on or after the file's Created
    day in: it can't move Created). A joke picture that is a live card's (named so by its posts
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
-   Reposts link only pictures of one card's one look. Outputs under `derived/match/`.
+   Reposts link only pictures of one card's one look. A card-sure draft first posted in a card channel (port,
+   update-NN-port, card-classification, ideas-discussion, new-cards) before any meme repost of it (its own or a
+   twin's) is the card's look, not a joke picture (`shown_first`; the pictures behind open owner questions stay as
+   built). Outputs under `derived/match/`.
    Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
    cards really played: the owner's answers Q1, Q2), ideas never ported (review only) and the rest (already in
    MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card), each checked by eye
@@ -121,7 +142,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    boxes aren't known never matches; a repost whose header matches no git version keeps them off the look). On eras
    A-C (no git version prints them) one picture per card and era is typed by eye (`derived/readers/types/eye.json`)
    and carried to the card's other pictures of that era by the same score (`header_types eye`, method 'eye header';
-   the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Item and
+   the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Picked by-eye bar
+   readings (a truth file with `"calibrate": false`, gap round 5's reads in review) are their pictures' truth and never
+   fit a bar. Item and
    status eras count stars as yellow blobs in a row that fill their box as stars do, calibrated on eye truths (a
    yellow wall or backdrop: no count; the truths publish as 'eye'. On pictures with no truth the readers alone are
    sure on few of the status and B-item cards: 11-13, S 4 of 97, B-item 8 of 94, C-item 0 of 3, A-item 174 of
@@ -172,10 +195,13 @@ the card's Image versions on the website before the git versions. Cards that nev
    2019-03-31 and 2019-05-14: OCR'd, each 'Name (Buff/Nerf/Rework)' entry a line `<message>:img<n>`, no text kept; a
    head that is no card's name, or one the eye doubts, goes to review) and name cards by the old names the timelines
    settled too (the Morgue's renamed entries, eye.json `titled`, owner.json `old_names`; 'Frozen in time' meant
-   Standstill until Standstill's first picture): evidence only, never aliases. HP/DEF units come from the card's
+   Standstill until Standstill's first picture) and a line's short form told by eye (`derived/facts/eye_lines.json`
+   `lines`: 'Maxwell', 'PoD', the Warcraftian class prefixes): evidence only, never aliases. The 2019 February balance
+   list (a docx, `CHANGELOG_DOCUMENTS`) is read like the pictures' lists (`<message>:doc<n>`, no text kept). HP/DEF units come from the card's
    sure bar reads near the line (git looks and drafts, the old repo's rows). **Created:**
    the earliest confident appearance (a named paper photo: "Before 2020", source paper card, sorting before every day;
-   else a card-sure picture, the old repo, the card repo; a PSD the old repo added before any PNG of the card, 'old
+   else a card-sure picture, the first repo, the old repo, the card repo; an exact head of a 2019 balance list whose
+   card's first picture keeps that name by eye (`eye_lines.json` `heads`, source 'changelog'); a PSD the old repo added before any PNG of the card, 'old
    repo (PSD)': `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
    date nothing) against `site/Card Creation Dates.json`: same, earlier

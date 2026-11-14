@@ -18,6 +18,14 @@ TC 36d62e53, the last 'init', 2023-11-05 23:15 PST), minus those init commits th
 
 Runs with the fork's Python from AC's scripts/ (else AC = the timelines worktree); oldgit_diag.py explains empty reads. Output under
 ~/Documents/Tools/discord-archive/derived/oldgit (never a repo). Card repo: GIT_NO_LAZY_FETCH=1, trees only.
+
+The first repo (FIRST_GIT, when present): the same GitHub repo's history before the old .git, cut by the force-pushes of
+2023-04-02 and 2023-04-21 (2022-08-24..2023-04-21), fetched read only into a bare repo of its own (blobless, its card PNGs
+fetched; its objects/info/alternates reads the old .git's objects). Its main commits come first, as one history with the
+old repo's (rows: repo 'first'); 'Initial No PSD's' (2023-04-02) re-made the tree before it, so that commit is its
+parent here. The side branch the_restoration_project re-committed 2020 port looks in 2022 (no history of them): left out.
+Authors not in authors.json map by their commit e-mail when another name with that e-mail maps (Kittycoon,
+MichaelSrouji: panda2525252525's e-mail).
 """
 import json
 import os
@@ -36,20 +44,27 @@ HOME = expanduser("~")
 HERE = dirname(os.path.abspath(__file__))
 AC = dirname(HERE) if exists(join(dirname(HERE), "commands", "psd_parser.py")) else join(HOME, "Documents/Tools/wt/timelines-1113")
 OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
+FIRST_GIT = join(HOME, "Documents/Tools/firstrepo.git")   # the first repo (read only; alternates: the old .git's objects)
+FIRST_REFS = ("refs/first/main-0402", "refs/first/main-0421")   # main before each force-push, oldest first
+FIRST_LINKS = {"2056706e9ac92dfc024c3fc267154d13c78f972c": "7d95f1eb94d5b4e848028ab01b7c2286312b89d0"}
 TC = join(HOME, "Desktop/TTSCardMaker")
 OUT = join(HOME, "Documents/Tools/discord-archive/derived/oldgit")
 AUTHORS = join(HOME, "Documents/Tools/wt/scratch/s1110/timelines/authors.json")
 TC_INIT = "36d62e5336de5134f1471bb18bcca3c74cae0ef3"    # the current repo's last 'init' (2023-11-05 23:15:22 -08:00)
 CUT = "2023-11-06T07:15:30Z"
-CARD_DIRS = ("Creatures", "Auxillary", "Auxiliary", "Items", "Field", "N.M.E")
+CARD_DIRS = ("Creatures", "Auxillary", "Auxiliary", "Items", "Field", "N.M.E", "Cards")   # Cards: the first repo's
+                                                                                           # creatures (to 2023-04-20)
 EXTS = ("psd", "png")
 NOT_CARDS = ("Rules", "Rulebook", "Markers")               # rule pages and markers: no cards (build_site, discord_match)
-OLD_FOLDERS = (("Auxillary/", "Auxiliary/"),)            # old spellings: today's classifier reads today's
+OLD_FOLDERS = (("Auxillary/", "Auxiliary/"), ("Cards/", "Creatures/"))   # old spellings: today's classifier reads today's
 THUMB = 480
 TASK_SECONDS = 600
 
 sys.path.insert(0, AC)
+os.environ["GIT_NO_LAZY_FETCH"] = "1"                     # the first repo is blobless: a missing blob is never fetched
 OG = ["git", "--git-dir", OLD_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
+FG = ["git", "--git-dir", FIRST_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
+STORE = FG if exists(join(FIRST_GIT, "objects", "info", "alternates")) else OG   # both repos' objects
 TG = ["git", "-C", TC, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "core.quotePath=false", "--no-pager"]
 TENV = {**os.environ, "GIT_NO_LAZY_FETCH": "1"}
 
@@ -121,40 +136,71 @@ def ls_tree(base, commit: str, env=None) -> dict:
 # ========================
 # index
 # ========================
-def old_commits() -> tuple:
-    """(commits parents first, {sha: meta}) of the old history before CUT, the current repo's init commits left out."""
-    own = set(git(OG, "rev-list", TC_INIT).decode().split())
-    fmt = "%H%x1f%P%x1f%aI%x1f%cI%x1f%ct%x1f%an%x1f%s%x1e"
-    out = git(OG, "log", "--all", "--before=" + CUT, "--topo-order", "--reverse", "--format=" + fmt).decode("utf-8", "replace")
-    order, meta = [], {}
+def log_commits(base, *args) -> list:
+    fmt = "%H%x1f%P%x1f%aI%x1f%cI%x1f%ct%x1f%an%x1f%ae%x1f%s%x1e"
+    out = git(base, "log", "--topo-order", "--reverse", "--format=" + fmt, *args).decode("utf-8", "replace")
+    found = []
     for rec in out.split("\x1e"):
         rec = rec.strip("\n")
-        if not rec:
-            continue
-        sha, parents, authored, committed, ct, author, subject = rec.split("\x1f")
-        if sha in own:
-            continue
-        order.append(sha)
-        meta[sha] = {"parents": parents.split(), "authored": authored, "date": committed, "ts": int(ct),
-                     "author": author, "subject": subject}
+        if rec:
+            sha, parents, authored, committed, ct, author, email, subject = rec.split("\x1f")
+            found.append((sha, {"parents": parents.split(), "authored": authored, "date": committed, "ts": int(ct),
+                                "author": author, "email": email, "subject": subject}))
+    return found
+
+
+def old_commits() -> tuple:
+    """(commits parents first, {sha: meta}) of the old history before CUT, the current repo's init commits left out;
+    the first repo's main commits before them (repo 'first'; FIRST_LINKS joins its two histories)."""
+    own = set(git(OG, "rev-list", TC_INIT).decode().split())
+    order, meta = [], {}
+    if STORE is FG:
+        for ref in FIRST_REFS:                                 # each ref's history, oldest first, once
+            for sha, m in log_commits(FG, ref, *[f"^{r}" for r in FIRST_REFS[:FIRST_REFS.index(ref)]]):
+                if sha not in meta:
+                    order.append(sha)
+                    meta[sha] = {**m, "repo": "first"}
+        for sha, parent in FIRST_LINKS.items():
+            if sha in meta and parent in meta:
+                meta[sha]["parents"] = [parent]
+                meta[sha]["linked"] = True
+    for sha, m in log_commits(OG, "--all", "--before=" + CUT):
+        if sha not in own and sha not in meta:
+            order.append(sha)
+            meta[sha] = {**m, "repo": "old"}
     return order, meta
+
+
+def mapped_authors(meta: dict, authors: dict) -> dict:
+    """{author name: mapped name}: authors.json, plus names it lacks whose commit e-mail a mapped name shares."""
+    by_email = {}
+    for m in meta.values():
+        if m["author"] in authors and not m["author"].startswith("_"):
+            by_email.setdefault(m.get("email"), authors[m["author"]])
+    found = {k: v for k, v in authors.items() if not k.startswith("_")}
+    for m in meta.values():
+        if m["author"] not in found and by_email.get(m.get("email")):
+            found[m["author"]] = by_email[m["email"]]
+    return found
 
 
 def index_main():
     os.makedirs(OUT, exist_ok=True)
-    authors = json.load(open(AUTHORS))
     order, meta = old_commits()
-    log(f"{len(order)} old commits ({meta[order[0]]['date']} .. {max(m['date'] for m in meta.values())})")
-    trees = {c: ls_tree(OG, c) for c in order}
+    authors = mapped_authors(meta, json.load(open(AUTHORS)))
+    log(f"{len(order)} old commits ({meta[order[0]]['date']} .. {max(m['date'] for m in meta.values())}), "
+        f"{sum(m['repo'] == 'first' for m in meta.values())} of them the first repo's")
+    trees = {c: ls_tree(STORE, c) for c in order}
     sizes = {sha: size for t in trees.values() for sha, size in t.values()}
     trees = {c: {p: v[0] for p, v in t.items()} for c, t in trees.items()}
 
     state, lineages, events, deletes = {}, {}, [], []
-    counter = [0]
+    counter = Counter()
 
-    def new_lineage(path):
-        counter[0] += 1
-        lid = f"L{counter[0]}"
+    def new_lineage(path, repo):
+        prefix = "F" if repo == "first" else "L"               # the first repo's lineages: F1.. (L1.. as before)
+        counter[prefix] += 1
+        lid = f"{prefix}{counter[prefix]}"
         lineages[lid] = {"ext": ext_of(path), "paths": [path]}
         return lid
 
@@ -230,7 +276,7 @@ def index_main():
                 here[blob].append(path)
         for path in last:
             copy = next((p for p in here.get(tree[path], ()) if p != path), None)
-            lid = new_lineage(path)
+            lid = new_lineage(path, meta[c]["repo"])
             cur[path] = (tree[path], lid)
             event(path, "copy" if copy else "add", lid, copy_of=copy)
         for path, (blob, lid) in gone.items():                 # deleted here (a merge: gone from every side)
@@ -257,22 +303,27 @@ def index_main():
             if len(lids) > 1:
                 clash.add(key[0])
                 together[key] |= lids
-    by_name = defaultdict(list)
-    for lid, lin in lineages.items():
-        for path in lin["paths"]:
-            by_name[stem_key(path)].append(lid)
-    for name, lids in by_name.items():
-        if name in clash:                                      # two files of one name at once: by folder only
-            groups = defaultdict(list)
-            for lid in lids:
-                for path in lineages[lid]["paths"]:
-                    groups[folder_stem(path)].append(lid)
-            for same in groups.values():
-                for lid in same[1:]:
-                    parent[find(lid)] = find(same[0])
-            continue
-        for lid in lids[1:]:
-            parent[find(lid)] = find(lids[0])
+    for repo in ("L", "F"):                                    # each repo's lineages by name, as the old repo's were
+        by_name = defaultdict(list)                            # (the first repo's by their last name: a misnamed file
+        for lid, lin in lineages.items():                      # renamed must not join two cards: Metal Shield)
+            if lid[0] == repo:
+                for path in lin["paths"] if repo == "L" else lin["paths"][-1:]:
+                    by_name[stem_key(path)].append(lid)
+        for name, lids in by_name.items():
+            if name in clash:                                  # two files of one name at once: by folder only
+                groups = defaultdict(list)
+                for lid in lids:
+                    for path in lineages[lid]["paths"]:
+                        groups[folder_stem(path)].append(lid)
+                for same in groups.values():
+                    for lid in same[1:]:
+                        parent[find(lid)] = find(same[0])
+                continue
+            for lid in lids[1:]:
+                parent[find(lid)] = find(lids[0])
+    joined = join_first(lineages, find, events, meta)
+    for f, o in joined.items():                                # a first-repo card into the old repo card it became
+        parent[find(f)] = find(o)
 
     position = {c: i for i, c in enumerate(order)}
     tip = order[len(order) - 1]
@@ -284,8 +335,12 @@ def index_main():
         groups[find(lid)].append(lid)
     old_cards, of_lineage = {}, {}
     names_used = Counter()
-    for root, lids in sorted(groups.items(), key=lambda kv: min(position[e["commit"]] for e in events
-                                                                  if e["lineage"] in kv[1])):
+    first_at = {}                                              # names: the old repo's cards in their old order first
+    for e in events:
+        root = find(e["lineage"])
+        rank = (e["lineage"][0] == "F", position[e["commit"]])
+        first_at[root] = min(first_at.get(root, rank), rank)
+    for root, lids in sorted(groups.items(), key=lambda kv: first_at[kv[0]]):
         mine = [e for e in events if e["lineage"] in lids]
         latest = max(mine, key=lambda e: position[e["commit"]])
         name = splitext(basename(latest["path"]))[0].replace("_", " ")
@@ -296,24 +351,24 @@ def index_main():
         for lid in lids:
             of_lineage[lid] = oid
         end = {p: b for p, (b, lid) in state[tip].items() if lid in lids}
-        old_cards[oid] = {"lineages": sorted(lids, key=lambda x: int(x[1:])),
+        old_cards[oid] = {"lineages": sorted(lids, key=lambda x: (x[0] == "L", int(x[1:]))),
                           "paths": sorted({p for lid in lids for p in lineages[lid]["paths"]}),
                           "first": min(mine, key=lambda e: position[e["commit"]])["commit"],
                           "last": latest["commit"],
                           "at_end": end,
                           "deleted": [d for d in deletes if d["lineage"] in lids]}
 
-    seen_blobs = defaultdict(dict)
+    seen_blobs, first_seen = defaultdict(dict), defaultdict(dict)   # per lineage; per old card in the first repo
     rows = []
     for e in events:
         m = meta[e["commit"]]
         vid = f"{e['commit'][:12]}:{e['path']}"
-        earlier = seen_blobs[e["lineage"]].get(e["blob"])
+        earlier = seen_blobs[e["lineage"]].get(e["blob"]) or first_seen[of_lineage[e["lineage"]]].get(e["blob"])
         row = {"id": vid, "old_id": of_lineage[e["lineage"]], "lineage": e["lineage"], "commit": e["commit"],
                "date": m["date"], "authored": m["authored"], "ts": m["ts"], "author": m["author"],
                "author_mapped": authors.get(m["author"]), "subject": m["subject"], "merge": len(m["parents"]) > 1,
                "path": e["path"], "ext": ext_of(e["path"]), "blob": e["blob"], "size": sizes.get(e["blob"]),
-               "kind": e["kind"], "era": m["date"][:7]}
+               "kind": e["kind"], "era": m["date"][:7], "repo": m["repo"]}
         for key in ("from_path", "copy_of"):
             if e.get(key):
                 row[key] = e[key]
@@ -325,6 +380,8 @@ def index_main():
         else:
             row["new_look"] = True
         seen_blobs[e["lineage"]].setdefault(e["blob"], vid)
+        if m["repo"] == "first":                               # a blob the first repo had: no new look again
+            first_seen[of_lineage[e["lineage"]]].setdefault(e["blob"], vid)
         rows.append(row)
     with open(join(OUT, "versions.jsonl.tmp"), "w", encoding="utf-8") as f:
         for row in rows:
@@ -332,7 +389,8 @@ def index_main():
     os.replace(join(OUT, "versions.jsonl.tmp"), join(OUT, "versions.jsonl"))
     write_json(join(OUT, "index.json"), {
         "about": "Old pre-wipe card repo (read-only), commits before the current repo's population (TC "
-                 f"{TC_INIT[:8]}), its init commits left out. versions.jsonl: one row per card file version.",
+                 f"{TC_INIT[:8]}), its init commits left out; the first repo's main commits before them (commits' "
+                 "repo 'first'). versions.jsonl: one row per card file version.",
         "cut": CUT, "tc_init": TC_INIT, "tip": tip,
         "commits": {c: {**meta[c], "author_mapped": authors.get(meta[c]["author"])} for c in order},
         "order": order, "old_cards": old_cards,
@@ -341,6 +399,31 @@ def index_main():
     log(f"versions: {len(rows)} ({dict(kinds)}); {sum(r['new_look'] for r in rows)} new looks; "
         f"{len(old_cards)} old cards from {len(lineages)} lineages; {len(deletes)} deletions; "
         f"clashing names: {sorted(clash)}")
+
+
+def join_first(lineages: dict, find, events: list, meta: dict) -> dict:
+    """{first-repo group root: old repo group root}: the old repo card each first-repo card became, by the file name
+    and folder of its last first-repo path against the old cards' first paths. A first-repo card never joins two old
+    ones (a rename inside the first repo keeps its last name only)."""
+    last_path, first_paths = {}, defaultdict(list)
+    for e in events:                                           # events are in commit order
+        root = find(e["lineage"])
+        if e["lineage"][0] == "F":
+            last_path[root] = e["path"]
+        elif e["path"] not in first_paths[root]:
+            first_paths[root].append(e["path"])
+    by_stem = defaultdict(set)
+    for root, paths in first_paths.items():
+        start = [p for p in paths if stem_key(p) == stem_key(paths[0])]   # the old card's first name
+        for p in start:
+            by_stem[stem_key(p)].add((root, dirname(today_rel(p)).lower()))
+    joined = {}
+    for root, path in last_path.items():                       # the same name in the same folder (Cards/ read as
+        here = dirname(today_rel(path)).lower()                # Creatures/): a meme 'Something' is not Omori's
+        roots = {r for r, folder in by_stem.get(stem_key(path), set()) if folder == here}
+        if len(roots) == 1:
+            joined[root] = next(iter(roots))
+    return joined
 
 
 # ========================
@@ -364,7 +447,7 @@ def w_init(types, stars, manifest):
     db = StatsDatabase()
     db.all_types = list(types)
     _W["parser"] = PSDParser(db.all_types, db, IconVocabulary.build(db.all_types, stars, manifest))
-    _W["cat"] = subprocess.Popen(OG + ["cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    _W["cat"] = subprocess.Popen(STORE + ["cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     signal.signal(signal.SIGALRM, _alarm)
 
 
@@ -611,6 +694,13 @@ def reads_main(workers: int, limit: int = 0):
                 psd_paths[v["blob"]].append(v["path"])
         elif v["blob"] not in png_blobs:
             png_blobs.append(v["blob"])
+    checked = git(STORE, "cat-file", "--batch-check=%(objectname) %(objecttype)", data=(
+        "\n".join([*psd_paths, *png_blobs]) + "\n").encode()).decode().split("\n")
+    held = {line.split()[0] for line in checked if line.endswith(" blob")}
+    missing = [sha for sha in psd_paths if sha not in held]    # the first repo's PSDs are fetched only when needed
+    psd_paths = {sha: paths for sha, paths in psd_paths.items() if sha in held}
+    png_blobs = [sha for sha in png_blobs if sha in held]
+    log(f"{len(missing)} PSD blobs not held (left unread)")
     done_reads = {(r["blob"], r.get("path")) for r in read_jsonl(join(OUT, "reads.jsonl"))}
     done_refs = {r["ref"] for r in read_jsonl(join(OUT, "refs.jsonl"))}
     tasks = []

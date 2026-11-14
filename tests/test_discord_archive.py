@@ -718,3 +718,20 @@ def test_mentions_are_kept_for_credits(tmp_path):
     miner, _ = make(tmp_path, fake)
     miner.run(["101"])
     assert stored(tmp_path, "101")[0]["mentions"] == [{"id": "7", "username": "artist", "global_name": "Artist"}]
+
+
+def test_files_mode_stores_named_documents(tmp_path):
+    import commands.discord_archive as da
+    from types import SimpleNamespace
+    got = {}
+
+    class Rest:
+        def get(self, path):
+            got["path"] = path
+            return {"id": "2", "attachments": [{"id": "9", "filename": "List.docx", "url": "u", "size": 5},
+                                               {"id": "8", "filename": "other.zip", "url": "v", "size": 5}]}
+    miner = SimpleNamespace(rest=Rest(), store=SimpleNamespace(patch_attachments=lambda c, r: got.update(patched=r)),
+                            log=lambda *a: None,
+                            _download=lambda a, c, m, counts: {"sha256": "s" + a["id"], "file": f"attachments/{a['id']}"})
+    da.Miner.fetch_files(miner, [("1", "2", "List.docx")])
+    assert got["path"] == "/channels/1/messages/2" and list(got["patched"]) == ["9"]

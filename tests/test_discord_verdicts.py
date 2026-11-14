@@ -366,3 +366,21 @@ def test_the_local_gate_tells_a_stored_versions_look_and_drafts_far_ones():
     versions["c"] = {"key": "c", "card": "c", "look": 2, "whole": FAR, "ts": T + 20}     # unstored, after the post
     members = list(versions.values())
     assert kind({"a": [50.0, 1.0], "b": [80.0, 1.0]}, how=dict(pick, keys=["c"]))[0] is None   # the pick unseen
+
+
+def test_a_look_shown_in_a_card_channel_before_its_meme_repost_is_no_joke():
+    post = lambda mid, channel, meme=False: {"message": mid, "channel": channel, "date": f"2020-08-{mid[-2:]}",
+                                             "bot": False, "morgue": meme, "paper": False}
+    row = lambda card, posts: {"id": "P-1", "sha256": "a", "verdict": "draft", "card": card, "joke": True,
+                               "joke_draft": True, "posts": posts}
+    shown = row("wendy", [post("1013", "update-02-port"), post("1025", "cursed", True)])
+    dv.shown_first(shown, {}, {"a": 1025})
+    assert not shown["joke"] and "joke_draft" not in shown and shown["shown_first"]["channel"] == "update-02-port"
+    twin = row("god-tamer", [post("1022", "port")])                   # its meme repost is a twin's, later
+    dv.shown_first(twin, {}, {"a": 1030})
+    assert not twin["joke"]
+    for kept in (row("wendy", [post("1013", "general-discussion"), post("1025", "cursed", True)]),
+                 row("wendy", [post("1013", "port")]),             # a twin's meme post came first
+                 row("fireball", [post("1013", "new-cards")])):    # an open owner question: as built
+        dv.shown_first(kept, {}, {"a": 1001 if kept["card"] == "wendy" and len(kept["posts"]) == 1 else 1025})
+        assert kept["joke"] and kept["joke_draft"]

@@ -81,6 +81,7 @@ BAR_READS = ("derived", "readers", "bars", "reads.jsonl")
 OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrows", "review.jsonl")
 FACTS, FACT_SWITCHES = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "switches.json")
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
+EYE_LINES = ("derived", "facts", "eye_lines.json")        # heads: 2019 list heads whose first picture keeps the name
 PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
 PSDS = ("derived", "psds", "psds.jsonl")                    # card PSDs posted on Discord (commands/discord_psds.py)
 HEADER = ("derived", "readers", "types", "header.jsonl")    # types by the git versions' header (header_types.py)
@@ -91,6 +92,7 @@ PSD_BITS = 3.0                                              # a look this near a
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
 OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
 PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
+FS_SOURCE = {"old git": "old repo", "first git": "first repo"}   # a card's first git record: where (else the card repo)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
 SURE_CLASSES = ("version_sure", "version_unsure", "draft")    # the card is sure (discord_verdicts)
@@ -339,6 +341,7 @@ class Inputs:
         self.facts = dm.read_jsonl(p.at(FACTS))
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
         self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
+        self.heads = (dm.read_json(p.at(EYE_LINES), {}) or {}).get("heads") or {}
         self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
         self.header_rows = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER))}
         self.header = {k: r for k, r in self.header_rows.items() if r.get("sure")}
@@ -1057,7 +1060,8 @@ class Chain:
             return {}, None
         first = min(vs, key=lambda v: v["ts"])
         prefix = first["key"][1:21]
-        git = {"source": "old repo" if first.get("old") else "git", "commit": first.get("commit"),
+        git = {"source": ("first repo" if first.get("repo") == "first" else "old repo") if first.get("old") else "git",
+               "commit": first.get("commit"),
                "path": first.get("path"), "date": dm.iso(first["ts"])}
         key = self.inputs.cards[cid]["key"]
         old = sorted((r for r in self.inputs.old_rows.get(key, []) if r["blob"].startswith(prefix)),
@@ -1276,7 +1280,8 @@ class Chain:
             rows += split.get(key, [])
         for row in sorted(rows, key=lambda r: (r["ts"], r["id"])):
             entry = {"id": "O-" + row["id"], "kind": "old repo", "date": dm.iso(row["ts"]), "day": day(row["ts"]),
-                     "badge": "old repo", "author": row.get("author"), "subject": row.get("subject"),
+                     "badge": row.get("badge") or "old repo", "repo": row.get("repo") or "old",
+                     "author": row.get("author"), "subject": row.get("subject"),
                      "commit": row.get("commit"), "path": row.get("path"), "blob": row.get("blob"),
                      "thumb": row.get("thumb"), "minor": bool(row.get("minor")), "share": row.get("share"),
                      "old_ability_change": row.get("ability_change"), "fields": old_fields(row, self.review_of)}
@@ -1295,10 +1300,14 @@ class Chain:
             return []
         card, out = self.inputs.cards[cid], []
         stop = card.get("fs") or float("inf")
+        pictured = {r["commit"] for r in self.inputs.old_rows.get(card["key"], []) if r.get("repo") == "first"}
         for row in self.inputs.first_repo:
             if row.get("card") != card["key"]:
                 continue
             when = dm.epoch(row.get("date"))
+            if any(c.startswith(row.get("commit") or "-") for c in pictured):
+                self.tally["first repo rows: now the first repo's picture row (Q5 premise changed)"] += 1
+                continue
             if when is None or when >= stop:
                 self.tally["first repo rows: after the card's first git record"] += 1
                 continue
@@ -1588,8 +1597,8 @@ class Chain:
                 if field.get("confidence") != "review" or field.get("review"):
                     continue
                 proposed = field.pop("proposed", None)
-                if proposed is None and key == "types":
-                    field["confidence"] = "unread"
+                if proposed is None and (key == "types" or e.get("repo") == "first"):
+                    field["confidence"] = "unread"             # nothing read (a first-repo PNG with no PSD fetched)
                     continue
                 field["review"] = self.add_review(
                     "field", f"{cid}|{e['id']}|{key}", card=cid, entry=e["id"], field=key, date=e.get("date"),
@@ -1618,7 +1627,7 @@ class Chain:
         stop = None
         if card.get("fs"):
             stop = {"date": dm.iso(card["fs"]), "day": day(card["fs"]),
-                    "source": "old repo" if card.get("fs_from") == "old git" else "git"}
+                    "source": FS_SOURCE.get(card.get("fs_from"), "git")}
             firsts = [v for v in self.inputs.versions.get(cid, []) if abs(v["ts"] - card["fs"]) < 1]
             if card.get("fs_psd"):                        # a PSD added before any PNG (old repo)
                 stop.update(commit=card["fs_psd"].get("commit"), path=card["fs_psd"].get("path"), psd=True)
@@ -1654,7 +1663,7 @@ class Chain:
                     found.append((dm.epoch(pic["date"]), "discord", {"picture": pic["id"], "channel": pic["channel"],
                                                                      "as": e.get("as")}))
             elif e["kind"] == "old repo":
-                found.append((dm.epoch(e["date"]), "old repo (PSD)" if e.get("psd_only") else "old repo",
+                found.append((dm.epoch(e["date"]), "old repo (PSD)" if e.get("psd_only") else e.get("badge") or "old repo",
                               {"commit": e["commit"], "as": e.get("as")}))
         for row in rows_all:                       # every card-sure picture counts, its look told or not
             if row.get("first") and not row.get("created_review") and not row.get("paper") and \
@@ -1662,12 +1671,18 @@ class Chain:
                     not row.get("no_created"):
                 found.append((dm.epoch(row["first"]["date"]), "discord", {"picture": row["id"],
                                                                           "channel": row["first"]["channel"]}))
+        if card["key"] in getattr(inputs, "heads", {}):    # a 2019 list's head, its first picture keeping the name
+            for f in inputs.facts:
+                if f.get("card") == card["key"] and f.get("source") == "changelog" and \
+                        search(r":(img|doc)\d", f.get("line", "")) and \
+                        (f.get("confidence") == "sure" or f.get("unit") == "unknown") and dm.epoch(f.get("date")):
+                    found.append((dm.epoch(f["date"]), "changelog", {"fact": f["id"], "channel": f.get("channel")}))
         first = (getattr(inputs, "psd_first", None) or {}).get(card["key"])
         if first and first.get("ts"):              # a PSD added before any PNG: a git appearance (S6)
             found.append((first["ts"], "old repo (PSD)", {"commit": first.get("commit")}))
         if card.get("fs"):
-            found.append((card["fs"], "old repo (PSD)" if card.get("fs_psd") else "old repo"
-                          if card.get("fs_from") == "old git" else "git", {}))
+            found.append((card["fs"], "old repo (PSD)" if card.get("fs_psd") else FS_SOURCE.get(card.get("fs_from"), "git"),
+                          {}))
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
         dated = {"date": dm.iso(when), "day": day(when), "source": source,
                  **{k: v for k, v in detail.items() if v is not None}}
@@ -1699,6 +1714,10 @@ class Chain:
                    "new": "no date in the file yet: proposed"}[out["status"]]
             if paper and out["status"] != "later":
                 why = f"a paper card's photo: Created '{PAPER_DAY}' (owner Q6), proposed (the preview uses it)"
+            elif ours.get("source") == "changelog" and out["status"] != "later":
+                why = "a 2019 balance list names it exactly (its first picture keeps that name, by eye): proposed"
+            elif ours.get("source") == "first repo" and out["status"] != "later":
+                why = "the first repo's file (2022-08..2023-04, refound on GitHub): proposed"
             out["review"] = self.add_review(f"created {out['status']}", cid, card=cid, ours=ours, file=file,
                                             earlier_unsure=hint, why=why)
         named = [r for r in rows_all if r.get("created_review") and r.get("first")]
@@ -1835,6 +1854,19 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
                          why="an old card that became two (owner Q3): both halves start with its versions, each "
                              "with its own half's stats")
     shown = bool(inputs.switches.get("first_repo_rows"))
+    firsts = [e for t in timelines.values() for e in t["entries"] if e["kind"] == "old repo" and e.get("repo") == "first"]
+    if firsts:                                   # Q5 was answered when the first repo's files were thought gone
+        notices = len(inputs.first_repo)
+        kept = sum(1 for t in timelines.values() for e in t["entries"] if e["kind"] == "first repo")
+        chain.add_review("first repo premise", "q5-files", rows=len(firsts),
+                         cards=len({t["card"] for t in timelines.values() for e in t["entries"]
+                                    if e["kind"] == "old repo" and e.get("repo") == "first"}),
+                         stops=sum(1 for t in timelines.values() if (t.get("stop") or {}).get("source") == "first repo"),
+                         notices=notices, pictured=chain.tally["first repo rows: now the first repo's picture row (Q5 "
+                                                               "premise changed)"], text_rows=kept,
+                         why="Q5 was answered (11-13) when the first repo's files were thought gone; they were found on "
+                             "GitHub (2022-08-24..2023-04-21), so its versions are picture rows like the old repo's "
+                             "(badge 'first repo') and each card's timeline stops at its first first-repo record")
     for q, answer, text in OWNER_ANSWERS:
         extra = {"rows": len(inputs.first_repo), "cards": len({r.get("card") for r in inputs.first_repo}),
                  "shown": shown} if q == "Q5" else {}

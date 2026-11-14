@@ -1103,6 +1103,33 @@ class Miner:
                  f"{counts['download_failures']} failed")
         return counts
 
+    def fetch_files(self, wanted: list) -> dict:
+        """Stores the named attachments of a few messages ((channel, message, file name) each; an image or not:
+        documents, archives, Paint.NET files), each message read again for fresh URLs; patches their lines."""
+        counts, stored = _new_counts(), {}
+        by_message: dict = {}
+        for container, message_id, name in wanted:
+            by_message.setdefault((container, message_id), set()).add(name)
+        try:
+            for (container, message_id), names in by_message.items():
+                try:
+                    message = self.rest.get(f"/channels/{container}/messages/{message_id}")
+                except ApiError as e:
+                    if e.fatal:
+                        raise
+                    self.log(f"message {message_id}: {e.reason()}")
+                    continue
+                for attachment in all_attachments(message):
+                    if attachment.get("filename") in names:
+                        result = self._download(attachment, container, message_id, counts)
+                        if result.get("sha256"):
+                            stored.setdefault(container, {})[attachment["id"]] = result
+        finally:
+            for container, results in stored.items():
+                self.store.patch_attachments(container, results)
+        self.log(f"files: {counts['images']} stored, {counts['download_failures']} failed, {counts['too_big']} too big")
+        return counts
+
     # -- summary --
     def summary(self, status: str) -> dict:
         warnings = []
@@ -1146,9 +1173,10 @@ def main(argv: Optional[list] = None, session=None) -> int:
     parser.add_argument("--retry-downloads", action="store_true", help="also files over an earlier, lower --max-mb")
     parser.add_argument("--max-mb", type=int, default=MAX_DOWNLOAD >> 20, help="largest file stored (MB)")
     parser.add_argument("--config", default=CONFIG_PATH, help="the config.py holding TOKEN")
+    parser.add_argument("--files", help="a JSON list of [channel, message, file name]: those attachments stored")
     args = parser.parse_args(argv)
-    if not (args.channels or args.all or args.retry_downloads):
-        parser.error("give --channels, --all or --retry-downloads")
+    if not (args.channels or args.all or args.retry_downloads or args.files):
+        parser.error("give --channels, --all, --retry-downloads or --files")
     bad = [value for value in [args.guild, *args.channels] if not is_snowflake(value)]
     if bad:
         parser.error(f"not Discord ids: {' '.join(bad)}")
@@ -1170,6 +1198,10 @@ def main(argv: Optional[list] = None, session=None) -> int:
     try:
         if args.retry_downloads:
             miner.retry_downloads()
+        if args.files:
+            with open(expanduser(args.files), encoding="utf-8") as f:
+                wanted = [tuple(x) for x in load(f) if all(is_snowflake(v) for v in x[:2])]
+            miner.fetch_files(wanted)
         if args.channels or args.all:
             summary = miner.run(args.channels, args.all, args.list)
             print(f"done: {summary['totals']['new']} new messages, {summary['totals']['images']} images, "
