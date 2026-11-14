@@ -428,7 +428,8 @@ def test_cards_list_keeps_a_name_with_a_comma():
 
 
 def test_blobs_of_in_reading_order():
-    """The chart and manifest first, then each card's PSD, PNG, numbered PNGs and duplicates together."""
+    """The chart and manifest first, then each card's PSD, PNG, numbered PNGs, duplicates and published plates file
+    together: its blob's, else that of a blob the checks file holds under its name."""
     paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "A Copy.png", "B.psd", "Types/Fire.png",
              "Types/Dark.png", cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
     tree = {path: ("", path) for path in paths}
@@ -437,6 +438,10 @@ def test_blobs_of_in_reading_order():
     assert cc.blobs_of(snapshot, ["A.psd", "B.psd"]) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
                                                         "A.psd", "A.png", "A2.png", "A Copy.png", "B.psd"]
     assert cc.blobs_of(snapshot, []) == []
+    checks = {"cards": {"b0": {"card": "B"}, "c0": {"card": "C"}, "a0": {"card": "A"}}}   # B pushed since b0's plate
+    plates = cc.plate_blobs(snapshot, ["A.psd", "B.psd", "C.psd"], {"A.psd": "pa", "a0": "pa0", "b0": "pb0"}, checks)
+    assert plates == {"A.psd": "pa", "B.psd": "pb0"}
+    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"], plates)[2:] == ["A.psd", "A.png", "A2.png", "A Copy.png", "pa", "B.psd", "pb0"]
 
 
 def test_soft_notes():

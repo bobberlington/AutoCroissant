@@ -159,6 +159,34 @@ def test_star_pictures_are_the_bakes(clone, tmp_path):
     assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
 
 
+def test_a_published_sheet_with_the_same_pixels_is_kept(monkeypatch):
+    """bar_sheet keeps old's WebP when its pixels are the new sheet's (colours under alpha 0 aside), without an encode;
+    another pixel, an AVIF or an unreadable one is encoded again."""
+    now = np.random.default_rng(2).integers(3, 256, (2, 30, 20, 4), np.uint8)
+    was = now.copy()
+    was[:, ::2, ::3] = 0                        # moved there only: alpha 0 between
+    changes = {"def": {v: (0, 0, now[v], was[v]) for v in (0, 1)}}
+    fresh = cp.bar_sheet(changes, {"def": 4})
+    decoded = lambda sheet: np.array(Image.open(io.BytesIO(base64.b64decode(sheet["img"].split(",", 1)[1]))))
+    def url(arr, kind="WEBP"):
+        buf = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(buf, kind, lossless=True, exact=True)
+        return {"img": f"data:image/{kind.lower()};base64," + base64.b64encode(buf.getvalue()).decode()}
+    pixels = decoded(fresh)
+    hidden, moved, shown = pixels.copy(), pixels.copy(), pixels[..., 3] > 0
+    hidden[~shown, :3] = 7
+    moved[tuple(np.argwhere(shown)[0])][0] ^= 1
+    same, other = [fresh, url(hidden)], [url(moved), url(pixels, "AVIF"), {"img": "data:image/webp;base64,AAAA"}, None]
+    assert (~shown).sum() > 100 and (decoded(same[1])[~shown][:, :3] == 7).all()
+    saves, save = [], Image.Image.save
+    monkeypatch.setattr(Image.Image, "save", lambda self, *a, **k: saves.append(a[1]) or save(self, *a, **k))
+    for old in same:
+        assert cp.bar_sheet(changes, {"def": 4}, old=old) == {**fresh, "img": old["img"]} and not saves
+    for old in other:
+        assert cp.bar_sheet(changes, {"def": 4}, old=old) == fresh and saves == ["WEBP"]
+        saves.clear()
+
+
 def test_creature_pictures_are_the_bakes(clone, tmp_path):
     """Creature 2's own stat picture is the bake's PNG of that `creatures` edit, keyed "<stat>@2" at its value; none
     past what its row prints, nor on a bar creature 1 shares (creature 1's picture)."""
@@ -273,10 +301,12 @@ def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):
     assert (done["added"], done["dropped"], done["kept"]) == (0, 1, 1) and files() == [f"{a}.json"]
     assert json.loads(git("-C", str(origin), "show", f"{cp.BRANCH}:{a}.json")) == plate
     assert cp.publish({a: plate}, str(later))["commit"] == ""                                   # nothing changed
+    assert cp.on_branch(str(later)) == {a: git("-C", str(origin), "rev-parse", f"{cp.BRANCH}:{a}.json")}
     fresh = tmp_path / "fresh"                                                  # a plate replaced, its old blob not here
     monkeypatch.delenv("GIT_NO_LAZY_FETCH")
     git("clone", "-q", "--filter=blob:none", f"file://{origin}", str(fresh))
     monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
+    assert cp.on_branch(str(fresh)) == {}                                       # not fetched yet
     run = cp.run_process                                                        # HTTPS pushes thin whatever --no-thin says
     monkeypatch.setattr(cp, "run_process", lambda cmd, **kw: run(["--thin" if a == "--no-thin" else a for a in cmd], **kw))
     newer = {"v": 1, "crops": [[n, n, 9, 9] for n in range(99)]}

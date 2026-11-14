@@ -17,7 +17,8 @@ colour), or false when the bake finds no room for one (the website then offers n
                                         [--cards a,b] [--workers n] [--minutes m]
     python -m commands.card_checks save --clone <checkout> --db <db dir> [--head <sha>] [results.json ...]
 
-list prints the blobs to check (PSDs without a result, their PNGs; a PNG pushed alone counts); run checks them; save puts
+list prints the blobs to check (PSDs without a result, their PNGs; a PNG pushed alone counts; their published plates, the
+plates branch fetched to card_plates.LOCAL_REF: a stat sheet whose pixels are the same is kept); run checks them; save puts
 the results in db/, drops PSDs gone from the tree, words every record's notes against the data (a website-only fix clears
 without a push) and marks the people's flags that went (a sweep's change keeps them: db/changelog). Exit 0, also for what
 it flags. No Discord or config imports.
@@ -575,6 +576,7 @@ class Context:
     fonts: str
     colors: list = field(default_factory=list)
     templates: dict = field(default_factory=dict)
+    plates: dict = field(default_factory=dict)  # {PSD path: its published plates file's blob} (plate_blobs)
 
     def chart(self) -> Optional[dict]:
         """status_fills() of the status chart, once."""
@@ -731,9 +733,10 @@ def check_card(ctx: Context, rel: str) -> dict:
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if image is not None else {}   # {PNG: picture n}
     if image is not None and parts is not None:
         try:
+            old = _published(ctx, rel)
             plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn))
-            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes)
-            plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS)
+            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old)
+            plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
     notes = [OLD_NOTE] if style == "old" else []
@@ -761,6 +764,18 @@ def check_card(ctx: Context, rel: str) -> dict:
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads, "notes": notes,
             "bars": CUSTOM_NOTES[why] if style == "custom" else None,
             "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate, **room}
+
+
+def _published(ctx: Context, rel: str) -> Optional[dict]:
+    """The card's published plates file (Context.plates), or None: its sheets are encoded again."""
+    sha = ctx.plates.get(rel)
+    if not sha:
+        return None
+    try:
+        return loads(ctx.snapshot.fetch(sha))
+    except Exception as error:                  # noqa: BLE001 - encoded again then
+        print(f"{rel}: no published plate: {type(error).__name__}: {error}", flush=True)
+        return None
 
 
 def _pictures(snapshot: Snapshot, rel: str, drawn: dict) -> dict:
@@ -960,17 +975,34 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
     return out
 
 
-def blobs_of(snapshot: Snapshot, rels: list) -> list:
+def plate_blobs(snapshot: Snapshot, rels: list, branch: dict, checks: dict) -> dict:
+    """{PSD path: its published plates file's blob}: its PSD blob's on the branch (card_plates.on_branch), else that of
+    a blob the checks file (load()) still holds under the card's name (pushed since: publish drops it after the run);
+    none without."""
+    named: dict = {}
+    for blob, record in checks["cards"].items():
+        named.setdefault(record.get("card"), []).append(blob)
+    out = {}
+    for rel in rels:
+        found = next((branch[blob] for blob in [snapshot.sha(rel), *named.get(card_name(rel), [])] if blob in branch), None)
+        if found:
+            out[rel] = found
+    return out
+
+
+def blobs_of(snapshot: Snapshot, rels: list, plates: Optional[dict] = None) -> list:
     """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart and manifest (a card read as
-    it lands waits for none at the end), then each card's PSD, PNG, numbered PNGs and duplicates."""
+    it lands waits for none at the end), then each card's PSD, PNG, numbered PNGs, duplicates and published plates file
+    (plates: plate_blobs)."""
     if not rels:
         return []
-    first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
-    cards = []
+    plates = plates or {}
+    shas = [snapshot.sha(path) for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
     for rel in rels:
         png, numbered = snapshot.png_for(rel)
-        cards += [path for path in [rel, png, *numbered, *snapshot.dup_pictures().get(rel, [])] if path]
-    return list(dict.fromkeys(snapshot.sha(path) for path in first + cards))
+        shas += [snapshot.sha(path) for path in [rel, png, *numbered, *snapshot.dup_pictures().get(rel, [])] if path]
+        shas += [plates[rel]] if rel in plates else []
+    return list(dict.fromkeys(shas))
 
 
 def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None,
@@ -1011,10 +1043,11 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
 _worker: list = []
 
 
-def _start(repository: str, clone: str, head: str) -> None:
+def _start(repository: str, clone: str, head: str, plates: dict) -> None:
     token_from_env()                            # a blob the clone lacks comes by REST
     card_bake.exit_with_parent()
     _worker[:] = [context(repository, clone, head)]
+    _worker[0].plates = plates
 
 
 def _one(rel: str) -> tuple:
@@ -1026,9 +1059,10 @@ def _one(rel: str) -> tuple:
         return rel, f"{type(error).__name__}: {error}", perf_counter() - started
 
 
-def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str) -> dict:
+def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str,
+        plates: Optional[dict] = None) -> dict:
     """check_card over rels in worker processes, for at most this long; {blob: record}, written to out as it grows
-    (every SAVE_EVERY s and at the end: a record's plate is ~18 KB)."""
+    (every SAVE_EVERY s and at the end: a record's plate is ~18 KB). plates: plate_blobs'."""
     snapshot = local_snapshot(repository, clone, head)
     found, started, saved = {}, perf_counter(), perf_counter()
 
@@ -1040,7 +1074,7 @@ def run(rels: list, repository: str, clone: str, head: str, workers: int, minute
         saved = perf_counter()
 
     try:
-        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head)) as pool:
+        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, plates or {})) as pool:
             jobs = [pool.submit(_one, rel) for rel in rels]
             for n, job in enumerate(as_completed(jobs), 1):
                 rel, record, seconds = job.result()
@@ -1103,10 +1137,11 @@ def main(args: Optional[list] = None) -> int:
               f"{sum(1 for r in checks['cards'].values() if r.get('name'))} name")
         return 0
     rels = to_check(snapshot, checks, options.all, only, shard)
+    plates = plate_blobs(snapshot, rels, card_plates.on_branch(options.clone), checks) if rels else {}
     if options.action == "list":
-        print("\n".join(blobs_of(snapshot, rels)))
+        print("\n".join(blobs_of(snapshot, rels, plates)))
     else:
-        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out)
+        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out, plates)
     return 0
 
 
@@ -1134,6 +1169,7 @@ __all__ = [
     'main',
     'mismatches',
     'name_note',
+    'plate_blobs',
     'png_key',
     'printed',
     'psd_steps',

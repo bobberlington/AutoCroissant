@@ -14,7 +14,7 @@ pasted in place of the mock-up's erased and redrawn ones.
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
 from argparse import ArgumentParser
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from fractions import Fraction
 from io import BytesIO
 from json import dumps, loads
@@ -251,6 +251,7 @@ BAR_MOVED = 2                               # view levels: a bar pixel moved les
 BAR_BYTES = 192_000                         # a lossless bar sheet past this goes lossy (BAR_AVIF)
 BAR_AVIF = 55                               # AVIF quality (screen tuning): under the site's 720 px image's noise (q50)
 BAR_SIDE = 16383                            # WebP's largest side: the sheet's cuts stack in columns of this height
+WEBP_URL = "data:image/webp;base64,"
 REACH = 3                                   # LANCZOS's reach in view rows
 EDGE = REACH + 1                            # view rows at a crop's cut whose clipped reach isn't view()'s
 
@@ -559,13 +560,33 @@ def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, pars
     return out
 
 
-def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_SIDE, vw: int = VIEW_W) -> Optional[dict]:
+def _same(old: Optional[dict], sheet: np.ndarray) -> bool:
+    """old (a published sheet) a lossless WebP of sheet: its alpha, and its colours where alpha > 0 (libwebp may change
+    them under alpha 0)."""
+    url = (old or {}).get("img") or ""
+    if not url.startswith(WEBP_URL):
+        return False
+    try:
+        data = b64decode(url[len(WEBP_URL):])
+        image = Image.open(BytesIO(data))
+        if len(data) > BAR_BYTES or image.format != "WEBP" or image.size != (sheet.shape[1], sheet.shape[0]) \
+                or image.mode not in ("RGB", "RGBA"):
+            return False
+        pixels = np.array(image.convert("RGBA"))
+    except Exception:                           # noqa: BLE001 - unreadable: encoded again
+        return False
+    pixels[pixels[..., 3] == 0] = 0
+    return np.array_equal(pixels, sheet)
+
+
+def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_SIDE, vw: int = VIEW_W,
+              old: Optional[dict] = None) -> Optional[dict]:
     """
     bar_changes() as the plates file's "bars": {"vw": the view's width, "bars": {stat: {"at": the PSD's value, "to": {value:
     cut index}}}, "cuts": [[x, y, w, h, sheet x, sheet y]] (view px), "img": a data URL}: per value the pixels moved past
     `moved` levels (alpha 255, the rest 0), identical cuts once, stacked in columns at most `side` tall; lossless WebP,
     or past BAR_BYTES AVIF 4:4:4 at BAR_AVIF, tuned for screen content (aom's palette and block copy: the values' repeats);
-    None for none.
+    None for none. old: the published plate's same sheet, its WebP kept when its pixels are these (no encode).
     """
     bars, cuts, pieces, seen = {}, [], [], {}
     for stat, values in changes.items():
@@ -598,6 +619,8 @@ def bar_sheet(changes: dict, at: dict, moved: int = BAR_MOVED, side: int = BAR_S
         sheet[sy:sy + piece.shape[0], sx:sx + piece.shape[1]] = piece
         under[sy:sy + piece.shape[0], sx:sx + piece.shape[1], :3] = was[..., :3]
         cut += [sx, sy]
+    if _same(old, sheet):
+        return {"vw": vw, "bars": bars, "cuts": cuts, "img": old["img"]}
     buf = BytesIO()
     Image.fromarray(sheet, "RGBA").save(buf, "WEBP", lossless=True, quality=100, method=6)
     kind = "webp"
@@ -646,23 +669,25 @@ def pictured(psd: PSDImage, png: Image.Image, card: dict, style: str) -> bool:
 
 
 def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
-              style: str, votes: Optional[dict] = None) -> Optional[dict]:
+              style: str, votes: Optional[dict] = None, old: Optional[dict] = None) -> Optional[dict]:
     """The plates file with its "bars" (bar_sheet) on a card pictured() picks; plate as it was otherwise. votes:
-    bar_changes'."""
+    bar_changes'. old: the card's published plates file."""
     card = parsed["card"]
     if not pictured(psd, png, card, style):
         return plate
     sheet = bar_sheet(bar_changes(psd, raw, png, parsed, parser, rel, votes), {**card, **_creature_stats(card)},
-                      vw=view(png).width)
+                      vw=view(png).width, old=(old or {}).get("bars"))
     if sheet is None:
         return plate
     return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "bars": sheet}
 
 
 def with_stars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
-               top: int) -> Optional[dict]:
-    """The plates file with its "icons": bar_sheet of star_changes under "stars"; plate as it was without any."""
-    sheet = bar_sheet({"stars": star_changes(psd, raw, png, parsed, parser, rel, top)}, parsed["card"], vw=view(png).width)
+               top: int, old: Optional[dict] = None) -> Optional[dict]:
+    """The plates file with its "icons": bar_sheet of star_changes under "stars"; plate as it was without any. old: the
+    card's published plates file."""
+    sheet = bar_sheet({"stars": star_changes(psd, raw, png, parsed, parser, rel, top)}, parsed["card"], vw=view(png).width,
+                      old=(old or {}).get("icons"))
     if sheet is None:
         return plate
     return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "icons": sheet}
@@ -701,6 +726,15 @@ def psd_blobs(where: str, head: str) -> set:
     """The PSD blobs of head's tree."""
     return {line.split()[2] for line in _git(where, "ls-tree", "-r", "-z", head).split("\0")
             if "\t" in line and line.split("\t", 1)[1].lower().endswith(".psd")}
+
+
+def on_branch(where: str) -> dict:
+    """{PSD blob: its plates file's blob} on the branch as last fetched to LOCAL_REF (card-checks.yml's To check); {}
+    without it."""
+    try:
+        return {name[:-5]: sha for name, sha in _files(where, LOCAL_REF).items() if name.endswith(".json")}
+    except Unpublished:
+        return {}
 
 
 def collected(paths: list) -> dict:
@@ -794,6 +828,7 @@ __all__ = [
     'looks',
     'main',
     'mock_misses',
+    'on_branch',
     'pictured',
     'plates',
     'psd_blobs',
