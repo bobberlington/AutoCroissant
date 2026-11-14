@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from subprocess import run as run_process
 
+import pytest
+
 from conftest import SITE_SRC
 
 SITE = SITE_SRC
@@ -54,6 +56,25 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
     assert "Out of date: the edit changed since" in stale
     assert "no image came with the result" in no_file and 'class="err"' not in no_file and "HP baked" in no_file   # not an error
     assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
+
+
+@pytest.mark.skipif(not has(PREVIEW_JS, "function unzip"), reason="no hand-over unzip in this preview.js")
+def test_the_hand_over_unzips(tmp_path):
+    """The preview job's hand-over as upload-artifact zips it (deflated, data descriptors) and a stored entry: the
+    checking tab's unzip gives the bytes back."""
+    import zipfile
+    files = {"result.json": json.dumps({"request": "req-00001", "state": "baked"}).encode() * 40, "preview.avif": bytes(range(256)) * 9}
+    sink = type("Sink", (), {"b": bytearray(), "write": lambda s, d: s.b.extend(d) or len(d), "flush": lambda s: None})()   # no seek: data descriptors
+    with zipfile.ZipFile(sink, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+        z.writestr(zipfile.ZipInfo("before.avif"), b"stored")
+    assert [i.flag_bits & 8 for i in z.infolist()] == [8, 8, 8]
+    (tmp_path / "a.zip").write_bytes(bytes(sink.b))
+    out = node(tmp_path, f"""const b = (await import("fs")).readFileSync({json.dumps(str(tmp_path / "a.zip"))});
+const f = await p.unzip(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
+out(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Buffer.from(v).toString("hex")])));""")
+    assert out == {**{k: v.hex() for k, v in files.items()}, "before.avif": b"stored".hex()}
 
 
 def test_tokens_wrap_and_fit(tmp_path):
