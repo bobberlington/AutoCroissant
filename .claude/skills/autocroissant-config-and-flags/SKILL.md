@@ -512,6 +512,8 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `KEEP_AFTER`, `DAYS_AFTER` | 150, 6 days | ... keeping the newest this many under this age (so a rewrite comes about daily) |
 | `TRIES` | 5 | publish pushes, each from the branch head then (after one on `WARM_REF`'s head when `--warm` ran) |
 | `IDENTITY` | AutoCroissant | git_commit's `GIT_IDENTITY`, copied (that module imports requests; a test compares them) |
+| `ARTIFACT`, `HANDED`, `ZIP_CAP` | `card-preview`; result.json, preview.avif, before.avif; 16 MB | `--take` (2026-11-14, the job's wait): the hand-over it takes, the only names unzipped, the zip's cap (digest checked; the blob store never gets the token) |
+| `POLL`, `POLL_LATE`, `LATE`, `JOB_FIRST`, `JOB_EVERY`, `WAIT`, `LOW` | 0.25 s, 3 s, 55 s, 10 s, 15 s, 715 s, 100 | `--take`'s pace: conditional listings (a 304 isn't counted) every POLL s, POLL_LATE from LATE s or under LOW calls left; the preview job looked at from JOB_FIRST s, every JOB_EVERY; WAIT at most |
 
 The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card's blobs by sha in the preview job
 (`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job

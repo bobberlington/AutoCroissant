@@ -1217,6 +1217,7 @@ The venv's key (2026-11-09): Clone also reads AC main's requirements-cards.txt o
     python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> --clone <checkout> [--request <id>]
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
     python -m commands.card_preview_branch --warm [--git <checkout>]
+    python -m commands.card_preview_branch --take <dir>
 
 The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG and blob gates, the redundancy check,
 `psd_edit.classify`, `apply_jobs` with every gate, the stars/types-refused-beside-the-rest rule, the creatures-stats
@@ -1288,7 +1289,11 @@ blobs and trees by `hash-object`/`mktree`, `commit-tree`, `-c pack.window=0 push
 thin pack would want blobs a blobless clone lacks; HTTPS pushes thin anyway, so no delta search, 2026-11-13); a refused push (the head moved) is retried from the new head, 5 tries. The publish
 job does those reads during its wait (`--warm`, 2026-11-07: into `refs/card-preview/warm`, index.json included), so
 publish's first try reaches the push with no network; refused, it goes on to the 5 tries with no sleep, and without a
-warm read (it failed, or ran past its 10 s) those 5 tries are all there is. When the
+warm read (it failed, or ran past its 10 s) those 5 tries are all there is. The wait itself (`--take`, 2026-11-14; a gh loop and
+actions/download-artifact before): one HTTPS connection to the API lists the run's `card-preview` artifact every 0.25 s with
+If-None-Match (a 304 isn't counted) and the preview job every 15 s; once listed, its zip's 302 on that connection, the
+blob store's URL without the token, the digest checked, only result.json and the two AVIFs unzipped (16 MB cap);
+download-artifact stays as the fallback (`took` not set). Counted calls about 4 a preview (were about 10-13). When the
 branch would hold more than `KEEP` (200) previews or one older than `DAYS` (7 days, or of unknown age), the commit is a
 fresh orphan with this preview and the newest `KEEP_AFTER` (150) under `DAYS_AFTER` (6 days), pushed with
 `--force-with-lease` on the head it read (a run that landed meanwhile breaks the lease and the retry keeps its preview);
