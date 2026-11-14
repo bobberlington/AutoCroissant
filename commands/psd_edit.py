@@ -5167,9 +5167,9 @@ def hold_lines(layer, fonts, undrawn: bool = False) -> int:
     """
     A paragraph box with drawn lines below its bottom grown down to hold them (set_text_box, its pixels kept): Photoshop
     hides such a line when it lays the text out again (below_box). Its top, sides and transform stay; the bottom goes
-    BOX_DESCENT em of its largest size under the last baseline. Not point text, a rotated or offset box, nor one with a
-    line the engine left undrawn; undrawn: only one with such a line (its words were lost: r29, Mr Softener), which the
-    caller draws again.
+    BOX_DESCENT em of its largest size under the last baseline. Not point text, an offset box or one tilted over 1% (a
+    hair's is fine: 19 cards' by 0.01-0.18 deg, Mettaton), nor one with a line the engine left undrawn; undrawn: only
+    one with such a line (its words were lost: r29, Mr Softener), which the caller draws again.
 
     Returns:
         px the box grew (0: not)
@@ -5179,7 +5179,7 @@ def hold_lines(layer, fonts, undrawn: bool = False) -> int:
     model = TextModel.from_layer(layer)
     box = frame(model)
     xx, xy, yx, yy, tx, ty = model.transform
-    if box is None or abs(xy) > 1e-6 or abs(yx) > 1e-6 or any(abs(v) > 1e-6 for v in model.box[:2]):
+    if box is None or abs(xy) > 0.01 * abs(xx) or abs(yx) > 0.01 * abs(yy) or any(abs(v) > 1e-6 for v in model.box[:2]):
         return 0
     lines = [line for line in layout(model, fonts).lines if line.text.strip()]
     past = [line for line in lines if line.y > box[1] + box[3] + 1e-6]
