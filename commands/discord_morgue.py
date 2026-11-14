@@ -5,28 +5,28 @@ stage 2, STAGE1 S7; the owner's answers Q1 and Q2, confirmed 11-13). Run after `
     python -m commands.discord_morgue build  [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_morgue sheets [--root <dir>]
 
-build   Each lost card (derived/match/lost_groups.json) and each lost card of the old repo (derived/oldgit/lost.json)
-        is a Morgue candidate (a joke card, or a card really played: a port or update picture, a classification
-        channel's, an update changelog line, the old repo's file), an idea never ported (review only), or neither:
-        already in MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card. The check by eye
-        (derived/morgue/eye.json) decides: name, status, the card it is, nearest live card, splits, merges, pictures
-        added or dropped. A lost card with no eye entry keeps the automatic status (MDW names, archived renames,
-        the lost group's) and is marked unchecked. A candidate or idea whose picture is the same picture as a row
-        given to a live card or the unsure review (whole and art within TWIN bits) keeps that row only when the eye
-        adds it (then listed in taken: the review page drops it there) or rules it another picture (not_twin);
-        else it goes to review (status twin), so no picture is both a live card's and the Morgue's. The kin pass
-        lists rows no entry holds that may be a lost card's (a none, art or unsure row whose title fits a candidate's
-        or idea's name better than any live card's; a none row that is a joke picture, or a played channel's with
-        card evidence) until the eye adds each to an entry, makes an entry of it (eye.json keyed by its picture id)
-        or rules it not a lost card's (not_kin). It also lists the rows that may be an MDW/The Morgue or
-        MDW/Unfinished card's (the whole within MDW_BITS of its PNG or the art within TWIN, a title like its name,
-        the same picture as such an entry's): an MDW entry takes them as a candidate does (taken), and an entry
-        whose picture is an MDW card's PNG but is ruled otherwise is listed in mdw_clash. A paper card's photo
+build   Each lost card (derived/match/lost_groups.json) and each lost card of the old repo (derived/oldgit/lost.json) is
+        a Morgue candidate (a joke card, or a card really played: a port or update picture, a classification channel's,
+        an update changelog line, the old repo's file), an idea never ported (review only), or neither: already in
+        MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card. The check by eye
+        (derived/morgue/eye.json; the owner's rulings over it: derived/review/owner.json 'morgue') decides: name,
+        status, the card it is, nearest live card, splits, merges, pictures added or dropped. A lost card with no eye
+        entry keeps the automatic status (MDW names, archived renames, the lost group's) and is marked unchecked. A
+        candidate or idea whose picture is the same picture as a row given to a live card or the unsure review (whole
+        and art within TWIN bits) keeps that row only when the eye adds it (then listed in taken: the review page drops
+        it there) or rules it another picture (not_twin); else it goes to review (status twin), so no picture is both a
+        live card's and the Morgue's. The kin pass lists rows no entry holds that may be a lost card's (a none, art or
+        unsure row whose title fits a candidate's or idea's name better than any live card's; a none row that is a joke
+        picture, or a played channel's with card evidence) until the eye adds each to an entry, makes an entry of it
+        (eye.json keyed by its picture id) or rules it not a lost card's (not_kin). It also lists the rows that may be
+        an MDW/The Morgue or MDW/Unfinished card's (the whole within MDW_BITS of its PNG or the art within TWIN, a title
+        like its name, the same picture as such an entry's): an MDW entry takes them as a candidate does (taken), and an
+        entry whose picture is an MDW card's PNG but is ruled otherwise is listed in mdw_clash. A paper card's photo
         (owner Q6) is dated "Before 2020" and comes first. Outputs under the archive's derived/morgue/ (never a repo):
-        candidates.json (candidates, then the lost cards that are not, with why; taken; created_hints: the renamed
-        and live ones' first dates for S6), ideas.json, thumbs/ (webp, every entry's pictures).
-        Candidates go only to the website's Morgue list (cards.json morgue): never cards[], decks, Unused, the
-        default search or Mentioned by. No message text, posters or authors.
+        candidates.json (candidates, then the lost cards that are not, with why; taken; created_hints: the renamed and
+        live ones' first dates for S6), ideas.json, thumbs/ (webp, every entry's pictures). Candidates go only to the
+        website's Morgue list (cards.json morgue): never cards[], decks, Unused, the default search or Mentioned by. No
+        message text, posters or authors.
 sheets  Contact sheets for the check by eye: each candidate's and idea's thumbs beside its nearest live card.
 """
 from argparse import ArgumentParser
@@ -51,6 +51,7 @@ VERDICTS = ("derived", "match", "verdicts.jsonl")
 OLD_LOST = ("derived", "oldgit", "lost.json")
 OLD_DIR = ("derived", "oldgit")                 # old lost cards' thumbs are relative to it
 PAIRS = ("derived", "matcher", "match", "pairs.json")
+OWNER = ("derived", "review", "owner.json")     # the owner's rulings outside the review page: morgue, entries as eye's
 MORGUE_DIR = dv.MORGUE_DIR
 UNFINISHED_DIR = "MDW/Unfinished/"
 OLD_STATS = "db/old_stats.json"                 # the data branch's archived cards (renamed_to: a rename)
@@ -369,6 +370,8 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         by_sha.setdefault(images[key].get("sha256"), []).append(key)
     live = {cid: c.get("name") or c.get("key") or cid for cid, c in cards.items()}
     eye = dm.read_json(paths.eye, {}) or {}
+    owner = (dm.read_json(join(root, *OWNER), {}) or {}).get("morgue") or {}
+    eye = {**eye, **{k: dict(v) for k, v in owner.items() if isinstance(v, dict)}}   # the owner's over the eye's
     made = {k: dict(v) for k, v in eye.items() if k.startswith("P-") and isinstance(v, dict)}   # keyed by a picture
     kinds = dv.channel_kinds(root)
     eras = dv.bar_reads(root)[2]
@@ -534,8 +537,8 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
                        f"{', deleted' if old.get('deleted') else ', at its end'})")
     else:
         why.append(NOT.get(x["status"], x["status"]) + (f": {x['card']}" if x.get("card") else ""))
-    why += [f"{p['id']}: by eye this card's; taken from {p['taken']['card'] or 'no card'} ({p['taken']['verdict']})"
-            for p in pics if p.get("taken")]
+    why += [f"{p['id']}: by {'the owner' if e.get('answer') else 'eye'} this card's; taken from "
+            f"{p['taken']['card'] or 'no card'} ({p['taken']['verdict']})" for p in pics if p.get("taken")]
     for t in x.get("twins") or []:
         twin, post = rows[t], first_post(rows[t].get("posts") or []) or {}
         why.append(f"the same picture as {t} ({twin['verdict']} {row_card(twin)}, {post.get('channel')} "
@@ -579,7 +582,7 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
              if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
              "weak": True if e.get("weak") else None, "twins": x.get("twins"), "made": bool(x.get("made")) or None,
-             "why": why, "eye": {"checked": bool(e), "note": e.get("note")}}
+             "why": why, "eye": {"checked": bool(e), "note": e.get("note")}, "owner": e.get("answer")}
     if used is not None:
         entry["slug"] = unique_slug(name, used)
     return {k: v for k, v in entry.items() if v not in (None, [], {}, "")} | {"eye": entry["eye"],

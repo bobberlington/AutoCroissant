@@ -28,11 +28,16 @@ build   Under the archive root's derived/facts/:
         review.jsonl    changelog lines the owner decides (ambiguous card, unsure fact, with why): ids only.
 sample  Prints n random lines that gave facts, with their facts, for an eye check (terminal only).
 A card is named by today's names (stats.json keys, titles, display and website names, file names) or by an old name
-through the old repo's sure renames (derived/oldgit/map.json); never through an alias, and no alias is written.
+through the old repo's sure renames (derived/oldgit/map.json) or the Discord-era names the timelines settled (the
+Morgue's renamed entries, eye.json 'titled', the owner's owner.json old_names, some with a time limit); never through
+an alias, and no alias is written. The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too:
+OCR'd, each 'Name (Buff/Nerf/Rework)' entry a changelog line '<message>:img<n>' (no text kept).
 Facts stop at the card repo's population (2023-11-05 23:15 PST); push notices at the old repo's first commit.
 """
 from argparse import ArgumentParser
 from collections import Counter
+from copy import copy
+from itertools import chain
 from datetime import datetime, timezone
 from hashlib import sha1
 from json import dumps, loads
@@ -169,6 +174,22 @@ BAR_CELLS, RAID_CELLS, RAID_STARS = 10, 20, 6             # bars a row holds (be
 CLUSTER = 2 * 86400                                       # reads this near the nearest one must agree with it
 NEAR = 180 * 86400                                        # farther reads never decide a unit (unlogged changes)
 BAR_WORD = re_compile(r"\bbars?\b", IGNORECASE)
+MORGUE = ("derived", "morgue", "candidates.json")         # the Morgue's renamed entries: old names (evidence only)
+MATCH_EYE = ("derived", "match", "eye.json")              # renamed first looks told by eye ('titled')
+OWNER_FILE = ("derived", "review", "owner.json")          # the owner's rulings outside the review page (old_names)
+CHANGELOG_PICTURES = ("325fb3259b34", "5ba4057218a4", "39ea31046541")   # 2019 balance changes posted as pictures
+                                                          # (general-discussion; an OCR scan of every pre-git none, art,
+                                                          # unsure and lost picture found no others: critic round 4)
+OCR_BIN = ("derived", "readers", "text", "bin", "ocr")    # the text readers' Vision CLI (timeline_text.ocr_bin)
+HEAD = re_compile(r"^(?P<head>[A-Za-z][^()]{0,48}?)\s*\(\s*(?P<tag>(?:buff|nerf|rework)[^)]*)\)\s*(?P<rest>.*)$",
+                  IGNORECASE)                             # a changelog picture's entry: 'Name (Buff/Nerf) change'
+GAP = 1.65                                                # a wrapped line sits within this many line heights
+HEAD_REVIEW = {                                           # heads naming a card that isn't sure (by eye): review
+    "Frozen in Time": "the item (Standstill, as the owner ruled the 2020 item) or the status Frozen In Time?",
+    "Blockade": "today's The Wall By Ech (its 2023 picture still prints Blockade)? 'HP -10%' is a share, not bars"}
+HEAD_ABILITY = {"Metal General": "the 5 ATK is the summoned probe's"}   # by eye: its numbers are the ability's
+BREAK = re_compile(r"(?<=\d)\s+(?=[A-Z][a-z])(?!(?:Health|Defen[cs]e|Attack|Speed|Bars?)\b)"
+                   r"|(?:(?<=\bitem)|(?<=\bcreature))\s+(?=[A-Z])")   # a picture entry's next sentence (no stop)
 
 
 # ========================
@@ -222,11 +243,12 @@ class Names:
 
     def __init__(self, live: dict, old: Optional[dict] = None, archived: Iterable = (), with_stats: Iterable = (),
                  dictionary: Iterable = (), statuses: Iterable = (), no_ability: Iterable = (), raid: Iterable = (),
-                 ids: Optional[dict] = None):
+                 ids: Optional[dict] = None, internal: Iterable = ()):
         self.by, self.longest, self.names_of = {}, 1, {}
         self.with_stats, self.words, self.statuses = set(with_stats), set(dictionary), set(statuses)
         self.no_ability = set(no_ability)                 # cards with no ability text today (minions)
         self.raid, self.ids = set(raid), ids or {}        # raid bosses; website id -> key
+        self.windowed, self._at = [], {}                  # old names meaning another card until a time
         for how, table in (("name", live), ("old", old or {})):
             for key, names in table.items():
                 for name in names:
@@ -234,10 +256,31 @@ class Names:
         for key in archived:
             if squash(key) not in self.by:
                 self.add(key, f"archived:{key}", "archived")
+        for name, key, until in internal:                 # evidence only: never written as an alias
+            if until:
+                self.windowed.append((squash(name), name, key, until))
+            elif len(squash(name)) >= 2 and squash(name) not in self.by:     # a name a card has: that card's
+                self.add(name, key, "internal")
         for form, entries in list(self.by.items()):
             if len(form) >= 8 and any(len(tokens(norm(k.split(":")[-1]))) > 1 for k, _ in entries):
                 other = form[:-1] if form.endswith("s") else form + "s"
                 self.by.setdefault(other, set(entries))
+
+    def at(self, when: str) -> "Names":
+        """The names as a line posted at when (UTC ISO) read them: an old name with a time limit (owner 11-13:
+        'Frozen in time' was the item, Standstill, until Standstill's first picture) names its card before then."""
+        active = tuple(w for w in self.windowed if when < w[3])
+        if not active:
+            return self
+        if active not in self._at:
+            other = copy(self)
+            other.by, other.names_of, other._at = dict(self.by), dict(self.names_of), {}
+            for form, name, key, _ in active:
+                other.by[form] = {(key, "internal")}
+                other.names_of[key] = set(other.names_of.get(key, ())) | {name}
+                other.longest = max(other.longest, len(tokens(norm(name))))
+            self._at[active] = other
+        return self._at[active]
 
     def add(self, name: str, key: str, how: str):
         form = squash(name)
@@ -337,7 +380,26 @@ def load_names(cards_repo: str, root: str) -> Names:
     if exists(DICT):
         with open(DICT, encoding="utf-8", errors="ignore") as f:
             words = {w.strip().lower() for w in f if w.strip()}
-    return Names(live, old, archived, with_stats, words, statuses, no_ability, raid, card_ids(stats))
+    ids = card_ids(stats)
+    return Names(live, old, archived, with_stats, words, statuses, no_ability, raid, ids, internal_names(root, ids))
+
+
+def internal_names(root: str, ids: dict) -> list:
+    """[(old name, card key, until)]: the Discord-era names the timelines settled (the Morgue's 'renamed' entries,
+    renamed first looks told by eye: eye.json 'titled', the owner's identities: owner.json old_names; until: a time
+    limit). Evidence only, never written as aliases."""
+    found = []
+    morgue = read_json(join(root, *MORGUE), {}) or {}
+    for e in morgue.get("not_candidates") or []:
+        if e.get("status") == "renamed" and ids.get(e.get("card")):
+            found += [(n, ids[e["card"]], None) for n in {e.get("name"), e.get("title_read")} if n]
+    for ruling in ((read_json(join(root, *MATCH_EYE), {}) or {}).get("pictures") or {}).values():
+        if ruling.get("titled") and ids.get(ruling.get("card")):
+            found.append((ruling["titled"], ids[ruling["card"]], None))
+    for o in (read_json(join(root, *OWNER_FILE), {}) or {}).get("old_names") or []:
+        if ids.get(o.get("card")):
+            found.append((o["name"], ids[o["card"]], o.get("until")))
+    return sorted(set(found), key=lambda f: (f[1], f[0], f[2] or ""))
 
 
 def card_ids(stats: dict) -> dict:
@@ -620,8 +682,13 @@ def rename_facts(text: str, names: Names) -> Optional[tuple]:
             continue
         to = name_like(sub(r"\s+(and|but|also|because|since|so)\b.*$", "", m.group("to")))
         frm = name_like(m.groupdict().get("from"))
+        prefix = None
         if not frm and "from" not in pattern.groupindex:
-            frm = name_like(sub(r"^\W+|[\s:,-]+$", "", text[:m.start()]))
+            prefix = sub(r"^\W+|[\s:,-]+$", "", sub(r"[\s:,-]+(?:changed?|renamed?)\s*$", "", text[:m.start()],
+                                                    flags=IGNORECASE))
+            frm = name_like(prefix)
+        if frm and prefix and squash(to or "") == squash(frm):
+            frm = None                    # 'X: changed name to X': the line's subject is already the new name
         if not to or (frm and squash(to) == squash(frm)):
             return None
         hits = [{k for k, _ in names.by.get(squash(x or ""), set())}
@@ -871,13 +938,103 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True)
             if source == "chat" and (not STAT_CHANGE.search(m["content"]) or
                                      len(m["content"].strip().split("\n")) > CHAT_LINES):
                 continue
-            carry = None
+            carry, at = None, names.at(iso(m["timestamp"]))
             for n, line in enumerate(m["content"].split("\n")):
                 if not line.strip():
                     continue
-                got = parse_line(line, names, vocabulary, source, carry)
+                got = parse_line(line, at, vocabulary, source, carry)
                 carry = got["heading"] or (carry if got.get("carried") or got["why"] == "no card" else None)
                 yield source, channel, m.get("channel_name") or titles.get(channel, (channel,))[0], m, n, line, got
+
+
+def picture_entries(lines: list) -> list:
+    """[(head, tag, text)]: a changelog picture's OCR lines ([text, conf, x, y, w, h, ...], top down) as its entries:
+    each 'Name (Buff|Nerf|Rework) change' head with the lines wrapped under it (a line within GAP line heights of the
+    one before, or starting in lower case or a digit); any other line (a title, 'Items') ends the entry."""
+    out, prev, open_ = [], None, False
+    for text, _conf, _x, y, _w, h, *_ in sorted(lines, key=lambda line: line[3]):
+        text = text.strip()
+        m = HEAD.match(text)
+        if m:
+            out.append([m["head"].strip(), m["tag"].strip(), m["rest"].strip()])
+            open_ = True
+        elif open_ and prev and (y - prev[0] < GAP * prev[1] or text[:1].islower() or text[:1].isdigit()):
+            out[-1][2] = f"{out[-1][2]} {text}".strip()
+        else:
+            open_ = False
+        prev = (y, h)
+    return [tuple(e) for e in out]
+
+
+def picture_line(head: str, rest: str, names: Names, base: Names, vocabulary: set) -> dict:
+    """One entry of a changelog picture: parsed as 'Head: change' when the head is exactly one card's name (today's,
+    an old one) and not a head the eye doubts (HEAD_REVIEW); else review (the cards it may name). The head's tag
+    states a change, so a change with no stated field is the ability's."""
+    form = squash(head)
+    keys = sorted({k for k, _ in names.by.get(form, set())})
+    doubt = {squash(h): why for h, why in HEAD_REVIEW.items()}.get(form)
+    if len(keys) != 1 or doubt:
+        near = keys + sorted({k for n in (names, base) for f, e in n.by.items() if len(form) >= 4 and
+                              (f.startswith(form) or form.startswith(f) and len(f) >= 4) for k, _ in e} - set(keys))
+        return {"facts": [], "unsure": near[:4], "why": "picture head", "heading": None,
+                "head": f"a changelog picture's head '{head}': {doubt or 'no card has this name'}"}
+    key, only = keys[0], {squash(h): why for h, why in HEAD_ABILITY.items()}.get(form)
+    got = parse_line(f"{head}: {BREAK.sub('; ', rest)}", names, vocabulary, "changelog")
+    if only:                                      # by eye: the numbers are the ability's
+        got["facts"] = [f for f in got["facts"] if f.get("kind") == "ability changed"]
+    for f in got["facts"]:
+        if f.get("doubt") == DOUBT["field"]:
+            f.update(doubt=None, sure=True)
+    if not got["facts"] and not got["unsure"]:    # the tag says it changed: no field stated, the ability
+        minion = key in names.no_ability
+        got.update(why=None, facts=[{"card": key, "kind": "ability changed", "sure": not minion,
+                                     "doubt": DOUBT["minion"] if minion else None}])
+    return got
+
+
+def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> Iterable[tuple]:
+    """(source, channel id, channel name, message, 'img<n>', entry text, parse) of the changelog pictures
+    (CHANGELOG_PICTURES), OCR'd with the text readers' Vision CLI (no text stored); none without it."""
+    import subprocess
+    tool = join(root, *OCR_BIN)
+    if not exists(tool):
+        counts["changelog pictures: no OCR tool"] += 1
+        return
+    files = {}
+    for a in read_jsonl(join(root, "attachments.jsonl")):
+        if str(a.get("sha256", ""))[:12] in CHANGELOG_PICTURES and a.get("file"):
+            files.setdefault(a["sha256"][:12], a)
+    wanted = {a["message_id"]: a["container_id"] for a in files.values()}
+    found = {}
+    for channel in sorted(set(wanted.values())):
+        for m in messages(root, channel):
+            if m["id"] in wanted:
+                found[m["id"]] = m
+    p = subprocess.Popen([tool], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        for pid in CHANGELOG_PICTURES:
+            a = files.get(pid)
+            m = found.get((a or {}).get("message_id"))
+            if not a or not m:
+                counts["changelog pictures: not in the archive"] += 1
+                continue
+            p.stdin.write(dumps({"path": join(root, a["file"]), "scale": 1.0, "fix": False}) + "\n")
+            p.stdin.flush()
+            lines = loads(p.stdout.readline()).get("lines") or []
+            counts["changelog pictures"] += 1
+            at = names.at(iso(m["timestamp"]))
+            for n, (head, _tag, rest) in enumerate(picture_entries(lines)):
+                yield ("changelog", a["container_id"], m.get("channel_name") or a["container_id"], m, f"img{n}",
+                       f"{head}: {rest}", picture_line(head, rest, at, names, vocabulary))
+    finally:
+        p.stdin.close()
+        p.wait()
+
+
+def line_order(line_id: str) -> int:
+    """A line id's place in its message ('<message>:<n>', a picture's '<message>:img<n>')."""
+    part = line_id.split(":")[1]
+    return int(part[3:]) if part.startswith("img") else int(part)
 
 
 def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True, log=print) -> dict:
@@ -886,7 +1043,8 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True
     kinds = {c: kind for c, (_, kind) in chat_channels(root).items()}
     messages_seen = set()
     seen = set()
-    for source, channel, cname, m, n, line, got in changelog_lines(root, names, vocabulary):
+    lines = chain(changelog_lines(root, names, vocabulary), picture_lines(root, names, vocabulary, counts))
+    for source, channel, cname, m, n, line, got in lines:
         counts[f"{source} lines"] += 1
         if m["id"] not in messages_seen:
             messages_seen.add(m["id"])
@@ -910,11 +1068,12 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True
                 continue
             seen.add(fact["id"])
             facts.append({**fact, "_doubt": doubt} if doubt and confidence == "unsure" else fact)
-        if got["unsure"] and source == "changelog":
+        if (got["unsure"] or got.get("head")) and source == "changelog":
             review.append({"id": "R" + short_id(line_id, "cards"), "kind": "ambiguous card",
                            "candidates": got["unsure"],
-                           "date": iso(m["timestamp"]), "channel": cname, "message": m["id"], "line": line_id,
-                           "why": "the line names several cards (or a name two cards had)"})
+                           "date": iso(m["timestamp"]), "channel": cname, "channel_id": channel, "message": m["id"],
+                           "line": line_id, "why": got.get("head") or
+                           "the line names several cards (or a name two cards had)"})
             counts["changelog lines with ambiguous cards"] += 1
         if got["why"]:
             counts[f"{source} why {got['why']}"] += 1
@@ -961,7 +1120,7 @@ def dedupe(facts: list, counts: Counter) -> list:
     to-only or by-only repeat may be a second change: kept, with 'repeat_of'. One ability mark per card and message
     (a sure one first). Sorted by date."""
     rank = {"sure": 0, "unsure": 1, "evidence": 2}
-    facts = sorted(facts, key=lambda f: (f["date"], f["message"], int(f["line"].split(":")[1])))
+    facts = sorted(facts, key=lambda f: (f["date"], f["message"], line_order(f["line"])))
     marks = {}
     for f in facts:
         if f.get("kind") == "ability changed":
@@ -1005,11 +1164,12 @@ def stamp(date: str) -> float:
 
 def load_reads(root: str, ids: dict) -> dict:
     """{card key: [(time, {hp, def})]} oldest first: sure bar reads of the Discord pictures whose card the matcher is
-    sure of (dated by the first post) and the old repo's picture-checked stats. Two-creature pictures left out."""
+    sure of (a git look or a draft; dated by the first post) and the old repo's picture-checked stats. Two-creature
+    pictures left out."""
     verdicts, reads = {}, {}
     for v in read_jsonl(join(root, *VERDICTS)):
-        if v.get("verdict") in ("version_sure", "version_unsure") and not v.get("joke") and v.get("card") in ids \
-                and (v.get("first") or {}).get("date"):
+        if v.get("verdict") in ("version_sure", "version_unsure", "draft") and not v.get("joke") and \
+                v.get("card") in ids and (v.get("first") or {}).get("date"):
             verdicts[v["file"]] = (ids[v["card"]], v["first"]["date"])
     for r in read_jsonl(join(root, *BAR_READS)):
         if r.get("src") == "discord" and r.get("file") in verdicts and not r.get("stats2"):

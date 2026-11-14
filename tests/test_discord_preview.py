@@ -177,3 +177,13 @@ def test_stop_at_git(tmp_path):
                           {"id": "P-2", "source": "discord", "date": "2026-06-19T04:06:58+00:00"},
                           {"id": "P-3", "source": "discord", "date": None, "printed": True}]}
     assert dp.mdw_cut(entry, firsts["whitepalace"]) == ["P-2"] and [p["id"] for p in entry["pictures"]] == ["P-1", "P-3"]
+
+
+def test_a_first_psd_s_row_and_created():
+    e = {"kind": "old repo", "blob": "b" * 40, "thumb": "oldgit/thumbs/" + "b" * 40 + ".webp", "psd_only": True}
+    assert dp.picture_job(e, "/r") == ("file", "/r/derived/oldgit/thumbs/" + "b" * 40 + ".webp", None)
+    assert dp.picture_job({**e, "psd_only": False}, "/r") == ("blob", "b" * 40, None)
+    laz = {"proposed": True, "status": "earlier", "date": "2023-09-10", "ours": {"source": "old repo (PSD)"},
+           "file": {"date": "2023-10-09"}}
+    got = dp.created_proposals({"cards": {"Laz": laz}})
+    assert got["Laz"]["source"] == "old repo" and got["Laz"]["psd"] and got["Laz"]["was"] == "2023-10-09"

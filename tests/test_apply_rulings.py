@@ -188,3 +188,18 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert ar.check(answer, got, {"chain-l1": number}, names)[0]["chain-l1"] == number and ar.check(answer, got, {},
                                                                                                     names)[2]
     assert not ar.check({"chain-l1": {"choice": "look", "value": key("a")}}, got, {"chain-l1": number}, names)[2]
+
+
+def test_the_owner_s_later_answers_show_read_only():
+    from types import SimpleNamespace
+    answers = {"a1": {"id": "a1", "when": "2026-11-13 14:30", "title": "Jokes", "answer": "their own", "ruling": "x"},
+               "a2": {"id": "a2", "when": "2026-11-13 23:15", "title": "Meme", "answer": "not sure", "ruling": "y"}}
+    inputs = SimpleNamespace(answers=answers, owner={"read_only": {"morgue:LC-1": "a2"}, "joke_edits": "a1",
+                                                     "notes": {"chain-1": {"answer": "a2", "note": "left open"}}})
+    assert tr.owner_answer(inputs, "morgue:LC-1")["id"] == "a2"
+    assert tr.owner_answer(inputs, "morgue:LC-2", {"kind": "joke", "nearest": {"by": "eye"}})["id"] == "a1"
+    assert tr.owner_answer(inputs, "morgue:LC-3", {"kind": "joke", "nearest": {"by": "name"}}) is None
+    items = [{"id": "chain-1", "meta": []}, {"id": "chain-2", "meta": []}]
+    tr.owner_notes(inputs, items)
+    assert items[0]["meta"] == ["The owner's answer (2026-11-13 23:15): Meme = not sure: left open"] and \
+        items[1]["meta"] == []

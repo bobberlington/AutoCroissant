@@ -549,3 +549,20 @@ def test_two_creatures_told_by_eye_publish_each_half():
     half = dc.picture_stats({"two": True, "truth": {"stats": top, "from": "eye"}}, "creature")
     assert half["confidence"] == "review"
     assert dc.read_key({"file": "a.png", "cell": 3}) == "a.png#c3" and dc.read_key({"file": "a.png"}) == "a.png"
+
+
+def test_weak_pictures_set_no_created_and_a_first_psd_dates_the_card():
+    weak, seen = picture(1, T + 5 * DAY, no_created="weak"), picture(2, T + 40 * DAY, whole=FAR)
+    files = {"Bolt": {"date": dc.day(T + 40 * DAY), "from": "discord"}}
+    got = inputs([weak, seen], created=files)
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    t = chain.card("bolt", found["bolt"], [])
+    assert [e["pictures"][0]["id"] for e in t["entries"] if e["kind"] == "discord"] == [weak["id"], seen["id"]]
+    assert t["entries"][0]["no_created"] == "weak" and "no_created" not in t["entries"][1]
+    made = chain.created("bolt", t, [weak, seen])                 # the owner's weak link enters, dates nothing
+    assert (made["status"], made["ours"]["picture"]) == ("same", seen["id"])
+    got.psd_first = {"Bolt": {"ts": T + 2 * DAY, "commit": "p1"}}  # the old repo's PSD before any PNG of it
+    made = chain.created("bolt", t, [weak, seen])
+    assert (made["status"], made["ours"]["source"], made["ours"]["day"]) == ("earlier", "old repo (PSD)",
+                                                                             dc.day(T + 2 * DAY))

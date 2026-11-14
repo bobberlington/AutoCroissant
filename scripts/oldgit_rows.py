@@ -475,6 +475,7 @@ class Data:
         self.shares = {(prev, r["blob"]): share for r in self.pictures.values() for prev, share in r.get("shares") or []}
         self.today = {}
         self.thumbs = {}
+        self.psd_firsts = {}                                   # card -> its first record when a PSD (psd_first)
 
     def load_today(self):
         stats, _, _, _ = oi.today_cards()
@@ -1023,23 +1024,48 @@ def ability_change(prev: dict, row: dict) -> str:
     return "same" if a["value"] == b["value"] else "formatting" if formatting_only(a["value"], b["value"]) else "changed"
 
 
+def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
+    """(the card's first old repo record when it is a PSD added before any PNG of it: {ts, date, commit, blob, path,
+    author, subject}, that PSD's version when its composite is a look of its own: a row) or (None, None). A PSD
+    whose composite is the first PNG's picture only dates the card (S6: 'old repo (PSD)')."""
+    psds = [v for v in versions if v["ext"] == "psd"]
+    if not psds or not pngs or psds[0]["ts"] >= pngs[0]["ts"]:
+        return None, None
+    first = psds[0]
+    off = picture_off(data, first["blob"], pngs[0]["blob"])
+    found = {"ts": first["ts"], "date": first["date"], "commit": first["commit"], "blob": first["blob"],
+             "path": first["path"], "author": data.authors.get(first["author"], first["author"]),
+             "subject": first["subject"], "off": off}
+    return found, first if off is not None and off > SAME_PICTURE else None
+
+
 def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
-    """The rows of one card's old files' PNG versions, oldest first."""
+    """The rows of one card's old files' PNG versions, oldest first; a PSD added before any PNG whose composite is a
+    look of its own first (psd_only: its composite and read; Tainted Lazarus 2023-09-10)."""
     from commands.png_changes import VISIBLE
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
     rows = []
-    for i, png in enumerate(pngs):
-        psds = [v for v in versions if v["ext"] == "psd" and v["old_id"] == png["old_id"]]
-        until = next((p["ts"] for p in pngs[i + 1:] if p["old_id"] == png["old_id"] and p["ts"] > png["ts"]), float("inf"))
-        psd, pick, off = pick_psd(data, png, psds, until)
+    first, own = psd_first(data, key, versions, pngs)
+    if first:
+        data.psd_firsts[key] = {k: v for k, v in first.items() if v is not None}
+    for png in ([own] if own else []) + pngs:
+        if png is own:                             # the composite is the picture: read and look the same
+            psd, pick, off = own, "its own composite", 0.0
+        else:
+            psds = [v for v in versions if v["ext"] == "psd" and v["old_id"] == png["old_id"]]
+            until = next((p["ts"] for p in pngs[pngs.index(png) + 1:] if p["old_id"] == png["old_id"] and
+                          p["ts"] > png["ts"]), float("inf"))
+            psd, pick, off = pick_psd(data, png, psds, until)
         fields, kind, two, note = check_fields(data, png, psd, pick, off, today)
         row = {"id": png["id"], "card": key, "old_id": png["old_id"], "date": png["date"], "ts": png["ts"],
                "author": data.authors.get(png["author"], png["author"]), "subject": png["subject"], "badge": BADGE,
                "link": None, "commit": png["commit"], "path": png["path"], "blob": png["blob"], "kind": png["kind"],
                "new_look": png["new_look"], "thumb": f"oldgit/thumbs/{png['blob']}.webp", "card_kind": kind,
                "fields": fields, "psd": note}
+        if png is own:
+            row["psd_only"] = True                 # no PNG yet: the PSD's composite (its thumb) is the picture
         name, stem = fields["name"]["value"], splitext(basename(png["path"]))[0].replace("_", " ")
         if name and names and norm(name) not in names:
             row["old_name"] = name                             # printed then: shown on the row, never an alias
@@ -1176,6 +1202,12 @@ def rows_main():
             for item in items:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
         os.replace(join(OUT, name + ".tmp"), join(OUT, name))
+    live = {r["card"] for r in live_rows}
+    oi.write_json(join(OUT, "psd_first.json"), {
+        "about": "Live cards whose first old repo record is a PSD added before any PNG of them (S6 dates them by it: "
+                 "'old repo (PSD)'); row: its composite is a look of its own, a psd_only row in rows.jsonl.",
+        "cards": {k: {**v, "row": any(r.get("psd_only") and r["card"] == k for r in live_rows)}
+                  for k, v in sorted(data.psd_firsts.items()) if k in live}})
     summary = summarize(data, live_rows, archived_rows, review)
     oi.write_json(join(OUT, "summary.json"), summary)
     print(json.dumps(summary, indent=1, ensure_ascii=False))

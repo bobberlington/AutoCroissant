@@ -187,3 +187,19 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
                 assert im.width <= dmo.THUMB_W
     text = json.dumps(data) + json.dumps(ideas)
     assert all(k not in text for k in ('"content"', '"author', "username", "Someone", "jump_url"))
+
+
+def test_the_owner_s_entries_over_the_eye_s(tmp_path):
+    root = tmp_path / "archive"
+    archive(root)
+    eye = json.loads((root / "derived/morgue/eye.json").read_text())
+    book = eye.pop(dv.picture_id(sha(14)))
+    (root / "derived/morgue/eye.json").write_text(json.dumps(eye))
+    (root / "derived/review").mkdir(parents=True, exist_ok=True)
+    (root / "derived/review/owner.json").write_text(json.dumps({"morgue": {dv.picture_id(sha(14)): {
+        **book, "name": "Book Two", "answer": "a1"}}}))
+    known = {"morgue": {}, "unfinished": {}, "renamed": {}, "looks": []}
+    dmo._build(dmo.Paths(str(root)), known, log=lambda *a: None)
+    found = {e["id"]: e for e in json.loads((root / "derived/morgue/candidates.json").read_text())["candidates"]}
+    entry = found[dv.group_id(sha(14))]
+    assert (entry["name"], entry["owner"], entry["kind"]) == ("Book Two", "a1", "played")

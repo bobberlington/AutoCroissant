@@ -102,6 +102,8 @@ TEXT_TRUTH = ("derived", "readers", "text", "truth.jsonl")
 TEXT_CAL, S_STARS_BAR = ("derived", "readers", "text", "calibration.json"), "S/today"   # status cards' star bar
 OLD_ROWS = ("derived", "oldrows", "rows.jsonl")     # old repo versions' fields (their stars)
 EYE = ("derived", "match", "eye.json")               # pictures told by eye: by_eye
+OWNER = ("derived", "review", "owner.json")          # the owner's rulings outside the review page (its pictures:
+                                                     # by_eye's shape, applied after the eye; kept apart from eye.json)
 EYE_W, EYE_BOX, EYE_BLUR = 600, 15, 1.2              # eyekeys: compared this wide, windows this big, both blurred
 LOCAL = ("derived", "match", "local.jsonl")          # card-sure pictures' local differences from their stored versions
 LOCAL_SAME, LOCAL_KEEP, LOCAL_DRAFT = 5.0, 10.0, 30.0   # local diff: that version's look / over it a gate's look is
@@ -1295,9 +1297,12 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         else:
             rows.append(judge_picture(sha, keys, sha in jokes, run))
     eye = (dm.read_json(join(root, *EYE), {}) or {}).get("pictures") or {}
+    owner = (dm.read_json(join(root, *OWNER), {}) or {}).get("pictures") or {}
     for row in rows:
         if row["id"] in eye:
             by_eye(row, eye[row["id"]] or {}, versions, cards)
+        if row["id"] in owner:                  # the owner's identity rulings (11-13): over the eye's
+            by_eye(row, owner[row["id"]] or {}, versions, cards, by="owner")
     reposts = repost_groups(rows, images, by_sha)
     for row in rows:
         image = images[by_sha[row["sha256"]][0]]
@@ -1330,7 +1335,8 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
                          cards_repo)
     makedirs(paths.out, exist_ok=True)
     order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "name_only", "created_review",
-             "eye", "joke", "meme_repost", "meme_live", "paper", "family", "version", "methods", "maybe",
+             "eye", "owner", "no_created", "joke", "meme_repost", "meme_live", "paper", "family", "version",
+             "methods", "maybe",
              "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
              "title_read", "card_evidence", "joke_draft", "posts"]
@@ -1345,14 +1351,19 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
     return tally
 
 
-def by_eye(row: dict, ruling: dict, versions: dict, cards: dict) -> None:
+def by_eye(row: dict, ruling: dict, versions: dict, cards: dict, by: str = "eye") -> None:
     """A picture told by eye (derived/match/eye.json: {pictures: {id: {card, look, why}}}): card a live card's id
     ('none': no card), look 'draft' or the git version key it shows (none: not told). Applied over the gates'
-    verdict; never to a joke picture's Morgue verdict."""
+    verdict; never to a joke picture's Morgue verdict. by 'owner': the owner's ruling (derived/review/owner.json,
+    same shape; no_created: the picture sets no Created, a weak link the owner kept)."""
     cid, look = ruling.get("card", row.get("card")), ruling.get("look")
     if row["verdict"] in ("morgue", "lost") and cid not in cards:
         return
-    why = "eye: " + (ruling.get("why") or "told by eye")
+    why = f"{by}: " + (ruling.get("why") or f"told by {by}")
+    if by != "eye" and cid in cards:
+        row["owner"] = why
+        if ruling.get("no_created"):
+            row["no_created"] = ruling["no_created"]
     if cid == "none":
         for k in ("card", "cards", "conf", "methods", "version", "name_only"):
             row.pop(k, None)
@@ -1363,14 +1374,14 @@ def by_eye(row: dict, ruling: dict, versions: dict, cards: dict) -> None:
     v = versions.get(look) if look not in (None, "draft") else None
     if v is not None and v.get("card") != cid:
         v = None
-    note = {"shows": "draft", "by": "eye", "commits": [], "git_dates": [], "keys": []} if look == "draft" else \
-        {"shows": "current" if v.get("look", 0) == 0 else "older", "by": "eye", "look": v.get("look", 0),
+    note = {"shows": "draft", "by": by, "commits": [], "git_dates": [], "keys": []} if look == "draft" else \
+        {"shows": "current" if v.get("look", 0) == 0 else "older", "by": by, "look": v.get("look", 0),
          "keys": [look], "commits": [v["commit"]] if v.get("commit") else [],
          "git_dates": [dm.iso(v["ts"])[:10]] if v.get("ts") else []} if v else \
         {**(row.get("version") or {}), "shows": None, "unsure": "the card told by eye, not its look"}
     row.pop("name_only", None)
     row.update(verdict="draft" if look == "draft" else "version_sure" if v else "version_unsure", card=cid,
-               cards=[cid], conf=1.0, version=note, eye=why, reason=why)
+               cards=[cid], conf=1.0, version=note, reason=why, **({"eye": why} if by == "eye" else {}))
     for k in ("maybe", "meme_live", "looks_like"):
         row.pop(k, None)
 

@@ -1,8 +1,8 @@
 # Card timelines from Discord
 
-**Status:** stage 2 in progress (2026-11-13): mined, old repo indexed, matcher run over every post, fields read, chains
-and Created built, review page built; a local preview built (`discord_preview`, the website's `HISTORY_DIR`).
-Nothing published (preview first, owner 11-13).
+**Status:** stage 2 in progress (2026-11-13, gap round 4 11-14): mined, old repo indexed, matcher run over every
+post, fields read, chains and Created built, review page built; a local preview built (`discord_preview`, the
+website's `HISTORY_DIR`). Nothing published (preview first, owner 11-13).
 
 ## Goal
 
@@ -62,7 +62,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    copies: none that far from every version, none at 5 from another look.
    Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
    round 2's pictures on a card's Created day, single-candidate pictures before git and near-git looks of the cards
-   with no Discord entry) override the gates. A version key is taken only when the picture is that version by eye:
+   with no Discord entry; `titled`: a renamed first look's printed title) override the gates. The owner's rulings
+   given outside the review page (`derived/review/owner.json`, kept apart from the eye's files; 11-13: the 2020
+   'PIZZA' item is Pepperoni Pizza's draft, the 2020 item 'Frozen in time' Standstill's, Wind's Blessing's five
+   pictures Second Wind's, which set no Created: `no_created`) come after the eye.
+   A version key is taken only when the picture is that version by eye:
    `discord_verdicts eyekeys` puts each beside the version's whole blob (its thumb when the clone lacks it) with the
    3 most different areas zoomed; a picture drawn otherwise in any way (a word, the title's spelling or colour, an
    icon, a medal, the text's layout or outline, the art) is a draft.
@@ -77,7 +81,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
    cards really played: the owner's answers Q1, Q2), ideas never ported (review only) and the rest (already in
    MDW/The Morgue or MDW/Unfinished, an old name of a live card, a split, no card), each checked by eye
-   (`derived/morgue/eye.json`); outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. A candidate's
+   (`derived/morgue/eye.json`; the owner's entries in `owner.json` over it: Pananda, a played creature, 11-13);
+   outputs `derived/morgue/candidates.json`, `ideas.json` and webp thumbs. A candidate's
    picture that is the same picture (whole and art within 3 bits) as a row given to a live card or the unsure review
    stays only when the eye takes that row (listed in `taken`: the review page drops it there) or rules it another
    picture; else the candidate goes to review. A kin pass lists the rows no entry holds that may still be a lost card's
@@ -161,14 +166,25 @@ the card's Image versions on the website before the git versions. Cards that nev
    40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change); a fact a later picture contradicts goes to review (a stated step,
    'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact
    that bounded its window goes), and a fact whose move the pictures around it show (the last sure value before, the
-   next after, no other fact on that field between) is confirmed by that picture (counted once). **Created:**
+   next after, no other fact on that field between) is confirmed by that picture (counted once). The changelog facts
+   (`commands/discord_facts.py`) also read the 2019 balance-change lists posted as pictures (general-discussion
+   2019-03-31 and 2019-05-14: OCR'd, each 'Name (Buff/Nerf/Rework)' entry a line `<message>:img<n>`, no text kept; a
+   head that is no card's name, or one the eye doubts, goes to review) and name cards by the old names the timelines
+   settled too (the Morgue's renamed entries, eye.json `titled`, owner.json `old_names`; 'Frozen in time' meant
+   Standstill until Standstill's first picture): evidence only, never aliases. HP/DEF units come from the card's
+   sure bar reads near the line (git looks and drafts, the old repo's rows). **Created:**
    the earliest confident appearance (a named paper photo: "Before 2020", source paper card, sorting before every day;
-   else a card-sure picture, the old repo, the card repo) against `site/Card Creation Dates.json`: same, earlier
+   else a card-sure picture, the old repo, the card repo; a PSD the old repo added before any PNG of the card, 'old
+   repo (PSD)': `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
+   row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
+   date nothing) against `site/Card Creation Dates.json`: same, earlier
    (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and
    first-repo rows before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
    check.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
-   local, never published): the owner's answers Q1-Q6 (read only, Q5's first-repo rows listed), the unsure old maps,
+   local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only, Q5's
+   first-repo rows listed; Morgue items the owner answered show read only, an open item a later answer bears on
+   says so), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
    templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
    never asked), Created dates (earlier,

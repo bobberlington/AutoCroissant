@@ -247,3 +247,32 @@ def test_two_creatures_told_by_eye_are_sure_halves(rows):
     assert rows.half_stats(got, 1, "Twin Princes")["confidence"] == "sure"
     alone = rows.check_stats(None, {"halves": {"top": top, "bottom": bottom}}, True, False)
     assert alone["confidence"] == "review" and rows.half_stats(alone, 0, "Twin Princes")["confidence"] == "review"
+
+
+def test_a_psd_before_any_png_dates_the_card_and_a_look_of_its_own_is_a_row(rows):
+    """S6: a PSD added before the card's first PNG is its first record; its composite, when a look of its own (Tainted
+    Lazarus 2023-09-10), is a row (psd_only, its thumb), else it only dates the card."""
+    path = "Creatures/Isaac/Lazarus"
+    v = lambda ext, blob, ts: {"id": f"{blob}:{path}.{ext}", "old_id": "Lazarus", "commit": blob * 20, "ts": ts,
+                               "date": f"2023-09-{ts // 10:02d}T00:00:00-04:00", "author": "Michael", "subject": "s",
+                               "path": f"{path}.{ext}", "ext": ext, "blob": blob, "kind": "add", "new_look": True}
+    versions = [v("psd", "p0", 100), v("psd", "p1", 200), v("png", "g1", 200)]
+    read = {"type": "creature", "name": "Lazarus", "printed_title": "Lazarus", "stars": 3, "types": ["light"],
+            "stats": stats(5, 4, 6, 5), "ability": "(OPT) Flip."}
+    reads = {(b, f"{path}.psd"): {"read": read} for b in ("p0", "p1")}
+    ocr = {"g1": {"title": [["LAZARUS", 1.0]], "lines": [["(OPT) Flip.", 1.0, 0.1, 0.8, 0.8, 0.05]]}}
+
+    class Apart(FakeData):
+        def thumb(self, blob):
+            import numpy as np
+            return np.full((64, 32, 3), 200 if blob == "p0" else 0, dtype=np.int16)
+    for kind, blobs in ((FakeData, ["g1"]), (Apart, ["p0", "g1"])):
+        data = kind({"Lazarus": versions}, reads, {"g1": {"best": stats(5, 4, 6, 5), "halves": {"apart": 0}}}, {},
+                    ocr, {"p0": 3, "p1": 3})
+        data.psd_firsts = {}
+        found = rows.card_rows(data, "Lazarus", ["Lazarus"], {"names": {"Lazarus"}, "creatures": False})
+        assert [r["blob"] for r in found] == blobs and data.psd_firsts["Lazarus"]["commit"] == "p0" * 20
+    first = found[0]
+    assert first["psd_only"] and first["thumb"] == "oldgit/thumbs/p0.webp"
+    assert first["psd"]["how"] == "its own composite"
+    assert first["fields"]["stars"]["value"] == 3 and "psd_only" not in found[1]

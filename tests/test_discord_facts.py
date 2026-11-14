@@ -189,3 +189,37 @@ def test_reads_join_the_matcher_and_old_rows(tmp_path):
         path.write_text("".join(json.dumps(r) + "\n" for r in rows))
     reads = F.load_reads(str(tmp_path), ids)
     assert list(reads) == ["A-B"] and [r for _, r in reads["A-B"]] == [{"hp": 4}, {"hp": 3, "def": 2}]
+
+
+def test_internal_old_names_and_their_time_limit():
+    base = names()
+    inner = F.Names({"Iron Golem": ["Iron Golem"], "Gloom": ["Gloom"], "Stand Still": ["Stand Still"]}, {}, [],
+                    with_stats={"Iron Golem"}, internal=[("Rust Golem", "Iron Golem", None), ("Gloom", "Iron Golem",
+                                                         None), ("Gloom", "Stand Still", "2020-08-02T01:49:19+00:00")])
+    assert inner.by["rustgolem"] == {("Iron Golem", "internal")}
+    assert inner.by["gloom"] == {("Gloom", "name")}                  # a name a card has today stays that card's
+    assert inner.at("2020-08-01T09:50:40+00:00").by["gloom"] == {("Stand Still", "internal")}
+    assert inner.at("2020-08-02T02:12:57+00:00") is inner            # after the limit: today's card
+    got = F.parse_line("Rust Golem: +1 ATK", inner, TYPES, "changelog")["facts"]
+    assert [(f["card"], f["field"], f["by"]) for f in got] == [("Iron Golem", "atk", 1)]
+    assert base.by.get("rustgolem") is None
+    assert facts("Mega Bot: Changed name to Mega Bot") == [{"card": "Mega Bot", "field": "name", "to": "Mega Bot",
+                                                            "sure": False}]   # the prefix is no old name
+
+
+def test_changelog_picture_entries():
+    line = lambda text, y, h=0.02: [text, 1.0, 0.05, y, 0.8, h]
+    lines = [line("April Balance Changes", 0.0, 0.07), line("Iron Golem (Rework) ATK -1 DEF -1 No longer", 0.08),
+             line("explodes on death", 0.105), line("Sun Cookie (Buff) Heals more", 0.15), line("Items", 0.22),
+             line("Old Relic (Nerf/Rework) Is now a 2 star item Cannot target", 0.26)]
+    assert F.picture_entries(lines) == [("Iron Golem", "Rework", "ATK -1 DEF -1 No longer explodes on death"),
+                                        ("Sun Cookie", "Buff", "Heals more"),
+                                        ("Old Relic", "Nerf/Rework", "Is now a 2 star item Cannot target")]
+    n = names()
+    got = F.picture_line("Iron Golem", "ATK -1 DEF -1 No longer explodes on death", n, n, TYPES)
+    assert [(f["card"], f.get("field") or f.get("kind"), f.get("by"), f["sure"]) for f in got["facts"]] == [
+        ("Iron Golem", "atk", -1, True), ("Iron Golem", "def", -1, True), ("Iron Golem", "ability changed", None, True)]
+    got = F.picture_line("Sun Cookie", "Heals more", n, n, TYPES)    # the tag says it changed: the ability
+    assert [(f["card"], f["kind"], f["sure"]) for f in got["facts"]] == [("Sun Cookie", "ability changed", True)]
+    got = F.picture_line("Golems", "Damage 6 -> 6.5", n, n, TYPES)   # no card has this name: review
+    assert got["facts"] == [] and "Golems" in got["head"]

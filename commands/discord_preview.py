@@ -112,7 +112,10 @@ def picture_name(e: dict) -> str:
 
 
 def picture_job(e: dict, root: str) -> tuple:
-    """(source kind, source, box) of a version's picture: a file of the archive (a sheet's cell box), or an old blob."""
+    """(source kind, source, box) of a version's picture: a file of the archive (a sheet's cell box), or an old blob
+    (a PSD added before any PNG: its stored composite, oldgit's thumb)."""
+    if e["kind"] == "old repo" and e.get("psd_only"):
+        return ("file", join(root, "derived", e["thumb"]), None)
     if e["kind"] == "old repo":
         return ("blob", e["blob"], None)
     pic = e["pictures"][0]
@@ -252,8 +255,12 @@ def created_proposals(created: dict) -> dict:
         if not c.get("proposed") or c.get("status") not in ("earlier", "new"):
             continue
         ours = c.get("ours") or {}
-        out[key] = {"date": c["date"], "sort": c.get("sort") or c["date"], "source": ours.get("source"),
+        source = ours.get("source")
+        out[key] = {"date": c["date"], "sort": c.get("sort") or c["date"],
+                    "source": "old repo" if source == "old repo (PSD)" else source,
                     "status": c["status"], "was": (c.get("file") or {}).get("date")}
+        if source == "old repo (PSD)":
+            out[key]["psd"] = True                 # the old repo's PSD, added before any PNG of the card
         if ours.get("as"):
             out[key]["as"] = ours["as"]
     return out

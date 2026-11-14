@@ -43,6 +43,7 @@ FACTS, FACT_REVIEW = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 MORGUE, IDEAS = ("derived", "morgue", "candidates.json"), ("derived", "morgue", "ideas.json")
 RULINGS = ("derived", "review", "rulings.json")
+OWNER = ("derived", "review", "owner.json")           # the owner's rulings outside the page (answers shown read only)
 EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
 PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"   # discord_chain's (owner Q6)
@@ -51,7 +52,8 @@ GUILD = "545138546021892096"                          # Impossibility Simulator 
 FORMAT = "card-timelines-rulings/1"                   # the export's format (apply_rulings checks it)
 STORE = "timelines-review"                            # the browser's saved answers (localStorage key prefix)
 SECTIONS = (                                          # id, title, what it asks
-    ("answers", "The owner's answers (read only)", "Your answers of 11-13 to stage 1's six questions, as built."),
+    ("answers", "The owner's answers (read only)", "Your answers of 11-13 to stage 1's six questions and your later "
+                                                   "rulings, as built."),
     ("maps", "Old repo: unsure maps", "Old-repo files whose card isn't sure. Their versions join the card you pick. "
                                       "(The seventh, Twin Princes, is under Splits: your Q3 answer.)"),
     ("matches", "Unsure matches and versions", "Discord pictures kept out of the timelines until you answer."),
@@ -107,6 +109,8 @@ class Inputs:
         self.morgue = dm.read_json(at(MORGUE), {}) or {}
         self.ideas = (dm.read_json(at(IDEAS), {}) or {}).get("ideas") or []
         self.rulings = (dm.read_json(at(RULINGS), {}) or {}).get("rulings") or {}
+        self.owner = dm.read_json(at(OWNER), {}) or {}
+        self.answers = {a["id"]: a for a in self.owner.get("answers") or []}
         self.used = set((dm.read_json(at(USED), {}) or {}).get("used") or [])
         self.left_out = {tuple(k.split("|")) for k in (dm.read_json(at(EYE), {}) or {}).get("leave_out") or {}}
         names = Counter(str(c.get("name") or cid).casefold() for cid, c in self.cards.items())
@@ -223,9 +227,10 @@ def choice(code: str, label: str, value=None, picture: Optional[dict] = None) ->
 # ========================
 def owner_answers(inputs: Inputs) -> list:
     out = []
-    for r in sorted((r for r in inputs.chain if r["kind"] == "owner's answer"), key=lambda r: r["question"]):
-        it = item(r["kind"], r["id"], "answers", None, f"{r['question']} = {r['answer']}", read_only=True)
-        it["meta"] = [r["ruling"]]
+    for n, r in enumerate(sorted((r for r in inputs.chain if r["kind"] == "owner's answer"),
+                                 key=lambda r: (r.get("order", 0), r["question"]))):
+        it = item(r["kind"], r["id"], "answers", None, f"{r['question']} = {r['answer']}", read_only=True, order=n)
+        it["meta"] = [r["ruling"]] + ([f"answered {r['when']}"] if r.get("when") else [])
         if r["question"] == "Q5":
             it["meta"].append(f"{r.get('rows')} rows on {r.get('cards')} cards; shown in the preview: "
                               f"{'yes' if r.get('shown') else 'no'}")
@@ -482,8 +487,9 @@ def fact_items(inputs: Inputs) -> list:
                 it["choices"] = [choice("yes", "right: count it")]
             it["choices"].append(choice("no", "wrong: leave it out"))
         elif r["kind"] == "ambiguous card":
-            fact = {"channel_id": next((f["channel_id"] for f in inputs.facts.values()
-                                        if f.get("message") == r.get("message")), None), "message": r.get("message")}
+            fact = {"channel_id": r.get("channel_id") or next((f["channel_id"] for f in inputs.facts.values()
+                                                               if f.get("message") == r.get("message")), None),
+                    "message": r.get("message")}
             it = item(r["kind"], r["id"], "matches", "facts", f"{when(r.get('date'))} #{r.get('channel')}",
                       date=r.get("date"), read_only=True)
             it["meta"] = [f"names: {', '.join(r.get('candidates') or [])}", r.get("why") or "",
@@ -583,6 +589,11 @@ def morgue_items(inputs: Inputs) -> list:
             label = {"yes": "on the Morgue list", "no": "leave it off"}
             it["choices"] = [choice("yes", label["yes"] + (" (as now)" if now == "yes" else "")),
                              choice("no", label["no"] + (" (as now)" if now == "no" else ""))]
+            answer = owner_answer(inputs, it["id"], e)
+            if answer:                                # the owner answered it: shown, not asked
+                it.update(read_only=True, choices=[])
+                it["meta"].append(f"The owner's answer ({answer.get('when')}): {answer['title']} = "
+                                  f"{answer['answer']}. {answer['ruling']}")
             out.append(it)
     groups = (inputs.morgue.get("candidates") or [], inputs.ideas, inputs.morgue.get("not_candidates") or [])
     thumbs = {e["id"]: e.get("thumb") for es in groups for e in es}
@@ -605,6 +616,26 @@ def morgue_items(inputs: Inputs) -> list:
     return out
 
 
+def owner_answer(inputs: Inputs, iid: str, e: Optional[dict] = None) -> Optional[dict]:
+    """The owner's answer (owner.json) an item is shown with read only: listed by its id, an entry the owner's
+    ruling made, or a joke edit of a live card (a joke candidate with its nearest live card named by eye)."""
+    aid = (inputs.owner.get("read_only") or {}).get(iid) or (e or {}).get("owner")
+    if not aid and e and e.get("kind") == "joke" and (e.get("nearest") or {}).get("by") == "eye":
+        aid = inputs.owner.get("joke_edits")
+    return inputs.answers.get(aid) if aid else None
+
+
+def owner_notes(inputs: Inputs, items: list) -> None:
+    """The owner's answers that bear on an item still open (owner.json notes): a line of its meta."""
+    notes = inputs.owner.get("notes") or {}
+    for it in items:
+        note = notes.get(it["id"])
+        answer = inputs.answers.get((note or {}).get("answer"))
+        if note and answer:
+            it["meta"].append(f"The owner's answer ({answer.get('when')}): {answer['title']} = {answer['answer']}"
+                              + (f": {note['note']}" if note.get("note") else ""))
+
+
 def offered(it: dict, r: dict) -> bool:
     """An answer one of the item's radios takes: a choice with its value, or the typed one."""
     return any(x["c"] == r.get("choice") and x.get("value") == r.get("value") for x in it.get("choices") or []) or \
@@ -616,6 +647,7 @@ def gather(inputs: Inputs) -> list:
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]
+    owner_notes(inputs, items)
     have = {i["id"] for i in items}
     for it in items:                                 # answered, but no radio here takes that answer any more (a
         r = inputs.rulings.get(it["id"])             # look's version gone): not applied
@@ -628,7 +660,8 @@ def gather(inputs: Inputs) -> list:
     order = {s[0]: n for n, s in enumerate(SECTIONS)}
     subs = {s: {p[0]: n for n, p in enumerate(parts)} for s, parts in SUBS.items()}
     return sorted(items, key=lambda i: (order[i["section"]], subs.get(i["section"], {}).get(i.get("sub"), 0),
-                                        i.get("title") if i["section"] in ("answers", "psd", "created", "maps") or
+                                        f"{i.get('order', 0):04d}" if i["section"] == "answers" else
+                                        i.get("title") if i["section"] in ("psd", "created", "maps") or
                                         i.get("sub") == "fields" else "",
                                         str(i.get("date") or ""), i["id"]))
 

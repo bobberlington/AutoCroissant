@@ -89,6 +89,8 @@ HEADER_EYE = ("derived", "readers", "types", "header_eye.jsonl")   # eras A-C: t
 MORGUE = ("derived", "morgue", "candidates.json")          # the Morgue's eye: pictures it took from a live card
 PSD_BITS = 3.0                                              # a look this near a posted PSD's composite shows it
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
+OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
+PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
 SURE_CLASSES = ("version_sure", "version_unsure", "draft")    # the card is sure (discord_verdicts)
@@ -328,6 +330,11 @@ class Inputs:
         self.old_rows = defaultdict(list)
         for row in dm.read_jsonl(p.at(OLD_ROWS)):
             self.old_rows[row["card"]].append(row)
+            cid = self.by_key.get(row["card"])
+            if row.get("psd_only") and cid and row["ts"] < (self.cards[cid].get("fs") or float("inf")):
+                self.cards[cid].update(fs=row["ts"], fs_from="old git", fs_psd=row)    # its first record: a PSD
+        self.psd_first = (dm.read_json(p.at(PSD_FIRST), {}) or {}).get("cards") or {}
+        self.owner = dm.read_json(p.at(OWNER), {}) or {}
         self.old_review = dm.read_jsonl(p.at(OLD_REVIEW))
         self.facts = dm.read_jsonl(p.at(FACTS))
         self.switches = dm.read_json(p.at(FACT_SWITCHES), {}) or {}
@@ -338,8 +345,10 @@ class Inputs:
         self.header_eye = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER_EYE)) if r.get("sure")}
         taken = {t["picture"]: t.get("entry") for t in (dm.read_json(p.at(MORGUE), {}) or {}).get("taken") or []}
         for row in self.verdicts:                # a joke or lost card's picture by the Morgue's eye: never a live card's
-            if row["id"] in taken and row["verdict"] in SURE_CLASSES:
-                row.update(morgue_taken=taken[row["id"]], verdict="unsure")
+            if row["id"] in taken:
+                row["morgue_taken"] = taken[row["id"]]
+                if row["verdict"] in SURE_CLASSES:
+                    row["verdict"] = "unsure"
         self.psds = defaultdict(list)
         for r in dm.read_jsonl(p.at(PSDS)):
             if r.get("card") and r.get("fields"):
@@ -921,8 +930,8 @@ class Chain:
         self.not_applied: set = set()            # field answers whose value is no longer the one proposed
         self._ocr = None
         self.maybe = {}                          # card -> its earliest dated picture the matcher wasn't sure of
-        for row in sorted((r for r in inputs.verdicts if r.get("first") and r["verdict"] == "unsure"),
-                          key=lambda r: r["first"]["date"]):
+        for row in sorted((r for r in inputs.verdicts if r.get("first") and r["verdict"] == "unsure"
+                           and not r.get("morgue_taken")), key=lambda r: r["first"]["date"]):
             for cid in row.get("maybe") or []:
                 self.maybe.setdefault(cid, row)
 
@@ -1273,7 +1282,7 @@ class Chain:
                      "old_ability_change": row.get("ability_change"), "fields": old_fields(row, self.review_of)}
             if row.get("split_from"):
                 entry["as"] = row["split_from"]
-            for k in ("old_name", "old_file", "in_tc_init", "two_creatures"):
+            for k in ("old_name", "old_file", "in_tc_init", "two_creatures", "psd_only"):
                 if row.get(k):
                     entry[k] = row[k]
             out.append(entry)
@@ -1594,6 +1603,10 @@ class Chain:
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
                                     {"paper": 0, "discord": 1, "text": 2, "first repo": 3, "old repo": 4}[e["kind"]],
                                     e["id"]))
+        weak = {r["id"]: r["no_created"] for r in rows if r.get("no_created")}
+        for e in entries:                                # the owner's weak link: shown, sets no Created
+            if e["kind"] == "discord" and e.get("pictures") and all(p["id"] in weak for p in e["pictures"]):
+                e["no_created"] = weak[e["pictures"][0]["id"]]
         self.no_kinds(cid, entries)
         self.owner_fields(cid, entries)
         self.star_guard(entries)
@@ -1607,7 +1620,9 @@ class Chain:
             stop = {"date": dm.iso(card["fs"]), "day": day(card["fs"]),
                     "source": "old repo" if card.get("fs_from") == "old git" else "git"}
             firsts = [v for v in self.inputs.versions.get(cid, []) if abs(v["ts"] - card["fs"]) < 1]
-            if firsts:
+            if card.get("fs_psd"):                        # a PSD added before any PNG (old repo)
+                stop.update(commit=card["fs_psd"].get("commit"), path=card["fs_psd"].get("path"), psd=True)
+            elif firsts:
                 stop.update(commit=firsts[0].get("commit"), path=firsts[0].get("path"))
         out = {"card": cid, "name": card.get("name"), "key": card["key"], "kind": card.get("type"), "stop": stop,
                "entries": entries}
@@ -1629,20 +1644,30 @@ class Chain:
         """Created = the earliest confident appearance with its source (a named paper photo first: "Before 2020",
         owner Q6); against the file. sort orders "Before 2020" before every day."""
         card, inputs = self.inputs.cards[cid], self.inputs
-        found = []
+        found, weak = [], {r["id"] for r in rows_all if r.get("no_created")}     # owner: these set no Created
         for e in timeline["entries"]:
-            if e["kind"] == "discord":
+            if e["kind"] == "discord" and not any(p["id"] in weak for p in e["pictures"]):
                 found.append((dm.epoch(e["date"]), "discord", {"picture": e["pictures"][0]["id"],
                                                                "channel": e["channel"], "as": e.get("as")}))
+            elif e["kind"] == "discord":           # the pictures the owner kept weak date nothing
+                for pic in (p for p in e["pictures"] if p["id"] not in weak and p.get("date")):
+                    found.append((dm.epoch(pic["date"]), "discord", {"picture": pic["id"], "channel": pic["channel"],
+                                                                     "as": e.get("as")}))
             elif e["kind"] == "old repo":
-                found.append((dm.epoch(e["date"]), "old repo", {"commit": e["commit"], "as": e.get("as")}))
+                found.append((dm.epoch(e["date"]), "old repo (PSD)" if e.get("psd_only") else "old repo",
+                              {"commit": e["commit"], "as": e.get("as")}))
         for row in rows_all:                       # every card-sure picture counts, its look told or not
             if row.get("first") and not row.get("created_review") and not row.get("paper") and \
-                    not row.get("joke_draft") and not (row.get("joke") and row["verdict"] != "version_sure"):
+                    not row.get("joke_draft") and not (row.get("joke") and row["verdict"] != "version_sure") and \
+                    not row.get("no_created"):
                 found.append((dm.epoch(row["first"]["date"]), "discord", {"picture": row["id"],
                                                                           "channel": row["first"]["channel"]}))
+        first = (getattr(inputs, "psd_first", None) or {}).get(card["key"])
+        if first and first.get("ts"):              # a PSD added before any PNG: a git appearance (S6)
+            found.append((first["ts"], "old repo (PSD)", {"commit": first.get("commit")}))
         if card.get("fs"):
-            found.append((card["fs"], "old repo" if card.get("fs_from") == "old git" else "git", {}))
+            found.append((card["fs"], "old repo (PSD)" if card.get("fs_psd") else "old repo"
+                          if card.get("fs_from") == "old git" else "git", {}))
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
         dated = {"date": dm.iso(when), "day": day(when), "source": source,
                  **{k: v for k, v in detail.items() if v is not None}}
@@ -1815,6 +1840,9 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
                  "shown": shown} if q == "Q5" else {}
         chain.add_review("owner's answer", q, question=q, answer=answer, ruling=text, read_only=True, **extra,
                          why="the owner's answer (2026-11-13)")
+    for n, a in enumerate(inputs.owner.get("answers") or [], 1):   # later answers (owner.json), as given
+        chain.add_review("owner's answer", a["id"], question=a["title"], answer=a["answer"], ruling=a["ruling"],
+                         read_only=True, order=n, when=a.get("when"), why=f"the owner's answer ({a.get('when')})")
     dm.write_json(paths.created, {
         "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a named paper photo: 'Before "
                  "2020', owner Q6; a card-sure Discord picture, the old repo, the card repo) with its source; status "
