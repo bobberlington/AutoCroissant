@@ -5154,12 +5154,13 @@ def below_box(keep, lines) -> bool:
     return below(lines) > below(keep.layout.lines)
 
 
-def hold_lines(layer, fonts) -> int:
+def hold_lines(layer, fonts, undrawn: bool = False) -> int:
     """
     A paragraph box with drawn lines below its bottom grown down to hold them (set_text_box, its pixels kept): Photoshop
     hides such a line when it lays the text out again (below_box). Its top, sides and transform stay; the bottom goes
     BOX_DESCENT em of its largest size under the last baseline. Not point text, a rotated or offset box, nor one with a
-    line the engine left undrawn.
+    line the engine left undrawn; undrawn: only one with such a line (its words were lost: r29, Mr Softener), which the
+    caller draws again.
 
     Returns:
         px the box grew (0: not)
@@ -5173,7 +5174,7 @@ def hold_lines(layer, fonts) -> int:
         return 0
     lines = [line for line in layout(model, fonts).lines if line.text.strip()]
     past = [line for line in lines if line.y > box[1] + box[3] + 1e-6]
-    if not past or not all(line.drawn for line in lines):
+    if not past or all(line.drawn for line in lines) == undrawn:
         return 0
     bottom = past[-1].y + BOX_DESCENT * max(run.style.size for run in model.runs if run.end > run.start)
     set_text_box(layer, (tx, ty, tx + xx * box[2], ty + yy * bottom))     # at its origin: nothing moves
@@ -5806,7 +5807,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             seen.update(key=key, verdict=ink_beyond(psd, layer, room))
         return seen["verdict"]
     report = draw()
+    grown = 0
     if which == "ability" and not copy:         # onto the design below or off the canvas: smaller (the preview's fit)
+        grown = hold_lines(layer, fonts, undrawn=True)
+        if grown:                               # every line drawn first, so none is lost
+            report = draw()
         scale, again = fit_below(psd, layer, room, fonts, draw, off_before, check)
         report = again or report
         if scale >= 1 and not off_before:       # no size fits: up, to stay on the card
@@ -5829,7 +5834,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flags.append(f"overflow: name: moved {moved:+d} px to stay on the card")
     elif anchor:
         flags.append(f"name: back where the card maker put it ({-anchor:+d} px)")
-    boxed = hold_lines(layer, fonts)
+    boxed = grown + hold_lines(layer, fonts)
     if boxed:                                   # else Photoshop hides its last line when it lays it out again (soft)
         flags.append(f"overflow: {which}: its box {boxed} px taller to hold its last line")
     bbox = tuple(layer.bbox)

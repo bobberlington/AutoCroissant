@@ -2224,7 +2224,7 @@ def test_a_line_below_its_box_grows_the_box(clone, parser, chart, tmp_path, monk
     (tmp_path / "grown").mkdir()
     (tmp_path / "plain").mkdir()
     baked = _bake(clone, parser, rel, {"ability": text}, tmp_path / "grown", chart)[1]
-    monkeypatch.setattr(pe, "hold_lines", lambda layer, fonts: 0)
+    monkeypatch.setattr(pe, "hold_lines", lambda layer, fonts, undrawn=False: 0)
     plain = _bake(clone, parser, rel, {"ability": text}, tmp_path / "plain", chart)[1]
     was, now = (TextModel.from_layer(pe.ability_layer(PSDImage.open(b.psd_path))) for b in (plain, baked))
     fonts = pe.layout_fonts(str(clone / pe.FONTS_DIR))
@@ -2232,6 +2232,21 @@ def test_a_line_below_its_box_grows_the_box(clone, parser, chart, tmp_path, monk
     assert last(was) > was.box[3] and last(now) < now.box[3]
     assert now.box[:3] == was.box[:3] and now.transform == was.transform
     assert Path(baked.png_path).read_bytes() == Path(plain.png_path).read_bytes()
+    flagged(baked.fx_notes, r"^overflow: ability: its box \d+ px taller")
+
+
+def test_lines_left_undrawn_grow_the_box_first(clone, parser, chart, tmp_path):
+    """r29: an Ability edit two lines past its box: the fork leaves the last undrawn (Photoshop's overset), so typed
+    words were lost with no note (Mr Softener). The box grows to hold every line before the fit, through every gate."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    rel = "Field/1 Stars/Keelhaul Key.psd"
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) \
+        + " Attacks deal 1 extra damage to every enemy creature."
+    baked = _bake(clone, parser, rel, {"ability": text}, tmp_path, chart)[1]
+    model = TextModel.from_layer(pe.ability_layer(PSDImage.open(baked.psd_path)))
+    lines = [line for line in layout(model, pe.layout_fonts(str(clone / pe.FONTS_DIR))).lines if line.text.strip()]
+    assert all(line.drawn for line in lines) and lines[-1].text.strip().endswith("enemy creature.")
     flagged(baked.fx_notes, r"^overflow: ability: its box \d+ px taller")
 
 
