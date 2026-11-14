@@ -7,9 +7,12 @@ which keeps a dispatched value on one line of the job's log.
 
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
     python -m commands.card_preview_branch --warm [--git <checkout>]
+    python -m commands.card_preview_branch --take <dir>
 
 --warm reads the branch while the job waits for the preview: publish's first try then builds on that head, no network
-until the push (a refused push: the usual tries from the head then).
+until the push (a refused push: the usual tries from the head then). --take is the job's wait: this run's hand-over
+(the preview job's artifact) listed by conditional GETs on one connection, then its zip unzipped into <dir> (take_over);
+`go=` and `took=` lines on stdout for $GITHUB_OUTPUT.
 
 Standard library and git only (never PIL, psd-tools, requests or card_bake): card-preview.yml's publish job runs it with
 the runner's own python3 and no pip install, so a preview that never ran (a failed install, a timeout) is still published,
@@ -18,16 +21,21 @@ without delta search). SPARSE_FILES is its import closure (the publish job's che
 """
 from argparse import ArgumentParser
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from http.client import HTTPException, HTTPSConnection
+from io import BytesIO
 from json import dumps, loads
-from os import environ
+from os import environ, makedirs
 from os.path import isfile, join
 from random import uniform
 from re import compile as re_compile
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import argv, stderr
-from time import sleep
+from time import monotonic, sleep
 from typing import Optional
 from unicodedata import category
+from urllib.parse import urlsplit
+from zipfile import BadZipFile, ZipFile
 
 from commands.repo_history import batch_env
 
@@ -53,6 +61,13 @@ GIT_TIMEOUT = 300
 IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissant@gmail.com",
             "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "autocroissant@gmail.com"}  # git_commit's
 BREAKS = ("Cc", "Zl", "Zp")                     # control characters and line or paragraph separators
+ARTIFACT = "card-preview"                       # the preview job's hand-over (card-preview.yml's Hand over)
+HANDED = (RESULT, SMALL, BEFORE)                # the only names taken from its zip
+ZIP_CAP = 16 << 20                              # bytes: the zip, and the files taken from it
+POLL, POLL_LATE, LATE = 0.25, 3, 55             # s between listings (a 304 isn't counted); POLL_LATE from LATE s on
+JOB_FIRST, JOB_EVERY = 10, 15                   # s: the preview job looked at (ended without a hand-over?)
+WAIT = 715                                      # s at most (the step's 5 s before it: 12 minutes)
+LOW = 100                                       # rate limit left under which listings slow to POLL_LATE
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
                  "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.avif` and "
                  "`before.avif` (the card before the edit, for the Diff); "
@@ -282,6 +297,156 @@ def publish(out: str, request: str, where: str = ".", now: Optional[datetime] = 
 
 
 # ========================
+# The hand-over
+# ========================
+class _Api:
+    """GETs on one kept HTTPS connection to the API host (the token's only host), conditional where asked."""
+
+    def __init__(self, base: str, token: str):
+        url = urlsplit(base)
+        self.host, self.root = url.netloc, url.path.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "card-preview-publish"}
+        self.connection = None
+        self.tags = {}                          # path -> ETag
+        self.used, self.left, self.sent, self.unchanged = [], None, 0, 0
+
+    def get(self, path: str, conditional: bool = False) -> tuple:
+        """(status, reply, body); one retry on a fresh connection."""
+        headers = {**self.headers, **({"If-None-Match": self.tags[path]} if conditional and path in self.tags else {})}
+        for retry in (False, True):
+            if self.connection is None:
+                self.connection = HTTPSConnection(self.host, timeout=10)
+            try:
+                self.connection.request("GET", self.root + path, headers=headers)
+                reply = self.connection.getresponse()
+                body = reply.read()
+                break
+            except (OSError, HTTPException):
+                self.close()
+                if retry:
+                    raise
+        self.sent += 1
+        self.unchanged += reply.status == 304
+        if reply.getheader("X-RateLimit-Used"):
+            used = int(reply.getheader("X-RateLimit-Used"))
+            self.used = [(self.used or [used])[0], used]       # first, last
+            self.left = int(reply.getheader("X-RateLimit-Remaining") or 0)
+        if conditional and reply.status == 200 and reply.getheader("ETag"):
+            self.tags[path] = reply.getheader("ETag")
+        return reply.status, reply, body
+
+    def close(self) -> None:
+        if self.connection is not None:
+            self.connection.close()
+        self.connection = None
+
+
+def _unzip(data: bytes) -> dict:
+    """HANDED's files in a zip, {name: bytes}; raises ValueError on a bad zip or past ZIP_CAP."""
+    files, total = {}, 0
+    try:
+        with ZipFile(BytesIO(data)) as archive:
+            for info in archive.infolist():
+                if info.filename in HANDED and info.filename not in files:
+                    total += info.file_size
+                    if total > ZIP_CAP:
+                        raise ValueError("past the size cap")
+                    files[info.filename] = archive.read(info)
+    except (BadZipFile, OSError, EOFError) as error:
+        raise ValueError(f"unreadable zip: {error}") from error
+    return files
+
+
+def _found(status: int, reply, body: bytes) -> list:
+    """ARTIFACT's rows in a 200 listing ([] for any other reply)."""
+    return [a for a in loads(body).get("artifacts", []) if a.get("name") == ARTIFACT and not a.get("expired")] if status == 200 else []
+
+
+def _take(api: _Api, repo: str, row: dict, out: str) -> dict:
+    """The listed artifact's zip: its 302 on the API's connection, the blob store's URL without the token, checked
+    against the row's digest; HANDED's files written into out. Returns {name: size}; raises ValueError or OSError."""
+    status, reply, _ = api.get(f"/repos/{repo}/actions/artifacts/{int(row['id'])}/zip")
+    to = urlsplit(reply.getheader("Location") or "")
+    if status != 302 or to.scheme != "https" or not to.netloc:
+        raise ValueError(f"the zip answered {status}")
+    store = HTTPSConnection(to.netloc, timeout=30)
+    try:
+        store.request("GET", to.path + (f"?{to.query}" if to.query else ""), headers={"User-Agent": "card-preview-publish"})
+        reply = store.getresponse()
+        data = reply.read(ZIP_CAP + 1)
+    except HTTPException as error:
+        raise ValueError(f"the blob store: {error}") from error
+    finally:
+        store.close()
+    if reply.status != 200 or len(data) > ZIP_CAP:
+        raise ValueError(f"the blob store answered {reply.status} ({len(data)} bytes)")
+    digest = str(row.get("digest") or "")
+    if digest.startswith("sha256:") and digest[7:] != sha256(data).hexdigest():
+        raise ValueError("the zip's digest isn't the listing's")
+    files = _unzip(data)
+    makedirs(out, exist_ok=True)
+    for name, body in files.items():
+        with open(join(out, name), "wb") as fh:
+            fh.write(body)
+    return {name: len(body) for name, body in files.items()}
+
+
+def take_over(out: str, repo: str, run: str, token: str, base: str = "https://api.github.com", limit: float = WAIT) -> str:
+    """
+    card-preview.yml's wait: the run's ARTIFACT listed (every POLL s, If-None-Match: a 304 isn't counted against the
+    rate limit), then its zip from the same connection (_take); the preview job looked at from JOB_FIRST s, every
+    JOB_EVERY s, for an end without a hand-over. Never raises for GitHub's or the network's sake.
+
+    Returns:
+        "taken" (HANDED's files in out), "listed" (listed, not taken: the fallback download-artifact's), "ended" (the
+        job validated, then ended without a hand-over: Publish publishes a try-again error), "invalid" (it never
+        validated: nothing to publish) or "late" (none of those in limit seconds)
+    """
+    api, runs, start = _Api(base, token), f"/repos/{repo}/actions/runs/{run}", monotonic()
+    listing, job_at, state = f"{runs}/artifacts?name={ARTIFACT}", JOB_FIRST, "late"
+    try:
+        while monotonic() - start < limit:
+            pause = POLL if monotonic() - start < LATE and (api.left is None or api.left >= LOW) else POLL_LATE
+            try:
+                status, reply, body = api.get(listing, conditional=True)
+                found = _found(status, reply, body)
+                if found:
+                    state = "listed"
+                    break
+                if status in (403, 429):            # rate limited
+                    pause = max(POLL_LATE, int(reply.getheader("Retry-After") or 0))
+                elif status not in (200, 304):
+                    pause = max(pause, 1)
+                if monotonic() - start >= job_at:
+                    job_at = monotonic() - start + JOB_EVERY
+                    status, _, body = api.get(f"{runs}/jobs", conditional=True)
+                    job = next((j for j in loads(body).get("jobs", []) if j.get("name") == "preview"), None) if status == 200 else None
+                    if job and job.get("status") == "completed":
+                        valid = any(s.get("name") == "Validate" and s.get("conclusion") == "success" for s in job.get("steps") or [])
+                        found = _found(*api.get(listing)) if valid else []     # a hand-over since the listing
+                        state = "listed" if found else "ended" if valid else "invalid"
+                        break
+            except (OSError, HTTPException, ValueError, AttributeError) as error:
+                print(f"card_preview_branch: a read failed ({clean(type(error).__name__)}): tried again", file=stderr)
+                pause = max(pause, 1)
+            sleep(pause)
+        took = monotonic()
+        if state == "listed":
+            try:
+                sizes = _take(api, repo, found[0], out)
+                state = "taken"
+                print(f"Hand-over taken in {monotonic() - took:.2f} s: " + ", ".join(f"{n} ({s} bytes)" for n, s in sizes.items()), file=stderr)
+            except (OSError, HTTPException, ValueError, KeyError, TypeError) as error:
+                print(f"card_preview_branch: the hand-over not taken ({clean(error, 300)}): download-artifact's", file=stderr)
+    finally:
+        api.close()
+    used = f"rate limit used {api.used[0]} -> {api.used[-1]}" if api.used else "no rate limit read"
+    print(f"Waited {took - start:.1f} s: {state}; {api.sent} API reads, {api.unchanged} not modified; {used}.", file=stderr)
+    return state
+
+
+# ========================
 # Public API Functions
 # ========================
 def main(args: Optional[list] = None) -> int:
@@ -293,7 +458,20 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--request", help="the client's id (8-64 of A-Z a-z 0-9 -)")
     parser.add_argument("--git", default=".", help="a checkout of the card repo (its git and credentials)")
     parser.add_argument("--warm", action="store_true", help="only read the branch, for a publish later (no --out or --request)")
+    parser.add_argument("--take", metavar="DIR", help="wait for this run's hand-over, unzipped into DIR (env GITHUB_REPOSITORY, "
+                                                      "GITHUB_RUN_ID, GH_TOKEN); go= and took= lines on stdout")
     options = parser.parse_args(argv[1:] if args is None else args)
+    if options.take:
+        state = take_over(options.take, environ["GITHUB_REPOSITORY"], environ["GITHUB_RUN_ID"],
+                          environ.get("GH_TOKEN") or environ.get("GITHUB_TOKEN", ""),
+                          environ.get("GITHUB_API_URL", "https://api.github.com"))
+        if state == "invalid":
+            print("The request never validated: nothing to publish.", file=stderr)
+        elif state == "late":
+            print("::warning::the preview did not end in 12 minutes: nothing published", file=stderr)
+        else:
+            print("go=true" + ("\ntook=true" if state == "taken" else ""))
+        return 0
     if not options.warm and (options.out is None or options.request is None):
         parser.error("--out and --request are required")
     try:
@@ -328,5 +506,6 @@ __all__ = [
     'main',
     'publish',
     'stamp',
+    'take_over',
     'warm',
 ]

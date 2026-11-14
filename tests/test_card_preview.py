@@ -516,6 +516,82 @@ def test_publish_on_a_warm_read(remote, tmp_path, monkeypatch):
     assert sorted(_index(remote.bare)) == ["base-0-0000", "mine-0-0000", "mine-1-0000", "mine-2-0000", "race-0-0000", "race-1-0000"] and not naps
 
 
+def _fake_github(monkeypatch, listings: list, jobs: dict, blob: bytes, digest: str = "") -> list:
+    """br's HTTPSConnection as GitHub: the run's artifact listings in turn (then the last), its jobs, the zip's 302 to
+    another host, the blob there (its digest listed); a fake clock. Returns the requests, (host, path, headers)."""
+    from hashlib import sha256
+    row = {"id": 7, "name": br.ARTIFACT, "digest": "sha256:" + (digest or sha256(blob).hexdigest())}
+    sent, clock = [], [0.0]
+
+    class Reply:
+        def __init__(self, status, body=b"", **headers):
+            self.status, self.body, self.headers = status, body, headers
+
+        def getheader(self, name, default=None):
+            return self.headers.get(name.replace("-", "_"), default)
+
+        def read(self, limit=None):
+            return self.body
+
+    class Connection:
+        def __init__(self, host, timeout=None):
+            self.host = host
+
+        def request(self, method, path, headers):
+            sent.append((self.host, path, headers))
+            if self.host == "blob.example":
+                self.reply = Reply(200, blob)
+            elif path.endswith("/zip"):
+                self.reply = Reply(302, Location="https://blob.example/a/b?sig=s")
+            elif path.endswith("/jobs"):
+                self.reply = Reply(200, json.dumps(jobs).encode())
+            else:
+                status, tag = listings.pop(0) if len(listings) > 1 else listings[0]
+                self.reply = (Reply(304) if tag and headers.get("If-None-Match") == tag else
+                              Reply(200, json.dumps({"artifacts": [row] if status else []}).encode(), ETag=tag))
+
+        def getresponse(self):
+            return self.reply
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(br, "HTTPSConnection", Connection)
+    monkeypatch.setattr(br, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    monkeypatch.setattr(br, "monotonic", lambda: clock[0])
+    return sent
+
+
+def test_the_take_over(tmp_path, monkeypatch, capsys):
+    """--take: the listing until the hand-over shows (If-None-Match: 304s), its zip through the 302, the blob store
+    asked without the token, only HANDED's names written; a job that ended without a hand-over, or never validated;
+    a zip past the cap or of another digest left to download-artifact."""
+    import zipfile
+    from io import BytesIO
+    zipped = BytesIO()
+    with zipfile.ZipFile(zipped, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in ((br.RESULT, b'{"state": "baked"}'), (br.SMALL, b"avif"), ("../x.avif", b"no"), ("a/" + br.BEFORE, b"no")):
+            z.writestr(name, data)
+    env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5", "GH_TOKEN": "tok", "GITHUB_API_URL": "https://api.example"}
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    running = {"jobs": [{"name": "preview", "status": "in_progress", "steps": []}]}
+    sent = _fake_github(monkeypatch, [(0, '"e1"'), (0, '"e1"'), (1, '"e2"')], running, zipped.getvalue())
+    assert br.main(["--take", str(tmp_path / "p")]) == 0
+    assert capsys.readouterr().out.split() == ["go=true", "took=true"]
+    assert sorted(f.name for f in (tmp_path / "p").iterdir()) == [br.SMALL, br.RESULT]
+    assert [h.get("If-None-Match") for host, p, h in sent if "artifacts?" in p] == [None, '"e1"', '"e1"']
+    assert [host for host, p, h in sent if "Authorization" in h] == ["api.example"] * 4 and sent[-1][0] == "blob.example"
+
+    ended = {"jobs": [{"name": "preview", "status": "completed", "steps": [{"name": "Validate", "conclusion": "success"}]}]}
+    for jobs, cap, digest, out in ((ended, br.ZIP_CAP, "", "go=true"), ({"jobs": [{"name": "preview", "status": "completed", "steps": []}]}, br.ZIP_CAP, "", ""),
+                                   (running, 10, "", "go=true"), (running, br.ZIP_CAP, "0" * 64, "go=true")):
+        _fake_github(monkeypatch, [(0, '"e1"')] if jobs is not running else [(1, '"e2"')], jobs, zipped.getvalue(), digest)
+        monkeypatch.setattr(br, "ZIP_CAP", cap)
+        assert br.main(["--take", str(tmp_path / "q")]) == 0 and capsys.readouterr().out.strip() == out
+    assert not (tmp_path / "q").exists()
+
+
 # ========================
 # card-preview.yml
 # ========================
