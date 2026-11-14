@@ -2077,6 +2077,20 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
 MIASMA = "Auxiliary/Minions/Miasma.psd"   # its merged image a third of the file
 
 
+def test_layer_records_compare_channel_bytes(tmp_path):
+    """layer_records holds each channel's bytes as read: a same-length change shows, records taken before it stay."""
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (8, 8))
+    psd.append(PixelLayer.frompil(Image.new("RGB", (8, 8), (200, 30, 30)), psd, "Square"))
+    psd.save(str(tmp_path / "a.psd"))
+    old, psd = pe.layer_records(str(tmp_path / "a.psd")), PSDImage.open(tmp_path / "a.psd")
+    taken = pe.layer_records(psd)
+    channel = psd._record.layer_and_mask_information.layer_info.channel_image_data[0][1]
+    channel.data = channel.data[:-1] + bytes([channel.data[-1] ^ 1])
+    assert taken == old and pe.layer_records(psd) != old
+    with pytest.raises(TypeError):
+        hash(old[0]["channels"])
+
 def test_save_psd_writes_effects_photoshop_reads(clone, tmp_path):
     """An effects block at version 1 (psd-tools' set_data, 11-08): Photoshop 2023 cannot read it; save_psd writes 0."""
     psd = PSDImage.open(_card(clone, GASOLINE)[0])

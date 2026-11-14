@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from json import load
 from difflib import SequenceMatcher
-from hashlib import blake2b, sha1
+from hashlib import blake2b
 from inspect import signature
 from itertools import combinations, product, zip_longest
 from io import BytesIO
@@ -9785,8 +9785,8 @@ def _fx_bytes(key, block) -> bytes:
 
 def layer_records(path) -> list:
     """
-    Each layer record's identity-free fingerprint: name, flags, rect, channels (id, length, pixel digest), mask, blend
-    and tagged blocks by key;
+    Each layer record's identity-free fingerprint: name, flags, rect, channels (id, length, _Pixels), mask, blend and
+    tagged blocks by key;
     path a file, an open PSD (read as opened: no edit on it) or its layer_records() already.
     """
     if isinstance(path, list):
@@ -9801,7 +9801,7 @@ def layer_records(path) -> list:
         out.append({"name": blocks.get_data(Tag.UNICODE_LAYER_NAME, record.name) if blocks else record.name,
                     "flags": record.flags.tobytes(),
                     "rect": (record.top, record.left, record.bottom, record.right),
-                    "channels": tuple((int(channel.id), channel.length, _digest(part))
+                    "channels": tuple((int(channel.id), channel.length, b"" if part is None else _Pixels(part))
                                       for channel, part in zip_longest(record.channel_info, data)),
                     "mask": mask.tobytes() if mask is not None else b"",
                     "blend": (record.blend_mode, record.opacity, record.clipping),
@@ -9820,14 +9820,19 @@ def _comp_record(a: dict, b: dict) -> Optional[str]:
     return f"changed {', '.join(map(repr, other))}" if other else None
 
 
-def _digest(channel) -> bytes:
-    """A channel's compression and data, hashed (sha1: hardware on arm64 and x86): a same-length change to a layer's
-    pixels shows. Compared within a run only."""
-    if channel is None:
-        return b""
-    digest = sha1(pack(">H", channel.compression.value))
-    digest.update(channel.data)
-    return digest.digest()
+class _Pixels:
+    """A channel's compression and data as read, compared by their bytes (no hash): a same-length change to a layer's
+    pixels shows."""
+    __slots__ = ("compression", "data")
+    __hash__ = None
+
+    def __init__(self, channel):
+        self.compression, self.data = channel.compression, channel.data
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, _Pixels):
+            return NotImplemented
+        return self.compression == other.compression and self.data == other.data
 
 
 MASK_RECT = ("top", "left", "bottom", "right", "real_top", "real_left", "real_bottom", "real_right")
