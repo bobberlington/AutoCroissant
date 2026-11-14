@@ -333,7 +333,7 @@ def test_an_eye_keys_local_difference_finds_a_small_drawn_change():
 def test_the_local_gate_tells_a_stored_versions_look_and_drafts_far_ones():
     """local.jsonl (eyekeys' score against every stored version, aspect within 1%): at LOCAL_SAME a version's look
     whatever the gates say; a gate's look over LOCAL_KEEP from its look not told; LOCAL_DRAFT from every stored
-    version a draft, unless a version made before the post wasn't compared."""
+    version a draft, unless a version made before the post wasn't compared, or none of the picked look's."""
     versions = {"a": {"key": "a", "card": "c", "look": 0, "whole": H, "ts": T},
                 "b": {"key": "b", "card": "c", "look": 1, "whole": FAR, "ts": T}}
     members = list(versions.values())
@@ -356,3 +356,6 @@ def test_the_local_gate_tells_a_stored_versions_look_and_drafts_far_ones():
     image["w"] = 400                                                                # a small picture: further
     assert kind({"a": [31.0, 1.0], "b": [80.0, 1.0]})[0] is None and kind({"a": [50.0, 1.0], "b": [80.0, 1.0]})[0] == "draft"
     assert dv.local_seen(None, members) == {}
+    versions["c"] = {"key": "c", "card": "c", "look": 2, "whole": FAR, "ts": T + 20}     # unstored, after the post
+    members = list(versions.values())
+    assert kind({"a": [50.0, 1.0], "b": [80.0, 1.0]}, how=dict(pick, keys=["c"]))[0] is None   # the pick unseen

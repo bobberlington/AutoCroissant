@@ -71,6 +71,8 @@ ICON_GAP = 4                # ... nearer than the next type's by this much or ha
 ICON_NEAR = 6               # nearest types kept per icon
 TWO_ROWS = 2                # rows whose top and bottom halves read apart: two creatures
 SPLITS = {"Twin Princes": ("Lothric", "Lorian")}    # one old card, two live ones (STAGE1 Q3, provisional A)
+SPLIT_EYE = {"Twin Princes": "the bar colours: Lorian's orange top rows, Lothric's blue bottom ones, as on today's "
+                             "cards (by eye)"}
 STAR_BAND = 1 / 6           # the card's top, where its stars are: the composite there = the PNG's
 MISSING_WORDS = 4           # card words in OCR'd ability lines the PSD text lacks: the card prints more (Pix)
 OLD_TYPES = {"undread": "undead", "tornado": "wind"}    # renamed types (same pictures)
@@ -1087,15 +1089,19 @@ def split_rows(data: Data, old_id: str, rows: list) -> dict:
     top rows, Lothric's blue bottom ones: gap round 3 by eye)."""
     cards = SPLITS[old_id]
     refs = {"today": {}, "last old version": {}, "first old version": {}}
+    days = defaultdict(set)
     for key in cards:
         if (data.today.get(key) or {}).get("stats"):
             refs["today"][key] = data.today[key]["stats"]
         ids = [o for o, c in data.map["cards"].items() if c.get("key") == key and c.get("confidence") == "sure"]
-        found = [s for s in (valid_stats(((data.psd.get((v["blob"], v["path"])) or {}).get("read") or {}).get("stats"))
-                             for v in sorted((v for o in ids for v in data.versions.get(o, []) if v["ext"] == "psd"),
-                                             key=lambda v: v["ts"])) if s]
+        found = [(v, s) for v, s in ((v, valid_stats(((data.psd.get((v["blob"], v["path"])) or {}).get("read") or {})
+                                                      .get("stats")))
+                                     for v in sorted((v for o in ids for v in data.versions.get(o, [])
+                                                      if v["ext"] == "psd"), key=lambda v: v["ts"])) if s]
         if found:
-            refs["first old version"][key], refs["last old version"][key] = found[0], found[-1]
+            refs["first old version"][key], refs["last old version"][key] = found[0][1], found[-1][1]
+            days["first old version"].add(found[0][0]["date"][:10])
+            days["last old version"].add(found[-1][0]["date"][:10])
     last = (rows[-1]["fields"].get("stats") or {}).get("creatures", {}).get("picture") or [None, None]
     dist = lambda a, b: sum(abs(a[s] - b[s]) for s in ORDER) if a and b and None not in a.values() else 99
     readings = {}
@@ -1104,7 +1110,7 @@ def split_rows(data: Data, old_id: str, rows: list) -> dict:
             ways = {"top": cards[0], "bottom": cards[1]}, {"top": cards[1], "bottom": cards[0]}
             costs = [dist(last[0], ref[w["top"]]) + dist(last[1], ref[w["bottom"]]) for w in ways]
             readings[name] = {**ways[costs.index(min(costs))], "distance": min(costs), "other way": max(costs),
-                              "stats": ref}
+                              "stats": ref, **({"days": sorted(days[name])} if days.get(name) else {})}
     by = next((n for n in refs if n in readings), None)
     order = (readings[by]["top"], readings[by]["bottom"]) if by else cards
     out = {}
@@ -1113,7 +1119,7 @@ def split_rows(data: Data, old_id: str, rows: list) -> dict:
                      "fields": {**r["fields"], "stats": half_stats(r["fields"].get("stats") or {}, half, old_id)}}
                     for r in rows]
     return {"halves": {k: ("top" if i == 0 else "bottom") for i, k in enumerate(order)}, "matched_by": by,
-            "readings": readings, "rows": out}
+            "readings": readings, "rows": out, **({"eye": SPLIT_EYE[old_id]} if old_id in SPLIT_EYE else {})}
 
 
 def half_stats(stats: dict, half: int, old_id: str) -> dict:

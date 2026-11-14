@@ -110,6 +110,7 @@ LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a c
                                                               # this many times the pair's 90th percentile cell (floored)
 BACKED = ("eye", "psd", "git look", "owner")                  # star reads no icon reader made
 APART_DAYS = 30                                               # two icon reads this far apart: read separately
+FACT_GRACE_DAYS = 3                                           # a picture this near before a changelog line: its port
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
 ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "attack", "infliction", "counter",
               "negation", "deploy", "offense", "protective"}  # an item's kind (its subtype; the last two the old
@@ -1368,6 +1369,31 @@ class Chain:
                                               "around it say otherwise)", f["value"], f.get("conf"))
                 self.tally["discord: stars, an icon read change nothing backs (review)"] += 1
 
+    def star_fact_guard(self, entries: list) -> None:
+        """Icon-read star counts in the run of versions just before a sure changelog line that changes the stars to
+        that count (Charge's overlapped 2 read 1 before 'stars to 1') go to review: the line says it was another.
+        Not when a read no icon reader made (BACKED) is in the run, or the run's last picture is within
+        FACT_GRACE_DAYS of the line (a port picture with its changelog)."""
+        versions = [e for e in entries if e["kind"] in ("discord", "old repo") and e.get("date")]
+        facts = [e for e in entries if e["kind"] == "text" and e["change"].get("field") == "stars" and
+                 "to" in e["change"]]
+        for f in facts:
+            to, when = f["change"]["to"], dm.epoch(f["date"])
+            run = []
+            for e in reversed([v for v in versions if dm.epoch(v["date"]) < when]):
+                got = e["fields"].get("stars")
+                if not is_sure(got) or got["value"] != to:
+                    break
+                run.append(e)
+            if not run or any(e["kind"] != "discord" or str(e["fields"]["stars"]["method"]).startswith(BACKED)
+                              for e in run) or when - dm.epoch(run[0]["date"]) <= FACT_GRACE_DAYS * 86400:
+                continue
+            for e in run:
+                got = e["fields"]["stars"]
+                e["fields"]["stars"] = unsure(got["method"], f"a later changelog line changes the stars to {to} "
+                                              "(it read so before)", got["value"], got.get("conf"))
+                self.tally["discord: stars, the count a later changelog line changes them to (review)"] += 1
+
     def check_facts(self, cid: str, entries: list) -> list:
         """A stat or stars fact against the pictures. Its new value (to; else by on the value before it: the last sure
         picture's, moved by the kept facts since) read otherwise by the next picture (within NEAR_DAYS, before the next
@@ -1571,7 +1597,8 @@ class Chain:
         self.no_kinds(cid, entries)
         self.owner_fields(cid, entries)
         self.star_guard(entries)
-        self.owner_fields(cid, entries)                  # a star the guard took to review, answered
+        self.star_fact_guard(entries)
+        self.owner_fields(cid, entries)                  # a star the guards took to review, answered
         entries = self.check_facts(cid, entries)
         self.diff(entries, card.get("type"))
         self.field_reviews(cid, entries)
@@ -1773,7 +1800,11 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
             kinds[e["kind"]] += 1
     for group in chain.splits.values():
         halves = group["split_of"]["into"]
+        how = next(({k: i["split"][k] for k in ("halves", "matched_by", "readings", "eye") if k in i["split"]}
+                    for i in inputs.old_review if (i.get("split") or {}).get("halves")
+                    and i.get("old_id") == group["split_of"]["name"]), None)
         chain.add_review("split", group["id"], name=group["split_of"]["name"], halves=halves, group=group["id"],
+                         picked=how,
                          entries={h: sum(1 for e in timelines[h]["entries"] if e.get("as")) for h in halves
                                   if h in timelines},
                          why="an old card that became two (owner Q3): both halves start with its versions, each "

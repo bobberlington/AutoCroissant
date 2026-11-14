@@ -687,7 +687,8 @@ def decide(pick: dict, image: dict, versions: dict, members: list) -> tuple:
         note.update(shows="draft", far=round(far, 2), commits=[], git_dates=[], keys=[])
         note.pop("unsure", None)
         return "draft", note
-    why = local_draft(image, members) or (no_git_look(image, members, near) if image.get("shape") and near else None)
+    why = local_draft(image, members, pick.get("keys") or ()) or (
+        no_git_look(image, members, near) if image.get("shape") and near else None)
     if why:
         note.update(shows="draft", far=round(min(near.values()), 2) if near else None, commits=[], git_dates=[],
                     keys=[], draft=why)
@@ -707,14 +708,15 @@ def local_seen(row: Optional[dict], members: list) -> dict:
             "local_unread": [keys[k].get("ts") for k in keys if k not in got]}
 
 
-def local_draft(image: dict, members: list) -> Optional[str]:
+def local_draft(image: dict, members: list, picked=()) -> Optional[str]:
     """A draft by the local gate: LOCAL_DRAFT from every stored version with its aspect ratio (LOCAL_DRAFT_NARROW
-    under LOCAL_WIDE), none made before the post left uncompared (localtest: no Discord or small copy of a git
-    version gets there)."""
+    under LOCAL_WIDE), none made before the post left uncompared, and one of the look the matcher picked (picked: its
+    versions) compared (localtest: no Discord or small copy of a git version gets there)."""
     local, posted = image.get("local") or {}, image.get("posted")
     bar = LOCAL_DRAFT if (image.get("w") or 0) >= LOCAL_WIDE else LOCAL_DRAFT_NARROW
     if not local or min(local.values()) < bar or unstored_before(image, members) or \
-            any(t is None or posted is None or float(t) <= posted for t in image.get("local_unread") or ()):
+            any(t is None or posted is None or float(t) <= posted for t in image.get("local_unread") or ()) or \
+            (picked and not any(k in local for k in picked)):
         return None
     return f"drawn otherwise: {min(local.values()):.0f} or more from every stored git version (local)"
 

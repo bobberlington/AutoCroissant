@@ -56,7 +56,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    score, the two nearest scored again after an affine alignment, cached in `derived/match/local.jsonl`; only
    versions with the picture's aspect ratio within 1% count): 5 or less from a version is that version's look; a
    gate-made look over 10 from that look's stored versions isn't told (one area drawn otherwise: the eye decides);
-   30 or more from every stored version (45 under 800 px wide), none made before the post left out, is a draft.
+   30 or more from every stored version (45 under 800 px wide), none made before the post left out and one of the
+   look the matcher picked compared, is a draft.
    `discord_verdicts localtest` sets those bars on every stored version's Discord (800 px) and small (360 px)
    copies: none that far from every version, none at 5 from another look.
    Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
@@ -106,7 +107,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    cell is a picture of its own to both readers (cut by its box; its key in their outputs ends '#c<n>'). A
    two-creature card whose two halves' bars are told (eye truth: stats, stats2) publishes both, never summed; a split
    card's halves (owner Q3) each take their own rows (Twin Princes: Lorian's orange top rows, Lothric's blue bottom
-   ones, as their cards' bars today). On the template (D1-D3) a picture's types are its git version's when the header's icon
+   ones, as their cards' bars today; the old repo's first split files of 2023-10-16 read the other way, which the
+   review page's split item says). On the template (D1-D3) a picture's types are its git version's when the header's icon
    band matches that version's (`commands/header_types.py`: NCC per icon cell, the bar calibrated on old repo PNGs'
    400 px JPEGs against the card's versions with other icons; method 'git header'; icons the version's PSD puts
    below the band, under a two-line title, are compared in their own boxes, and a version with types whose icon
@@ -125,7 +127,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    whose abilities print icons and styled digits (D2, D3, D-item, F) pool their eye bar apart, 1.0: their 0.81 reads
    lose an icon or a digit); stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the
-   picture's right edge: `scripts/timeline_text.py edges`). Every field keeps its method (psd, picture, ocr, text) and a
+   picture's right edge: `scripts/timeline_text.py edges`; a count of 1 never in A, C, B-item and F, whose copies
+   read overlapped or unlike stars as one; a star bar with under 8 truths at or above it is none: F, D3. B-item's
+   overlapped clusters, 93 eye truths: no bar, its stars publish only as 'eye'). Every field keeps its method (psd, picture, ocr, text) and a
    confidence.
 4. **Chain** (`commands/discord_chain.py build`, outputs under `derived/chain/`; the owner's answers of 11-13, Q1-Q6):
    per live card, the Discord looks posted before its first git record (a git look, or a draft; a later git look posted
@@ -138,7 +142,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    picture didn't read (a sheet's cell, unread bars) is never filled from its repost, only proposed, and a repost's own
    contrary star or stat read takes a reader's sure value to review. An icon-read star count that changes with nothing
    to back it (no eye or PSD read, no second read apart, no changelog fact, the versions around it say otherwise) goes
-   to review. Then the sure changelog facts before it (Q4; item kinds
+   to review, as do icon-read counts in the run of versions just before a sure changelog line that changes the stars
+   to that count (none of them eye or PSD, the last over 3 days before the line). Then the sure changelog facts before it (Q4; item kinds
    never), the first repo's push notices naming the card alone as text-only rows (Q5: date, mapped author, commit
    message, badge "first repo"; no picture or link), the old repo's rows, a split card's versions "as <old name>" on
    both halves (Q3), and first a paper card's photo named as the card (by the matcher or by eye,

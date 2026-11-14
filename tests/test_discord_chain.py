@@ -186,8 +186,8 @@ def test_created_against_the_file_and_splits():
 
 def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
     """A swapped number counts (5/7/6/6 -> 5/7/7/6); a picture alike but for one area (an icon added) is its own
-    look; an icon-read star count changing with nothing to back it goes to review; a repost's own contrary read
-    takes a reader's sure stars to review."""
+    look; an icon-read star count changing with nothing to back it goes to review, as does one a later changelog
+    line changes the stars to; a repost's own contrary read takes a reader's sure stars to review."""
     import numpy as np
     from PIL import Image
     a, b = ["Mettaton X form (5/7/6/6) for two turns"], ["Mettaton X form (5/7/7/6) for two turns"]
@@ -243,6 +243,18 @@ def test_numbers_local_edits_and_unbacked_star_changes(tmp_path):
     for entries, held in cases:
         chain.star_guard(entries)
         assert {e["id"] for e in entries if e["kind"] != "text" and not dc.is_sure(e["fields"]["stars"])} == held
+    later = dict(fact, date=iso(T + 400 * DAY), change={"field": "stars", "to": 1})     # Charge: 2 read 1, then 'to 1'
+    cases = [([version(1, 0, 1), version(2, 0.01, 1), later], {"E1", "E2"}),
+             ([version(1, 0, 1), version(2, 0.01, 1, "eye"), later], set()),            # eye backs the run
+             ([version(1, 0, 1), version(2, 200, 2, "icon"), later], set()),            # a version between
+             ([version(1, 398, 1), later], set())]                                      # its port picture
+    for entries, held in cases:
+        for e in entries:
+            if e["kind"] == "discord" and e["fields"]["stars"]["method"] == "icon":
+                e["fields"]["stars"] = dc.unsure("icon", "read under its bar", 2)
+        chain.star_fact_guard(entries)
+        assert {e["id"] for e in entries if e["kind"] != "text" and e["fields"]["stars"].get("why", "").startswith(
+            "a later changelog")} == held
     mine = {"stars": dc.sure(2, "icon+known")}
     other = {"stars": dc.unsure("icon", "read under its bar", 4)}
     assert dc.merge_fields(mine, other, "repost P-1")["stars"]["confidence"] == "review"

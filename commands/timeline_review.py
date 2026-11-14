@@ -362,7 +362,7 @@ def chain_items(inputs: Inputs) -> list:
             it = item(kind, r["id"], "splits", None, f"{r.get('name')} -> " + " + ".join(
                 inputs.name(h) for h in r.get("halves") or []), read_only=True)
             it["meta"] = [r.get("why") or "", "versions 'as' the old card: " + ", ".join(
-                f"{inputs.name(h)} {n}" for h, n in (r.get("entries") or {}).items())]
+                f"{inputs.name(h)} {n}" for h, n in (r.get("entries") or {}).items()), *split_evidence(r.get("picked"))]
             for h in r.get("halves") or []:
                 t = inputs.timelines.get(h) or {}
                 it["pics"] += [entry_pic(inputs, h, e["id"], f"{inputs.name(h)} as {e.get('as')} {when(e.get('date'))}")
@@ -372,6 +372,21 @@ def chain_items(inputs: Inputs) -> list:
             continue
         it["pics"] = [p for p in it["pics"] if p]
         out.append(it)
+    return out
+
+
+def split_evidence(how: Optional[dict]) -> list:
+    """What picked a split card's halves (oldgit_rows.split_rows), and the readings that say the other way."""
+    if not (how or {}).get("halves"):
+        return []
+    side = {v: k for k, v in how["halves"].items()}
+    out = [f"Top rows {side.get('top')}, bottom rows {side.get('bottom')}. Picked by "
+           f"{how.get('matched_by') or 'their order'}'s stats" + (f" and {how['eye']}" if how.get("eye") else "") + "."]
+    for name, rd in (how.get("readings") or {}).items():
+        if rd.get("top") != side.get("top"):
+            days = f" ({', '.join(rd['days'])})" if rd.get("days") else ""
+            out.append(f"The {name}{days} reads the other way (top {rd.get('top')}, bottom {rd.get('bottom')}), so "
+                       "both timelines show a swap and a swap back at the split.")
     return out
 
 

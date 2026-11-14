@@ -75,6 +75,12 @@ def test_the_page_offers_the_answers_and_the_morgue_list(tmp_path):
     assert "type=radio" not in tr.item_html(items()[-1])                             # read only
     cell = tr.pic_html(tr.pic("../matcher/x.webp", "cell", [0.5, 0, 1, 1], 0.5))
     assert "background-size:200.00% 100.00%" in cell and "background-position:100.00% 0.00%" in cell
+    how = {"halves": {"Lorn": "top", "Pike": "bottom"}, "matched_by": "today", "eye": "the bar colours",
+           "readings": {"today": {"top": "Lorn", "bottom": "Pike"},
+                        "first old version": {"top": "Pike", "bottom": "Lorn", "days": ["2023-10-16"]}}}
+    said = tr.split_evidence(how)                  # a split's halves: what picked them, what reads the other way
+    assert said[0] == "Top rows Lorn, bottom rows Pike. Picked by today's stats and the bar colours."
+    assert len(said) == 2 and "first old version (2023-10-16)" in said[1] and tr.split_evidence(None) == []
     (tmp_path / "derived" / "morgue").mkdir(parents=True)
     (tmp_path / "derived" / "review").mkdir(parents=True)
     entry = lambda n: {"id": f"LC-{n}", "name": f"Card {n}"}

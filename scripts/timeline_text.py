@@ -65,6 +65,7 @@ TYPE_SIZES = [0.05 * 1.13 ** k for k in range(12)]     # type icon width / card 
 MIN_STAR = 0.04                                  # a star at least this share of the card's width
 COPY_FLOOR, MAX_COPIES = 0.2, 12                 # star copies kept: correlation at least this, at most this many
 KNOWN_STARS_ONLY = ("A", "C")                    # eras whose star counts are sure only when a known count agrees
+ONE_STAR_UNSURE = KNOWN_STARS_ONLY + ("B-item", "F")   # copies read 1 for overlapped (B-item) or unlike (F) stars
 SHURIKENS = ("ninja star",)                      # stars turned and staggered over the art (PoD): copies miss them
 EDGE_FROM, EDGE_SEEN = 0.3, 0.5                  # a star cut by the right edge: this share shows; copies this alike seen
 LETTER_SIZE = 0.6                                # a copy under this share of a title word's height inside it: a letter
@@ -81,6 +82,7 @@ EYE_GROUP = {"D2": "inline icons", "D3": "inline icons", "D-item": "inline icons
 # right, the plain-text eras 88 of 88)
 UNSORTED = ("other", "bars-other")                # pictures no era fits (not all cards): no borrowed bars
 MIN_N = 8                                        # an era with less truth borrows its group's bar
+STAR_MIN_ABOVE = MIN_N                           # a star bar resting on fewer truths at or above it: none (F had 3)
 FIELDS = ("title", "ability", "stars", "types")
 TOKEN = re.compile(r"\[([^\]:]+)(?::[^\]]*)?\]")
 WORD = re.compile(r"[a-z0-9]+")
@@ -1679,7 +1681,7 @@ def field_read(rd, field, how, exclude=()):
         rule = how.get("rule") or STAR_RULES[0]
         n, conf = (count_blobs(rd.get("star_blobs"), rule) if rule.get("kind") else
                    count_stars(rd.get("stars"), rule))
-        if n == 1 and not rule.get("kind") and rd.get("era") in KNOWN_STARS_ONLY:
+        if n == 1 and not rule.get("kind") and rd.get("era") in ONE_STAR_UNSURE:
             return n, "icon", 0.0              # the cut star alone: overlapped stars read 1 too
         if n is not None and stars_known((rd.get("title") or {}).get("name"), n, exclude):
             return n, "icon+known", round(0.5 + 0.5 * conf, 4)
@@ -1912,10 +1914,16 @@ def calibrate():
                     break
             else:
                 bar = None
-            cal["eras"][key][field] = {"truth": TRUTH_OF.get(src), "n": len(labelled), "how": how, "fitted_bar": bar,
-                                       "target": target,
+            thin = pick_bar(res, target)[1] if field == "stars" and bar is not None else None
+            if thin is not None and thin >= STAR_MIN_ABOVE:
+                thin = None
+            cal["eras"][key][field] = {"truth": TRUTH_OF.get(src), "n": len(labelled), "how": how,
+                                       "fitted_bar": None if thin is not None else bar, "target": target,
                                        "accuracy_all": round(sum(r[1] for r in res) / len(res), 4) if res else None,
                                        "cv": cv}
+            if thin is not None:
+                cal["eras"][key][field].update(thin_bar=bar, thin_above=thin)
+                bar = None
             choices[(era, src, field)] = (how, bar)
             eye_rows[(field, EYE_GROUP.get(era, ""))] += [(r[0], r[1], key) for r in res] if src == "discord" else []
     # small eye samples: a bar under the pooled eye bar (every eye era's reads of its group, each under its era's

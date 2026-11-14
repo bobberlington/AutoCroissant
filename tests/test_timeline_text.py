@@ -94,7 +94,7 @@ def test_star_blobs_rows_and_clusters(tt):
 
 def test_stars_never_count_a_full_copy_list(tt):
     """Every copy kept a star (the copy list full): no count; no non-star copy: the margin is taken from the floor;
-    A/C plain counts are never sure."""
+    A/C plain counts are never sure, nor a count of 1 in B-item and F."""
     full = {"icon": "star", "bank": 0.9, "size": 0.05, "copies": [[1.0, 0.0, i, 0] for i in range(tt.MAX_COPIES)]}
     assert tt.count_stars(full, {"ncc": 0.85, "mad": 30}) == (None, 0.0)
     two = dict(full, copies=[[1.0, 0.0, 0, 0], [0.9, 2.0, 9, 0]])
@@ -104,6 +104,8 @@ def test_stars_never_count_a_full_copy_list(tt):
     assert tt.field_read(rd, "stars", {"rule": {"ncc": 0.85, "mad": 30}}) == (2, "icon", 0.0)
     one = dict(rd, stars=dict(two, copies=[[1.0, 0.0, 0, 0], [0.3, 60.0, 9, 0]]))
     assert tt.field_read(one, "stars", {"rule": {"ncc": 0.85, "mad": 30}})[2] == 0.0
+    for era in ("B-item", "F"):                        # overlapped or unlike stars read 1: never sure, known or not
+        assert tt.field_read(dict(one, era=era), "stars", {"rule": {"ncc": 0.85, "mad": 30}}) == (1, "icon", 0.0)
 
 
 def test_star_counts_in_doubt_are_never_sure(tt):
