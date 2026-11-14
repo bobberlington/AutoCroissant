@@ -55,7 +55,8 @@ BAND = {"1:2": 0.135, "2:3": 0.2, "1:1": 0.24}   # title band: share of the card
 ICON_BAND = {"1:2": 0.2, "2:3": 0.25, "1:1": 0.3}   # types (stacks of icons reach lower)
 STAR_BAND = {"1:2": 0.28, "2:3": 0.3, "1:1": 0.35}  # stars (stacks of five reach lower still)
 BLOB_BAND = {"1:2": 0.11, "2:3": 0.11, "1:1": 0.2}  # yellow star blobs (a status card's 2 x 2 stack reaches 0.2)
-ROW_MAX_W = 0.2                                  # a yellow blob this wide and 3/4 as tall (card widths): no row of stars
+ROW_MAX_W = 0.15                                 # a yellow blob this wide and 3/4 as tall (card widths): no row of stars
+ROW_FILL = (0.33, 0.8)                           # a star fills this share of its box (eye truths: 1%-99% 0.36-0.83)
 LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|def",
           "atk": r"attack|atack|attak|atk", "spd": r"speed|spead|spee|spd"}
 STAR_SIZES = [0.045 * 1.14 ** k for k in range(11)]    # star icon width / card width
@@ -1081,7 +1082,8 @@ def read_star_blobs(a, title_box, band=0.11):
 
 def count_blobs(sb, rule):
     """(n, conf) from read_star_blobs. 'row': the largest group of like blobs (area within rule['tol'], squarish,
-    one row); sure when no other sizeable blob shares the row. 'cluster': an overlapped cluster's width over its
+    filling their box as a star does, one row); sure when no other sizeable blob shares the row; none behind a
+    yellow wall. 'cluster': an overlapped cluster's width over its
     height, each star after the first adding rule['step'] (the cluster must fill its box like stars do)."""
     if not sb or not sb.get("blobs"):
         return None, 0.0
@@ -1090,9 +1092,10 @@ def count_blobs(sb, rule):
         return None, 0.0                    # a yellow backdrop (a status card's wall): stars merge into it
     if rule["kind"] == "row":
         best = []
-        for b in blobs:
+        stars = [b for b in blobs if ROW_FILL[0] <= b[0] / max(1.0, b[3] * WORK_W * b[4] * WORK_W) <= ROW_FILL[1]]
+        for b in stars:
             cy = b[2] + b[4] / 2
-            group = [c for c in blobs if 1 / rule["tol"] <= c[0] / b[0] <= rule["tol"]
+            group = [c for c in stars if 1 / rule["tol"] <= c[0] / b[0] <= rule["tol"]
                      and 0.6 <= c[3] / max(c[4], 1e-4) <= 1.6 and abs(c[2] + c[4] / 2 - cy) < rule.get("rows", 0.6) * b[4]]
             if len(group) > len(best):
                 best = group

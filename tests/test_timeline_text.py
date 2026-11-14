@@ -77,17 +77,19 @@ def test_a_title_takes_the_nearest_name_with_its_margin(tt, monkeypatch):
 def test_star_blobs_rows_and_clusters(tt):
     """Era A: like blobs in up to two rows count, an art blob of another size sharing the row makes it unsure;
     era B: an overlapped cluster's width over height."""
-    sun = lambda x, y, a=100: [a, x, y, 0.03, 0.03]
-    row = {"blobs": [sun(0.6, 0.02), sun(0.65, 0.02, 95), sun(0.7, 0.02, 105), sun(0.62, 0.06), sun(0.68, 0.06)]}
+    sun = lambda x, y, a=60: [a, x, y, 0.03, 0.03]
+    row = {"blobs": [sun(0.6, 0.02), sun(0.65, 0.02, 57), sun(0.7, 0.02, 63), sun(0.62, 0.06), sun(0.68, 0.06)]}
     assert tt.count_blobs(row, {"kind": "row", "tol": 1.43, "rows": 1.6}) == (5, 1.0)
     assert tt.count_blobs(row, {"kind": "row", "tol": 1.43, "rows": 0.6})[0] == 3
-    art = {"blobs": [[300, 0.6, 0.02, 0.05, 0.03]] + row["blobs"][:3]}
+    art = {"blobs": [[180, 0.6, 0.02, 0.05, 0.03]] + row["blobs"][:3]}
     assert tt.count_blobs(art, {"kind": "row", "tol": 1.43, "rows": 0.6}) == (3, 0.3)
     side = 0.05
     cluster = {"blobs": [[int(0.55 * (2.11 * side * tt.WORK_W) * (side * tt.WORK_W)), 0.7, 0.0, 2.11 * side, side]]}
     assert tt.count_blobs(cluster, {"kind": "cluster", "step": 0.37, "base": 1.0})[0] == 4
     wall = {"blobs": [[5800, 0.04, 0.0, 0.29, 0.2]] + row["blobs"][:2]}           # a status card's yellow wall
     assert tt.count_blobs(wall, {"kind": "row", "tol": 1.7, "rows": 1.6}) == (None, 0.0)
+    flat = {"blobs": [[110, 0.0, 0.08, 0.03, 0.03], [100, 0.1, 0.08, 0.03, 0.03]]}        # full boxes: no stars
+    assert tt.count_blobs(flat, {"kind": "row", "tol": 1.7, "rows": 1.6}) == (None, 0.0)
 
 
 def test_stars_never_count_a_full_copy_list(tt):
