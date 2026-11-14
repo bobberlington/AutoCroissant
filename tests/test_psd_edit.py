@@ -2284,6 +2284,24 @@ def test_lines_left_undrawn_grow_the_box_first(clone, parser, chart, tmp_path):
     flagged(baked.fx_notes, r"^overflow: ability: its box \d+ px taller")
 
 
+def test_a_box_tilted_by_a_hair_grows_too(clone, parser, chart, tmp_path):
+    """r33: 19 cards' Ability boxes keep a free-transform tilt of 0.01-0.18 deg (Miasma's 0.08). hold_lines skipped
+    them, so a long edit lost its last 4 lines with no note. Under 1% the box grows like any other, its tilt kept."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    rel = "Auxiliary/Minions/Miasma.psd"
+    tilt = pe.ability_layer(PSDImage.open(_card(clone, rel)[0]))._data.transform[:4]
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) \
+        + " Attacks deal 1 extra damage to every enemy creature. At the start of your turn, heal 1 HP."
+    baked = _bake(clone, parser, rel, {"ability": text}, tmp_path, chart)[1]
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    lines = [line for line in layout(TextModel.from_layer(layer), pe.layout_fonts(str(clone / pe.FONTS_DIR))).lines
+             if line.text.strip()]
+    assert 0 < abs(tilt[1]) < 0.01 * tilt[0] and layer._data.transform[:4] == tilt
+    assert all(line.drawn for line in lines) and lines[-1].text.strip().endswith("heal 1 HP.")
+    flagged(baked.fx_notes, r"^overflow: ability: its box \d+ px taller")
+
+
 def test_tab_stops_bake(clone, parser, chart, tmp_path):
     """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows
     Michael's Blessing's tabs as spaces: they stay tabs, and an edited tabbed line keeps its '->' column (it collapsed,
