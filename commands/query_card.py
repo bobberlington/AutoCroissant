@@ -36,7 +36,7 @@ from commands.utils import BREAK_LEN, queue_file as _queue_file, queue_message a
 DEFAULT_MATCH_RATIO = 0.6
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
-FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~)\s*(.*)$")   # a condition: field, operator, value
+FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~|=)\s*(.*)$")   # a condition: field, operator, value
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
 URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
@@ -179,7 +179,7 @@ class CardRepository:
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
         self._hay: tuple = (None, "", None, [], [])     # (cards_dff, Card Edits.json sha, haystack, squashed names,
-                                                         # series names) for text terms
+                                                         # series and subseries names) for text terms
 
     def populate_files(self) -> int:
         """
@@ -393,6 +393,10 @@ class CardRepository:
         column, operator, value = found.groups()
         value = value.strip()
         column = "alias" if column == "aliases" else column     # the website takes both
+        if operator == "=":                              # a known field's lone = reads as ==; else text
+            if column not in NUMBER_FIELDS + TEXT_FIELDS and column not in self.cards_dff.columns:
+                return None
+            operator = "=="
         if operator == "!=":
             raise QueryError(f"For 'not', put ! before the condition: !{column}=={value}.")
         extra = column not in NUMBER_FIELDS and column not in TEXT_FIELDS and column in self.cards_dff.columns
@@ -417,9 +421,11 @@ class CardRepository:
                                       ">": day > value}[operator]
         elif operator in ("==", "~"):
             value = value.strip('"')
-            if col is not None:
-                text = col.where(col.notna(), "").astype(str).str.lower()
-                kept = col.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
+            for part in (col, self._field("subseries") if column == "series" else None):   # series: a subseries too
+                if part is not None:
+                    text = part.where(part.notna(), "").astype(str).str.lower()
+                    hit = part.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
+                    kept = hit if kept is None else kept | hit
         else:
             raise QueryError(f"{column} takes == or ~" + (" or a date: created>=2025, created<2021-06." if column == "created" else "."))
         return self.cards_dff[kept] if kept is not None else self.cards_dff.iloc[0:0]
@@ -448,18 +454,19 @@ class CardRepository:
         if self._hay[0] is not df or self._hay[1] != sha:
             names = self._edit_names[1]
             titles = df["display_name"] if "display_name" in df else Series(None, index=df.index, dtype=object)
-            series = df["series"] if "series" in df else [None] * len(df)
+            series = [df[c] if c in df else [None] * len(df) for c in ("series", "subseries")]
             rows, flat = [], []
             for label, title, ability in zip(df.index, titles, df["ability"]):
                 parts = [str(label)] + ([title] if isinstance(title, str) else []) + list(names.get(CardAuthors.key(str(label)), []))
                 rows.append("\n".join(parts + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
                 flat.append("\n" + "\n".join(map(squash, parts)) + "\n")
-            self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flat, [series_names(s) for s in series])
+            self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flat,
+                         [series_names(s) | series_names(u) for s, u in zip(*series)])
         return self._hay[2]
 
     def _plain_matches(self, text: str):
         """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer: a
-        whole name), or a series' name, so 'moms knife' and 'hollow knight' find their cards."""
+        whole name), or a series' or subseries' name, so 'moms knife' and 'hollow knight' find their cards."""
         self._haystack()
         term = squash(text)
         probe = term if len(term) > 3 else "\n" + term + "\n"
@@ -505,7 +512,7 @@ class CardRepository:
         - String exact match: "type==creature", "subtype==attack"
         - String contains: "type~aux", "series~kirby"
         - Quoted values keep & and |: 'subseries=="mario & luigi"'
-        - A series or a name without punctuation: "hollow knight", "moms knife"
+        - A series, a subseries or a name without punctuation: "hollow knight", "moms knife"
 
         Args:
             ability: Search query string
@@ -543,7 +550,7 @@ class CardRepository:
         if stat_result is not None:
             return stat_result
 
-        # Text: names, aliases and ability, a name without its punctuation, a series (as the website); "quoted" as whole words
+        # Text: names, aliases and ability, a name without its punctuation, a (sub)series (as the website); "quoted" as whole words
         hay = self._haystack()
         if len(ability) > 1 and ability.startswith('"') and ability.endswith('"'):
             term = ability.strip('"')

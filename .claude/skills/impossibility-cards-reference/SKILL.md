@@ -774,7 +774,10 @@ also finds (as search.js): a card whose name, title or Card Edits names, as lett
 accents and punctuation dropped), hold the term squashed (4+ letters anywhere, 3 or fewer only a whole name:
 `moms knife`, `hrh`), and a series' cards when the squashed term is the series, without a leading The or a closing
 number, or a part split at `:` or `/` (`series_names`: `hollow knight`, `dark souls`, `undertale`); so `!kirby` drops the
-Kirby series too. `prep_dataframes`
+Kirby series too. A subseries counts as a series (both sides, 2026-11-14, as TTS Find a card): its name finds its cards
+(`paper mario: the thousand-year door`, `paper mario`), `series==X`/`series~X` match the subseries too (the queries
+from before the 10-20 split), and a known field's lone `=` reads as `==` (`series=paper mario`; an unknown one stays
+text). `prep_dataframes`
 adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
 gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's own example.
 

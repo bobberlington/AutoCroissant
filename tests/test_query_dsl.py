@@ -19,7 +19,8 @@ CARDS = [
          ability="Deals double damage.\nDie at the end of the turn."),
     dict(name="sans.", file="Sans", type="creature", series="undertale", hp=1, defense=1, atk=1, spd=9, stars=5,
          ability="Dodge every attack. +1 SPD."),
-    dict(name="King Dedede", type="creature", series="kirby", hp=4, defense=4, atk=4, spd=2, stars=4, ability="Hammer time."),
+    dict(name="King Dedede", type="creature", series="kirby", subseries="Kirby's Return to Dream Land", hp=4, defense=4,
+         atk=4, spd=2, stars=4, ability="Hammer time."),
     dict(name="Mettaton EX", type="creatures", hp=6, defense=6, atk=6, spd=6, ability="Gain +2 DEF."),
     dict(name="Fire Bomb", type="item", subtype="attack", stars=2, ability="Deal 3 damage to a [fire] creature."),
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
@@ -68,7 +69,8 @@ def repo():
     for c in CARDS:
         name = c.get("file", c["name"])
         stats[name] = cm.CardInfo(name=name, card_type=c["type"], path=f"X/{name}.psd", ability=c["ability"],
-                                  stars=c.get("stars"), series=c.get("series"), subtype=c.get("subtype"),
+                                  stars=c.get("stars"), series=c.get("series"), subseries=c.get("subseries"),
+                                  subtype=c.get("subtype"),
                                   types=c.get("types", []), display_name=c["name"] if "file" in c else None,
                                   stats=cm.CardStats(c.get("hp", -1), c.get("defense", -1), c.get("atk", -1), c.get("spd", -1)))
     with pytest.MonkeyPatch.context() as mp:
@@ -103,12 +105,15 @@ def test_website_synonyms_are_the_bots():
 
 
 def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
-    """A plain term also finds a series' cards and a name typed without its punctuation, on the bot and the website."""
+    """A plain term also finds a series' or subseries' cards and a name typed without its punctuation, series== and
+    series~ a subseries too, and a known field's lone = is ==, on the bot and the website."""
     rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
-            ("moms knife", {"Mom's Knife"}), ("msk", set())]           # 3 letters or fewer: a whole name only
+            ("moms knife", {"Mom's Knife"}), ("msk", set()),           # 3 letters or fewer: a whole name only
+            ("kirby's return to dream land", {"King Dedede"}), ("series==kirby's return to dream land", {"King Dedede"}),
+            ("series~dream", {"King Dedede"}), ("series=undertale", {"sans."}), ("hp = 6", {"Mettaton EX"})]
     for query, cards in rows:
         assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
-    shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series")} for c in CARDS]
+    shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp")} for c in CARDS]
     script = tmp_path / "search.mjs"
     script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
 const cards = {json.dumps(shaped)};
