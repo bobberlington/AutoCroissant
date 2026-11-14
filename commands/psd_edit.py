@@ -5196,8 +5196,10 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
     line under its panel) or off the canvas (Soul Sanctum's wrapped line) set smaller until it doesn't, no lower than
     the old text, as the website's preview draws it (mockup.js drawText): by FIT_STEP, down to FIT_MIN of its size,
     every run's FontSize, Leading and BaselineShift scaled alike (badges keep their size and middle against the
-    letters). No size fits, or a layer with tabs (its stops don't shrink: Michael's Blessing's arrow column would
-    break): left as it was, ink_beyond tells it.
+    letters). No size fits: left at its size, ink_beyond tells it; one running off the card is set at the largest size
+    on it no lower than the old text, unless moving it up (lift: off the bottom) keeps it on the card printing over no
+    more (r32: lifted, Dryya's text covered its ATK and SPD rows). A layer with tabs (its stops don't shrink: Michael's
+    Blessing's arrow column would break): left at its size, moved up off the bottom.
 
     Args:
         psd: The card, the text set and rasterized
@@ -5209,11 +5211,11 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
         check: ink_beyond(psd, layer, before) (set_text_layer's, which keeps the last verdict)
 
     Returns:
-        (scale, report): (1.0, None) when it was left as it was
+        (scale, report, up): (1.0, None, up) when it was left as it was; up: px lift moved it
     """
     off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
     if "\t" in layer.text or not off and check() is None:
-        return 1.0, None
+        return 1.0, None, lift(psd, layer, before) if off else 0
     from psd_tools.api import text_edit
     text = layer.text
     units = text_edit.utf16_prefix(text)
@@ -5238,19 +5240,36 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
     rows = (before[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
     floor = int(rows.max()) + 1 + BEYOND[0] if len(rows) else psd.height
 
-    def fits() -> bool:                         # no lower than the old text (ink_beyond lets a few px onto the design)
+    def placed() -> bool:                       # no lower than the old text (ink_beyond lets a few px onto the design)
         ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
-        return (not len(ink) or int(ink.max()) + 1 <= floor) and check() is None \
+        return (not len(ink) or int(ink.max()) + 1 <= floor) \
             and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
+    largest = None                              # (scale, px it prints over): the largest size placed
     for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
         if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
             break
         scaled(scale)
         report = layer.rasterize(fonts=fonts)
-        if fits():
-            return scale, report
+        if placed():
+            if check() is None:
+                return scale, report, 0
+            largest = largest or (scale, _over_px(check()))
     scaled(1.0)
-    return 1.0, draw()
+    report = draw()
+    up = lift(psd, layer, before) if off else 0
+    if not off or largest is None or up and not _ink_off_canvas(layer, psd.width, psd.height) \
+            and _over_px(check()) <= largest[1]:
+        return 1.0, report, up
+    if up:                                      # still off the card, or printing over more: that size
+        nudge(layer, 0, up)
+    scaled(largest[0])
+    return largest[0], layer.rasterize(fonts=fonts), 0
+
+
+def _over_px(verdict: Optional[str]) -> int:
+    """The px an ink check's verdict counts (0: none)."""
+    found = search(r"\((\d+) px", verdict or "")
+    return int(found.group(1)) if found else 0 if verdict is None else 1 << 30
 
 
 def _title_lines(geometry: dict) -> list:
@@ -5821,10 +5840,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         grown = hold_lines(layer, fonts, undrawn=True)
         if grown:                               # every line drawn first, so none is lost
             report = draw()
-        scale, again = fit_below(psd, layer, room, fonts, draw, off_before, check)
+        _, again, up = fit_below(psd, layer, room, fonts, draw, off_before, check)
         report = again or report
-        if scale >= 1 and not off_before:       # no size fits: up, to stay on the card
-            up = lift(psd, layer, room)
     elif up:
         nudge(layer, 0, -up)
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)
