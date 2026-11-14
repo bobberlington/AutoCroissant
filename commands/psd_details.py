@@ -472,7 +472,8 @@ def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
         except Refused as e:
             refused[str(n)] = _why(e)
     groups = [group for group in PSDParser._star_groups(psd) if PSDParser.stars_in(group, types)]
-    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)) if groups else []
+    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars, None, types)) \
+        if groups else []
     loose = _loose_units(psd, groups, not groups, types, stars)[0] if at else []
     shown = _merge_twins(loose + outside) if loose else []
     order = _reading(shown, _median_size(shown)[1], True) if shown else []
@@ -493,13 +494,13 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     None: one from vocab.
     """
     parser = parser or _icon_parser(vocab)
-    types = parser.all_types
+    types, stars = parser.all_types, parser.star_names()
     groups = [group for group in PSDParser._star_groups(psd) if PSDParser.stars_in(group, types)]
     if len(groups) != 1:
         return _kept_stars(psd, rel, parser)
-    total = PSDParser.stars_drawn(psd, types, parser.star_names())
+    total = PSDParser.stars_drawn(psd, types, stars)
     container = _star_container(groups[0], types)
-    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), parser.star_names()))
+    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars, None, types))
     shown = _merge_twins(_star_units(container, types)[0] + outside)     # as plan_stars lays them out (R2, R3)
     if not shown:
         return _kept_stars(psd, rel, parser)

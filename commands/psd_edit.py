@@ -7821,7 +7821,7 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
         if second is None or below != old or len(second[1]) != below or any(unit.count != 1 for unit in second[1]):
             refuse(f"the card draws {below} more below its middle, not one second creature's {old}")
         groups = [group for group in groups if group is not second[0]]
-    outside = [] if named else PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
+    outside = [] if named else PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars, None, types)
     plan = IconPlan("stars", old, value)
     if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups
         shown, hidden = _loose_units(psd, groups, named, types, stars)

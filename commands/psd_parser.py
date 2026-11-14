@@ -9,13 +9,15 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
 from os import PathLike
+from os.path import splitext
 import numpy as np
 from psd_tools import PSDImage
 from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Callable, Optional, Union
 
 from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
-from commands.psd_regions import comp_creature, comp_stat, comp_value, digit_span, drawn_box, reaches_over, union_box
+from commands.psd_regions import (comp_creature, comp_stat, comp_value, digit_span, drawn_box, linked_name,
+                                   reaches_over, union_box)
 
 getLogger("psd_tools").setLevel(CRITICAL)
 
@@ -311,6 +313,11 @@ def star_leaf(layer, types=()) -> bool:
 def star_icon_name(text: str) -> str:
     """A Types/Stars name or a layer name as star icons compare: no ' copy N', letters and digits only."""
     return sub(r"[^a-z0-9]+", "", sub(r"\s+copy(\s+\d+)?$", "", text.strip(), flags=IGNORECASE).lower())
+
+
+def star_file(layer) -> str:
+    """The file a smart object links (linked_name) as star icons compare: no extension, star_icon_name; else ""."""
+    return star_icon_name(splitext(linked_name(layer))[0])
 
 
 def _parents(layer) -> list:
@@ -1360,9 +1367,10 @@ class PSDParser:
         Stars drawn on a card whose star count comes from the PSD (stars_drawn: the one counter, the bake's too).
 
         The visible layers that can draw (star_leaf) in the outermost visible groups with "stars" in their name, plus
-        layers named after a Types/Stars icon outside them (Massive Moss Charger's 'Hk star'), with no such group the
-        layers named "... Star ...", give pieces (star_pieces: one layer can draw several); those above the midline are
-        judged together (star_sets): overlapping stars stay apart, glows join their star, a stacked copy is one.
+        layers named after a Types/Stars icon or linking one's file outside them (Massive Moss Charger's 'Hk star',
+        Hero Cap's 'Mother'), with no such group the layers named "... Star ...", give pieces (star_pieces: one layer
+        can draw several); those above the midline are judged together (star_sets): overlapping stars stay apart, glows
+        join their star, a stacked copy is one.
         """
         return self.stars_drawn(psd, self.all_types, self.star_names())
 
@@ -1402,10 +1410,12 @@ class PSDParser:
         return not layer.is_group() and layer.has_pixels() and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()
 
     @staticmethod
-    def outside_stars(psd: PSDImage, groups, stars, show=None) -> list:
+    def outside_stars(psd: PSDImage, groups, stars, show=None, types=()) -> list:
         """
-        Shown layers outside the Stars groups named after a Types/Stars icon (stars: star_names()), star-sized and above
-        the midline: Nosk's and Massive Moss Charger's 'Hk star' (not Blasphemous Blade's card-wide 'Elden Ring').
+        Shown layers outside the Stars groups named after a Types/Stars icon (stars: star_names()), or smart objects
+        linking one's file (star_file) not named after a type icon (types), star-sized and above the midline: Nosk's
+        and Massive Moss Charger's 'Hk star', Hero Cap's 'Mother' (Starstorm.png; not Thunderfury's 'Equip', nor
+        Blasphemous Blade's card-wide 'Elden Ring').
         """
         if not stars:
             return []
@@ -1413,9 +1423,13 @@ class PSDParser:
         inside = {id(layer) for group in groups for layer in group.descendants()}
         out = []
         for layer in psd.descendants():
-            if layer.is_group() or id(layer) in inside or star_icon_name(base_name(layer)) not in stars:
+            if layer.is_group() or id(layer) in inside:
                 continue
-            if show.get(id(layer), layer.visible) and all(parent.visible for parent in _parents(layer)) and star_leaf(layer):
+            named = star_icon_name(base_name(layer)) in stars
+            if not named and star_file(layer) not in stars:
+                continue
+            if show.get(id(layer), layer.visible) and all(parent.visible for parent in _parents(layer)) \
+                    and star_leaf(layer, () if named else types):
                 core = PSDParser._core_box(layer)
                 if in_header(core, psd.height) and _area(core) <= STAR_ICON_SHARE * psd.width * psd.height:
                     out.append(layer)
@@ -1427,7 +1441,7 @@ class PSDParser:
         show = show or {}
         groups = PSDParser._star_groups(psd)
         leaves = [layer for group in groups for layer in PSDParser._visible_leaves(group, show) if star_leaf(layer, types)]
-        leaves += [layer for layer in PSDParser.outside_stars(psd, groups, stars, show) if layer not in leaves]
+        leaves += [layer for layer in PSDParser.outside_stars(psd, groups, stars, show, types) if layer not in leaves]
         if not groups:
             leaves += [layer for layer in psd.descendants() if PSDParser.named_star(layer) and layer not in leaves
                        and show.get(id(layer), layer.visible) and all(parent.visible for parent in _parents(layer))
@@ -1442,7 +1456,7 @@ class PSDParser:
         Args:
             psd: The open card
             types: Types/ names: a layer named after one is a type icon, no star
-            stars: star_names(): layers outside the Stars groups named after one count
+            stars: star_names(): layers outside the Stars groups named after one, or linking its file, count
             show: id(layer) -> visible, overriding its flag
             boxes: id(group) -> core boxes judged with the pieces (a star's copy)
             counts: id(group) -> stars added there (a star group's copy)

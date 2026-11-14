@@ -515,6 +515,18 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
     assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
 
 
+def test_linked_star_icons_outside_the_group(clone, parser, tmp_path, monkeypatch):
+    """Hero Cap's two 'Mother' outside its Stars group link Starstorm.png: 3 stars, not 1 (an edit to 1 or 2 hides
+    them); one named after a type icon is that type's (Thunderfury's 'Equip' links a star icon's file)."""
+    monkeypatch.setattr("commands.psd_parser.linked_name",  # the pin's are embedded: linked as on TC main
+                        lambda layer: layer.smart_object.filename if layer.kind == "smartobject" else "")
+    psd, parsed = _open(parser, clone, "Auxiliary/Items/Hero_Cap.psd", tmp_path)
+    assert parsed["card"]["stars"] == 3
+    assert [len(pe.plan_stars(psd, parsed, n, parser).hide) for n in (1, 2, 3)] == [2, 1, 0]
+    next(one for one in psd.descendants() if one.name == "Mother" and one.parent.name == "images").name = "Equip"
+    assert pe.PSDParser.stars_drawn(psd, parser.all_types, parser.star_names()) == 2
+
+
 @pytest.mark.header_stars
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top

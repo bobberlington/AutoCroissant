@@ -60,7 +60,7 @@ from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
 from commands.psd_parser import NO_STATS, picture_numbers, variant_view
-from commands.psd_regions import (STATS, bar_box, comp_bars, comp_creature, drawn_bar, linked_items, placed_data,
+from commands.psd_regions import (STATS, bar_box, comp_bars, comp_creature, drawn_bar, linked_items, placed_id,
                                   stat_rows, union_box)
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
@@ -806,8 +806,7 @@ def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
     paths = {item["uuid"]: item["path"] for item in linked_items(psd, rel, tree) if item["path"]}
     out: dict = {}
     for layer in psd.descendants():
-        placed = placed_data(layer)
-        key = str(getattr(placed.get(b"Idnt"), "value", placed.get(b"Idnt")) or "").strip("\x00") if placed else ""
+        key = placed_id(layer)
         if paths.get(key) and paths[key] not in out:
             why = why_not_redrawn(layer)
             if why:

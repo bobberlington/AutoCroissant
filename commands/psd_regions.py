@@ -189,6 +189,23 @@ def placed_data(layer):
     return None
 
 
+def placed_id(layer) -> str:
+    """A smart object's uuid (its SoLd Idnt: its document's lnk2/lnk3/lnkE item's), else ""."""
+    placed = placed_data(layer)
+    return str(getattr(placed.get(b"Idnt"), "value", placed.get(b"Idnt")) or "").strip("\x00") if placed else ""
+
+
+def linked_name(layer) -> str:
+    """The file name of a linked smart object's lnkE item (as linked_items reads them: a lazy open never reads the
+    embedded documents), else ""."""
+    key = placed_id(layer)
+    blocks = layer._psd._record.layer_and_mask_information.tagged_blocks if key else None
+    if blocks is None or Tag.LINKED_LAYER_EXTERNAL not in blocks:
+        return ""
+    return next((str(item.filename or "").strip("\x00") for item in blocks.get_data(Tag.LINKED_LAYER_EXTERNAL) or []
+                 if str(item.uuid).strip("\x00") == key), "")
+
+
 def comp_names(placed) -> dict:
     """{comp ID: name} of a placed layer's layer comps."""
     comps = (placed.get(b"compInfo") or {}).get(b"compList") or []
@@ -292,8 +309,7 @@ def linked_items(psd: PSDImage, psd_path: str, tree=None) -> list:
     found: dict = {}
     tree = as_tree(tree)
     for layer in psd.descendants() if items else ():
-        placed = placed_data(layer)
-        key = str(getattr(placed.get(b"Idnt"), "value", placed.get(b"Idnt")) or "").strip("\x00") if placed else ""
+        key = placed_id(layer)
         item = items.get(key)
         if item is None:
             continue
@@ -509,7 +525,9 @@ __all__ = [
     'drawn_box',
     'fx_pad',
     'linked_items',
+    'linked_name',
     'placed_data',
+    'placed_id',
     'overlay_words',
     'reaches_over',
     'regions',

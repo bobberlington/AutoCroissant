@@ -99,10 +99,12 @@ since 2026-10-20.
   a lone one 0.5-2 times a star's size is a star; the rest is art (Toy Chica's LINE, Auto Croissant's cat).
   Overlapping stars stay apart (Zoltan, the dice faces of Nightmare and The Lich King). Layers named after a
   `Types/Stars` icon outside the groups count too, when star-sized and above the midline (Massive Moss Charger's two
-  'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted. The bake (Lane 3,
-  2026-10-26, `psd_edit.plan_stars`) lays stars outside the group out with it (Nosk, Massive Moss Charger), takes a
-  star drawn twice on one spot as one (Tainted Eden, Living Bread), splits one layer drawing several into masked
-  copies (`split_stars`: Grimora, Dimension D), keeps a row centred on the card centred (Grimora, Lor Starcutter), and
+  'Hk star': 4, not 2), as do smart objects linking such an icon's file (`psd_regions.linked_name`) not named after a
+  type icon (Hero Cap's two 'Mother', Starstorm.png: 3, not 1; not Thunderfury's 'Equip'). Stars below the midline
+  (Tainted Lazarus's dead form) are not counted. The bake (Lane 3, 2026-10-26, `psd_edit.plan_stars`) lays stars
+  outside the group out with it (Nosk, Massive Moss Charger), takes a star drawn twice on one spot as one (Tainted
+  Eden, Living Bread), splits one layer drawing several into masked copies (`split_stars`: Grimora, Dimension D),
+  keeps a row centred on the card centred (Grimora, Lor Starcutter), and
   gives a second creature's upside-down set the same count, turned half round (Tainted Lazarus), or redraws neither.
   The midline test is the box's centre, not its top as for type icons, so a new star whose centre falls below it is
   refused (The Evil Idol's column at 6-8). A new or moved star may not sit under art drawn over it (`_covered`: more

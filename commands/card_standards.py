@@ -4137,8 +4137,7 @@ def _loose_icons(psd: PSDImage) -> tuple:
 
 def art_icons(psd: PSDImage, rel: str, parser: PSDParser) -> frozenset:
     """Layer ids of the linked star icons in images that are the card's art: filed in Stars alone (on a copy), the
-    parser reads the card otherwise (Hero Cap's two 'Mother' stars: 3 stars, not 1; owner 2026-11-09). They stay put,
-    untold."""
+    parser reads the card otherwise (owner 2026-11-09). They stay put, untold."""
     kind = folder_kind(rel)
     images, units = _loose_icons(psd)
     stars = [u for u in units if _link_kind(u[0]) == "star"]

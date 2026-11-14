@@ -919,12 +919,14 @@ def _linked_icons(monkeypatch):
     links = {"Starstorm.png": "Types/Stars/Starstorm.png", "Offensive_Minion.png": "Types/Offensive_Minion.png"}
     monkeypatch.setattr(SmartObject, "link_target",     # the pin's are embedded: linked as on TC main
                         lambda self, *args, **kwargs: links.get(self.filename))
+    monkeypatch.setattr("commands.psd_parser.linked_name",
+                        lambda layer: layer.smart_object.filename if layer.kind == "smartobject" else "")
 
 
 def test_folders_mid_images_icons(clone, tmp_path, monkeypatch):
     """Owner 2026-11-09: Armored Squit's linked type icon in the middle of images, crossing no ink, into Creature
     Types, parse and picture the same (its hidden Curves clipped to that folder gone first: the guards keep those);
-    Hero Cap's two 'Mother' stars there are art (in Stars the parser would count 3 stars, not 1): not told, not moved."""
+    Hero Cap's two 'Mother' stars there into Stars (the parser counts them either way: 3 stars)."""
     _linked_icons(monkeypatch)
     parser = clone_vocabulary(str(clone)).parser()
     rel = "Auxiliary/Minions/Armored_Squit.psd"
@@ -940,10 +942,8 @@ def test_folders_mid_images_icons(clone, tmp_path, monkeypatch):
     assert not cs.folder_issues(PSDImage.open(tmp_path / "out.psd"), rel, parser)
     assert [layer.name for layer in types][0] == "Offensive_Minion"
     rel = "Auxiliary/Items/Hero_Cap.psd"
-    path = _card(clone, rel)[0]
-    assert not [line for line in cs.folder_issues(PSDImage.open(path), rel, parser) if "Mother" in line]
-    done = cs.standard_folders(path, str(tmp_path / "hero.psd"), rel, parser)
-    assert not [line for line in done if "Mother" in line]
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "hero.psd"), rel, parser)
+    assert done.count("'Mother' out of 'images' into Stars") == 2
 
 
 def test_folders_as_the_templates(clone, tmp_path):
