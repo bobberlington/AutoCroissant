@@ -293,3 +293,38 @@ def test_a_web_chapter_is_not_printed(bs, tmp_path):
     done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == ["stats"]
+
+
+def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
+    """site.yml's PSD sizes (psd_sizes.py): kept by blob; the first run reads the whole tree, a later one only a new
+    PSD's folder; build_site.psd_sizes reads its file as the trees API's reply."""
+    spec = importlib.util.spec_from_file_location("site_psd_sizes", BUILD_SITE.parent / "psd_sizes.py")
+    ps = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ps)
+    repo, out = tmp_path / "repo", str(tmp_path / "tree.json")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for path, data in (("A/x.psd", b"aaa"), ("B/y.PSD", b"bbbbb"), ("B/y.png", b"p")):
+        (repo / path).parent.mkdir(exist_ok=True)
+        (repo / path).write_bytes(data)
+    first, _ = _commit(repo, "one", 1_700_000_000)
+    (repo / "A/x.psd").write_bytes(b"aaaa")
+    second, _ = _commit(repo, "two", 1_700_000_100)
+    git = lambda *a: subprocess.run(["git", *a], cwd=repo, capture_output=True, text=True, check=True).stdout
+    asked = []
+
+    def trees(path):        # the trees API, from git
+        asked.append(path)
+        rows = git("ls-tree", "-l", *(["-r", path.split("?")[0]] if "?" in path else [path])).splitlines()
+        return [{"path": p, "type": m.split()[1], "sha": m.split()[2], "size": int(m.split()[3])}
+                for m, p in (r.split("\t") for r in rows)], False
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(ps, "CACHE", str(tmp_path / "cache" / "psd" / "sizes.json"))
+    monkeypatch.setattr(ps, "MANY", 1)
+    monkeypatch.setattr(ps, "trees", trees)
+    assert ps.main(first, out) == 0 and asked == [f"{first}?recursive=1"]
+    assert sorted(bs.psd_sizes(out).values()) == [3, 5]
+    asked.clear()
+    assert ps.main(second, out) == 0 and asked == [git("rev-parse", f"{second}:A").strip()]
+    assert sorted(bs.psd_sizes(out).values()) == [4, 5]
+    assert sorted(json.loads((tmp_path / "cache" / "psd" / "sizes.json").read_text()).values()) == [4, 5]
