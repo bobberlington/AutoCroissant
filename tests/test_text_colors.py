@@ -268,6 +268,32 @@ def test_status_words_keep_the_chart(clone, tmp_path):
     assert fills.get("Hardened") in before and "#ffd21f" in fills.values() and "status words" in " ".join(baked.fx_notes)
 
 
+def test_fx_words_keep_their_look(clone, tmp_path):
+    """A phrase holding an Ability FX layer's words bakes, those words keeping their look; a phrase of them alone is
+    refused."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Kirby/3 Stars/Computer_Virus.psd"       # 'Ability FX: 1st: Slime'
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    alone = pe.classify(parsed, {"colors": [{"field": "ability", "phrase": "1st: Slime", "color": "#ff0000"}]}, psd, parser)
+    assert not alone.jobs and "effect layer" in alone.refusals[0].why
+    edits = {"colors": [{"field": "ability", "phrase": "1st: Slime can attack twice", "color": "#ff0000"}]}
+    got = pe.classify(parsed, edits, psd, parser)
+    assert got.jobs == edits and not got.refusals
+    old = pe.ability_layer(psd).text
+    fx = [i for a, b, _ in pe._fx_words(psd, pe.ability_layer(psd)) if old[a:b] == "1st: Slime" for i in range(a, b)]
+    before = {i: pe._hex(f) for s, e, f in pe.run_fills(pe.ability_layer(psd)) for i in range(s, e)}
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    after = {i: pe._hex(f) for s, e, f in pe.run_fills(layer) for i in range(s, e)}
+    can = old.index(" can attack twice") + 1
+    assert fx and all(after[i] == before[i] for i in fx) and after[can] == "#ff0000"
+    assert "1st: Slime keep their look" in " ".join(baked.fx_notes)
+
+
 def test_status_colours_record(clone, tmp_path):
     """Card sync's status colours (db/status_colors.json, the mock-up's): each chart status as it prints, a gradient
     one in its mean colour, read once per chart blob; the site ships them (build_site.status_colors)."""
