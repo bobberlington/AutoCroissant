@@ -2287,6 +2287,25 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
         assert all(note.endswith("; check the card") for note in notes)
 
 
+def test_a_shrunk_ability_grows_back(clone, parser, chart):
+    """r16: fit_below only shrinks, from the size the text has now: an Ability an edit set smaller stayed smaller once a
+    later edit shortened it (Old Chica, Morpho Knight). With the earlier bake's fit (its verdict) its runs go back to
+    the card maker's size first; text that fits no size keeps the size it had."""
+    fonts, rel = str(clone / pe.FONTS_DIR), "Items/Equip/3 Stars/Deep_Focus.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"])
+    sizes = lambda: [run[2] for run in _runs(pe.ability_layer(psd))]
+    made = sizes()
+    shrunk = pe.set_text_layer(psd, "ability", old + " Gain 1 HP. Die.", fonts, chart, parser=parser)
+    small = sizes()
+    assert pe.FIT_MIN <= shrunk.fit < 1 and max(small) < max(made)
+    long = pe.set_text_layer(psd, "ability", old + " Gain 1 HP and draw a card." * 16, fonts, chart, parser=parser,
+                             fit=shrunk.fit)
+    assert long.fit == shrunk.fit and set(sizes()) == set(small) and long.lifted > 0   # lifted at that size
+    back = pe.set_text_layer(psd, "ability", old, fonts, chart, parser=parser, fit=long.fit)
+    assert back.fit == 1.0 and sizes() == pytest.approx(made, abs=0.011)     # the shrink's 2 decimals
+
+
 def test_ink_checks_look_at_the_text_alone(clone, parser, chart, monkeypatch):
     """11-08: ink_beyond and inks_over build their masks on _ink_box, not the whole canvas: every verdict and px count
     as the whole canvas's (Deep Focus' lines past its old text, then pushed past each edge of the canvas)."""

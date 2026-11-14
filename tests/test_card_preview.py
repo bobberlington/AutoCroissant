@@ -30,6 +30,7 @@ import pytest
 import yaml
 
 import commands.card_bake as cb
+import commands.card_db as card_db
 import commands.card_preview as cp
 import commands.card_preview_branch as br
 import commands.card_preview_reads as early
@@ -279,7 +280,8 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     (a key, a PSD path in another case, a numbered picture's parts or stars, a picture-only duplicate's any fields, an MDW PSD, an
     unknown card) and Card Edits.json (a duplicate's first: it names the PSD), and writes the blobs into a blobless clone,
     where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
-    assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
+    assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD, cp.VERDICTS_JSON))
+    assert cp.VERDICTS_JSON == card_db.VERDICTS_JSON
     assert early.PICTURE_FIELDS == cp.PICTURE_FIELDS
     for python in filter(None, (executable, shutil.which("python3.12"))):     # the runner's python3: 3.12 (ubuntu-24.04)
         assert run_process([python, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0, python
@@ -323,13 +325,27 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     monkeypatch.setattr(early, "_get", get)
     done = early.reads("Mini Doomer", {"hp": 8}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
     blobs = [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, cb.EDITS_PATH]
-    assert sorted(done) == sorted(blobs + [f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}"])
+    assert sorted(done) == sorted(blobs + [f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}", f"db/{cp.VERDICTS_JSON}"])
     assert [done[p][1] for p in blobs] == ["ok"] * 4 and done[f"db/{pe.SPOT_RECORD}"][1] == "OSError: down"
-    assert sorted(p.name for p in (tmp_path / "records").iterdir()) == [pe.RENDER_RECORD]
+    assert sorted(p.name for p in (tmp_path / "records").iterdir()) == [pe.RENDER_RECORD, cp.VERDICTS_JSON]
     done = early.reads("Breakfast", {"name": "x"}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
     assert {p: done[p][1] for p in blobs + [dup]} == {**dict.fromkeys(blobs, "in the clone"), cb.EDITS_PATH: "ok", dup: "ok"}
     for path in blobs + [dup]:
         assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
+
+
+def test_the_preview_reads_the_verdict(tmp_path, monkeypatch):
+    """r16: the preview bakes from where Card sync's bake would: the data's verdict (read beside the records) on the
+    card's PSD gives the moved title and the smaller Ability; another PSD's, or none, nothing."""
+    verdict = {"state": "baked", "psd": "abcdef12", "reason": "ability", cb.ANCHOR: -12, cb.FIT: 0.8836}
+    (tmp_path / cp.VERDICTS_JSON).write_text(json.dumps({"schema": 1, "cards": {"mini doomer": verdict}}))
+    monkeypatch.setenv(pe.RECORDS_DIR, str(tmp_path))
+    for sha, want in (("abcdef1234", (-12, 0.8836)), ("99999999aa", (0, 1.0))):
+        card = cb.Card("Mini Doomer", "mini doomer", {"ability": "x"}, DOOMER, sha)
+        cp.remember(card)
+        assert (card.title_anchor, card.ability_fit) == want
+    monkeypatch.delenv(pe.RECORDS_DIR)
+    cp.remember(card)
 
 
 def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):

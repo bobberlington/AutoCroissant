@@ -292,6 +292,10 @@ def test_shared_bars_and_moved_titles_are_remembered():
     baked = {"state": "baked", "psd": "abcdef12", "reason": "name 'Stay' -> 'Stay II'; overflow: name: moved +32 px to stay on the card"}
     assert cb.title_anchor(baked, "abcdef1234") == 32
     assert cb.title_anchor(baked, "99999999aa") == 0 and cb.title_anchor({**baked, "state": "refused"}, "abcdef1234") == 0
+    fit = {**baked, cb.FIT: 0.8836}             # an Ability set smaller (r16): grown back first while the PSD is its
+    assert cb.ability_fit(fit, "abcdef1234") == cb.ability_fit({**fit, "state": "refused"}, "abcdef1234") == 0.8836
+    assert cb.ability_fit(fit, "99999999aa") == cb.ability_fit(baked, "abcdef1234") == 1.0
+    assert cb.ability_fit({**fit, cb.FIT: 0.1}, "abcdef1234") == 1.0
 
 
 def test_blob_gate(github):

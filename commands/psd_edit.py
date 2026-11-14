@@ -331,6 +331,7 @@ class Edit:
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
     lines: Optional[tuple] = None  # a plain layer spliced in place: the splice zone, the only pixels it changes
     lifted: int = 0         # px an Ability edit moved its layer up (lift)
+    fit: float = 1.0        # an Ability's scale against the card maker's size (fit_below; the bake's verdict keeps it)
     boxed: bool = False     # its box grown to hold its lines (hold_lines): its Txt2 frames change (gate_stories)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
@@ -381,6 +382,7 @@ class Baked:
     icons: dict = field(default_factory=dict)       # stars / types -> the layout their edit followed (IconPlan.how)
     whole: dict = field(default_factory=dict)       # field -> whole_redraw()'s measurement (Edit.whole)
     files: dict = field(default_factory=dict)       # repo path -> bytes: other files the edits set (Edit.files)
+    fit: Optional[float] = None     # the Ability's Edit.fit (None: no Ability edit), for the verdict
 
 
 # ========================
@@ -5192,6 +5194,33 @@ def hold_lines(layer, fonts, undrawn: bool = False) -> int:
     return max(1, round(yy * (bottom - box[3])))
 
 
+def size_runs(layer) -> list:
+    """The layer's style runs as (start, end, {FontSize, Leading, BaselineShift} it sets or inherits): fit_below's."""
+    from psd_tools.api import text_edit
+    units = text_edit.utf16_prefix(layer.text)
+    resources = layer.resource_dict
+    try:
+        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
+                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        normal = {}
+    runs = []
+    for u0, u1, data in text_edit._spans(text_edit._section(layer, "StyleRun"), units[-1]):
+        sheet = data["StyleSheet"]["StyleSheetData"]
+        keys = {key: float(getattr(sheet.get(key, normal.get(key)), "value", sheet.get(key, normal.get(key))))
+                for key in ("FontSize", "Leading", "BaselineShift") if sheet.get(key, normal.get(key)) is not None}
+        runs.append((text_edit._str_index(units, u0), text_edit._str_index(units, u1), keys))
+    return runs
+
+
+def set_sizes(layer, runs: list, scale: float) -> None:
+    """size_runs' runs set at scale (1: as they were)."""
+    for a, b, keys in runs:
+        if b > a and keys:
+            layer.set_span_style(a, b, **{key: value if scale == 1 else round(value * scale, 2)
+                                          for key, value in keys.items()})
+
+
 def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool, check) -> tuple:
     """
     An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
@@ -5218,27 +5247,10 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
     off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
     if "\t" in layer.text or not off and check() is None:
         return 1.0, None, lift(psd, layer, before) if off else 0
-    from psd_tools.api import text_edit
-    text = layer.text
-    units = text_edit.utf16_prefix(text)
-    resources = layer.resource_dict
-    try:
-        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
-                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
-    except (KeyError, IndexError, TypeError, ValueError):
-        normal = {}
-    runs = []
-    for u0, u1, data in text_edit._spans(text_edit._section(layer, "StyleRun"), units[-1]):
-        sheet = data["StyleSheet"]["StyleSheetData"]
-        keys = {key: float(getattr(sheet.get(key, normal.get(key)), "value", sheet.get(key, normal.get(key))))
-                for key in ("FontSize", "Leading", "BaselineShift") if sheet.get(key, normal.get(key)) is not None}
-        runs.append((text_edit._str_index(units, u0), text_edit._str_index(units, u1), keys))
+    runs = size_runs(layer)
 
     def scaled(scale: float) -> None:
-        for a, b, keys in runs:
-            if b > a and keys:
-                layer.set_span_style(a, b, **{key: value if scale == 1 else round(value * scale, 2)
-                                              for key, value in keys.items()})
+        set_sizes(layer, runs, scale)
     rows = (before[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
     floor = int(rows.max()) + 1 + BEYOND[0] if len(rows) else psd.height
 
@@ -5573,7 +5585,7 @@ def nudge(layer, dx: int, dy: int) -> None:
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None, layer=None, copy: bool = False,
-                   area: Optional[tuple] = None, anchor: int = 0, up: int = 0) -> Edit:
+                   area: Optional[tuple] = None, anchor: int = 0, up: int = 0, fit: float = 1.0) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs (SPLICE_UNIT), Photoshop's raster staying on the rest.
@@ -5600,6 +5612,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         anchor: px an earlier bake moved this title to keep it on the card (R4, its verdict): moved back first, so a
             shorter title sits where the card maker put it and a move is always counted from there
         up: A copy's: px its Ability moved up (lift), which it follows
+        fit: The scale an earlier bake set this Ability at (fit_below, its verdict): its runs go back to the card
+            maker's size first, so a text that fits there prints at it again (Edit.fit: the scale it prints at now)
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
@@ -5807,11 +5821,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             layer.set_span_style(a, b, fill=fill)
     unstretch(layer, typed)
     # typed badges at the computed size and middle, typed icons shifted when off (owner 2026-10-25);
-    for fit in badge_fits(layer, fonts, typed) if typed else ():    # a kept one as the guards keep it
-        keys = ({"FontSize": fit["fit_size"], "BaselineShift": fit["fit_shift"]}
-                if fit["kind"] == "badge" and (fit["start"], fit["end"]) not in stay else badge_wants(fit))
+    for placed in badge_fits(layer, fonts, typed) if typed else ():    # a kept one as the guards keep it
+        keys = ({"FontSize": placed["fit_size"], "BaselineShift": placed["fit_shift"]}
+                if placed["kind"] == "badge" and (placed["start"], placed["end"]) not in stay else badge_wants(placed))
         if keys:
-            layer.set_span_style(fit["start"], fit["end"], **keys)
+            layer.set_span_style(placed["start"], placed["end"], **keys)
     now = _char_styles(layer)[1]
     stray = [c for i, c in enumerate(text) if now[i] and i not in glyphs and c not in blank and i not in plain]
     if stray:           # letters the icon font draws plainly: typed in place of a badge, or "(1GCD)" made "(GCD)"
@@ -5836,13 +5850,25 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         if not seen or seen["key"] != key:
             seen.update(key=key, verdict=ink_beyond(psd, layer, room))
         return seen["verdict"]
-    report = draw()
+    base = fit if which == "ability" and not copy else 1.0     # its size against the card maker's
+    shrunk = size_runs(layer) if base < 1 and "\t" not in layer.text else None     # tabs: fit_below never fits
+    if shrunk:                                  # an earlier bake's fit undone: the card maker's size
+        set_sizes(layer, shrunk, 1 / base)
+        base = 1.0
+    report, fitted = draw(), base
     grown = 0
     if which == "ability" and not copy:         # onto the design below or off the canvas: smaller (the preview's fit)
         grown = hold_lines(layer, fonts, undrawn=True)
         if grown:                               # every line drawn first, so none is lost
             report = draw()
-        _, again, up = fit_below(psd, layer, room, fonts, draw, off_before, check)
+        scale, again, up = fit_below(psd, layer, room, fonts, draw, off_before, check)
+        fitted = base * scale
+        if shrunk and scale >= 1 and again is not None:    # no size fits: at the size it had
+            if up:
+                nudge(layer, 0, up)
+            set_sizes(layer, shrunk, 1.0)
+            again, fitted = draw(), fit
+            up = 0 if off_before else lift(psd, layer, room)
         report = again or report
     elif up:
         nudge(layer, 0, -up)
@@ -5910,7 +5936,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
                 whole=spliced is None or bool(spliced.fallback), lifted=up,
-                lines=lines, boxed=bool(boxed))
+                lines=lines, boxed=bool(boxed), fit=fitted)
 
 
 # ========================
@@ -11083,19 +11109,20 @@ def save_png(image: Image.Image, path: str, like: Image.Image, level: Optional[i
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
                psd: Optional[PSDImage] = None, view: Optional[int] = None, template: Optional[tuple] = None,
-               ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
+               ability_from: Optional[tuple] = None, title_anchor: int = 0, ability_fit: float = 1.0) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant_view(): its edits, renders, merge
     onto that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its
     own eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
     a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
-    title_anchor: set_text_layer's anchor for a name job or the one title box of a parts job.
+    title_anchor: set_text_layer's anchor for a name job or the one title box of a parts job. ability_fit: its fit for
+    an ability job or the one ability box of a parts job.
     """
     hold = ExitStack()
     try:
         with _files_seen(parser) as files:
             return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
-                               view, hold, template, ability_from, title_anchor, files)
+                               view, hold, template, ability_from, title_anchor, files, ability_fit)
     finally:
         hold.close()
 
@@ -11117,7 +11144,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
                 psd: Optional[PSDImage] = None, view: Optional[int] = None, hold: ExitStack = None,
                 template: Optional[tuple] = None,
-                ability_from: Optional[tuple] = None, title_anchor: int = 0, files: Optional[dict] = None) -> Baked:
+                ability_from: Optional[tuple] = None, title_anchor: int = 0, files: Optional[dict] = None,
+                ability_fit: float = 1.0) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save (stripped: save_psd) and run every gate.
 
@@ -11210,16 +11238,17 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             if len(found) != 1:
                 raise Refused("unsupported-card", f"{len(found)} ability layers: edit each box on the website")
             edits += set_parts(new, {str(found[0]["id"]): {"text": value}}, record, fonts_dir, chart, _card_name(parsed),
-                               parser, old)
+                               parser, old, fit=ability_fit)
         elif name == "name" and placed:         # a smart object's title (Gust of Wind's, its Motion Blur kept)
             edits.append(set_placed_title(new, placed, value, fonts_dir, rel, parser))
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), parser,
-                                        old, anchor=title_anchor if name == "name" else 0))
+                                        old, anchor=title_anchor if name == "name" else 0,
+                                        fit=ability_fit if name == "ability" else 1.0))
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), parser, old,
-                               ability_from, rel, title_anchor)
+                               ability_from, rel, title_anchor, ability_fit)
         elif name == "colors":                  # last: on the text the edits above set
             edits.append(set_colors(new, value, fonts_dir, _card_name(parsed), chart))
         else:
@@ -11329,7 +11358,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                                if name in {n for n, _ in edit.fx} | {n for _, _, n in edit.rebuilt}],
                  list(dict.fromkeys([note for edit in edits for note in edit.notes] + flags)), icc, rerender,
                  {edit.field: edit.icons.how for edit in edits if edit.icons is not None}, whole,
-                 {path: data for edit in edits for path, data in edit.files.items()})
+                 {path: data for edit in edits for path, data in edit.files.items()},
+                 next((edit.fit for edit in edits if edit.field == "ability"), None))
 
 
 # ========================
@@ -11581,7 +11611,7 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
               parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
-              ability_from: Optional[tuple] = None, rel: str = "", anchor: int = 0) -> list:
+              ability_from: Optional[tuple] = None, rel: str = "", anchor: int = 0, fit: float = 1.0) -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
     visible FX layers and copies, its story), then each ability part and title part set as one text
@@ -11596,6 +11626,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         ability_from: (the card kind's template, its name): template_for's, for a "+ability" job (added last)
         rel: The card's repo path (where a "+ability" goes and its font: ability_place)
         anchor: set_text_layer's, for the card's one title box (R4: an earlier bake's move, undone first)
+        fit: set_text_layer's, for the card's one ability box (an earlier bake's fit, undone first)
 
     Returns:
         One Edit per field ("ability" then "name"), then the added ability's; raises Refused as set_text_layer does
@@ -11648,7 +11679,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             copies = followers(layer.layer_id)
             edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, parser,
                                   original, layer=layer,
-                                  anchor=anchor if kind == "title" and len(joined[kind]) == 1 else 0)
+                                  anchor=anchor if kind == "title" and len(joined[kind]) == 1 else 0,
+                                  fit=fit if kind == "ability" and len(joined[kind]) == 1 else 1.0)
             edit.story = first_story(layer)
             typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
             edit.notes = [note for note in edit.notes if not _typed_lines(note, typed)]    # an Enter in the box is no overflow
@@ -11696,6 +11728,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         out.append(_combine(which, edits, subs, psd, {key: found[key][2]["text"] for key in mine},
                             {key: jobs[key].get("text") for key in mine}, info["removed"],
                             info["stories"], info["moved"], info["boxes"], notes))
+        if kind == "ability" and len(joined[kind]) == 1:    # the one box's (deleted: none)
+            out[-1].fit = next((edit.fit for _, edit, copy in edits if not copy), 1.0)
     if ADD_ABILITY in jobs:                     # scheduled last (§4.7)
         if ability_from is None:
             raise Refused("unsupported-card", "ability: no template to add the Ability layer from")

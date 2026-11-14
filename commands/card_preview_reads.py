@@ -1,10 +1,10 @@
 """
 A card preview's reads, started early: card-preview.yml runs this in the background while its setup runs. The data's
-render and spot records (db/ on the data branch) go to a folder (CARD_RECORDS_DIR), and the blobs card_preview reads
-first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, a picture-only duplicate's own PNG, the status
-chart for an ability, parts or colors edit; and Card Edits.json, bake_card's first read, which a duplicate's PSD waits for) into
-the clone's object store, where card_bake.fetch_verified looks before REST. The same reads, earlier; a miss only
-costs the time (the bake checks every blob's sha and fetches what the clone lacks).
+render and spot records and the bake's verdicts (db/ on the data branch) go to a folder (CARD_RECORDS_DIR), and the
+blobs card_preview reads first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, a picture-only
+duplicate's own PNG, the status chart for an ability, parts or colors edit; and Card Edits.json, bake_card's first read,
+which a duplicate's PSD waits for) into the clone's object store, where card_bake.fetch_verified looks before REST. The
+same reads, earlier; a miss only costs the time (the bake checks every blob's sha and fetches what the clone lacks).
 
     python3 -S -m commands.card_preview_reads --card <key or PSD path> --edit <json file> --clone <checkout>
                                               --repo <owner/name> --head <sha> --records <dir>
@@ -34,7 +34,7 @@ from global_config import API_BASE, DATA_BRANCH, EDITS_PATH, ICON_MANIFEST_PATH
 # ========================
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # card_bake's: not cards
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"     # psd_edit's
-RECORDS = ("render_record.json", "spot_record.json")                        # psd_edit's RENDER_RECORD, SPOT_RECORD
+RECORDS = ("render_record.json", "spot_record.json", "verdicts.json")  # psd_edit's two records, the bake's verdicts
 PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # card_preview's
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}

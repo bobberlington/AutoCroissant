@@ -50,6 +50,7 @@ from global_config import CARD_REPO, ICON_MANIFEST_PATH
 # ========================
 # Configuration
 # ========================
+VERDICTS_JSON = "verdicts.json"                 # card_db's: the data's verdicts, read beside the records
 SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "commands/card_bake.py",
                 "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
@@ -150,6 +151,17 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
     return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                 view=view, dup=dup)
+
+
+def remember(card: Card) -> None:
+    """What the data's verdict says an earlier bake of the card's PSD left (card_bake.remember), as the bake reads it;
+    the verdicts read (card_preview_reads) beside the records. None or a bad file: nothing."""
+    folder = environ.get(psd_edit.RECORDS_DIR, "")
+    try:
+        known = card_bake.load_verdicts(join(folder, VERDICTS_JSON) if folder else "")
+    except (OSError, ValueError):
+        return
+    card_bake.remember(card, card_bake.verdict_of(known, card.key))
 
 
 def blobs_of(snapshot: Snapshot, card: Card) -> list:
@@ -408,6 +420,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
         ready()                                 # the reads are in (the fonts: at the first font)
+        remember(one)
         snapshot.prefetch(blobs_of(snapshot, one))    # side by side
         png_rel = one.dup or (snapshot.png_for(one.rel)[0] if one.rel else "")     # a duplicate's: its own picture
         if one.view is not None:                # the picture's own PNG
