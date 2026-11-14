@@ -120,6 +120,7 @@ def _build(bs, monkeypatch, repo, out, data_dir=None):
     monkeypatch.setattr(bs, "REPO", str(repo["root"]))
     for name, sub in (("DIST", "dist"), ("CACHE", ".cache"), ("OG_CACHE", ".og-cache")):
         monkeypatch.setattr(bs, name, str(out / sub))
+    monkeypatch.setattr(bs, "VCACHE", str(out / ".vcache"), raising=False)   # TTSCardMaker since 11-14
     (out / ".cache").mkdir(parents=True, exist_ok=True)
     if not (out / ".cache" / "cover").exists():
         (out / ".cache" / "cover").symlink_to(bs.covers, target_is_directory=True)
@@ -151,6 +152,25 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
     melon2 = _by_name(out["cards.json"]["cards"])["Watermelon2"]
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
+
+
+def test_older_versions_copied_by_the_versions_job(bs, repo, tmp_path, monkeypatch):
+    """site.yml's build makes no older-version copies (VERSION_BUDGET 0): it lists every older version's PNG blob, newest
+    first (VERSION_LIST), for its versions job (--versions); the next build links that job's copies (app.js versionCopy)."""
+    listed, (c1, c2, _) = tmp_path / "copies.txt", repo["commits"]
+    monkeypatch.setattr(bs, "VERSION_BUDGET", 0)
+    monkeypatch.setattr(bs, "VERSION_LIST", str(listed))
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    copies = tmp_path / "a" / "dist" / "thumbs" / "v"
+    blob = lambda c: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{ALPHA}.png"], capture_output=True,
+                                    text=True, check=True).stdout.strip()
+    assert listed.read_text().split() == [blob(c2), blob(c1)] and not any(copies.iterdir())
+    bs.version_copies(listed.read_text().split(), 60)                 # the versions job
+    listed.unlink()
+    _build(bs, monkeypatch, repo, tmp_path / "a")
+    alpha, tag = _by_name(out["cards.json"]["cards"])["Alpha"]["id"], out["cards.json"]["thumbs"]["v"]
+    assert sorted(p.name for p in copies.iterdir()) == sorted(f"{alpha}-{c[:10]}-{tag}.avif" for c in (c1, c2))
+    assert not listed.exists()
 
 
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
