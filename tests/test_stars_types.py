@@ -1088,3 +1088,12 @@ def test_a_bakes_own_hidden_icon_comes_back(parser, tmp_path):
         _, baked = _bake(parser, paths, {"types": ["fire"]}, tmp_path, types_dir=types_dir)
         plan = _plan(parser, baked.psd_path, REL, "types", ["fire", "water"])
         assert [layer.name for layer in plan.show] == ["water"] and not plan.icons, row
+
+
+def test_a_bakes_own_hidden_star_comes_back(parser, tmp_path):
+    """A hidden star on a shown one that moves aside (an earlier bake's copy, hidden as 4 went to 3) is shown there, not
+    copied again."""
+    paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1025, 125)), hidden=((970, 125),))
+    plan = _plan(parser, paths[0], REL, "stars", 4)
+    assert [tuple(layer.bbox) for layer in plan.show] == [(970, 125, 1070, 225)] and not plan.copies
+    assert [(tuple(layer.bbox), dx, dy) for layer, dx, dy in plan.moves] == [((1025, 125, 1125, 225), 55, 0)]

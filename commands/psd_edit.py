@@ -6538,6 +6538,24 @@ def _place(units: list, spots: list, size: tuple, snap: bool = False) -> tuple:
     return moves, free
 
 
+def _on_spots(units: list, spots: list, size: tuple, snap: bool = False) -> tuple:
+    """
+    Hidden stars of the star's size already on spots a copy would take (within the tolerance; snap: moved onto it):
+    shown there instead (an earlier bake's copy, or the star it hid).
+
+    Returns:
+        ([(unit, dx, dy)] shown, spots left)
+    """
+    tol, free, out = _tol(max(size)), list(spots), []
+    for unit in units:
+        spot = next((s for s in free if abs(s[0] - unit.centre[0]) <= tol and abs(s[1] - unit.centre[1]) <= tol), None)
+        if spot is not None and all(abs(unit.size[k] - size[k]) <= tol for k in (0, 1)):
+            free.remove(spot)
+            out.append((unit, round(spot[0] - unit.centre[0]) if snap else 0,
+                        round(spot[1] - unit.centre[1]) if snap else 0))
+    return out, free
+
+
 def _ink(layer) -> Optional[tuple]:
     """(bbox, solid alpha) of a drawn layer; None when it has no pixels to read."""
     alpha = _alpha(layer)
@@ -7752,8 +7770,9 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     - in the group holding the stars one by one (in its one shown count folder, "3 stars", when it has those): fewer
       hide the last in reading order (rows top to bottom, each right to left; the first when only that leaves a
       layout; none that bares a kept star's shadow: _bares), a die's five keeps the die's faces (DICE_FACES); more show
-      the card's own hidden stars first, then copy
-      the last star layer at the layout's spacing (_star_layouts, the first that stays clear): rows of two with an odd
+      the card's own hidden stars first, then copy the last star layer at the layout's spacing (_star_layouts, the
+      first that stays clear; a hidden star of its size on a copy's spot once the others moved, as an earlier bake
+      left it, is shown there instead: _on_spots): rows of two with an odd
       one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
       the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column, then
       _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay on
@@ -8026,6 +8045,8 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
                 stages.append(("fit", banner))              # else where they fit alone, art aside (owner 11-08), told
             places: dict = {}
             every = lambda moves, copies: moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]
+            spare = [unit for unit in hidden if unit.count == 1 and not any(unit is one for one in shown)
+                     and counted({**show, **{id(layer): True for layer in unit.layers}}) == counted(show) + 1]
             for (mode, back), j in product(stages, range(len(layouts))):
                 if mode == "shrink":
                     raise _Shrink(*given, back)
@@ -8035,9 +8056,10 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
                     under = [move for move in shaded(order, moves) if move[0] is not source]
                     moves = [move for move in moves if move not in under]   # under a shadow: hidden, a copy (on top)
                     free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
-                    places[j] = moves, under, [(source, round(spot[0] - source.centre[0]),
-                                                round(spot[1] - source.centre[1]), "") for spot in free]
-                moves, under, copies = places[j]
+                    again, free = _on_spots(spare, free, source.size, bool(shrink))    # shown there, not copied
+                    places[j] = moves + again, under, [(source, round(spot[0] - source.centre[0]),
+                                                        round(spot[1] - source.centre[1]), "") for spot in free], again
+                moves, under, copies, again = places[j]
                 soft, drop = mode != "fit", 0   # fit: none clear of the art, the first that fits alone (owner 11-08)
                 if mode == "lower" or (mode == "fit" and failed(every(moves, copies), False)[0]):
                     found = None if below else lowered(order, moves, copies, under, back, soft)   # owner 11-08: down
@@ -8048,7 +8070,11 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
                 why = why or (off_back(back, moves, copies) if soft else None)
                 if why is None:
                     art = None if soft else failed(every(moves, copies))[0] or off_back(back, moves, copies)
-                    plan.moves += _as_drawn(moves)
+                    shown_again = [unit for unit, _, _ in again]
+                    plan.moves += _as_drawn([move for move in moves if move[1] or move[2]
+                                             or not any(move[0] is unit for unit in shown_again)])
+                    plan.show += [layer for unit in shown_again for layer in unit.layers]
+                    show.update({id(layer): True for unit in shown_again for layer in unit.layers})
                     copies = _as_drawn(copies)
                     how = name
                     gone = [layer for unit, _, _ in under for layer in unit.layers]
@@ -8060,7 +8086,9 @@ def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPar
                         plan.notes.append(f"stars: placed where they fit, though {art}: check it")
                     if back is None and banner is not None and (len(order) > 1 or shrink == 0):   # a lone star's too
                         plan.notes.append(f"stars: placed off {banner[0].name!r} under them: check it")    # once B failed
-                    shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
+                    shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)] + shown_again
+                    if shown_again:
+                        how = f"{how}, hidden stars shown"
                     break
                 if mode == "spot" and (first is None or far > first[0]):   # the deciding reason: the layout whose
                     first = (far, why)                                      # checks got furthest
