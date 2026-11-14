@@ -550,6 +550,25 @@ def test_recompress_leaves_16_bit_and_bands_without_oxipng(monkeypatch):
 
 
 @pytest.mark.oxipng
+def test_a_stored_png_band_cant_take_is_saved_deflated(tmp_path, monkeypatch):
+    """encode and a committed bake (card_bake._smaller) save STORED for band(): the same banded bytes; one band() can't
+    take is saved again at DEFLATED (never the stored file); a banded file is left as it is."""
+    import io
+    import commands.card_bake as cb
+    like, stored, deflated, path = pe.open_png(photoshop_png(art())), io.BytesIO(), io.BytesIO(), tmp_path / "card.png"
+    psd_edit.save_png(art(), stored, like, pe.STORED)
+    psd_edit.save_png(art(), deflated, like, pe.DEFLATED)
+    path.write_bytes(stored.getvalue())
+    banded = cb._smaller(str(path))
+    assert pe.banded(banded) and banded == path.read_bytes() == cb._smaller(str(path)) == pe.encode(art(), like)
+    assert banded == pe.band(deflated.getvalue())
+    monkeypatch.setattr(pe, "band", lambda data: None)
+    path.write_bytes(stored.getvalue())
+    assert cb._smaller(str(path)) == path.read_bytes() == deflated.getvalue() == pe.encode(art(), like)
+    assert len(deflated.getvalue()) * 3 < len(stored.getvalue())
+
+
+@pytest.mark.oxipng
 @pytest.mark.parametrize("cores", [1, 4])
 def test_bands_deflated_apart_are_the_one_streams_bytes(monkeypatch, cores):
     """band()'s bands deflated side by side (threads) are one stream's with a full flush per band, IDAT for IDAT."""

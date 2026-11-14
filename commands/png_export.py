@@ -24,6 +24,7 @@ draw those.
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
     recompress(data, minimum, floor) -> bytes or None        the PNG banded (a preview's: oxipng), checked, or None
+    deflated(data) -> bytes                                  a STORED PNG band() couldn't take, at DEFLATED
     band(data) -> bytes or None                              the PNG deflated in BAND-row bands (git deltas a change)
     use_cores(count), share(workers)                         band()'s threads: a pool worker's share of the cores
     same_png(a, b) -> bool                                   the same image: size, RGBA pixels and every chunk but text
@@ -105,6 +106,8 @@ BAND_LEVEL = 8                                  # band()'s zlib level, Z_FILTERE
 DEFLATES = 4                                    # band()'s deflate threads at most (zlib frees the GIL)
 FLUSH = b"\x00\x00\xff\xff"                     # the empty stored block a full flush ends with
 PIXEL_BYTES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}    # a pixel's bytes at bit depth 8, by colour type
+STORED = 0                                      # zlib level of a PNG band() deflates again right after (encode, a bake)
+DEFLATED = 6                                    # PIL's default: such a PNG band() can't take is saved at it (not 8-11 MB)
 _cores = [cpu_count() or 1]                     # band()'s cores: a pool worker's share (use_cores)
 
 
@@ -292,13 +295,25 @@ def _bbox(mask: np.ndarray) -> Optional[tuple]:
 
 
 def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
-    """The PNG file: like's colour chunks kept (psd_edit.save_png), banded (recompress, whatever its size)."""
+    """The PNG file: like's colour chunks kept (psd_edit.save_png), banded (recompress, whatever its size); saved
+    STORED for band(), at DEFLATED when band() can't take it."""
+    def saved(level: int) -> bytes:
+        buf = BytesIO()
+        if like is not None:
+            psd_edit.save_png(image, buf, like, level)
+        else:
+            image.save(buf, "PNG", compress_level=level)
+        return buf.getvalue()
+    return recompress(saved(STORED), None) or saved(DEFLATED)
+
+
+def deflated(data: bytes) -> bytes:
+    """A STORED PNG band() couldn't take, saved again at DEFLATED with its own colour chunks (psd_edit.save_png)."""
+    image = Image.open(BytesIO(data))
+    image.load()
     buf = BytesIO()
-    if like is not None:
-        psd_edit.save_png(image, buf, like)
-    else:
-        image.save(buf, "PNG")
-    return recompress(buf.getvalue(), None) or buf.getvalue()
+    psd_edit.save_png(image, buf, image, DEFLATED)
+    return buf.getvalue()
 
 
 # ========================
@@ -1458,6 +1473,9 @@ __all__ = [
     'follow',
     'dilate',
     'encode',
+    'deflated',
+    'DEFLATED',
+    'STORED',
     'EXPORT',
     'G2_BLANK',
     'G2_DRAW',

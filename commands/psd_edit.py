@@ -91,7 +91,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # them all in the text gamma, or all straight. Under "preview" and "straight" the edited layers are pinned to the gamma
 # (text_kwargs()): Photoshop redraws them in it
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
-PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
+PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1; a committed bake's: 0)
 ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of save_png, made beside the gates
 OLD_BESIDE = False          # a preview's: gate_dirty draws old's box in a thread beside new's (Card sync's pool: serial)
 FONTS_WAIT = None           # a preview's: returns once MDW/Fonts is in (it restores beside the bake); called before any FontMap
@@ -10988,7 +10988,7 @@ def save_psd(psd: PSDImage, path) -> None:
     psd.save(path, update_preview=False)
 
 
-def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
+def save_png(image: Image.Image, path: str, like: Image.Image, level: Optional[int] = None) -> None:
     """
     Write the merged PNG with the official PNG's color chunks (iCCP, gAMA, cHRM, pHYs): only pixels change.
 
@@ -10996,6 +10996,7 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
         image: The merged image
         path: Where it goes
         like: The official PNG as opened (its info holds the chunks Photoshop wrote)
+        level: zlib's level (None: PNG_LEVEL)
     """
     chunks = PngInfo()
     if like.info.get("gamma") is not None:
@@ -11003,7 +11004,7 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
     if like.info.get("chromaticity"):
         chunks.add(b"cHRM", b"".join(pack(">I", int(round(v * 100000))) for v in like.info["chromaticity"]))
     keep = {key: like.info[key] for key in ("icc_profile", "dpi") if like.info.get(key)}
-    image.save(path, "PNG", pnginfo=chunks, compress_level=PNG_LEVEL, **keep)
+    image.save(path, "PNG", pnginfo=chunks, compress_level=PNG_LEVEL if level is None else level, **keep)
 
 
 # ========================
