@@ -2171,8 +2171,8 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
     """Review 2026-10-24: an Ability's added line printed over what lies below its old text (Deep Focus' flourish, Holy
     Card's torn panel border, Autopsy Report off its box) with no note; inks_over passed them, the old ink touching
     those layers elsewhere. It bakes set smaller until it stays off them and no lower than the old text (fit_below, the
-    website preview's fit), else as it is with a note (six more sentences on Deep Focus); a line added on the plain
-    panel has none."""
+    website preview's fit), else with a note, off the card at the largest size on it (six more sentences on Deep
+    Focus: r32, lifted at full size over its art); a line added on the plain panel has none."""
     fonts = str(clone / pe.FONTS_DIR)
     focus, gain = "Items/Equip/3 Stars/Deep_Focus.psd", " Gain 1 HP. Die."
     for rel, more, want in ((focus, gain, "fit"), ("Items/Equip/2 Stars/Holy_Card.psd", gain, "fit"),
@@ -2185,7 +2185,7 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
         edit = pe.set_text_layer(psd, "ability", old + more, fonts, chart, parser=parser)
         notes = [note for note in edit.notes if note.startswith("ability: ")]
         fit = _runs(edit.layers[0])[0][2] < size
-        assert (bool(notes), bool(fit)) == (want == "told", want == "fit"), (rel, edit.notes)
+        assert (bool(notes), bool(fit), edit.lifted) == (want == "told", want is not None, 0), (rel, edit.notes)
         assert all(note.endswith("; check the card") for note in notes)
 
 
@@ -2214,9 +2214,24 @@ def test_ink_checks_look_at_the_text_alone(clone, parser, chart, monkeypatch):
     assert len(seen) >= 4 and all(search(r"\(\d+ px", got) for got in seen)
 
 
-def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
+def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path, monkeypatch):
     """11-08: an added line no size fits (fit_below) ran off the card's bottom, unseen (46 cards). The Ability moves up
-    until its last line ends where the old one did, TySh and raster together, through every gate."""
+    until its last line ends where the old one did, TySh and raster together, through every gate (Krabby Patty's, no
+    size tried). r32: lifted at full size, Dryya's longer Ability covered its ATK and SPD rows: the largest size on the
+    card no lower than the old text is set instead when it prints over less."""
+    rel = "Creatures/Hollow Knight/4 Stars/Dryya.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"])
+    was = _ink(pe.ability_layer(psd), psd)
+    size = _runs(pe.ability_layer(psd))[0][2]
+    stats = [layer.bbox for layer in psd.descendants() if layer.kind == "type" and layer.name in ("Attack", "Speed")]
+    edit = pe.set_text_layer(psd, "ability", old + " Attacks deal 1 extra damage to every enemy creature. At the start "
+                             "of your turn, heal 1 HP.", str(clone / pe.FONTS_DIR), chart, parser=parser)
+    ink = _ink(edit.layers[0], psd)
+    assert edit.lifted == 0 and _runs(edit.layers[0])[0][2] < size and len(stats) == 2
+    assert np.nonzero(ink.any(axis=1))[0].max() <= np.nonzero(was.any(axis=1))[0].max() + pe.BEYOND[0]
+    assert not any(ink[y0:y1, x0:x1].any() for x0, y0, x1, y1 in stats)
+    monkeypatch.setattr(pe, "FIT_MIN", 1.0)
     rel = "Auxiliary/Items/Krabby_Patty.psd"
     old = PSDImage.open(_card(clone, rel)[0])
     text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) + "\nDraw a card."
@@ -2232,9 +2247,11 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
 
 def test_a_line_below_its_box_grows_the_box(clone, parser, chart, tmp_path, monkeypatch):
     """r22: a status added to Keelhaul Key's Ability lays its last line below the box; the PNG shows it, Photoshop hides
-    it when it lays the text out again. The box grows down to hold it (hold_lines), through every gate, pixels kept."""
+    it when it lays the text out again. The box grows down to hold it (hold_lines), through every gate, pixels kept
+    (no size tried: since r32 the fit sets this one smaller)."""
     from psd_tools.composite.text.layout import layout
     from psd_tools.composite.text.model import TextModel
+    monkeypatch.setattr(pe, "FIT_MIN", 1.0)
     rel = "Field/1 Stars/Keelhaul Key.psd"
     text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) \
         + " Attacks inflict 1 Blazing."
