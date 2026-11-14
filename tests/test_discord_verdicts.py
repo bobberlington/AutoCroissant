@@ -301,6 +301,11 @@ def test_looks_no_git_version_has_are_drafts_and_named_only_picks_reach_the_name
     assert kind(marks={"t:2cd", "n:2:c", "n:234:t"})[0] is None                  # OCR joins digits: never counted
     assert kind(marks={"t:2cd", "n:2:c", "n:3:t"}, w=420, h=760)[0] is None      # cut: a screenshot
     assert kind(era="S", stars=2, git_stars={1})[0] == "draft" and kind(era="S", stars=1, git_stars={1})[0] is None
+    assert dv.decide(pick, {"shape": "1:2", "w": 1200, "h": 2400, "whole": old, "size_class": "ps1200"}, {"a": v},
+                     [v])[1]["draft"].startswith("a whole card export")                 # 8+ bits from every version
+    assert dv.decide(pick, {"shape": "1:2", "w": 389, "h": 790, "whole": old, "size_class": "shot"}, {"a": v},
+                     [v])[0] is None                                                     # a screenshot: maybe cut
+    assert kind(size_class="ps1200")[0] is None                                         # under 8 bits
     named = {"status": "confident", "cards": ["c"], "scored": [{"card": "c", "conf": 0.93, "s": {"title": 1.0}}]}
     assert dv.gate("c", 0.93, named, "1:2", {}, whole=True) is None
     assert dv.gate("c", 0.93, named, "1:2", {}).startswith("confidence")

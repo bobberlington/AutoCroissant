@@ -54,6 +54,8 @@ WORK_W = 360                                     # icons matched on the card at 
 BAND = {"1:2": 0.135, "2:3": 0.2, "1:1": 0.24}   # title band: share of the card's height
 ICON_BAND = {"1:2": 0.2, "2:3": 0.25, "1:1": 0.3}   # types (stacks of icons reach lower)
 STAR_BAND = {"1:2": 0.28, "2:3": 0.3, "1:1": 0.35}  # stars (stacks of five reach lower still)
+BLOB_BAND = {"1:2": 0.11, "2:3": 0.11, "1:1": 0.2}  # yellow star blobs (a status card's 2 x 2 stack reaches 0.2)
+ROW_MAX_W = 0.2                                  # a yellow blob this wide and 3/4 as tall (card widths): no row of stars
 LABELS = {"hp": r"health|heaith|healt|hp", "def": r"defen[cs]e|defemse|deffense|def",
           "atk": r"attack|atack|attak|atk", "spd": r"speed|spead|spee|spd"}
 STAR_SIZES = [0.045 * 1.14 ** k for k in range(11)]    # star icon width / card width
@@ -544,6 +546,8 @@ def overlap(a, b):
 # ========================
 _NAMES = None
 _STAGE1 = None
+_BAR_ERAS = None
+BAR_ERAS = ("A", "B", "C", "D1", "D2", "D-item", "A-item", "B-item", "C-item")   # a bar reader's era taken over 'other'
 
 
 def names_index():
@@ -577,6 +581,15 @@ def stage1_eras():
     return _STAGE1
 
 
+def bar_eras():
+    """{file: era} of the bar readers' Discord reads (derived/readers/bars/reads.jsonl) in a card era (BAR_ERAS)."""
+    global _BAR_ERAS
+    if _BAR_ERAS is None:
+        _BAR_ERAS = {r["file"]: r["era"] for r in jsonl(join(ROOT, "derived/readers/bars/reads.jsonl"))
+                     if r.get("src") == "discord" and r.get("era") in BAR_ERAS}
+    return _BAR_ERAS
+
+
 def stat_labels(lines):
     """{stat: (x0, y0, x1, y1)} of the printed stat labels in whole-card OCR lines (fractions)."""
     out = {}
@@ -605,7 +618,15 @@ def look_of(a):
 
 def era_of(item, w, h, labels, look):
     """The card's template era: stage 1's for the card channels' pictures; else by size (old repo, today) or by the
-    stat labels' place and the look (the stage-1 rules)."""
+    stat labels' place and the look (the stage-1 rules); a Discord picture no rule fits takes the bar readers' era."""
+    era, how = era_rules(item, w, h, labels, look)
+    if era in UNSORTED and item["src"] == "discord" and bar_eras().get(item["file"]):
+        return bar_eras()[item["file"]], "bars"      # no text era fits: the bar readers' (labels, span, look)
+    return era, how
+
+
+def era_rules(item, w, h, labels, look):
+    """era_of's own rules (stage 1's era first)."""
     if item["src"] == "discord":
         known = stage1_eras().get(item["file"])
         if known:
@@ -1065,6 +1086,8 @@ def count_blobs(sb, rule):
     if not sb or not sb.get("blobs"):
         return None, 0.0
     blobs = [b for b in sb["blobs"] if b[0] >= 12]
+    if rule["kind"] == "row" and any(b[3] > ROW_MAX_W and b[4] > 0.75 * ROW_MAX_W for b in blobs):
+        return None, 0.0                    # a yellow backdrop (a status card's wall): stars merge into it
     if rule["kind"] == "row":
         best = []
         for b in blobs:
@@ -1294,7 +1317,8 @@ def star_task(args):
         work = cv2.resize(a, (WORK_W, max(2, round(WORK_W * H0 / W0))), interpolation=cv2.INTER_AREA)
         shp = rec.get("shape") or shape(W0, H0)
         tb = title_box(rec, read_title(rec.get("band")), BAND[shp])
-        return {"id": item["id"], "stars": read_stars(work, STAR_BAND[shp], tb), "star_blobs": read_star_blobs(work, tb)}
+        return {"id": item["id"], "stars": read_stars(work, STAR_BAND[shp], tb),
+                "star_blobs": read_star_blobs(work, tb, BLOB_BAND[shp])}
     except Exception as e:
         return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
@@ -1348,7 +1372,7 @@ def read_one(item, rec):
            "title": title}
     ability_icons(out, work, ability_reads(out, rec, labels, band, title), title)
     out["stars"] = read_stars(work, STAR_BAND[shp], tb)
-    out["star_blobs"] = read_star_blobs(work, tb)
+    out["star_blobs"] = read_star_blobs(work, tb, BLOB_BAND[shp])
     tk = types_known_of(work, shp, title)
     if tk:
         out["types_known"] = tk
@@ -1749,7 +1773,7 @@ def no_sure(rd, sheets):
 
 def confirmed(rd):
     """A card by stage 1's era, its stat labels or its file (not by look alone): its OCR text is a card's."""
-    return rd.get("era_how") in ("stage1", "labels", "size") and rd["era"] not in UNSORTED
+    return rd.get("era_how") in ("stage1", "labels", "size", "bars") and rd["era"] not in UNSORTED
 
 
 def floored(era, src, field, n, bar):

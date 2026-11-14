@@ -86,6 +86,7 @@ NO_BARS = {"field", "buff", "debuff"}           # card types that print no stat 
                                                 # stats are all -1: no_stats)
 OLD_ERAS = {"A", "B", "C", "A-item", "B-item", "C-item"}   # templates before the card template (2022-06)
 OLD_BITS = 8.0                                  # an older template's picture this far from every git version: a draft
+EXPORT_SIZES = {"ps1200", "gen400"}             # whole card exports: copies of a git version stay under OLD_BITS of it
 CARD_ASPECTS, WHOLE_ASPECT = (1 / 2, 2 / 3, 1.0), 0.03   # card exports' w/h; a cut screenshot is 5%+ off
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")  # the text readers' era and stars per Discord picture
 TEXT_TRUTH = ("derived", "readers", "text", "truth.jsonl")
@@ -538,7 +539,8 @@ def sure_bars(read: Optional[dict]) -> Optional[dict]:
 
 def bar_reads(root: str, variant: str = "png") -> tuple:
     """({picture sha256: sure stats}, {blob[:20]: sure stats}, {picture sha256: era}) from the era bar readers'
-    reads (BARS): Discord pictures and the old repo's PNGs (variant: as stored, or jpeg400, a Discord-like copy)."""
+    reads (BARS): Discord pictures, the old repo's and the card repo's PNGs (variant: as stored, or jpeg400, a
+    Discord-like copy)."""
     pictures, blobs, eras = {}, {}, {}
     for r in dm.read_jsonl(join(root, *BARS)):
         stats = sure_bars(r)
@@ -547,7 +549,7 @@ def bar_reads(root: str, variant: str = "png") -> tuple:
             eras[sha] = r.get("era")
             if stats:
                 pictures[sha] = stats
-        elif r.get("src") == "oldgit" and r.get("variant") == variant and r.get("blob") and stats:
+        elif r.get("src") in ("oldgit", "tc") and r.get("variant") == variant and r.get("blob") and stats:
             blobs[r["blob"][:20]] = stats
     return pictures, blobs, eras
 
@@ -664,9 +666,11 @@ def no_git_look(image: dict, members: list, near: dict) -> Optional[str]:
     """Why a card picture whose look isn't told can be no git version (None: it may be one): an older template
     (OLD_ERAS) where no git version of the card is one, OLD_BITS from every git version; a whole card (not cut:
     whole_card) printing a number or timing tag no read of any git version has (mark_diff's novel, numbers of 1-2
-    digits: OCR joins and splits longer ones); a status card's star count no git version has. The last two also need
-    the whole card over SURE_BITS from every git version and no git version unstored before the post. (Selftest:
-    no copy of a git version turns into a draft; a version's own marks missing from a cut or small copy did.)"""
+    digits: OCR joins and splits longer ones); a status card's star count no git version has; a whole card export
+    (EXPORT_SIZES) OLD_BITS from every git version. The last three also need no git version unstored before the post,
+    the first two of them the whole card over SURE_BITS from every git version. (Selftest: no copy of a git version
+    turns into a draft; a version's own marks missing from a cut or small copy did; Discord copies of 4,029
+    versions are under 7.5 bits from their own.)"""
     far = min(near.values())
     if image.get("era") in OLD_ERAS and far >= OLD_BITS and not any(m.get("era") in OLD_ERAS for m in members):
         return f"an older template ({image['era']}) than every git version's"
@@ -679,6 +683,8 @@ def no_git_look(image: dict, members: list, near: dict) -> Optional[str]:
     stars, git = image.get("stars"), image.get("git_stars")
     if image.get("era") == "S" and isinstance(stars, int) and git and stars not in git:
         return f"{stars} stars, no git version's ({', '.join(map(str, sorted(git)))})"
+    if image.get("size_class") in EXPORT_SIZES and far >= OLD_BITS:
+        return f"a whole card export {far:.1f} bits from every git version"
     return None
 
 
@@ -708,7 +714,7 @@ class Run:
         return {**image, **when_posted(posts, self.cards.get(cid)), "marks": read_marks(image.get("lines")),
                 "bars": None if cell else self.bars.get(sha), "tags": self.tags,
                 "era": None if cell else self.eras.get(sha), "stars": None if cell else self.stars.get(sha),
-                "git_stars": self.git_stars.get(cid)}
+                "git_stars": self.git_stars.get(cid), "size_class": None if cell else self.classes.get(sha)}
 
     def twin(self, v: dict) -> Optional[dict]:
         """The post a verdict was made sure by (dm.same_image), if any."""
@@ -1619,7 +1625,8 @@ def selftest(root: str, cards_repo: str = dm.LOCAL_DIR_LOC, log: Callable = prin
                     "marks": read_marks(feat.get("lines")),
                     "text": dm.read_text(feat.get("lines")),
                     "bars": copies.get(v["key"].split("-")[0][1:]), "made": v.get("ts"), "tags": tags,
-                    "no_bars": prints_no_bars(cards.get(truth))}
+                    "no_bars": prints_no_bars(cards.get(truth)),
+                    "size_class": "ps1200" if name in ("discord", "small") else None}   # uncut copies: exports
             kind, note = version_of(judged, cid, seen, versions, members[cid])
             outcome = "draft" if kind == "draft" else "unsure" if kind != "git" else \
                 "right" if note.get("look") == looks[v["key"]] else "wrong"

@@ -7,6 +7,7 @@ with a Python that has Pillow and numpy (OCR of old-repo pictures needs pyobjc's
     python -m commands.era_bars read      [--root <dir>] [--old-git <dir>] [--workers <n>] [--only discord|oldgit]
     python -m commands.era_bars calibrate [--root <dir>]
     python -m commands.era_bars add       [--root <dir>] [--workers <n>]
+    python -m commands.era_bars versions  [--root <dir>] [--old-git <dir>] [--cards-repo <clone>] [--workers <n>]
 
 truth      truth/psd.json: each old-repo creature or minion PNG version's stats as its same-commit PSD gives them
            (today's parser on digit rows and comp bars; the rows' own layers on the alt template and masked rows).
@@ -25,6 +26,11 @@ add        The card-sure Discord pictures (derived/match/verdicts.jsonl) read no
            2023-11-06): their era from the text readers (derived/readers/text/reads.jsonl), else era_of; their OCR lines
            the text readers' (ocr.jsonl), else Vision's; read as above and made sure by calibration.json as it stands
            (its bars are not fitted again) -> appended to reads.jsonl.
+versions   The git versions the look checks compare a picture with: the card repo's PNG versions the matcher knows
+           (derived/matcher/match/pairs.json) whose blob the clone stores (never a lazy fetch) and the old repo's item
+           versions (read only), era by size; read as 'read' does (the PNG and its 400 px JPEG) and made sure by
+           calibration.json as it stands (a 1:2 card repo version: the stricter of D2's and D3's bars, its
+           construction unknown) -> reads.jsonl (src 'tc', and 'oldgit' rows marked 'item'), replacing earlier ones.
 Outputs go to the archive root's derived/readers/bars/ (never a repo). Nothing here talks to Discord.
 """
 from argparse import ArgumentParser
@@ -80,6 +86,7 @@ BUSY = re_compile(r"\W*omori\W*")                    # bars drawn as arms: never
 BUSY_TEMPLATE = re_compile(r"\W*(paint\s*warrior|frog)\W*")   # heavy texture bars on the template (D1-D3): never sure
 NEVER_SURE = ("multi", "busy")                       # groups no bar applies to
 TEMPLATE_ERAS = ("D1", "D2", "D3")
+PAIRS = ("derived", "matcher", "match", "pairs.json")    # the matcher's references: the card repo's versions
 ITEM_W, ITEM_ASP = 1150, (1.45, 1.55)                # the item template (1200x1800): bars there are an item's
 
 
@@ -878,6 +885,105 @@ def add_reads(root: str, workers: int):
         f"{sum(1 for r in rows if r.get('stats'))}")
 
 
+def stored(git_dir: str, specs: list) -> dict:
+    """{'commit:path': blob sha} of the specs whose blob this store holds (no lazy fetch)."""
+    data = dm.git_out(git_dir, "cat-file", "--batch-check", data=("\n".join(specs) + "\n").encode()) if specs else None
+    out = {}
+    for spec, line in zip(specs, (data or b"").decode().splitlines()):
+        parts = line.split()
+        if len(parts) == 3 and parts[1] == "blob":
+            out[spec] = parts[0]
+    return out
+
+
+def version_era(w: int, h: int) -> Optional[str]:
+    """A git version's era by its size: the item template, a 1:2 card (D2; D1 under 900 px), the raid square."""
+    if is_item_size(w, h):
+        return "D-item"
+    if 1.9 <= h / w <= 2.1:
+        return "D2" if w >= 900 else "D1"
+    if 0.95 <= h / w <= 1.05 and w >= 2000:
+        return "R"
+    return None
+
+
+def version_jobs(root: str, old_git: str, cards_repo: str) -> list:
+    """The card repo's stored PNG versions (the matcher's references) and the old repo's item PNG versions."""
+    pairs = dm.read_json(join(root, *PAIRS), {}) or {}
+    cards = pairs.get("cards") or {}
+    tc = [v for v in pairs.get("versions") or [] if not v.get("old")]
+    git_dir = dm.git_dir_of(cards_repo)
+    have = stored(git_dir, [f"{v['commit']}:{v['path']}" for v in tc]) if git_dir else {}
+    jobs, seen = [], set()
+    for v in tc:
+        sha = have.get(f"{v['commit']}:{v['path']}")
+        if not sha or sha in seen:
+            continue
+        seen.add(sha)
+        jobs.append({"git_dir": git_dir, "blob": sha,
+                     "row": {"src": "tc", "blob": sha, "card": v["card"], "path": v["path"], "commit": v["commit"],
+                             "date": dm.iso(v["ts"]), "title": (cards.get(v["card"]) or {}).get("name") or v["card"]}})
+    for line in open(join(root, *OLDGIT, "versions.jsonl")):
+        v = loads(line)
+        if v["ext"] != "png" or not v["path"].startswith(("Items/", "Auxillary/Items/")) or v["blob"] in seen:
+            continue
+        seen.add(v["blob"])
+        jobs.append({"git_dir": old_git, "blob": v["blob"],
+                     "row": {"src": "oldgit", "blob": v["blob"], "card": v["old_id"], "path": v["path"],
+                             "commit": v["commit"], "date": v["date"], "item": True, "title": v["old_id"]}})
+    return jobs
+
+
+def version_task(job: dict) -> list:
+    """A worker: one git version, its era by size, read as stored and as its 400 px JPEG."""
+    try:
+        img = dm.load_image(dm.open_source(("git", job["git_dir"], job["blob"])))
+        era = version_era(*img.size)
+        base = {**job["row"], "w": img.width, "h": img.height}
+        if era is None:
+            return [{**base, "era": None, "skipped": "size"}]
+        rows = []
+        for variant, pic in (("png", img), (f"jpeg{JPEG[0]}", dm.degrade(img, *JPEG))):
+            got = read_card(pic, _ocr(pic), era=era, title=job["row"]["title"], card=job["row"]["card"])
+            rows.append({**base, "variant": variant, "era_from": "size", **got})
+        return rows
+    except Exception as e:
+        return [{**job["row"], "error": f"{type(e).__name__}: {str(e)[:160]}"}]
+
+
+def read_versions(root: str, old_git: str, cards_repo: str, workers: int):
+    """versions: read version_jobs, mark them sure by calibration.json as it stands, replace their rows."""
+    base = join(root, *OUT)
+    jobs = version_jobs(root, old_git, cards_repo)
+    log(f"versions: {len(jobs)} ({sum(1 for j in jobs if j['row']['src'] == 'tc')} card repo, "
+        f"{sum(1 for j in jobs if j['row']['src'] == 'oldgit')} old repo items)")
+    cal = load(open(join(base, "calibration.json")))
+    rows = []
+    with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(version_task, j) for j in jobs]
+        for i, fut in enumerate(as_completed(futures), 1):
+            rows.extend(fut.result())
+            if i % 100 == 0 or i == len(jobs):
+                log(f"versions: {i}/{len(jobs)}")
+    for r in rows:
+        bar = bar_of(cal, r)
+        for key in ("stats", "stats2"):
+            for st in (r.get(key) or {}).values():
+                st["sure"] = bar is not None and st["conf"] >= bar and not st.get("hold")
+    keep = [r for r in map(loads, open(join(base, "reads.jsonl")))
+            if r.get("src") != "tc" and not (r.get("src") == "oldgit" and r.get("item"))]
+    every = keep + rows
+    every.sort(key=lambda r: (r["src"], r.get("ts") or r.get("date") or "", r.get("file") or r.get("blob"),
+                              r.get("variant", "")))
+    with open(join(base, "reads.jsonl.tmp"), "w") as f:
+        for r in every:
+            f.write(dumps(r) + "\n")
+    replace(join(base, "reads.jsonl.tmp"), join(base, "reads.jsonl"))
+    log(f"versions: {len(rows)} rows, {sum(1 for r in rows if r.get('error'))} errors; eras "
+        f"{Counter(r.get('era') for r in rows)}; with a sure stat "
+        f"{sum(1 for r in rows if any((s or {}).get('sure') for s in (r.get('stats') or {}).values()))}")
+
+
 # ========================
 # calibrate
 # ========================
@@ -990,6 +1096,17 @@ def classes(rows: list, root: str) -> dict:
             "field_2021_12_to_2023_05": sum(1 for r in disc if r.get("era") == "F" and "2021-12" <= r["ts"][:7] <= "2023-05")}
 
 
+def bar_of(cal: dict, row: dict) -> Optional[float]:
+    """The bar a read's sure marks follow: Discord pictures their own truth's; a card repo version on the template
+    (D2/D3 by size) the stricter of both groups' (its construction unknown); else its group's."""
+    g = group_of(row)
+    if row.get("src") == "discord":
+        return cal["groups"].get(g, {}).get("discord_truth", {}).get("bar")
+    groups = ("D2", "D3") if row.get("src") == "tc" and g in ("D2", "D3") else (g,)
+    bars = [cal["groups"].get(x, {}).get("bar") for x in groups]
+    return None if any(b is None for b in bars) else max(bars)
+
+
 def calibrate(root: str):
     base = join(root, *OUT)
     rows = [loads(line) for line in open(join(base, "reads.jsonl"))]
@@ -1039,8 +1156,7 @@ def calibrate(root: str):
         cal["groups"][g] = entry
     reads = defaultdict(lambda: [0, 0])
     for r in rows:
-        got = cal["groups"].get(group_of(r), {})
-        bar = got.get("discord_truth", {}).get("bar") if r["src"] == "discord" else got.get("bar")
+        bar = bar_of(cal, r)
         for key in ("stats", "stats2"):
             for st in (r.get(key) or {}).values():
                 st["sure"] = bar is not None and st["conf"] >= bar and not st.get("hold")
@@ -1069,11 +1185,12 @@ def calibrate(root: str):
 
 def main(argv=None):
     ap = ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("truth", "read", "calibrate", "add"))
+    ap.add_argument("step", choices=("truth", "read", "calibrate", "add", "versions"))
     ap.add_argument("--root", default=dm.DEFAULT_ROOT)
     ap.add_argument("--old-git", default=dm.OLD_GIT)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "oldgit"), help="read: these pictures again, the others' rows kept")
+    ap.add_argument("--cards-repo", default=dm.LOCAL_DIR_LOC, help="versions: the card repo clone (stored blobs only)")
     a = ap.parse_args(argv)
     root, old_git = expanduser(a.root), expanduser(a.old_git)
     if a.step == "truth":
@@ -1082,6 +1199,8 @@ def main(argv=None):
         read_all(root, old_git, a.workers, a.only)
     elif a.step == "add":
         add_reads(root, a.workers)
+    elif a.step == "versions":
+        read_versions(root, old_git, expanduser(a.cards_repo), a.workers)
     else:
         calibrate(root)
 

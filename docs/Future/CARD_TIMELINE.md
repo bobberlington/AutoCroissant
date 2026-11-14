@@ -45,12 +45,16 @@ the card's Image versions on the website before the git versions. Cards that nev
    timing tags and numbers are that version's; made before the look's first git version, its text exactly that
    version's at any length, whatever picked the look (no text read: unsure); more than 3 days before, its bars read
    (`derived/readers/bars`) the same too (the hash can't see a bar or a typo; a card whose data stats are all -1
-   prints none). A look the gates can't tell is a draft when no git version can be it: an older template (eras A-C
+   prints none; the git versions' bars: the old repo's PNGs and items and the card repo's stored PNGs, `era_bars
+   versions`). A look the gates can't tell is a draft when no git version can be it: an older template (eras A-C
    and their items) than every git version's, 8+ bits from all; a whole card export (not a cut screenshot) printing
    a number (1-2 digits) or timing tag no read of any git version has, over 3 bits from all; a status card's star
-   count no git version has. The selftest's held-out check holds: no copy of a git version becomes a draft.
-   Pictures told by eye (`derived/match/eye.json`: card and look, the status pairs and port pictures of gap round 1)
-   override the gates.
+   count no git version has; a whole card export (the 1200 px and 400 px template sizes) 8+ bits from every git
+   version (Discord copies of git versions stay under 7.5). The last three need no git version unstored before the
+   post. The selftest's held-out check holds: no copy of a git version becomes a draft.
+   Pictures told by eye (`derived/match/eye.json`: card and look; gap round 1's status pairs and port pictures, gap
+   round 2's pictures on a card's Created day, single-candidate pictures before git and near-git looks of the cards
+   with no Discord entry) override the gates.
    A card named only (its title, file name or chat; nothing of its look or text) is sure only when the picture's text
    fits it (version fit 0.25; a title read alone, weight 0.93, goes to this check on a whole card export) and no
    card the matcher saw in that text fits better (a reused name: 2019's joke Potato,
@@ -84,11 +88,17 @@ the card's Image versions on the website before the git versions. Cards that nev
    within 3 bits that no PSD read otherwise holds (a field another PSD set is never overwritten), or adds it as a
    version dated by its post. Card-sure pictures
    the card channels' pass missed are bar-read too (`era_bars add`: era from the text readers, sure by the
-   calibration as it stands). On the template (D1-D3) a picture's types are its git version's when the header's icon
+   calibration as it stands). The text readers take the bar readers' era for a picture no rule of theirs fits
+   ('other'), read again with it, the bars not fitted again. On the template (D1-D3) a picture's types are its git version's when the header's icon
    band matches that version's (`commands/header_types.py`: NCC per icon cell, the bar calibrated on old repo PNGs'
    400 px JPEGs against the card's versions with other icons; method 'git header'; icons the version's PSD puts
    below the band, under a two-line title, are compared in their own boxes, and a version with types whose icon
-   boxes aren't known never matches; a repost whose header matches no git version keeps them off the look). A picture by era: today's template through the card checks' bar reader
+   boxes aren't known never matches; a repost whose header matches no git version keeps them off the look). On eras
+   A-C (no git version prints them) one picture per card and era is typed by eye (`derived/readers/types/eye.json`)
+   and carried to the card's other pictures of that era by the same score (`header_types eye`, method 'eye header';
+   the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Item and
+   status eras count stars as yellow blobs in a row, calibrated on eye truths (a blob as wide as a yellow wall: no
+   count). A picture by era: today's template through the card checks' bar reader
    (`card_checks.read_picture`); older templates (digit rows, earlier bars) need their own readers, calibrated on the git versions
    of each era; ability text by OCR with stoogedings icons matched to `Types/` and badges to the font's badge set; stars and types
    by icon match (a count is never sure on shuriken stars, with a copy on a title letter, or with a star cut by the

@@ -85,6 +85,7 @@ PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named b
 PSDS = ("derived", "psds", "psds.jsonl")                    # card PSDs posted on Discord (commands/discord_psds.py)
 HEADER = ("derived", "readers", "types", "header.jsonl")    # types by the git versions' header (header_types.py)
 HEADER_MISS = 0.6                                           # a header this unlike every git version's: other icons
+HEADER_EYE = ("derived", "readers", "types", "header_eye.jsonl")   # eras A-C: types by eye references' headers
 MORGUE = ("derived", "morgue", "candidates.json")          # the Morgue's eye: pictures it took from a live card
 PSD_BITS = 3.0                                              # a look this near a posted PSD's composite shows it
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
@@ -322,6 +323,7 @@ class Inputs:
         self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
         self.header_rows = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER))}
         self.header = {k: r for k, r in self.header_rows.items() if r.get("sure")}
+        self.header_eye = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER_EYE)) if r.get("sure")}
         taken = {t["picture"]: t.get("entry") for t in (dm.read_json(p.at(MORGUE), {}) or {}).get("taken") or []}
         for row in self.verdicts:                # a joke or lost card's picture by the Morgue's eye: never a live card's
             if row["id"] in taken and row["verdict"] in SURE_CLASSES:
@@ -444,6 +446,11 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
                 inputs.header[row["id"]].get("card") == row.get("card"):
             got = inputs.header[row["id"]]                 # the header's icons as a git version's (same template)
             fields[key] = sure(got["types"], "git header", got["ncc"], version=got["version"])
+        elif key == "types" and row["id"] in getattr(inputs, "header_eye", {}) and \
+                inputs.header_eye[row["id"]].get("card") == row.get("card"):
+            got = inputs.header_eye[row["id"]]             # eras A-C: an eye reference's icons (header_types eye)
+            fields[key] = sure(got["types"], "eye" if got["ref"] == row["id"] else "eye header", got["ncc"],
+                               ref=None if got["ref"] == row["id"] else got["ref"])
         elif text:
             why = "Discord types are never sure (icons outside Types/)" if key == "types" else \
                 f"stars: {read['doubt']}" if read.get("doubt") else "read under its bar"

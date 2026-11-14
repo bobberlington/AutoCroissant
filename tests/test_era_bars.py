@@ -120,6 +120,18 @@ def test_eras_and_the_bar():
     assert eb.bar_for([(0.9, True)] * 5) is None              # too few to set a bar
 
 
+def test_git_versions_by_size_and_their_bar():
+    """A git version's era by its size; a card repo version on the template takes the stricter of D2's and D3's
+    bars (its construction unknown), an old repo item its group's."""
+    assert eb.version_era(1200, 1800) == "D-item" and eb.version_era(1200, 2400) == "D2"
+    assert eb.version_era(400, 800) == "D1" and eb.version_era(2400, 2400) == "R" and eb.version_era(500, 600) is None
+    cal = {"groups": {"D2": {"bar": 0.5, "discord_truth": {"bar": 0.6}}, "D3": {"bar": 0.77}, "D-item": {"bar": 1.0}}}
+    assert eb.bar_of(cal, {"src": "tc", "era": "D2"}) == 0.77
+    assert eb.bar_of(cal, {"src": "oldgit", "era": "D2"}) == 0.5
+    assert eb.bar_of(cal, {"src": "discord", "era": "D2"}) == 0.6
+    assert eb.bar_of(cal, {"src": "oldgit", "item": True, "era": "D-item"}) == 1.0
+
+
 def test_truth_eye_none_drops_the_psd(tmp_path):
     base = tmp_path.joinpath(*eb.OUT, "truth")
     base.mkdir(parents=True)

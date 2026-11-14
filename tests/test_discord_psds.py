@@ -63,3 +63,39 @@ def test_icons_outside_the_band_are_compared_in_their_boxes():
     slots = ht.card_slots([{"key": "k1", "card": "c"}, {"key": "k3", "card": "c"}], boxes)
     assert ht.compared("k1", "c", types, boxes, slots) == [box] and ht.compared("k2", "c", types, boxes, slots) is None
     assert ht.compared("k3", "c", types, boxes, slots) == [box]
+
+
+def test_eye_references_carry_types_over_the_bar(tmp_path):
+    """Eras A-C: a reference typed by eye gives its types to the card's same-era picture whose header matches over
+    the bar (the highest other-types pair + MARGIN: here a check with one more icon); a header with another icon
+    stays unsure."""
+    import json
+    from PIL import Image, ImageDraw
+    rng = np.random.default_rng(3)
+    base = rng.uniform(0, 255, (800, 400, 3)).astype(np.uint8)
+
+    def save(name, icon=None, seed=None, box=(5, 5, 50, 45)):
+        a = base.copy() if seed is None else np.random.default_rng(seed).uniform(0, 255, (800, 400, 3)).astype(np.uint8)
+        img = Image.fromarray(a)
+        if icon:
+            ImageDraw.Draw(img).ellipse(box, fill=icon)
+        (tmp_path / "attachments").mkdir(exist_ok=True)
+        img.save(tmp_path / "attachments" / f"{name}.png")
+        return f"attachments/{name}.png"
+    files = {"P-ref": save("ref"), "P-same": save("same"), "P-icon": save("icon", (255, 0, 0)),
+             "P-other": save("other", seed=9), "P-chk": save("chk", (0, 0, 255), box=(20, 20, 36, 36))}
+    d = tmp_path / "derived"
+    for sub in ("match", "readers/text", "readers/bars", "readers/types"):
+        (d / sub).mkdir(parents=True, exist_ok=True)
+    rows = [{"id": k, "verdict": "draft", "card": "c" if k != "P-other" else "o", "file": f} for k, f in files.items()]
+    (d / "match/verdicts.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (d / "readers/text/reads.jsonl").write_text("".join(json.dumps({"src": "discord", "file": f, "era": "B"}) + "\n"
+                                                        for f in files.values()))
+    (d / "readers/bars/reads.jsonl").write_text("")
+    eye = {"pictures": {"P-ref": {"card": "c", "era": "B", "types": ["fire"], "file": files["P-ref"]},
+                        "P-other": {"card": "o", "era": "B", "types": ["rock"], "file": files["P-other"]}},
+           "checks": {"P-chk": {"card": "c", "era": "B", "types": ["fire", "ice"], "file": files["P-chk"]}}}
+    (d / "readers/types/eye.json").write_text(json.dumps(eye))
+    got = {r["id"]: r for r in ht.eye_read(str(tmp_path))}
+    assert got["P-ref"]["sure"] and got["P-same"]["sure"] and got["P-same"]["types"] == ["fire"]
+    assert not got["P-icon"]["sure"] and not got["P-chk"]["sure"]

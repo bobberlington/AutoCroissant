@@ -86,6 +86,8 @@ def test_star_blobs_rows_and_clusters(tt):
     side = 0.05
     cluster = {"blobs": [[int(0.55 * (2.11 * side * tt.WORK_W) * (side * tt.WORK_W)), 0.7, 0.0, 2.11 * side, side]]}
     assert tt.count_blobs(cluster, {"kind": "cluster", "step": 0.37, "base": 1.0})[0] == 4
+    wall = {"blobs": [[5800, 0.04, 0.0, 0.29, 0.2]] + row["blobs"][:2]}           # a status card's yellow wall
+    assert tt.count_blobs(wall, {"kind": "row", "tol": 1.7, "rows": 1.6}) == (None, 0.0)
 
 
 def test_stars_never_count_a_full_copy_list(tt):
@@ -166,5 +168,9 @@ def test_template_eras_by_labels_and_size(tt):
     assert tt.era_of(item, 390, 790, lab(0.19), dict(look, frame_white=0.1))[0] == "C"
     assert tt.era_of(item, 1200, 2400, lab(0.28), look)[0] == "D2"
     assert tt.era_of({"src": "old"}, 1200, 1800, {}, look)[0] == "D-item"
+    tt._BAR_ERAS = {"attachments/none.png": "C-item"}       # no rule fits: the bar readers' era
+    assert tt.era_of(item, 500, 600, {}, dict(look, frame_white=0.1, low_white=0.0)) == ("C-item", "bars")
+    assert tt.era_of(item, 390, 790, lab(0.19), look)[0] == "A"
+    tt._BAR_ERAS = None
     arr = np.zeros((10, 10, 3), np.uint8)
     assert tt.look_of(arr)["low_black"] == 1.0

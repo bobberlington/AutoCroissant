@@ -8,6 +8,7 @@ boxes are unknown is never a sure match.
 
     python -m commands.header_types calibrate [--root <dir>] [--old-git <dir>] [--n 400]
     python -m commands.header_types read      [--root <dir>]
+    python -m commands.header_types eye       [--root <dir>]
 
 calibrate  Old repo PNG versions (the old .git, read only) as Discord shows them (a 400 px JPEG, discord_match.degrade)
            against the matcher's thumbs: its own version (the same icons) and the card's other versions whose sure
@@ -18,6 +19,12 @@ read       Each card-sure Discord picture (derived/match/verdicts.jsonl, not a s
            the current version: the card data's) -> derived/readers/types/header.jsonl {picture id, types, version,
            ncc, boxes} sure when the best is over the bar, no version with other types is within MARGIN of it, its
            data says no 'unknown' and its icon boxes are known when it has types.
+eye        Eras A-C (no git version prints them): pictures typed by eye (derived/readers/types/eye.json: 'pictures',
+           one reference per card and era; 'checks', more pictures typed by eye for the bar) carried to the card's
+           other card-sure pictures of that era by the same score (band and cells, no boxes). The bar: the highest
+           pair with other types (a check against its card's reference, references of other cards of the era) +
+           MARGIN; a match also needs no reference with other types within MARGIN -> derived/readers/types/
+           eye_calibration.json and header_eye.jsonl {picture id, card, era, types, ref, ncc, rival, sure}.
 Nothing here talks to Discord; outputs stay under the archive's derived/.
 """
 from argparse import ArgumentParser
@@ -50,6 +57,7 @@ BOX_SIDE = (24, 24)                                 # icon boxes compared at thi
 DETAILS_FILE = "db/psd_details.json"                # the data branch's PSD records (header type icon boxes)
 JPEG = (400, 70)                                    # a Discord-like copy: width, quality (as era_bars)
 SURE = ("version_sure", "version_unsure", "draft")
+EYE_ERAS = ("A", "B", "C")                          # eras no git version prints: references typed by eye
 
 
 def log(text: str):
@@ -333,9 +341,84 @@ def read(root: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> list:
     return out
 
 
+def picture_eras(root: str) -> dict:
+    """{picture file: era}: the bar readers' era, else the text readers'."""
+    eras = {}
+    for r in dm.read_jsonl(join(root, "derived", "readers", "text", "reads.jsonl")):
+        if r.get("src") == "discord":
+            eras[r["file"]] = r.get("era")
+    for r in dm.read_jsonl(join(root, "derived", "readers", "bars", "reads.jsonl")):
+        if r.get("src") == "discord" and r.get("era"):
+            eras[r["file"]] = r["era"]
+    return eras
+
+
+def eye_heads(root: str, eye: dict) -> dict:
+    heads = {}
+    for pid, r in eye.items():
+        try:
+            heads[pid] = head(dm.load_image(join(root, r["file"])))
+        except Exception:
+            continue
+    return heads
+
+
+def eye_read(root: str) -> list:
+    """eye: the eye references' types carried to the same card's same-era pictures (calibrated first)."""
+    got = dm.read_json(join(root, *OUT, "eye.json"), {}) or {}
+    refs, checks = got.get("pictures") or {}, got.get("checks") or {}
+    heads = eye_heads(root, {**refs, **checks})
+    by = defaultdict(list)
+    for pid, r in refs.items():
+        if pid in heads:
+            by[(r["card"], r["era"])].append(pid)
+    same, other = [], []
+    for pid, r in checks.items():
+        for ref in by.get((r["card"], r["era"]), ()):
+            (same if refs[ref]["types"] == r["types"] else other).append(score(heads[pid], heads[ref], []))
+    for (card, era), ids in by.items():
+        for (card2, era2), ids2 in by.items():
+            if era2 == era and card2 > card:
+                other += [score(heads[a], heads[b], []) for a in ids for b in ids2
+                          if refs[a]["types"] != refs[b]["types"]]
+    bar = round(max(other, default=0.0) + MARGIN, 4)
+    cal = {"about": "Header band NCC between Discord pictures of eras A-C: same, a check typed by eye like its card's "
+                    "reference; other, a check with other types, or two references of other cards of the era with "
+                    "other types. bar = the highest other + MARGIN.",
+           "references": len(refs), "checks": len(checks), "same": len(same), "other": len(other), "bar": bar,
+           "same_over_bar": round(sum(x >= bar for x in same) / len(same), 4) if same else None,
+           "same_quantiles": quantiles(same), "other_quantiles": quantiles(other)}
+    dm.write_json(join(root, *OUT, "eye_calibration.json"), cal)
+    eras = picture_eras(root)
+    out = []
+    for row in dm.read_jsonl(join(root, "derived", "match", "verdicts.jsonl")):
+        era = eras.get(row.get("file"))
+        mine = by.get((row.get("card"), era))
+        if row["verdict"] not in SURE or row.get("cell") or not mine:
+            continue
+        if row["id"] in refs:
+            r = refs[row["id"]]
+            out.append({"id": row["id"], "card": r["card"], "era": era, "types": r["types"], "ref": row["id"],
+                        "ncc": 1.0, "rival": -1.0, "sure": True})
+            continue
+        try:
+            me = head(dm.load_image(join(root, row["file"])))
+        except Exception:
+            continue
+        scores = sorted(((score(me, heads[ref], []), ref) for ref in mine), reverse=True)
+        best, ref = scores[0]
+        rival = max((s for s, k in scores if refs[k]["types"] != refs[ref]["types"]), default=-1.0)
+        out.append({"id": row["id"], "card": row["card"], "era": era, "types": refs[ref]["types"], "ref": ref,
+                    "ncc": best, "rival": round(rival, 4), "sure": best >= bar and best - rival >= MARGIN})
+    dm.write_text(join(root, *OUT, "header_eye.jsonl"), "".join(dm.dumps(r) + "\n" for r in out))
+    log(dm.dumps(cal, indent=1))
+    log(f"eye: {len(out)} pictures, {sum(r['sure'] for r in out)} sure (bar {bar})")
+    return out
+
+
 def main(argv: Optional[list] = None) -> int:
     ap = ArgumentParser(prog="python -m commands.header_types", description="Types by the git versions' header.")
-    ap.add_argument("step", choices=("calibrate", "read"))
+    ap.add_argument("step", choices=("calibrate", "read", "eye"))
     ap.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
     ap.add_argument("--old-git", default=dm.OLD_GIT)
     ap.add_argument("--n", type=int, default=400)
@@ -343,6 +426,8 @@ def main(argv: Optional[list] = None) -> int:
     root = dm.check_root(a.root)
     if a.step == "calibrate":
         calibrate(root, a.old_git, a.n)
+    elif a.step == "eye":
+        eye_read(root)
     else:
         read(root)
     return 0
