@@ -13,6 +13,7 @@ from threading import Lock
 from requests import get
 from requests.exceptions import RequestException
 from typing import Optional
+from unicodedata import normalize
 from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
@@ -60,6 +61,9 @@ TREE_VERSION = 1                                         # CARD_TREE_JSON's layo
 WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
 NAME_NORM = compile(r"[\s_\-.'\u2019!?,:\u2122\u00ae\u00a9]+")  # autocomplete: WEB_NORM and ! ? , : TM (R) (C)
 NO_MENTIONS = AllowedMentions.none()                     # replies quote the typed text: never ping
+SERIES_THE = compile(r"^\s*the\s+", IGNORECASE)         # a series typed without its leading The (search.js squashed)
+SERIES_NUMBER = compile(r"\s+(?:[ivx]+|\d+)$", IGNORECASE)   # or its closing number: Dark Souls III, Pikmin 2
+SERIES_PARTS = compile(r"[:/]+")                         # or one part: Undertale/Deltarune, YIIK: A Postmodern RPG
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -67,6 +71,20 @@ def typed(text: str, quotes: bool = False) -> str:
     too (/query_ability's syntax; the rulebook prints curly ones)."""
     text = straight(text).replace("\u2018", "'")
     return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
+
+
+def squash(text: str) -> str:
+    """text as letters and digits only, accents dropped (search.js squash): "Mom's Knife" -> momsknife."""
+    return "".join(ch for ch in normalize("NFD", text).lower() if ch.isalnum())
+
+
+def series_names(series) -> frozenset:
+    """What a plain term may be to find a series' cards, squashed (search.js squashed)."""
+    if not isinstance(series, str):
+        return frozenset()
+    names = {squash(v) for part in (series, *SERIES_PARTS.split(series))
+             for v in (part, SERIES_NUMBER.sub("", SERIES_THE.sub("", part)))}
+    return frozenset(names - {""})
 
 
 def ban_list_text(banlist: dict) -> str:
@@ -160,7 +178,8 @@ class CardRepository:
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
-        self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
+        self._hay: tuple = (None, "", None, [], [])     # (cards_dff, Card Edits.json sha, haystack, squashed names,
+                                                         # series names) for text terms
 
     def populate_files(self) -> int:
         """
@@ -429,12 +448,22 @@ class CardRepository:
         if self._hay[0] is not df or self._hay[1] != sha:
             names = self._edit_names[1]
             titles = df["display_name"] if "display_name" in df else Series(None, index=df.index, dtype=object)
-            rows = []
+            series = df["series"] if "series" in df else [None] * len(df)
+            rows, flat = [], []
             for label, title, ability in zip(df.index, titles, df["ability"]):
                 parts = [str(label)] + ([title] if isinstance(title, str) else []) + list(names.get(CardAuthors.key(str(label)), []))
                 rows.append("\n".join(parts + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
-            self._hay = (df, sha, Series(rows, index=df.index, dtype=object))
+                flat.append("\n" + "\n".join(map(squash, parts)) + "\n")
+            self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flat, [series_names(s) for s in series])
         return self._hay[2]
+
+    def _plain_matches(self, text: str):
+        """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer: a
+        whole name), or a series' name, so 'moms knife' and 'hollow knight' find their cards."""
+        self._haystack()
+        term = squash(text)
+        probe = term if len(term) > 3 else "\n" + term + "\n"
+        return array([bool(term) and (probe in flat or term in series) for flat, series in zip(*self._hay[3:])], dtype=bool)
 
     @staticmethod
     def _text_pattern(text: str) -> str:
@@ -476,6 +505,7 @@ class CardRepository:
         - String exact match: "type==creature", "subtype==attack"
         - String contains: "type~aux", "series~kirby"
         - Quoted values keep & and |: 'subseries=="mario & luigi"'
+        - A series or a name without punctuation: "hollow knight", "moms knife"
 
         Args:
             ability: Search query string
@@ -513,14 +543,15 @@ class CardRepository:
         if stat_result is not None:
             return stat_result
 
-        # Text: names, aliases and ability (as the website); "quoted" as whole words
+        # Text: names, aliases and ability, a name without its punctuation, a series (as the website); "quoted" as whole words
         hay = self._haystack()
         if len(ability) > 1 and ability.startswith('"') and ability.endswith('"'):
             term = ability.strip('"')
             edge = lambda ch: r"\b" if ch.isalnum() or ch == "_" else ""   # a word's edge; a tag's ( and ) are their own
             pattern = edge(term[:1]) + escape(term) + edge(term[-1:])
             return self.cards_dff[hay.str.contains(pattern, na=False).values]
-        exact_matches = self.cards_dff[hay.str.contains(self._text_pattern(ability), na=False).values]
+        found = hay.str.contains(self._text_pattern(ability), na=False).values | self._plain_matches(ability)
+        exact_matches = self.cards_dff[found]
         if len(exact_matches):
             return exact_matches
         # nothing has the text: near-whole abilities (a pasted ability with a typo), closest first

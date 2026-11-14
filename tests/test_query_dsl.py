@@ -1,6 +1,8 @@
 """/query_ability's query language on a table of website-shaped cards, and /query_rulebook's lines."""
 
+import json
 import re
+from subprocess import run as run_process
 
 import pytest
 
@@ -25,6 +27,7 @@ CARDS = [
     dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]. On the PF: 1 CDMG, lose 1 SP."),
     dict(name="Power Ring", type="item", ability="+1 ATK to every friendly minion."),
     dict(name="Enfeebled", type="debuff", ability="-1 ATK."),
+    dict(name="Mom's Knife", type="item", series="The Binding of Isaac", ability="Throw it."),
 ]
 ERROR = "error"                                          # the bot answers with an error
 
@@ -35,7 +38,8 @@ QUERIES = [                                              # query, the cards foun
     ("health", {"Bloon"}), ("speed", {"sans."}),
     ("counter damage", {"Burning"}), ("primary field: 1 cdmg, lose 1 star points", {"Burning"}),   # SP, PF, CDMG
     ('"damage"', {"Meta Knight", "Fire Bomb"}), ('"(2u)"', {"Bloon"}),
-    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning", "Power Ring", "Enfeebled"}),
+    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning", "Power Ring", "Enfeebled",
+                         "Mom's Knife"}),
     ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
     ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}),
     ("hp>5", {"Meta Knight", "Mettaton EX"}), ("hp > 5", {"Meta Knight", "Mettaton EX"}),
@@ -96,6 +100,23 @@ def test_website_synonyms_are_the_bots():
     js = (SITE_SRC / "site" / "assets" / "search.js").read_text(encoding="utf-8")
     table = re.search(r"const SYNONYMS = \{(.*?)\};", js, re.S).group(1)
     assert dict(re.findall(r'"?([a-z][a-z ]*)"?: "([a-z ]+)"', table)) == qc.SYNONYMS
+
+
+def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
+    """A plain term also finds a series' cards and a name typed without its punctuation, on the bot and the website."""
+    rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
+            ("moms knife", {"Mom's Knife"}), ("msk", set())]           # 3 letters or fewer: a whole name only
+    for query, cards in rows:
+        assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
+    shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series")} for c in CARDS]
+    script = tmp_path / "search.mjs"
+    script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
+const cards = {json.dumps(shaped)};
+process.stdout.write(JSON.stringify({json.dumps([q for q, _ in rows])}.map(q => cards.filter(S.compile(q)).map(c => c.name))));""",
+                      encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert [set(names) for names in json.loads(done.stdout)] == [cards for _, cards in rows]
 
 
 def test_space_finds_line_break(repo, monkeypatch):

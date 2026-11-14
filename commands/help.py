@@ -39,7 +39,8 @@ card_commands = {
                                              "\n  type==creature  series==kirby  subseries~door  alias~mk  (== exact, ~ contains)"
                                              "\n  created>=2025, 2023-10 or 2021-06-01; values with & or | in quotes"
                                              "\n  damage/DMG, defense/DEF, speed/SPD, health/HP, star points/SP,"
-                                             "\n  primary field/PF, counter damage/CDMG find each other",
+                                             "\n  primary field/PF, counter damage/CDMG find each other"
+                                             "\n  hollow knight, moms knife: a series' cards, names without punctuation",
 }
 
 stats_commands = {
