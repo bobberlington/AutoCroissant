@@ -22,7 +22,7 @@ from hashlib import blake2b, sha1
 from inspect import signature
 from itertools import combinations, product, zip_longest
 from io import BytesIO
-from math import comb, hypot
+from math import ceil, comb, floor, hypot
 from os import environ, pathsep, scandir
 from os.path import basename, dirname, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
@@ -8601,27 +8601,38 @@ def _icon_png(types_dir: str, stem: str) -> str:
     raise Refused("unsupported-card", f"types: no {stem}.png in Types/", "types")
 
 
-def _icon_image(path: str, box: tuple) -> tuple:
+def _icon_image(path: str, box: tuple, whole: bool = False) -> tuple:
     """
     A Types/ PNG fitted into the box (its opaque part, aspect kept, centred; hard_edged: nearest): (RGBA image, left,
-    top, the whole file's quad: where a smart object linking it draws those pixels).
+    top, the whole file's quad: where a smart object linking it draws those pixels). whole: the image holds all of the
+    file's ink at that scale (a glow past the opaque part), as the link draws it.
     """
-    image = Image.open(path).convert("RGBA")
-    solid = image.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
+    source = Image.open(path).convert("RGBA")
+    solid = source.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
     if solid is None:
         raise Refused("unsupported-card", f"types: {basename(path)} draws nothing", "types")
-    full = image.size
-    image = image.crop(solid)
+    full = source.size
+    image = source.crop(solid)
     scale = min((box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height)
     width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
     mode = Image.NEAREST if hard_edged(np.asarray(image)) else Image.LANCZOS
     sx, sy = width / image.width, height / image.height
-    image = image.convert("RGBa").resize((width, height), mode).convert("RGBA")
     cx, cy = _centre(box)
     left, top = round(cx - width / 2), round(cy - height / 2)
     x0, y0 = left - solid[0] * sx, top - solid[1] * sy
     x1, y1 = x0 + full[0] * sx, y0 + full[1] * sy
-    return image, left, top, [x0, y0, x1, y0, x1, y1, x0, y1]
+    quad = [x0, y0, x1, y0, x1, y1, x0, y1]
+    ink = source.getchannel("A").getbbox() if whole else solid
+    if ink == solid:
+        return image.convert("RGBa").resize((width, height), mode).convert("RGBA"), left, top, quad
+    e = 1e-6                                    # float slack: an opaque edge on the file's edge stays
+    l = min(left, max(floor(x0 + ink[0] * sx + e), ceil(x0 - e)))     # the ink's pixels in the quad
+    t = min(top, max(floor(y0 + ink[1] * sy + e), ceil(y0 - e)))
+    r = max(left + width, min(ceil(x0 + ink[2] * sx - e), floor(x1 + e)))
+    b = max(top + height, min(ceil(y0 + ink[3] * sy - e), floor(y1 + e)))
+    area = (max(0, (l - x0) / sx), max(0, (t - y0) / sy), min(full[0], (r - x0) / sx), min(full[1], (b - y0) / sy))
+    image = source.convert("RGBa").resize((r - l, b - t), mode, box=area)       # the opaque part on today's pixels
+    return image.convert("RGBA"), l, t, quad
 
 
 def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference, rel: str = ""):
@@ -8632,7 +8643,7 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference, 
     """
     from psd_tools.api.layers import PixelLayer
     path = _icon_png(types_dir, stem)
-    image, left, top, quad = _icon_image(path, box)
+    image, left, top, quad = _icon_image(path, box, whole=True)
     profile, source = foreign_profile(psd), image.info.get("icc_profile")      # field.png: Adobe RGB
     if profile is not None or source:           # the PNG's profile (else sRGB) into the card's, as Photoshop places it
         from PIL import ImageCms
