@@ -1,9 +1,11 @@
 """Helpers and fixtures shared by several test modules (a cut never deletes them with a test)."""
 import ast
+import ctypes
 import hashlib
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 from copy import deepcopy
@@ -282,12 +284,20 @@ def github(monkeypatch, tmp_path, tmp_path_factory, files, clone):
     monkeypatch.setattr(gc, "cant_write", False)
     origin, local = tmp_path / "origin", tmp_path / "clone"
     made = _github_repos(tmp_path_factory, files)                       # files is the same in every test
-    subprocess.run(["cp", "-Rc", str(made / "origin"), str(made / "clone"), str(tmp_path)], check=True)  # APFS clones
+    clone_tree(made / "origin", origin)
+    clone_tree(made / "clone", local)
     subprocess.run(["git", "-C", str(local), "remote", "set-url", "origin", f"file://{origin}"], check=True)
     return LocalCards(fake, origin, local)
 
 
 _MADE: list = []
+
+
+def clone_tree(src, dst) -> None:
+    """dst as an APFS clone of the folder src (one clonefile(2), .git and all); a plain copy elsewhere."""
+    clonefile = getattr(ctypes.CDLL(None), "clonefile", None)
+    if clonefile is None or clonefile(os.fsencode(src), os.fsencode(dst), 0) != 0:
+        shutil.copytree(src, dst, symlinks=True)
 
 
 def _github_repos(tmp_path_factory, files: dict) -> Path:
@@ -514,7 +524,7 @@ def put(repo, rel, data: bytes):
 
 @pytest.fixture(scope="session")
 def cards_template(tmp_path_factory, clone):
-    """The cards repo, built once per worker (git clone --local per test hardlinks its objects)."""
+    """The cards repo, built once per worker (each test gets a clone_tree copy)."""
     psds = {}
     for rel in (DOOMER, FREEZER, OTHER):
         data = (clone / rel).read_bytes()
@@ -547,8 +557,7 @@ def cards(tmp_path, cards_template, monkeypatch):
     monkeypatch.setattr(cd, "_activity", lambda repository: [])                  # offline: pushes told by author
     monkeypatch.setattr(psd_details, "font_index", lambda tree=None: None)
     repo = tmp_path / "cards"
-    git(tmp_path, "clone", "-q", "--local", str(cards_template.repo), str(repo))
-    git(repo, "remote", "remove", "origin")                                    # as the template: no remote
+    clone_tree(cards_template.repo, repo)                                      # as the template: no remote
     db = tmp_path / "data" / "db"
     db.mkdir(parents=True)
     return SimpleNamespace(repo=repo, psds=dict(cards_template.psds), db=db, first=cards_template.first, tmp=tmp_path)

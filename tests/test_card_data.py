@@ -18,7 +18,7 @@ import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
 from conftest import REPO, SITE_SRC, blob_sha_bytes
-from helpers import (DOOMER, FREEZER, OTHER, _build, _golden, _read, _strip, bot_files, cards, cards_template, commit, git,  # noqa: F401
+from helpers import (DOOMER, FREEZER, OTHER, _build, _golden, _read, _strip, bot_files, cards, cards_template, clone_tree, commit, git,  # noqa: F401
                      git_bytes, put)
 
 BROKEN = b"8BPS" + b"\0" * 30
@@ -264,11 +264,14 @@ def test_history_values_out_of_range_are_kept_and_listed(cards):
     assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(22, 3, 3, 3)]
 
 
-def test_errors(cards, tmp_path):
+def test_errors(cards, tmp_path, capsys):
     assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ without --empty
     shallow = tmp_path / "shallow"
-    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{cards.repo}", str(shallow)], check=True)
+    clone_tree(cards.repo, shallow)
+    (shallow / ".git" / "shallow").write_text(git(cards.repo, "rev-parse", "HEAD"))          # as a --depth 1 clone
+    capsys.readouterr()
     assert cd.main(["--checkout", str(shallow), "--db", str(cards.db), "--empty"]) == cd.EXIT_ERROR
+    assert "non-shallow" in capsys.readouterr().out
 
 
 def test_data_tip_moved_refuses(cards, tmp_path):

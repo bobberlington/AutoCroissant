@@ -28,7 +28,7 @@ import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
 from conftest import SITE_SRC
-from helpers import art, bot_files, build_font, card, fixture_psd, photoshop_png, sharing
+from helpers import art, bot_files, build_font, card, clone_tree, fixture_psd, photoshop_png, sharing
 
 
 # ========================
@@ -108,10 +108,9 @@ def guards_template(tmp_path_factory):
 
 @pytest.fixture
 def cards(tmp_path, guards_template):
-    """The template's repo, cloned --local (hardlinked objects), with an empty PSD folder beside it."""
+    """The template's repo, as a clone_tree copy, with an empty PSD folder beside it."""
     root, base, alice, bot = guards_template
-    _git(tmp_path, "clone", "-q", "--local", str(root), str(tmp_path / "cards"))
-    _git(tmp_path / "cards", "remote", "remove", "origin")
+    clone_tree(root, tmp_path / "cards")
     (tmp_path / "psds").mkdir()
     return tmp_path / "cards", base, alice, bot
 

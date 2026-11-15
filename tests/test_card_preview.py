@@ -37,7 +37,7 @@ import commands.github_api as github_api
 import commands.psd_edit as pe
 from conftest import REPO, SITE_SRC, blob_sha_bytes as _sha
 from golden_cards import VOCAB
-from helpers import bot_files
+from helpers import bot_files, clone_tree
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
@@ -80,6 +80,7 @@ def preview_template(tmp_path_factory, clone):
     repo = tmp_path_factory.mktemp("preview-template") / "cards"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "uploadpack.allowFilter", "true")      # a blobless clone of it: the REST blob path
     for path, data in files.items():
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
         (repo / path).write_bytes(data)
@@ -88,12 +89,10 @@ def preview_template(tmp_path_factory, clone):
 
 @pytest.fixture
 def cards(tmp_path, clone, preview_template, monkeypatch):
-    """The template's repo, cloned --local (hardlinked objects), and the runner's environment."""
+    """The template's repo, as a clone_tree copy, and the runner's environment."""
     template, head, files = preview_template
     repo = tmp_path / "cards"
-    _git(tmp_path, "clone", "-q", "--local", str(template), str(repo))
-    _git(repo, "remote", "remove", "origin")
-    _git(repo, "config", "uploadpack.allowFilter", "true")      # a blobless clone of it: the REST blob path
+    clone_tree(template, repo)
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
     monkeypatch.setenv(cb.WORK_ENV, str(tmp_path / "runner"))
     (tmp_path / "runner").mkdir()
