@@ -7,6 +7,9 @@ def load(path):
     d = json.load(open(path))
     if isinstance(d.get('cards'), list):
         return sorted(d['cards'], key=order)
+    if 'cols' in d['cards']:  # cards.json as columns: {n, cols: {field: [value or None]}}
+        cols = d['cards']['cols']
+        return sorted(({k: v[i] for k, v in cols.items() if v[i] is not None} for i in range(d['cards']['n'])), key=order)
     rows = {}  # stats.json: {"schema", "cards": {name: {card_type, path, ...}}}
     for n, v in d['cards'].items():
         rows[n] = {'name': v.get('display_name') or n, 'key': n, 'type': v.get('card_type'), 'psd': v.get('path'),

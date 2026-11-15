@@ -44,6 +44,7 @@ from urllib.request import Request, urlopen
 
 from PIL import Image
 
+from commands.card_models import site_cards
 from commands.rulebook import CHAPTER_FILE
 from global_config import RULEBOOK_PAGES, RULEBOOK_SRC, SITE_URL
 
@@ -322,7 +323,7 @@ def pre_key(seen: dict, trees: list, fonts: list, exe: str) -> str:
     Chrome's version.
     """
     data, index = seen["cards"], seen["index"]
-    cards = [c for c in data.get("cards") or [] if isinstance(c, dict)]
+    cards = [c for c in site_cards(data) if isinstance(c, dict)]
     loose = lambda s: LOOSE.sub("", str(s or "").casefold())
     named = {}                                     # loose name: shown as a picture
     for chapter in loads(seen["rules"]).get("chapters") or []:

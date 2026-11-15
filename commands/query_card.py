@@ -23,7 +23,7 @@ from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZ
 from commands.card_edits import CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
-from commands.card_models import picture_only, stats_db, straight
+from commands.card_models import picture_only, site_cards, stats_db, straight
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
@@ -809,7 +809,7 @@ class CardRepository:
                 return
             reply.raise_for_status()
             body = reply.json()
-            cards, morgue, banlist = body.get("cards", []), body.get("morgue") or [], body.get("banlist") or {}
+            cards, morgue, banlist = site_cards(body), body.get("morgue") or [], body.get("banlist") or {}
             tag = str((body.get("thumbs") or {}).get("360") or "")
             banned = {e["id"]: e.get("reason") or "" for g in banlist.get("groups") or [] for e in g.get("entries") or []
                       if e.get("id")}

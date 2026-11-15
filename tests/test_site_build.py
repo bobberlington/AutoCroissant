@@ -136,8 +136,19 @@ def _build(bs, monkeypatch, repo, out, data_dir=None):
     return {p.name: json.loads(p.read_text(encoding="utf-8")) for p in data.glob("*.json")}
 
 
-def _by_name(cards: list) -> dict:
-    return {c["name"]: c for c in cards}
+def _by_name(data: dict) -> dict:
+    """cards.json's cards by name (rows or columns)."""
+    return {c["name"]: c for c in cm.site_cards(data)}
+
+
+def test_cards_json_columns(bs):
+    """cards.json's cards as columns read back as the same rows, keys in order (app.js rowsOf, site_cards); rows when no
+    field order fits every card or a card holds a None."""
+    rows = [{"id": "a", "name": "A", "hp": 1}, {"id": "b", "dup": "a", "name": "B"}, {"id": "c", "name": "C", "hp": 0}]
+    got = cm.site_cards({"cards": bs.columns(rows)})
+    assert got == rows and [list(c) for c in got] == [list(c) for c in rows]
+    for odd in ([{"a": 1, "b": 2}, {"b": 1, "a": 2}], [{"a": None}]):
+        assert bs.columns(odd) is odd
 
 
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
@@ -146,11 +157,11 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     back through its picture 1's."""
     t1, t2, t3 = repo["t"]
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
+    alpha = _by_name(out["cards.json"])["Alpha"]
     assert (alpha["ts"], alpha["since"]) == (t3, t2)
     assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "Old text."}]
-    assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
-    melon2 = _by_name(out["cards.json"]["cards"])["Watermelon2"]
+    assert "since" not in _by_name(out["cards.json"])["Watermelon"]      # its text started at its last commit
+    melon2 = _by_name(out["cards.json"])["Watermelon2"]
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
 
 
@@ -168,7 +179,7 @@ def test_older_versions_copied_by_the_versions_job(bs, repo, tmp_path, monkeypat
     bs.version_copies(listed.read_text().split(), 60)                 # the versions job
     listed.unlink()
     _build(bs, monkeypatch, repo, tmp_path / "a")
-    alpha, tag = _by_name(out["cards.json"]["cards"])["Alpha"]["id"], out["cards.json"]["thumbs"]["v"]
+    alpha, tag = _by_name(out["cards.json"])["Alpha"]["id"], out["cards.json"]["thumbs"]["v"]
     assert sorted(p.name for p in copies.iterdir()) == sorted(f"{alpha}-{c[:10]}-{tag}.avif" for c in (c1, c2))
     assert not listed.exists()
 

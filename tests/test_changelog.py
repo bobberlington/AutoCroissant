@@ -219,10 +219,13 @@ def test_payload_words_links_and_order():
 
 
 def test_links_by_the_sites_key(tmp_path):
-    """cards.json's `name` is the shown title: ids go by `key` (the database's name), else name."""
+    """cards.json's `name` is the shown title: ids go by `key` (the database's name), else name; its cards as rows or
+    columns."""
     site = {"cards": [{"id": "metal-general", "name": "MEtal General", "key": "Metal General"},
                       {"id": "kirby", "name": "Kirby"}]}
     assert cl.site_ids(site) == {"Metal General": "metal-general", "Kirby": "kirby"}
+    cols = {"cards": {"n": 2, "cols": {"id": ["metal-general", "kirby"], "name": ["MEtal General", "Kirby"], "key": ["Metal General", None]}}}
+    assert cl.site_ids(cols) == cl.site_ids(site)                      # build_site's columns
     db = str(tmp_path / "db")
     cl.append_events(db, [dict(e, push=PUSH) for e in cl.number([
         {"kind": "changed", "card": "Metal General", "title": "MEtal General", "card_type": "creature", "fields": {"hp": [1, 2]}}],

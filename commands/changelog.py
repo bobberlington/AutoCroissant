@@ -27,7 +27,7 @@ from global_config import SITE_URL, TIMEZONE
 from commands.card_db import write_text
 from commands.card_edits import art_list, as_parsed
 from commands.card_history import same_series, unknown
-from commands.card_models import CardInfo, picture_only
+from commands.card_models import CardInfo, picture_only, site_cards
 
 # ========================
 # Configuration
@@ -426,8 +426,7 @@ def advance(db: str, seq: int, push: Optional[str] = None) -> None:
 def site_ids(data) -> dict:
     """The website's cards.json -> {card name: share id}, keyed by each card's `key` (the database's name; its `name`
     is the shown title), else its name."""
-    cards = data.get("cards", data) if isinstance(data, dict) else data
-    return {c.get("key") or c.get("name"): c["id"] for c in cards or [] if isinstance(c, dict) and c.get("id")}
+    return {c.get("key") or c.get("name"): c["id"] for c in site_cards(data) if isinstance(c, dict) and c.get("id")}
 
 
 def card_link(name: str, site: str, ids: Optional[dict] = None) -> str:

@@ -304,6 +304,15 @@ def straighten_card(card) -> bool:
     return changed
 
 
+def site_cards(data) -> list:
+    """The website's cards.json (data: the file's dict, or its card list) -> its cards as rows; build_site writes them
+    as columns ({"n", "cols": {field: [value, None where the card has none]}}) or rows."""
+    cards = data.get("cards") if isinstance(data, dict) else data
+    if isinstance(cards, dict):
+        return [{k: v[i] for k, v in cards["cols"].items() if v[i] is not None} for i in range(cards["n"])]
+    return cards if isinstance(cards, list) else []
+
+
 def get_stats_as_dict() -> dict[str, dict]:
     """
     Get the stats database as a dictionary format.
@@ -336,6 +345,7 @@ __all__ = [
     'file_stem',
     'get_stats_as_dict',
     'rename_trailer',
+    'site_cards',
     'small_case',
     'stats_db',
     'straight',

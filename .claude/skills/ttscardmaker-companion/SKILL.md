@@ -655,7 +655,9 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
 
 **Output (`site/dist/`):**
 - **Data files:**
-  - `data/cards.json` (everything the first screen needs; ~84 KB gzipped). History counts `hv`/`iv` instead of the
+  - `data/cards.json` (everything the first screen needs; ~115 KB gzipped). Its `cards` are columns
+    (`{n, cols: {field: [value or null]}}`, build_site `columns`; rows when no field order fits): app.js `rowsOf`
+    and AC `card_models.site_cards` read both shapes. History counts `hv`/`iv` instead of the
     data; `parsed` only when false; `ts` ("updated", Recently updated) = the card's last real change (`set_updated`,
     owner 2026-11-09: stats, stars, types, name, ability beyond formatting (`text_key`), or a visible picture change made
     by no pass, bake or guards commit; else the PSD's last commit), `since` = when the current text started (the bot's
