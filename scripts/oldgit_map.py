@@ -353,24 +353,27 @@ def map_main():
                         titles.append(t)
         evidence, how = {}, []
 
-        # path
+        # path: the files at the old history's end, else (deleted in the lost 2023 history) at its own end before it
         path_target = None
-        for p in sorted(old["at_end"]):
-            via, q = None, None
-            if p in init:
-                via, q = "same path", p
-            elif init_lower.get(p.lower()):
-                via, q = "same path (case)", init_lower[p.lower()][0]
-            elif init_blob.get(old["at_end"][p]):
-                via, q = "same blob", init_blob[old["at_end"][p]][0]
-            elif len(init_name.get((stem_key(p), ext_of(p)), ())) == 1:
-                via, q = "same file name", init_name[(stem_key(p), ext_of(p))][0]
-            if q and init_target.get(q):
-                path_target = init_target[q]
-                evidence["path"] = {"end_path": p, "via": via, "init_path": q, "today": tracked.get(q),
-                                    "target": list(path_target)}
-                if ext_of(p) == "psd":
-                    break
+        for end, label in ((old["at_end"], None), (old.get("at_own_end") or {}, index.get("own_tip"))):
+            for p in sorted(end):
+                via, q = None, None
+                if p in init:
+                    via, q = "same path", p
+                elif init_lower.get(p.lower()):
+                    via, q = "same path (case)", init_lower[p.lower()][0]
+                elif init_blob.get(end[p]):
+                    via, q = "same blob", init_blob[end[p]][0]
+                elif len(init_name.get((stem_key(p), ext_of(p)), ())) == 1:
+                    via, q = "same file name", init_name[(stem_key(p), ext_of(p))][0]
+                if q and init_target.get(q):
+                    path_target = init_target[q]
+                    evidence["path"] = {"end_path": p, "via": via, "init_path": q, "today": tracked.get(q),
+                                        "target": list(path_target), **({"end": label[:8]} if label else {})}
+                    if ext_of(p) == "psd":
+                        break
+            if path_target:
+                break
         if path_target:
             how.append("path")
 

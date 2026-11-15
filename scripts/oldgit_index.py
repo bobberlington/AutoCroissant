@@ -380,18 +380,23 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
         parent[find(f)] = find(o)
 
     position = {c: i for i, c in enumerate(order)}
-    tip = order[len(order) - 1]
-    for c in order:                                            # the old history's newest commit
-        if meta[c]["ts"] > meta[tip]["ts"] and not any(c in meta[o]["parents"] for o in order):
-            tip = c
+    lost = {c for c in order if meta[c].get("lost")}
+
+    def newest(commits: list) -> str:                          # the newest commit no other of them has as a parent
+        tip = commits[len(commits) - 1]
+        for c in commits:
+            if meta[c]["ts"] > meta[tip]["ts"] and not any(c in meta[o]["parents"] for o in commits):
+                tip = c
+        return tip
+    tip = newest(order)                                        # the old history's newest commit
+    own_tip = newest([c for c in order if c not in lost]) if lost else tip   # before the lost 2023 history
     groups = defaultdict(list)
     for lid in lineages:
         groups[find(lid)].append(lid)
     old_cards, of_lineage = {}, {}
     names_used = Counter()
-    first_at = {}                                              # names: the old repo's cards in their old order first
-    lost = {c for c in order if meta[c].get("lost")}           # then the first repo's, then the lost 2023 ones (ids
-    for e in events:                                           # as before: HR-H, the meme Tyler)
+    first_at = {}                          # names: the old repo's cards in their old order first, the first repo's,
+    for e in events:                       # then those first seen in the lost 2023 history (ids kept: HR-H, the meme Tyler)
         root = find(e["lineage"])
         rank = (2 if e["commit"] in lost else int(e["lineage"][0] == "F"), position[e["commit"]])
         first_at[root] = min(first_at.get(root, rank), rank)
@@ -407,11 +412,12 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
         for lid in lids:
             of_lineage[lid] = oid
         end = {p: b for p, (b, lid) in state[tip].items() if lid in lids}
+        own_end = {p: b for p, (b, lid) in state[own_tip].items() if lid in lids}
         old_cards[oid] = {"lineages": sorted(lids, key=lambda x: (x[0] == "L", int(x[1:]))),
                           "paths": sorted({p for lid in lids for p in lineages[lid]["paths"]}),
                           "first": min(mine, key=lambda e: position[e["commit"]])["commit"],
                           "last": latest["commit"],
-                          "at_end": end,
+                          "at_end": end, **({"at_own_end": own_end} if own_tip != tip and own_end != end else {}),
                           "deleted": [d for d in deletes if d["lineage"] in lids]}
 
     seen_blobs, first_seen = defaultdict(dict), defaultdict(dict)   # per lineage; per old card in the first repo
@@ -447,7 +453,7 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
         "about": "Old pre-wipe card repo (read-only), commits before the current repo's population (TC "
                  f"{TC_INIT[:8]}), its init commits left out; the first repo's main commits before them (commits' "
                  "repo 'first'). versions.jsonl: one row per card file version.",
-        "cut": CUT, "tc_init": TC_INIT, "tip": tip,
+        "cut": CUT, "tc_init": TC_INIT, "tip": tip, "own_tip": own_tip,
         "commits": {c: {**meta[c], "author_mapped": authors.get(meta[c]["author"])} for c in order},
         "order": order, "old_cards": old_cards,
         "unmapped_authors": sorted({m["author"] for m in meta.values() if m["author"] not in authors})})
