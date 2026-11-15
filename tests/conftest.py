@@ -27,6 +27,7 @@ CARDS_REV = "a4d137bf06cd372649090a32644023abee8719ea"   # the card repo commit 
 HISTORY = Path(expanduser("~/Documents/Tools/wt/scratch/tc-history.git"))   # full history (no blobs) for revs the clone lacks
 PINNED = Path(expanduser("~/.cache/autocroissant-tests"))                   # the pinned trees, one per CARDS_REV
 PINNED_BASE = ("Types", "MDW/Fonts", "MDW/Croissant's Special Folder/Satus Effect Colors.psd", "site/Card Edits.json")
+FOLDER_CAP = 1_000_000_000                                # a pinned folder bigger than this is refused (all of MDW: 2.6 GB)
 LIVE = (REMIND_JSON, FORUM_JSON)                         # the checkout's live stores, never written by a test
 GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
               "core.looseCompression": "0",               # fixture repos of real PSDs: no zlib on every add
@@ -187,9 +188,13 @@ def _materialize(root: Path, rel: str) -> None:
     kind, data = found
     if kind == "blob":
         return _write(path, data)
-    listing = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "--name-only", CARDS_REV, "--", rel],
+    listing = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "-l", CARDS_REV, "--", rel],
                              capture_output=True, check=True, env=no_lazy()).stdout.decode()
-    for each in filter(None, listing.split("\0")):
+    rows = [row.split("\t", 1) for row in filter(None, listing.split("\0"))]
+    size = sum(int(meta.split()[3]) for meta, _ in rows if meta.split()[3].isdigit())
+    if size > FOLDER_CAP:
+        raise RuntimeError(f"pinned / {rel!r} writes {size / 1e9:.1f} GB: name the subfolder or file the test reads")
+    for _, each in rows:
         if not (root / each).is_file():
             _write(root / each, _blob(root, f"{CARDS_REV}:{each}")[1])
     Pinned.done.add(rel)
