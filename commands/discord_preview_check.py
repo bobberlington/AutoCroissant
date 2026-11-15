@@ -17,6 +17,7 @@ differing ones). Nothing is changed: a field the eye rules wrong is fixed upstre
 """
 import importlib.util
 import json
+import os
 import re
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -84,10 +85,14 @@ def check_one(job: dict) -> dict:
         rec = tt.ocr_task(item)
         if rec.get("error"):
             return {**out, "error": rec["error"]}
-        rd = tt.read_one(item, rec)
+        f = job["fields"]
+        rule = job.get("star_rule") or DEFAULT_STAR_RULE
+        parts = {"ability"} if "ability" in f else set()     # only what is published (types: its own check below)
+        if isinstance(f.get("stars"), int):
+            parts.add("blobs" if rule.get("kind") else "stars")
+        rd = tt.read_one(item, rec, parts)
         era = job.get("era") or rd.get("era")
         out["era"] = era
-        f = job["fields"]
         res = out["fields"]
         if "name" in f:
             title = rd.get("title") or {}
@@ -104,7 +109,6 @@ def check_one(job: dict) -> dict:
             res["ability"] = {"r": "near" if near else result(r >= ABILITY_RECALL, (read + whole).strip()),
                               "recall": round(r, 3)}
         if "stars" in f and isinstance(f["stars"], int):
-            rule = job.get("star_rule") or DEFAULT_STAR_RULE
             n, _ = (tt.count_blobs(rd.get("star_blobs"), rule) if rule.get("kind")
                     else tt.count_stars(rd.get("stars"), rule))
             res["stars"] = {"r": result(n == f["stars"], n is not None), "read": n}
@@ -171,14 +175,19 @@ def jobs_of(root: str) -> list:
 def check(root: str, workers: int = 3, redo: bool = False):
     """redo: keep the last check's rows (a field no longer published left out), read again those with an error, an
     ability that didn't read the same (the ability rule changed last), or a field published since or read now that
-    has no result there (types none published: read since)."""
+    has no result there (types none published: read since); also the rows an unfinished run left in
+    check.partial.jsonl (each row is kept there as it is read; removed when check.jsonl is written)."""
     root = dm.check_root(root)
     jobs = jobs_of(root)
     out = join(root, *OUT)
+    partial = join(out, "check.partial.jsonl")
     last = {}
     if redo:
         for r in dm.read_jsonl(join(out, "check.jsonl")):
             if not r.get("error") and (r.get("fields", {}).get("ability") or {"r": "same"})["r"] == "same":
+                last[(r["card"], r["id"], r["image"])] = r
+        for r in dm.read_jsonl(partial):                      # an unfinished run's reads: the rules of now
+            if not r.get("error"):
                 last[(r["card"], r["id"], r["image"])] = r
     key = lambda j: (j["card"], j["id"], j["image"])
     fresh = lambda r, j: all(k in r.get("fields", {}) and r["published"].get(k) == v
@@ -188,9 +197,12 @@ def check(root: str, workers: int = 3, redo: bool = False):
     todo = [j for i, j in enumerate(jobs) if i not in kept]
     print(f"check: {len(jobs)} versions with sure fields, {len(todo)} to read", flush=True)
     done = {}
-    with ProcessPoolExecutor(workers) as pool:
+    with open(partial, "a", encoding="utf-8") as fh, ProcessPoolExecutor(workers) as pool:
         for i, (job, r) in enumerate(zip(todo, pool.map(check_one, todo, chunksize=4)), 1):
             done[(job["card"], job["id"], job["image"])] = r
+            fh.write(json.dumps({**r, "kind": job["kind"], "published": job["fields"],
+                                 **({"half": job["half"]} if job.get("half") else {})}, ensure_ascii=False) + "\n")
+            fh.flush()
             if i % 250 == 0:
                 print(f"check: {i}/{len(todo)}", flush=True)
     rows = []
@@ -202,6 +214,7 @@ def check(root: str, workers: int = 3, redo: bool = False):
     with open(join(out, "check.jsonl"), "w") as fh:
         for r in rows:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    os.remove(partial)
     tally = Counter((f, v["r"]) for r in rows for f, v in r.get("fields", {}).items())
     fields = sorted({f for f, _ in tally})
     lines = [f"PREVIEW CHECK: {len(rows)} published versions with sure fields, read again from their webps",

@@ -1413,8 +1413,11 @@ def edge_task(args):
         return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
 
-def read_one(item, rec):
-    """Every text field of one input from its OCR record and its picture."""
+def read_one(item, rec, parts=None):
+    """Every text field of one input from its OCR record and its picture (parts: only the title, era and these of
+    'ability', 'stars', 'blobs', 'types'; the preview check reads only what was published: types' presence is over
+    half the time, the stars a quarter)."""
+    want = lambda part: parts is None or part in parts
     import numpy as np
     import cv2
     img = load(item)
@@ -1431,10 +1434,13 @@ def read_one(item, rec):
     kind = "card" if (len(labels) >= 2 or era in ("A", "B", "C", "D1", "D2", "D3", "R", "bars-other")) else "other"
     out = {"id": item["id"], "src": item["src"], "era": era, "era_how": how, "w": W0, "h": H0, "kind": kind,
            "title": title}
-    ability_icons(out, work, ability_reads(out, rec, labels, band, title), title)
-    out["stars"] = read_stars(work, STAR_BAND[shp], tb)
-    out["star_blobs"] = read_star_blobs(work, tb, BLOB_BAND[shp])
-    tk = types_known_of(work, shp, title)
+    if want("ability"):
+        ability_icons(out, work, ability_reads(out, rec, labels, band, title), title)
+    if want("stars"):
+        out["stars"] = read_stars(work, STAR_BAND[shp], tb)
+    if want("blobs"):
+        out["star_blobs"] = read_star_blobs(work, tb, BLOB_BAND[shp])
+    tk = types_known_of(work, shp, title) if want("types") else None
     if tk:
         out["types_known"] = tk
     return out

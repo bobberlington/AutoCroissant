@@ -187,3 +187,32 @@ def test_a_first_psd_s_row_and_created():
            "file": {"date": "2023-10-09"}}
     got = dp.created_proposals({"cards": {"Laz": laz}})
     assert got["Laz"]["source"] == "old repo" and got["Laz"]["psd"] and got["Laz"]["was"] == "2023-10-09"
+
+
+def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
+    """discord_preview check keeps each read in check.partial.jsonl as it goes: --redo reads only what is left, and
+    the partial file goes once check.jsonl is written."""
+    from concurrent.futures import ThreadPoolExecutor
+    import commands.discord_preview_check as pc
+    out = tmp_path / "derived" / "preview"
+    out.mkdir(parents=True)
+    jobs = [{"card": c, "id": "D-1", "image": "P-1.webp", "kind": "discord", "fields": {"stars": 2}} for c in "abc"]
+    calls = []
+
+    def one(job):
+        calls.append(job["card"])
+        if job["card"] == "c" and len(calls) == 3:
+            raise KeyboardInterrupt                          # the run stopped here
+        return {"card": job["card"], "id": job["id"], "image": job["image"], "fields": {"stars": {"r": "same", "read": 2}}}
+    monkeypatch.setattr(pc, "jobs_of", lambda root: jobs)
+    monkeypatch.setattr(pc, "check_one", one)
+    monkeypatch.setattr(pc, "ProcessPoolExecutor", ThreadPoolExecutor)
+    monkeypatch.setattr(pc.dm, "check_root", lambda root: root)
+    try:
+        pc.check(str(tmp_path), workers=1, redo=True)
+    except KeyboardInterrupt:
+        pass
+    assert len((out / "check.partial.jsonl").read_text().splitlines()) == 2
+    rows = pc.check(str(tmp_path), workers=1, redo=True)
+    assert calls == ["a", "b", "c", "c"] and [r["card"] for r in rows] == ["a", "b", "c"]
+    assert (out / "check.jsonl").exists() and not (out / "check.partial.jsonl").exists()
