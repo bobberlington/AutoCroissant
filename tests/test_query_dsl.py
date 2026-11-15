@@ -57,6 +57,8 @@ QUERIES = [                                              # query, the cards foun
     ("series==kirby & !hp>5", {"Kirby", "King Dedede"}), ("subtype==equip", {"Panda Shield"}),
     ("atack>3", ERROR), ("total~5", ERROR), ("hp>=x", ERROR), ("type>3", ERROR),
     ("type!=creature", ERROR),
+    ("fire || ice", {"Fire Bomb", "Burning"}), ("fire |", {"Fire Bomb", "Burning"}),   # blank parts dropped (search.js)
+    ("|", ERROR), ("&", ERROR), ("series~", ERROR), ("types~", ERROR),
     ('"atack>3"', set()),
     ("can\u2019t", {"Burning"}), ("\u201cdeal 2\u201d", {"Kirby"}),        # a phone's curly quotes
     ("series==\u201ckirby\u201d & \u201cdie\u201d", {"Meta Knight"}),
