@@ -296,17 +296,19 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
         (cards.repo / path).write_bytes(cards.files[path])
     head = _commit(cards.repo)
     snapshot = cb.local_snapshot(cb.CARD_REPO, str(cards.repo))
-    snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability or parts edit
+    snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability, parts or colors edit
     tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
     for card, fields in (("Mini Doomer", {"hp": 8}), (DOOMER.upper(), {"ability": "x"}), ("Mini Doomer", {"ability": None, "hp": 8}),
                          ("A Snack2", {"parts": {"1": {}}}), ("A Snack2", {"stars": 3}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
-                         ("Breakfast", {"name": "x"}), ("Breakfast", {"ability": "x", "hp": 3})):
+                         ("Breakfast", {"name": "x"}), ("Breakfast", {"ability": "x", "hp": 3}),
+                         ("Mini Doomer", {"colors": [{"field": "name", "color": "#ff2200"}]})):
         try:
             want = [p for p in cp.blobs_of(snapshot, cp.resolve(snapshot, card, fields)) if p in tree]
         except cp.BadInput:
             want = []
         assert early.paths_of(tree, card, fields, edits) == want, card
     assert early.paths_of(tree, "Breakfast", {"name": "x"}, edits) == [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, dup]
+    assert early.paths_of(tree, "Mini Doomer", {"colors": [{"field": "name", "color": "#ff2200"}]})[-1] == pe.STATUS_CHART
     views = [cp.resolve(snapshot, "A Snack2", f).view for f in ({"stars": 3}, {"name": "x", "ability": "y"}, {"colors": []})]
     assert views == [2, None, None]             # its derived text, its own colours: refused as before
     blobless = tmp_path / "blobless"

@@ -2,7 +2,7 @@
 A card preview's reads, started early: card-preview.yml runs this in the background while its setup runs. The data's
 render and spot records (db/ on the data branch) go to a folder (CARD_RECORDS_DIR), and the blobs card_preview reads
 first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, a picture-only duplicate's own PNG, the status
-chart for an ability or parts edit; and Card Edits.json, bake_card's first read, which a duplicate's PSD waits for) into
+chart for an ability, parts or colors edit; and Card Edits.json, bake_card's first read, which a duplicate's PSD waits for) into
 the clone's object store, where card_bake.fetch_verified looks before REST. The same reads, earlier; a miss only
 costs the time (the bake checks every blob's sha and fetches what the clone lacks).
 
@@ -96,7 +96,7 @@ def paths_of(tree: dict, card: str, fields: dict, cards: Optional[dict] = None) 
     for path in tree:                           # card_bake Snapshot.png_for's
         if dirname(path) == folder and path.lower().endswith(".png") and basename(path)[:len(basename(path)) - 4].lower() == name:
             png = path
-    chart = STATUS_CHART if any(fields.get(f) is not None for f in ("ability", "parts")) else ""   # psd_fields' rule
+    chart = STATUS_CHART if any(fields.get(f) is not None for f in ("ability", "parts", "colors")) else ""   # bake_card's rule
     return [p for p in (ICON_MANIFEST_PATH, rel, png, dup, chart) if p in tree]
 
 

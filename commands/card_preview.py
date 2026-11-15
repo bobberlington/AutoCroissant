@@ -153,11 +153,11 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
 
 
 def blobs_of(snapshot: Snapshot, card: Card) -> list:
-    """What the preview reads first: the icon manifest, the card's PSD and official PNG, the status chart for an ability
-    or parts edit."""
+    """What the preview reads first: the icon manifest, the card's PSD and official PNG, the status chart for an ability,
+    parts or colors edit."""
     if not card.rel:
         return [ICON_MANIFEST_PATH]
-    chart = psd_edit.STATUS_CHART if {"ability", "parts"} & set(card.fields) else ""
+    chart = psd_edit.STATUS_CHART if {"ability", "parts", "colors"} & set(card.fields) else ""
     return [ICON_MANIFEST_PATH, card.rel, snapshot.png_for(card.rel)[0], card.dup, chart]
 
 
