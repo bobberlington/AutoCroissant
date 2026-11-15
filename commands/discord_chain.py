@@ -913,6 +913,11 @@ def created_sort(date: Optional[str]) -> str:
     return BEFORE_SORT if date == BEFORE_DAY else date or "9999"
 
 
+def photo_missing(cards: dict, keyed: dict = PHOTO_CREATED) -> list:
+    """The owner's 'Before 2020' ids (keyed: {id: name}) whose card is gone or renamed: their Created lapsed."""
+    return [f"{k} ({name})" for k, name in sorted(keyed.items()) if (cards.get(k) or {}).get("name") != name]
+
+
 # ========================
 # The chain
 # ========================
@@ -1762,6 +1767,9 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
     owned["discord: named only on or after the file's Created day (enters)"] = named_on_or_after(inputs)
     chain = Chain(inputs)
     chain.tally.update(owned)
+    missing = photo_missing(inputs.cards)
+    for m in missing:
+        log(f"WARNING: {PHOTO_SOURCE} Created: no card {m} (owner Q6): its 'Before 2020' lapsed")
     found, split = chain.discord_rows()
     by_card = defaultdict(list)
     for row in inputs.verdicts:
@@ -1814,10 +1822,10 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
         remove(paths.ruled)
     items = sorted(chain.review.values(), key=lambda i: (i["kind"], i["id"]))
     dm.write_text(paths.review, "".join(dumps(i, ensure_ascii=False) + "\n" for i in items))
-    text = stats_text(timelines, created, items, chain.tally, kinds)
+    text = stats_text(timelines, created, items, chain.tally, kinds, missing)
     dm.write_text(paths.stats, text)
     log(text)
-    return {"timelines": len(timelines), "review": len(items), "entries": dict(kinds)}
+    return {"timelines": len(timelines), "review": len(items), "entries": dict(kinds), "photo_missing": missing}
 
 
 def _listdir(path: str) -> list:
@@ -1825,7 +1833,7 @@ def _listdir(path: str) -> list:
     return listdir(path) if exists(path) else []
 
 
-def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kinds: Counter) -> str:
+def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kinds: Counter, missing=()) -> str:
     lines = [f"CARD TIMELINES (S5 + S6), built {dm.now_iso()}", ""]
     with_discord = [t for t in timelines.values() if any(e["kind"] == "discord" for e in t["entries"])]
     lines += [f"cards {len(timelines)}; with a Discord version {len(with_discord)}; with any entry "
@@ -1871,6 +1879,7 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
         if c["ours"]["source"] == PHOTO_SOURCE:
             lines.append(f"  {PHOTO_SOURCE} Created: {key}: {c['status']} {c['date']} (file "
                          f"{(c.get('file') or {}).get('date')} {(c.get('file') or {}).get('from')})")
+    lines.append(f"  {PHOTO_SOURCE} Created, owner's cards missing (lapsed): {', '.join(missing) or 'none'}")
     lines += ["", "REVIEW ITEMS: " + ", ".join(f"{k} {n}" for k, n in Counter(i["kind"] for i in items).most_common())]
     lines += ["", "TALLY"] + [f"  {k}: {n}" for k, n in sorted(tally.items())]
     return "\n".join(lines) + "\n"

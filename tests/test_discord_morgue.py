@@ -155,6 +155,7 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
                                                              "thread": None, "source": "discord"}}
     assert [x["id"] for x in muru["pictures"]] == [dv.picture_id(sha(26))] and muru["slug"] == "m-uru"
     assert any("Before 2020" in w for w in muru["why"]) and data["candidates"][0]["id"] == MURU   # sorts first
+    assert counts["photo_missing"] == []                    # a regrouped M'uru would be listed (its Created lapsed)
     assert all(e["first"].get("day") is None for e in data["candidates"][1:] + data["not_candidates"] + ideas)
     assert data["taken"] == [{"picture": p9, "entry": dv.group_id(sha(6)), "verdict": "version_unsure",
                               "card": "zero-two"},             # its twin taken by eye

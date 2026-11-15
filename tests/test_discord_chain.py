@@ -1,8 +1,8 @@
 """discord_chain on made-up cards: the buff/nerf rule and ability changes, which pictures enter a timeline, reposts
 merged (nearest look, same words, same numbers counted, no local edit, no fill a picture didn't read), icon star
 changes nothing backs, facts checked by pictures, first-repo push notices (no rows), splits and Created against the
-file (the physical card photos' three)."""
-from collections import defaultdict
+file (the physical card photos' three, a lapsed id told)."""
+from collections import Counter, defaultdict
 from types import SimpleNamespace
 
 import commands.discord_chain as dc
@@ -150,6 +150,13 @@ def test_the_physical_card_photos_date_exactly_three_cards():
     assert (bolt["status"], bolt["ours"]["source"], bolt["ours"]["picture"]) == ("same", "discord", "P-000000000003")
     assert not any(i["kind"] == "paper photo" for i in chain.review.values())
     assert sum(1 for i in chain.review.values() if i.get("read_only")) == 2           # only the two
+    assert dc.photo_missing(got.cards) == []
+    got.cards["pep-drinks"] = got.cards.pop("pep-drink")                              # renamed: the ruling lapses
+    assert dc.photo_missing(got.cards) == ["pep-drink (Pep Drink)"]
+    text = dc.stats_text({}, {}, [], Counter(), Counter(), dc.photo_missing(got.cards))
+    assert "physical card photo Created, owner's cards missing (lapsed): pep-drink (Pep Drink)" in text
+    assert dc.photo_missing({"LC-1c11be0504": {"name": "M'uru"}}, dc.PHOTO_MORGUE) == []
+    assert dc.photo_missing({"LC-0000000000": {"name": "M'uru"}}, dc.PHOTO_MORGUE) == ["LC-1c11be0504 (M'uru)"]
 
 
 def test_reposts_join_their_nearest_look_with_the_same_words():

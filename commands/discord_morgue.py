@@ -488,13 +488,16 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
     hints = [created_hint(e, rows) for e in others
              if e["status"] in ("renamed", "live", TWIN_STATUS) and e.get("card") in live]
     unchecked = [e["id"] for e in candidates + ideas + others if not e["eye"]["checked"]]
+    lapsed = dc.photo_missing({e["id"]: e for e in candidates}, dc.PHOTO_MORGUE)
+    for m in lapsed:
+        log(f"WARNING: {dc.PHOTO_SOURCE} Created: no Morgue candidate {m} (owner Q6): its 'Before 2020' lapsed")
     counts = {"candidates": len(candidates), "jokes": sum(e["kind"] == "joke" for e in candidates),
               "played": sum(e["kind"] == "played" for e in candidates), "ideas": len(ideas),
               "not_candidates": dict(Counter(e["status"] for e in others)),
               "pictures": sum(len(e["pictures"]) for e in candidates), "taken": len(taken),
               "made": sum(bool(x.get("made")) for x in entries.values()), "kin": len(kin),
               "twins_open": [e["id"] for e in others if e["status"] == TWIN_STATUS], "kin_open": kin_open,
-              "mdw_clash": clash, "unchecked": unchecked}
+              "mdw_clash": clash, "unchecked": unchecked, "photo_missing": lapsed}
     stamp = dm.now_iso()
     dm.write_json(join(paths.out, "candidates.json"), {"generated": stamp, "about": ABOUT, "counts": counts,
                                                        "candidates": candidates, "not_candidates": others,

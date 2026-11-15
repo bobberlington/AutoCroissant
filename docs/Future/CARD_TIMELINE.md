@@ -33,7 +33,9 @@ photos; nothing else is one. They are in no timeline, review item or Morgue evid
 matcher never reads the thread (`discord_match.LEFT_OUT`, as ai-images and patty-vault). Created = "Before 2020" (no
 day, sorting first, source 'physical card photo') for exactly Pep Drink and Wham Bam Bone (`discord_chain.PHOTO_CREATED`;
 their earliest appearance kept as `dated`; the review page shows the item read only) and M'uru, a Morgue candidate
-(`PHOTO_MORGUE`, LC-1c11be0504, slug m-uru: its entry's first); no other Created comes from the photos.
+(`PHOTO_MORGUE`, LC-1c11be0504, slug m-uru: its entry's first); no other Created comes from the photos. The ids are
+fixed: an id that no longer names its card (a rename, a regrouped Morgue entry) is a WARNING in the chain's stats and
+the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unseen.
 
 ## Pipeline
 
