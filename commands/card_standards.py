@@ -2047,8 +2047,11 @@ def laid_plan(layer, faces, earlier: tuple = ()):
     if now is None:
         return None
     moved = lambda found: any(now[0].layout.glyphs[i].gid in way for i in found for way in ways)
-    drawn_then = _drawn_earlier(layer, faces, earlier, now)
-    if not moved({i for i, share in now[4].items() if share > OLD_GLYPH_BAD}) and not moved(drawn_then):
+    bad = moved({i for i, share in now[4].items() if share > OLD_GLYPH_BAD})
+    # drawn_then only holds glyphs EARLIER_GAIN off this font, read only if moved or past DRAWN_ODD: else none to render
+    drawn_then = set() if bad or not any(share >= EARLIER_GAIN and (share > DRAWN_ODD or moved({i}))
+                                         for i, share in now[4].items()) else _drawn_earlier(layer, faces, earlier, now)
+    if not bad and not moved(drawn_then):
         odd = {i for i, share in now[4].items() if share > DRAWN_ODD and i not in drawn_then}
         if moved(odd):
             whole = font_cause(layer, faces, earlier)
