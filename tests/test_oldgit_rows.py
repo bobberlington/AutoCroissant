@@ -125,6 +125,12 @@ def test_stars_are_the_drawn_ones_checked_by_the_folder(rows):
     later = [row("a", 1, 0)]
     rows.confirm_stars(later, {"stars": 2})
     assert later[0]["fields"]["stars"]["confidence"] == "review"
+    other = {"blob": "c", "path": "Creatures/X/2 Stars/A.png", "fields": {"stars": rows.check_stars(2, 2, False, "creature")}}
+    rows.confirm_stars([other], {"stars": 2})                  # another look's PSD drawing the folder's count
+    assert other["fields"]["stars"]["confidence"] == "sure"
+    off = {"blob": "d", "path": "Creatures/X/2 Stars/A.png", "fields": {"stars": rows.check_stars(2, 1, False, "creature")}}
+    rows.confirm_stars([off], {"stars": 2})
+    assert off["fields"]["stars"]["confidence"] == "review"
 
 
 def test_the_ability_is_checked_both_ways_and_the_name_as_printed(rows):
@@ -307,3 +313,24 @@ def test_a_psd_before_any_png_dates_the_card_and_a_look_of_its_own_is_a_row(rows
     assert first["psd_only"] and first["thumb"] == "oldgit/thumbs/p0.webp"
     assert first["psd"]["how"] == "its own composite"
     assert first["fields"]["stars"]["value"] == 3 and "psd_only" not in found[1]
+
+
+def test_a_buffs_arrow_on_the_right_is_a_header_icon(rows):
+    """Other cards' stars sit right of the title, so their right half is left out; a 2022-23 buff has its arrow there."""
+    class Layer:
+        def __init__(self, name, bbox):
+            self.name, self.bbox, self.kind, self.parent = name, bbox, "pixel", None
+
+        def is_group(self):
+            return False
+
+        def is_visible(self):
+            return True
+
+    class Psd:
+        width = 400
+
+        def descendants(self):
+            return [Layer("Layer 39", (334, 0, 398, 57)), Layer("tomato", (10, 5, 70, 60))]
+    assert [layer.name for layer in rows.header_icons(Psd())] == ["tomato"]
+    assert [layer.name for layer in rows.header_icons(Psd(), right=True)] == ["tomato", "Layer 39"]

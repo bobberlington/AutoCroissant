@@ -256,9 +256,10 @@ def type_icons() -> list:
     return [(name, vec) for name, vec in found if vec is not None]
 
 
-def header_icons(psd) -> list:
+def header_icons(psd, right: bool = False) -> list:
     """Visible picture layers in the header's left half or a 'Types' group (bottom within HEADER card widths of the
-    top), icon-sized, no star in their name: a card's type icons (its stars sit right of the title)."""
+    top), icon-sized, no star in their name: a card's type icons (its stars sit right of the title; right: the right
+    half too, a buff's arrow where other cards have stars, 2022-23)."""
     w = psd.width
     found = []
     for layer in psd.descendants():
@@ -266,7 +267,7 @@ def header_icons(psd) -> list:
             continue
         x0, y0, x1, y1 = layer.bbox
         typed = layer.parent is not None and "type" in getattr(layer.parent, "name", "").lower()   # a 'Types' group
-        if y1 > HEADER * w or (x0 + x1) / 2 > 0.55 * w and not typed or \
+        if y1 > HEADER * w or (x0 + x1) / 2 > 0.55 * w and not typed and not right or \
                 not (0.04 * w <= x1 - x0 <= ICON_MAX * w and 0.04 * w <= y1 - y0 <= ICON_MAX * w):
             continue
         if "star" in layer.name.lower():
@@ -275,14 +276,15 @@ def header_icons(psd) -> list:
     return sorted(found, key=lambda layer: (layer.bbox[0], layer.bbox[1]))
 
 
-def w_icons(sha: str) -> dict:
+def w_icons(job) -> dict:
     import numpy as np
     from psd_tools import PSDImage
-    row = {"blob": sha, "icons": []}
+    sha, buff = job
+    row = {"blob": sha, "icons": [], **({"buff": True} if buff else {})}
     try:
         psd = PSDImage.open(BytesIO(oi.w_blob(sha)))
         refs = _W["icons"]
-        for layer in header_icons(psd):
+        for layer in header_icons(psd, right=buff):
             try:
                 vec = icon_vector(layer.topil())
             except Exception:
@@ -306,10 +308,12 @@ def w_icons_init(refs):
 
 
 def icons_main(workers: int):
-    blobs = sorted({r["blob"] for r in oi.read_jsonl(join(oi.OUT, "reads.jsonl")) if r["kind"] == "psd"})
+    reads = [r for r in oi.read_jsonl(join(oi.OUT, "reads.jsonl")) if r["kind"] == "psd"]
+    buffs = {r["blob"] for r in reads if (r.get("read") or {}).get("type") == "buff"}    # the right half too
+    blobs = sorted({r["blob"] for r in reads})
     target = join(OUT, "icons.jsonl")
-    done = {r["blob"] for r in oi.read_jsonl(target)}
-    blobs = [b for b in blobs if b not in done]
+    done = {r["blob"] for r in oi.read_jsonl(target) if r["blob"] not in buffs or r.get("buff")}   # a later row wins
+    blobs = [(b, b in buffs) for b in blobs if b not in done]
     refs = type_icons()
     log(f"icons: {len(blobs)} PSDs, {len(refs)} type pictures ({len({n for n, _ in refs})} types)")
     os.makedirs(OUT, exist_ok=True)
@@ -664,7 +668,8 @@ def check_stars(folder, drawn, star_look: bool, kind: str):
 
 def confirm_stars(rows: list, today: dict):
     """Stars across a card's rows: one picture filed under two star folders -> review; a folder the PSD can't confirm
-    (no drawn stars) is sure when it never changes and today's stars are the same."""
+    (no drawn stars, or the PSD's look is another's but it draws the folder's count) is sure when it never changes and
+    today's stars are the same."""
     folders = defaultdict(set)
     for row in rows:
         folders[row["blob"]].add(folder_stars(row["path"]))
@@ -677,10 +682,14 @@ def confirm_stars(rows: list, today: dict):
         if len(moved) > 1:
             f.update(confidence="review", why=f"the same picture is filed under {' and '.join(map(str, moved))} Stars")
             f.pop("check", None)
-        elif f["method"] == "folder" and not (f.get("reads") or {}).get("drawn") and len(every) == 1 \
-                and today.get("stars") in every and f["value"] in every:
-            f.update(confidence="sure", check="today, never changed")
-            f.pop("why", None)
+        elif f["confidence"] != "sure" and len(every) == 1 and today.get("stars") in every and f["value"] in every:
+            reads = f.get("reads") or {}
+            if f["method"] == "folder" and not reads.get("drawn"):
+                f.update(confidence="sure", check="today, never changed")
+                f.pop("why", None)
+            elif f["method"] == "psd" and reads.get("drawn") == reads.get("folder") == f["value"]:
+                f.update(confidence="sure", check="drawn, folder; today, never changed")
+                f.pop("why", None)
 
 
 def valid_stats(stats, high: bool = False):

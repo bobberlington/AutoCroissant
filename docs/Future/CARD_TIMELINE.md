@@ -38,7 +38,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
    shared commit e-mail. Its card PSDs are fetched too (11-15, one batched read-only fetch: 1,133 blobs): its rows
    read their fields from the PSD of the same commit (else the nearest) checked against the PNG, as the old repo's
-   do, a disagreement to review; a row whose PSD is missing or unread reads its fields off the picture (its
+   do, a disagreement to review (stars a PSD of another look draws are sure when they are the folder's, which never
+   changes and is today's; a buff's arrow, at the top right on 2022-23 cards, is a header icon); a row whose PSD is
+   missing or unread reads its fields off the picture (its
    stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
    with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
