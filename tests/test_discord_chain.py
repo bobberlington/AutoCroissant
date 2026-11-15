@@ -1,6 +1,7 @@
 """discord_chain on made-up cards: the buff/nerf rule and ability changes, which pictures enter a timeline, reposts
 merged (nearest look, same words, same numbers counted, no local edit, no fill a picture didn't read), icon star
-changes nothing backs, facts checked by pictures, first-repo rows, splits, paper cards and Created against the file."""
+changes nothing backs, facts checked by pictures, first-repo push notices (no rows), splits, paper cards and Created
+against the file."""
 from collections import defaultdict
 from types import SimpleNamespace
 
@@ -57,7 +58,7 @@ def inputs(verdicts, text=None, bars=None, facts=(), old_rows=(), created=None, 
     return SimpleNamespace(root=str(root), cards=cards, by_key={c["key"]: k for k, c in cards.items()}, versions=versions,
                            images=images or {}, verdicts=verdicts, lost=list(lost), text=text or {}, text_truth={},
                            bars=bars or {}, old_rows=rows, old_review=list(old_review), facts=list(facts),
-                           switches={"first_repo_rows": True}, first_repo=list(first_repo),
+                           first_repo=list(first_repo),
                            paper_eye=paper_eye or {}, created_file=created or {}, first_data={})
 
 
@@ -104,14 +105,12 @@ def test_which_pictures_enter_and_reposts_merge():
     t = chain.card("bolt", found["bolt"], split.get("bolt", []))
     kinds = [(e["kind"], e["id"]) for e in t["entries"]]
     assert kinds == [("paper", "D-P-000000000009"), ("discord", "D-P-000000000001"), ("text", "F-f1"),
-                     ("discord", "D-P-000000000003"), ("discord", "D-P-000000000004"), ("first repo", "Q-q1"),
-                     ("old repo", "O-aaaaaaaaaaaa:Creatures/Bolt.png")]
-    paper, first, fact, second, look, push = (e for e in t["entries"][:6])
+                     ("discord", "D-P-000000000003"), ("discord", "D-P-000000000004"),
+                     ("old repo", "O-aaaaaaaaaaaa:Creatures/Bolt.png")]      # push notices: no rows (owner Q5, 11-14)
+    paper, first, fact, second, look = t["entries"][:5]
     assert (paper["date"], paper["label"], [p["id"] for p in paper["pictures"]]) == (
         None, dc.PAPER_DAY, ["P-000000000009", "P-000000000011"])                         # one paper card
     assert paper["fields"] == {"name": dc.sure("Bolt", "matcher")} and first["changes"]["ability_change"] == "first"
-    assert push == {"id": "Q-q1", "kind": "first repo", "date": iso(T + 3.5 * DAY), "day": dc.day(T + 3.5 * DAY),
-                    "badge": "first repo", "author": "Chestnut", "subject": "Update Bolt", "source": "first repo push"}
     assert [p["id"] for p in first["pictures"]] == ["P-000000000001", "P-000000000002"]     # a repost merged
     assert second["changes"]["bal"] == "buff" and fact["confirmed_by"] == second["id"]
     assert look["look"]["git"]["source"] == "old repo" and look["fields"]["stats"]["method"] == "git look: picture"
@@ -124,6 +123,10 @@ def test_which_pictures_enter_and_reposts_merge():
     dated = chain.created("bolt", {**t, "entries": t["entries"][1:]}, rows)
     assert dated["ours"]["picture"] == "P-000000000001"                                      # not 7, named only
     assert dated["named_only_earlier"]["picture"] == "P-000000000007"
+    chain.inputs.first_repo.append({"id": "q0", "card": "Bolt", "date": iso(T - 2 * DAY), "author": "Chestnut",
+                                    "subject": "Bolt"})
+    hinted = chain.created("bolt", {**t, "entries": t["entries"][1:]}, rows)
+    assert hinted["first_repo_earlier"]["row"] == "Q-q0"                 # a push notice: a Created hint (review) only
 
 
 def test_reposts_join_their_nearest_look_with_the_same_words():

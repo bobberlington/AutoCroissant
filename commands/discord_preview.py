@@ -12,8 +12,8 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
           index.json             every card with a history (its folder, counts), the Morgue's new entries, the MDW
                                  Morgue cards' Discord pictures, and the Created dates the chain proposes (earlier or
                                  new only; "Before 2020" for a paper card, owner Q6)
-          <card id>/timeline.json  its entries oldest first: paper, discord, first repo (owner Q5), text (owner Q4: data
-                                 only) and old repo; each picture's version names its webp
+          <card id>/timeline.json  its entries oldest first: paper, discord, text (owner Q4: data only) and old repo
+                                 (the first repo's badged 'first repo', owner Q5); each picture's version names its webp
           <card id>/<picture>.webp one per version, at most WEBP_W wide (never a full-size copy)
           _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card
         Only sure fields go in (value, method, confidence); review items, notes, posters, message ids and links never.
@@ -63,12 +63,11 @@ VERDICTS = ("derived", "match", "verdicts.jsonl")
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
 OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> today's (an MDW card's first old record)
 MDW_FOLDER = "MDW/The Morgue/"
-BEFORE_GIT = ("discord", "text", "first repo")               # dated entries that must come before the card's first git record
+BEFORE_GIT = ("discord", "text")                             # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
 PICTURE_KINDS = ("discord", "old repo", "paper")
-TEXT_KINDS = ("text", "first repo")
 BADGE = {"discord": "Discord", "old repo": "old repo", "paper": "paper card", "first repo": "first repo",
-         "text": "changelog"}
+         "text": "changelog"}                       # first repo: an old repo row's (repo 'first')
 WEBP_W, WEBP_Q = 720, 80                   # the website's card view width; quality
 MAX_PIXELS = 40_000_000                    # a picture past this is shrunk on open (phone photos)
 KINDS_OF = {"name": str, "stars": int, "types": list, "stats": dict, "ability": str}   # another kind: left out
@@ -76,8 +75,8 @@ CHANGE_KEYS = ("name", "stars", "types", "stats", "bal", "buffs", "nerfs", "abil
 FACT_KEYS = ("field", "from", "to", "by", "op", "unit")
 PAPER_DAY = "Before 2020"                  # owner Q6 (discord_chain.PAPER_DAY)
 ABOUT = ("Card timelines before the card repo (preview): per card its versions from Discord (date and channel), the "
-         "old pre-wipe repo (date, mapped author, commit subject), paper cards (Before 2020), the first repo's push "
-         "notices (text only) and changelog facts (data only). Only sure fields; no message text, posters or links.")
+         "old pre-wipe repo and the first repo (date, mapped author, commit subject), paper cards (Before 2020) "
+         "and changelog facts (data only). Only sure fields; no message text, posters or links.")
 
 
 def log(text: str):
@@ -130,7 +129,7 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
         out.update(label=e.get("label") or PAPER_DAY, sort=e.get("sort"))
     if kind in ("discord", "text"):
         out["channel"] = e.get("channel")
-    if kind in ("old repo", "first repo"):
+    if kind == "old repo":
         out.update(author=e.get("author"), subject=e.get("subject"))
     if kind == "old repo" and e.get("repo") == "first":
         out.update(badge=BADGE["first repo"], repo="first")      # the first repo's file (2022-08..2023-04)
@@ -230,7 +229,7 @@ def leave_out(t: dict, ids, versions: list = ()) -> list:
             redo = True
             continue
         kept.append(e)
-        if e["kind"] in TEXT_KINDS:
+        if e["kind"] == "text":
             if e.get("confirmed_by") in ids:
                 e.pop("confirmed_by")
             continue
@@ -391,7 +390,7 @@ def git_first_changes(t: dict, last: Optional[dict], versions: list) -> dict:
 
 def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict], versions: list = ()) -> Optional[dict]:
     """A chain timeline cut at its card's first record in the card repo (pngs: its PNG's lineage), when that is earlier
-    than the chain's stop: its Discord, changelog and first-repo entries from then on are left out, its stop moves back
+    than the chain's stop: its Discord and changelog entries from then on are left out, its stop moves back
     and its git_first is diffed again against the last version left. git_first is dated when its card-data version
     (data: discord_chain.first_versions) was first committed in the card's PSD lineage (psds), approx when the card had
     PSD versions before that one (its change is in one of them) or that version isn't there. Returns what changed:
@@ -602,7 +601,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         counts.update(e["kind"] for e in out["entries"])
         index["cards"][folder] = {"key": t["key"], "name": t["name"], "dir": folder,
                                   "versions": sum(e["kind"] in PICTURE_KINDS for e in out["entries"]),
-                                  "texts": sum(e["kind"] in TEXT_KINDS for e in out["entries"])}
+                                  "texts": sum(e["kind"] == "text" for e in out["entries"])}
         dm.write_json(join(out_dir, folder, "timeline.json"), out)
     morgue = dm.read_json(join(root, *MORGUE), {}) or {}
     files = {}

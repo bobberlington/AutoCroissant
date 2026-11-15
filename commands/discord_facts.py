@@ -1,8 +1,8 @@
 """
-Changelog facts for the card timelines (docs/Future/CARD_TIMELINE.md; owner answers Q4/Q5, 2026-11-13). Reads the
+Changelog facts for the card timelines (docs/Future/CARD_TIMELINE.md; owner answers Q4 2026-11-13, Q5 11-14). Reads the
 archive the miner stored (commands/discord_archive.py) and writes structured facts only, never a message's text:
 
-    python -m commands.discord_facts build  [--root <dir>] [--cards-repo <dir>] [--no-first-repo-rows]
+    python -m commands.discord_facts build  [--root <dir>] [--cards-repo <dir>]
     python -m commands.discord_facts sample [--root <dir>] [--cards-repo <dir>] [--n 40] [--seed 1] [--sure]
 
 build   Under the archive root's derived/facts/:
@@ -22,9 +22,9 @@ build   Under the archive root's derived/facts/:
                         the card's nearest picture reads (Discord pictures the matcher is sure of, the old repo's
                         rows), else from what bars can hold (whole, at most 10; raid bosses 20), else from the line
                         ('bars', a 4-number stat list): 'unit_how' read, range, said or list.
-        firstrepo.jsonl text-only rows (date, mapped author, commit subject, badge "first repo") for push notices
-                        naming exactly one card and nothing else (no list in the subject); shown while the switch is
-                        on (switches.json: on, owner Q5 = A; --no-first-repo-rows turns it off).
+        firstrepo.jsonl push notices naming exactly one card and nothing else (no list in the subject): date, mapped
+                        author, commit subject; evidence only (owner Q5, 11-14: the first repo's commits are picture
+                        rows), the chain's 'first repo earlier' Created hints.
         review.jsonl    changelog lines the owner decides (ambiguous card, unsure fact, with why): ids only.
 sample  Prints n random lines that gave facts, with their facts, for an eye check (terminal only).
 A card is named by today's names (stats.json keys, titles, display and website names, file names) or by an old name
@@ -69,7 +69,6 @@ CHAT_SKIP_KINDS = {"meme/joke", "bot", "update"}   # morgue channels never date 
 CHAT_LINES = 12                                    # longer chat messages are game reports and idea lists
 AUTHORS = "~/Documents/Tools/wt/scratch/s1110/timelines/authors.json"
 MORE_AUTHORS = {"Croissant2": "Croissant"}         # owner 10-30: the GitHub account Croissant2 is Croissant
-SWITCH = "first_repo_rows"
 DICT = "/usr/share/dict/words"
 STAT = {"hp": "hp", "health": "hp", "def": "def", "defense": "def", "defence": "def", "atk": "atk",
         "attack": "atk", "spd": "spd", "speed": "spd"}
@@ -1087,7 +1086,7 @@ def line_order(line_id: str) -> int:
     return int(part[3:]) if part.startswith(("img", "doc")) else int(part)
 
 
-def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True, log=print) -> dict:
+def build(root: str, names: Names, vocabulary: set, log=print) -> dict:
     out = join(root, *OUT)
     facts, review, counts = [], [], Counter()
     kinds = {c: kind for c, (_, kind) in chat_channels(root).items()}
@@ -1147,23 +1146,16 @@ def build(root: str, names: Names, vocabulary: set, first_repo_rows: bool = True
     review.sort(key=lambda r: (r["date"], r["line"]))
     pushes, rows = push_facts(root, names, counts)
     facts += pushes
-    switches = {SWITCH: bool(first_repo_rows),
-                "why": "owner Q5 = A (2026-11-13): text-only rows for notices naming exactly one card, shown in "
-                       "the preview; the other notices are evidence only",
-                "owner_answers": ["Q4 = B", "Q5 = A"]}
-    for row in rows:
-        row["shown"] = bool(first_repo_rows)
     write_text(join(out, "facts.jsonl"), "".join(dumps(f, ensure_ascii=False) + "\n" for f in facts))
     write_text(join(out, "firstrepo.jsonl"), "".join(dumps(r, ensure_ascii=False) + "\n" for r in rows))
     write_text(join(out, "review.jsonl"), "".join(dumps(r, ensure_ascii=False) + "\n" for r in review))
-    write_json(join(out, "switches.json"), switches)
     summary = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "facts": len(facts),
                "first_repo_rows": len(rows), "review": len(review), "counts": dict(sorted(counts.items())),
                "cards": len({f["card"] for f in facts if f.get("card")} |
                             {c for f in facts for c in f.get("cards", [])}),
                "cards_with_sure_facts": len({f["card"] for f in facts if f.get("confidence") == "sure"})}
     write_json(join(out, "summary.json"), summary)
-    log(f"facts {len(facts)}, first repo rows {len(rows)} (shown: {bool(first_repo_rows)}), review {len(review)}")
+    log(f"facts {len(facts)}, first repo rows {len(rows)}, review {len(review)}")
     return summary
 
 
@@ -1323,7 +1315,8 @@ def authors() -> dict:
 
 
 def push_facts(root: str, names: Names, counts: Counter) -> tuple:
-    """Evidence facts (one per commit naming cards) and first-repo rows (notices naming exactly one card)."""
+    """Evidence facts (one per commit naming cards) and first-repo rows (notices naming exactly one card: Created
+    hints)."""
     who = authors()
     facts, rows = [], []
     for m in messages(root, GITHUB_ID):
@@ -1358,8 +1351,7 @@ def push_facts(root: str, names: Names, counts: Counter) -> tuple:
             continue
         counts["push notices naming one card"] += 1
         rows += [{"id": "q" + short_id(m["id"], sha), "card": union[0], "date": date, "author": who.get(raw, raw),
-                  "subject": subject.strip(), "badge": "first repo", "message": m["id"], "commit": sha,
-                  "switch": SWITCH} for sha, subject, raw in own]
+                  "subject": subject.strip(), "message": m["id"], "commit": sha} for sha, subject, raw in own]
     counts["push cards named"] = len({c for f in facts for c in f["cards"]})
     return facts, rows
 
@@ -1386,8 +1378,6 @@ def main(argv=None):
     parser.add_argument("command", choices=("build", "sample"))
     parser.add_argument("--root", default=DEFAULT_ROOT)
     parser.add_argument("--cards-repo", default=LOCAL_DIR_LOC)
-    parser.add_argument("--no-first-repo-rows", dest="first_repo_rows", action="store_false",
-                        help="hide the first repo's text-only rows (owner Q5 = A shows them)")
     parser.add_argument("--n", type=int, default=40)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--sure", action="store_true", help="sample: only lines with a sure changelog fact")
@@ -1396,7 +1386,7 @@ def main(argv=None):
     names = load_names(expanduser(args.cards_repo), root)
     vocabulary = vocabulary_of(root)
     if args.command == "build":
-        build(root, names, vocabulary, args.first_repo_rows)
+        build(root, names, vocabulary)
     else:
         sample(root, names, vocabulary, args.n, args.seed, args.sure)
 

@@ -1,6 +1,6 @@
 # Card timelines from Discord
 
-**Status:** stage 2 in progress (2026-11-13, gap round 5 11-14: the first repo found on GitHub): mined, old repo indexed, matcher run over every
+**Status:** stage 2 in progress (2026-11-13; 11-14: the first repo found on GitHub, its commits picture rows): mined, old repo indexed, matcher run over every
 post, fields read, chains and Created built, review page built; a local preview built (`discord_preview`, the
 website's `HISTORY_DIR`). Nothing published (preview first, owner 11-13).
 
@@ -42,8 +42,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
    a picture is never sure; an old repo PNG with no PSD stats is sure by its two readers only when its era read is
    sure and the same on every stat: static-noise bars fool all three).
-   Its rows carry the badge "first repo"; each card's timeline stops at its first first-repo record; a Q5 text row
-   whose commit now has a picture row is that row (the review page asks the owner to confirm the changed premise).
+   Its rows carry the badge "first repo" (owner Q5, 11-14: picture rows, no text-only rows; its push notices in
+   github-updates are evidence only: Created hints); each card's timeline stops at its first first-repo record.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it). A lost first-repo file whose picture is a live card's card-sure Discord picture
@@ -183,8 +183,7 @@ the card's Image versions on the website before the git versions. Cards that nev
    to back it (no eye or PSD read, no second read apart, no changelog fact, the versions around it say otherwise) goes
    to review, as do icon-read counts in the run of versions just before a sure changelog line that changes the stars
    to that count (none of them eye or PSD, the last over 3 days before the line). Then the sure changelog facts before it (Q4; item kinds
-   never), the first repo's push notices naming the card alone as text-only rows (Q5: date, mapped author, commit
-   message, badge "first repo"; no picture or link), the old repo's rows, a split card's versions "as <old name>" on
+   never), the old repo's rows (the first repo's among them, badge "first repo"), a split card's versions "as <old name>" on
    both halves (Q3), and first a paper card's photo named as the card (by the matcher or by eye,
    `derived/readers/paper/eye.json`), dated "Before 2020" with no day (Q6). Only card- and look-sure pictures enter
    (never one the Morgue's eye took for a joke or lost card: `taken`); a stat-less card's picture reading no bar
@@ -215,12 +214,12 @@ the card's Image versions on the website before the git versions. Cards that nev
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
    date nothing) against `site/Card Creation Dates.json`: same, earlier
    (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and
-   first-repo rows before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
+   first-repo push notices before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
    check.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
-   local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only, Q5's
-   first-repo rows listed; Morgue items the owner answered show read only, listed by id, the joke edits of live
-   cards each by eye; an open item a later answer bears on says so), the unsure old maps,
+   local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only; Morgue
+   items the owner answered show read only, listed by id, the joke edits of live cards each by eye; an open item a
+   later answer bears on says so), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
    templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
    never asked), Created dates (earlier,
@@ -239,7 +238,7 @@ the card's Image versions on the website before the git versions. Cards that nev
 6. **Publish** (`commands/discord_preview.py build`, the preview first, owner 11-13): `derived/preview/history/` in the
    `history` branch's layout: `index.json` (each card's folder; the Morgue's entries from Discord, owner Q1/Q2; the MDW
    Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" for a paper
-   card), `<card id>/timeline.json` (entries oldest first: paper, discord, first repo, text, old repo; only sure fields,
+   card), `<card id>/timeline.json` (entries oldest first: paper, discord, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
    wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
@@ -254,8 +253,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    picture that is no version of the card (OMORI's 16 AI restyles; the next version is diffed again, the review page
    doesn't ask about it). The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
-   lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo";
-   Discord: date and channel; a paper card "Before 2020"; first repo: text only), each compared with the current card
+   lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo",
+   the first repo's "first repo"; Discord: date and channel; a paper card "Before 2020"), each compared with the current card
    as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
    version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the

@@ -130,9 +130,9 @@ def test_build_writes_facts_without_text(tmp_path, monkeypatch):
             if r.get("fact") == hp["id"]] == [F.DOUBT["unit"]]
     for name in ("facts.jsonl", "review.jsonl"):
         assert "zany" not in (out / name).read_text() and "Quirky" not in (out / name).read_text()
-    row = json.loads((out / "firstrepo.jsonl").read_text())       # one row: the listing notice is evidence only
-    assert (row["card"], row["badge"], row["shown"]) == ("Sun Cookie", "first repo", True)     # owner Q5 = A
-    assert json.loads((out / "switches.json").read_text())[F.SWITCH] is True
+    row = json.loads((out / "firstrepo.jsonl").read_text())       # one notice: the listing one is evidence only
+    assert (row["card"], row["author"], row["commit"]) == ("Sun Cookie", "Somebody", "abcdef1")   # a Created hint
+    assert not (out / "switches.json").exists()                   # owner Q5 (11-14): no text-only rows
 
 
 def test_hp_def_units():

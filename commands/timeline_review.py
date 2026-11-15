@@ -8,7 +8,7 @@ Reads the parts' outputs under the archive's derived/ (chain, match, matcher, ol
 preview's eye.json: its leave_out pictures, no version of the card, are not asked about) and writes derived/review/:
     index.html   the page (open it in a browser: its pictures are the archive's own thumbnails, by relative path)
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
-Sections: the owner's answers (Q1-Q6, read only; Q5's first-repo rows listed), the unsure old maps, unsure matches and
+Sections: the owner's answers (Q1-Q6 and the later ones, read only), the unsure old maps, unsure matches and
 versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, paper
 photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
 earlier than the Created date in use), the Morgue list (candidates, ideas never ported, the rest) and splits. A name
@@ -52,8 +52,8 @@ GUILD = "545138546021892096"                          # Impossibility Simulator 
 FORMAT = "card-timelines-rulings/1"                   # the export's format (apply_rulings checks it)
 STORE = "timelines-review"                            # the browser's saved answers (localStorage key prefix)
 SECTIONS = (                                          # id, title, what it asks
-    ("answers", "The owner's answers (read only)", "Your answers of 11-13 to stage 1's six questions and your later "
-                                                   "rulings, as built."),
+    ("answers", "The owner's answers (read only)", "Your answers to stage 1's six questions and your later rulings, "
+                                                   "as built."),
     ("maps", "Old repo: unsure maps", "Old-repo files whose card isn't sure. Their versions join the card you pick. "
                                       "(The seventh, Twin Princes, is under Splits: your Q3 answer.)"),
     ("matches", "Unsure matches and versions", "Discord pictures kept out of the timelines until you answer."),
@@ -231,27 +231,6 @@ def owner_answers(inputs: Inputs) -> list:
                                  key=lambda r: (r.get("order", 0), r["question"]))):
         it = item(r["kind"], r["id"], "answers", None, f"{r['question']} = {r['answer']}", read_only=True, order=n)
         it["meta"] = [r["ruling"]] + ([f"answered {r['when']}"] if r.get("when") else [])
-        if r["question"] == "Q5":
-            it["meta"].append(f"{r.get('rows')} rows on {r.get('cards')} cards; shown in the preview: "
-                              f"{'yes' if r.get('shown') else 'no'}")
-            it["table"] = [[when(q.get("date")), q.get("card") or "", q.get("author") or "", q.get("subject") or ""]
-                           for q in sorted(inputs.first_repo, key=lambda q: q.get("date") or "")]
-        out.append(it)
-    return out
-
-
-def premise_items(inputs: Inputs) -> list:
-    """Owner answers whose premise changed (the first repo's files found): open, in the answers section."""
-    out = []
-    for r in (r for r in inputs.chain if r["kind"] == "first repo premise"):
-        it = item(r["kind"], r["id"], "answers", None, "Q5 changed premise: the first repo's files were found",
-                  order=-1)
-        it["meta"] = [r.get("why") or "", f"{r.get('rows')} first-repo picture rows on {r.get('cards')} cards; "
-                      f"{r.get('stops')} timelines now stop at the first repo; of the {r.get('notices')} Q5 text rows, "
-                      f"{r.get('pictured')} became picture rows and {r.get('text_rows')} stay text rows (the rest come "
-                      "after a card's first first-repo record: its git history)"]
-        it["choices"] = [choice("yes", "keep: picture rows from the first repo (as built)"),
-                         choice("no", "no: text-only rows, as answered on 11-13")]
         out.append(it)
     return out
 
@@ -658,7 +637,7 @@ def offered(it: dict, r: dict) -> bool:
 
 
 def gather(inputs: Inputs) -> list:
-    items = premise_items(inputs) + owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
+    items = owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]
@@ -704,7 +683,6 @@ figure .crop{background-repeat:no-repeat}figcaption{font-size:12px;color:#b5bac1
 color:#dbdee1;border:1px solid #4e5058;border-radius:4px;padding:.15rem .3rem}
 button{background:#5865f2;color:#fff;border:0;border-radius:4px;padding:.3rem .7rem;cursor:pointer;margin:.2rem}
 button.small{background:#4e5058;padding:.1rem .5rem;font-size:12px}a{color:#00a8fc}
-table{border-collapse:collapse;font-size:12px;margin-top:.4rem}td{padding:.1rem .5rem;border-bottom:1px solid #3f4147}
 footer{position:fixed;bottom:0;left:0;right:0;background:#111214;padding:.5rem 1.5rem;display:flex;gap:1rem;
 align-items:center;z-index:2}footer textarea{flex:1;height:2.6rem;background:#2b2d31;color:#dbdee1;border:0}
 body.open-only .item.done,body.open-only .item.ro{display:none}
@@ -834,10 +812,6 @@ def item_html(it: dict) -> str:
     body = [head, f"<div class=meta>{meta}</div>"]
     if it.get("pics"):
         body.append("<div class=pics>" + "".join(pic_html(p) for p in it["pics"]) + "</div>")
-    if it.get("table"):
-        body.append("<details><summary>the rows</summary><table>" + "".join(
-            "<tr>" + "".join(f"<td>{escape(str(c))}</td>" for c in row) + "</tr>" for row in it["table"])
-            + "</table></details>")
     if not it.get("read_only"):
         name = escape("r-" + it["id"], quote=True)
         opts = []

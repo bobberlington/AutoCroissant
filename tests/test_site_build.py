@@ -471,7 +471,7 @@ def test_theme_colours_pass_the_contrast_test():
 
 
 def _timelines(root):
-    """A HISTORY_DIR: Alpha's paper card (under another card), Discord look, first-repo notice, changelog facts (one its
+    """A HISTORY_DIR: Alpha's paper card (under another card), Discord look, changelog facts (one its
     old-repo version confirms), old-repo version, git_first and a Discord post after its first version here; one Morgue
     joke card; White Palace's (MDW) Discord pictures, one after its PNG's first record; Alpha's Created proposed as a
     paper card's."""
@@ -487,7 +487,6 @@ def _timelines(root):
          "w": 40, "h": 80, "fields": {"name": {"value": "Alpha", "method": "eye", "confidence": "sure"}}, "changes": {}, "covered": True},
         {"id": "D-P-2", "kind": "discord", "date": "2021-03-04T05:06:07+00:00", "channel": "new-cards", "image": pic("alpha", "P-2.webp"),
          "w": 40, "h": 80, "fields": {"stats": stats(3, 5), "ability": {"method": "ocr", "confidence": "review"}}, "changes": {}},
-        {"id": "Q-1", "kind": "first repo", "date": "2022-09-01T00:00:00+00:00", "author": "Maker", "subject": "alpha"},
         {"id": "F-1", "kind": "text", "date": "2022-10-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4}},
         {"id": "F-2", "kind": "text", "date": "2023-04-20T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4},
          "confirmed": True, "confirmed_by": "O-1"},
@@ -531,12 +530,12 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
     rows = out["versions.json"]["early"][alpha["id"]]
     # after the repo's rows, newest first, the undated paper card last; no review field, no link
-    assert [r["k"] for r in rows] == ["old repo", "first repo", "discord", "paper"]
-    assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[2]["ch"] == "new-cards" and rows[3]["label"] == "Before 2020"
-    assert rows[3]["cov"] == 1 and "cov" not in rows[2]
-    assert "img" not in rows[1] and rows[2]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
-    assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows if "img" in r)
-    assert alpha["ive"] == 4 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
+    assert [r["k"] for r in rows] == ["old repo", "discord", "paper"]
+    assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[1]["ch"] == "new-cards" and rows[2]["label"] == "Before 2020"
+    assert rows[2]["cov"] == 1 and "cov" not in rows[1]
+    assert rows[1]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
+    assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows)
+    assert alpha["ive"] == 3 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
     # Created: a paper card's "Before 2020" sorts first; the file's date is kept as createdWas
     assert (alpha["created"], alpha["createdFrom"], alpha["createdBefore"]) == ("2019-01-01", "paper", 2020)
     # the Morgue's entry from Discord: picture only, never a live card
