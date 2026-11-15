@@ -4,8 +4,9 @@ style, stat-row encoding, status-word layers, template deviations, the header's 
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
-6; its outline, stroke: VERSION 7). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's
-build); its "version" is the VERSION it was gathered under (an older one: the build reads that card again).
+6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8). One record per card PSD, keyed by its git blob
+sha, in the card data's db/psd_details.json (the Card sync Action's build); its "version" is the VERSION it was gathered
+under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). text_of (the file's text), prune(cards, shas) to the tree. The build
@@ -18,7 +19,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from io import BytesIO
 from json import dumps
-from math import hypot
+from math import cos, floor, hypot, radians, sin
 from os import PathLike, environ
 from os.path import isdir
 from re import IGNORECASE, fullmatch, sub
@@ -41,11 +42,14 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 7                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"
+VERSION = 8                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
 MORE = ["…", "more", True]             # the tree's cut marker
+FX_PAST = 8                                 # px past its level's Stroke a Drop Shadow shows (the template's: hidden)
+FX_OPACITY = 15                             # % an effect needs to show (Crystal Guardian's 10%, 250 px: no)
+FX_BLENDS = ("normal", "multiply", "screen")   # the blends the mock-up draws
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
 HEADER_STARS = 10                           # star counts the header section lays out (1..10)
 HEADER_ICONS = 8                            # type icons it keeps spots for
@@ -262,9 +266,75 @@ def _stroke(layer) -> Optional[list]:
     return None
 
 
+def _num(value: float):
+    value = float(value)
+    return int(value) if value.is_integer() else round(value, 2)
+
+
+def _offset(distance: float, angle: float) -> tuple:
+    """A shadow's whole-pixel (dx, dy), as the fork's _shadow_offset: each axis rounded, a half away from zero."""
+    def away(v):
+        whole = floor(abs(v) + 0.5)
+        return whole if v >= 0 else -whole
+    return away(round(-distance * cos(radians(angle)), 6)), away(round(distance * sin(radians(angle)), 6))
+
+
+def _text_fx(layer) -> Optional[list]:
+    """The Drop Shadows and Outer Glows round a type layer's letters, its own and its groups' (VERSION 8), outermost
+    first, when one shows: an Outer Glow with one colour, or a Drop Shadow reaching FX_PAST px past its level's Stroke,
+    either at FX_OPACITY or more. Each: k (shadow, glow), size, spread, blend, color, opacity (x its layer's and parents'),
+    dx/dy (a shadow's), ws/wo (a Stroke set deeper: a group's effect is cast round it). Else None."""
+    from psd_tools.api.effects import DropShadow, OuterGlow, Stroke
+    from psd_tools.constants import StrokePosition
+    chain = [*reversed(list(_ancestors(layer))), layer]
+    levels = []                                 # (depth, opacity down to it, enabled effects)
+    opacity = 1.0
+    for depth, owner in enumerate(chain):
+        opacity *= owner.opacity / 255
+        try:
+            effects = [e for e in owner.effects if e.enabled] if owner.effects.enabled else []
+        except Exception:                       # an effects block psd-tools can't read
+            continue
+        levels.append((depth, opacity, effects))
+
+    def outline(e):
+        size = float(e.size)
+        return size if e.position == StrokePosition.OUTSIDE else size / 2 if e.position == StrokePosition.CENTER else 0.0
+
+    out, shows = [], False
+    for depth, op, effects in levels:
+        own = max((outline(e) for e in effects if isinstance(e, Stroke)), default=0.0)
+        deeper = max(((outline(e), float(e.opacity)) for d, _, es in levels if d > depth for e in es if isinstance(e, Stroke)),
+                     default=(0.0, 100.0))
+        for e in effects:
+            if not isinstance(e, (DropShadow, OuterGlow)):
+                continue
+            blend = str(e.blend_mode).rsplit(".", 1)[-1].lower()
+            try:
+                rgb = [round(float(_value(e.color[key]))) for key in (b"Rd  ", b"Grn ", b"Bl  ")]
+            except Exception:                   # a gradient glow, another colour model
+                continue
+            strength = float(e.opacity) * op
+            if blend not in FX_BLENDS or not strength > 0:
+                continue
+            shadow = isinstance(e, DropShadow)
+            fx = {"k": "shadow" if shadow else "glow", "size": _num(e.size), "spread": _num(e.choke if shadow else e.spread),
+                  "blend": blend, "color": rgb, "opacity": round(strength, 1)}
+            seen = True                         # a glow
+            if shadow:
+                fx["dx"], fx["dy"] = _offset(float(e.distance), float(e.angle))
+                seen = hypot(fx["dx"], fx["dy"]) + float(e.size) - own >= FX_PAST
+            if deeper[0] > 0:
+                fx.update(ws=_num(deeper[0]), wo=_num(deeper[1]))
+            shows |= seen and strength >= FX_OPACITY
+            out.append(fx)
+    return out if shows else None
+
+
 def _text(texts: list) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
-    A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke)."""
+    A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke); its
+    shadows and glows: "fx" (_text_fx)."""
     out = []
     for layer in texts:
         try:
@@ -294,6 +364,12 @@ def _text(texts: list) -> list:
             stroke = None
         if stroke:
             out[-1]["stroke"] = stroke
+        try:
+            fx = _text_fx(layer)
+        except Exception:                       # drawn without them
+            fx = None
+        if fx:
+            out[-1]["fx"] = fx
     return out
 
 
