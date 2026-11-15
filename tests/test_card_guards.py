@@ -1629,6 +1629,7 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
                                            (tmp_path / "gone.git", 1, "::warning::0 of 6 pushed blobs fetched: the rest by REST"))):
         repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
         temp.mkdir()
+        (temp / "cards.code").write_text("0\n")                     # Cards start's checkout done
         subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout", f"file://{origin}", str(repo)], check=True)
         _git(repo, "remote", "set-url", "origin", f"file://{url}")
         _git(repo, "config", "remote.origin.uploadpack", "sleep 1; git-upload-pack")      # GitHub's time
