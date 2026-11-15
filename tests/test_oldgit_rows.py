@@ -90,7 +90,7 @@ class FakeData:
         self.versions, self.psd, self.rereads, self.pictures, self.shares = versions, reads, {}, pictures, shares
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
-        self.eye_bars, self.eye_bars2 = {}, {}
+        self.eye_bars, self.eye_bars2, self.era_reads, self.look_reads = {}, {}, {}, {}
 
     def ocr_of(self, blob):
         return self._ocr.get(blob, {})
@@ -236,6 +236,23 @@ def test_the_bar_readers_eye_truth_wins(rows):
     assert (eye["value"], eye["method"], eye["confidence"]) == (printed, "eye", "sure")
     blind = rows.check_stats({"stats": printed}, {"best": printed}, False, False, eye=None)
     assert blind["confidence"] == "review"
+
+
+def test_first_repo_stats_need_an_eye_era_or_discord_read(rows):
+    """A first-repo row with no PSD stats: its two readers alone are not sure (one bias on the old templates); the
+    same look's Discord eye read, a calibrated era read or a reader agreeing with a sure Discord read is. HP 0 on a
+    creature's picture read: never sure."""
+    biased, shown = stats(4, 2, 4, 4), stats(5, 3, 5, 5)
+    pic = {"best": biased, "template": biased}
+    era = lambda v, sure: {"era": "A", "stats": {k: {"v": x, "sure": sure} for k, x in v.items()}}
+    check = lambda **kw: rows.check_stats(None, pic, False, False, first=True, **kw)
+    assert check()["confidence"] == "review"
+    assert (check(era=era(shown, True))["value"], check(era=era(biased, False))["confidence"]) == (shown, "review")
+    assert (check(looks=[("eye", shown)])["value"], check(looks=[("eye", shown)])["method"]) == (shown, "eye")
+    assert check(looks=[("read", biased)])["check"] == "the same look's Discord read"
+    assert check(looks=[("read", shown)])["confidence"] == "review"
+    zero = stats(0, 0, 4, 3)
+    assert rows.check_stats(None, {"best": zero, "template": zero}, False, False, creature=True)["confidence"] == "review"
 
 
 def test_two_creatures_told_by_eye_are_sure_halves(rows):

@@ -44,6 +44,8 @@ DERIVED = dirname(oi.OUT)
 OUT = join(DERIVED, "oldrows")
 CARD_CACHE = join(DERIVED, "matcher", "match", "cache", "cards.jsonl")
 BAR_TRUTH = join(DERIVED, "readers", "bars", "truth")   # the bar readers' by-eye stats (eye_*.json, by PNG blob)
+BAR_READS = join(DERIVED, "readers", "bars", "reads.jsonl")   # the era bar readers' calibrated reads (era_bars)
+VERDICTS = join(DERIVED, "match", "verdicts.jsonl")     # Discord pictures told as a git look (version_sure)
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
@@ -462,6 +464,23 @@ class Data:
                     self.eye_bars[blob] = t.get("stats")
                     if t.get("stats2"):                        # two creatures: the bottom half's rows
                         self.eye_bars2[blob] = t["stats2"]
+        self.era_reads, self.look_reads = {}, defaultdict(list)    # PNG blob -> its era read; look key -> Discord's
+        discord = {}
+        for r in oi.read_jsonl(BAR_READS) if exists(BAR_READS) else ():
+            if r.get("src") == "oldgit" and r.get("variant") == "png" and r.get("stats"):
+                self.era_reads[r["blob"]] = r
+            elif r.get("src") == "discord" and r.get("file"):
+                truth = r.get("truth") or {}
+                stats = r.get("stats") or {}
+                if truth.get("from") == "eye" and truth.get("stats"):
+                    discord[r["file"]] = ("eye", truth["stats"])
+                elif stats and all((s or {}).get("sure") for s in stats.values()):
+                    discord[r["file"]] = ("read", {k: s.get("v") for k, s in stats.items()})
+        for v in oi.read_jsonl(VERDICTS) if exists(VERDICTS) else ():
+            file = (v.get("file") or "") + (f"#c{v['cell']}" if v.get("cell") else "")
+            if v.get("verdict") == "version_sure" and not v.get("joke") and file in discord:
+                for key in (v.get("version") or {}).get("keys") or ():
+                    self.look_reads[key].append(discord[file])
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
         self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
         for r in list(self.psd.values()) + list(self.rereads.values()):
@@ -682,11 +701,24 @@ def field(value, method: str, sure: bool, check: str = "", why: str = "") -> dic
     return out
 
 
-def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, eye2=None) -> dict:
+def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, eye2=None, first=False, era=None,
+                looks=(), creature=False) -> dict:
     """The printed stats (keys: an item's HP/DEF bars): the bar readers' eye truth for the PNG first (eye: its
     stats, None when not readable by eye, False: none), else the picture's read (two readers), the PSD's digit rows
     where they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart
-    (two creatures read by eye, eye2 the bottom half's rows: both halves sure, never summed)."""
+    (two creatures read by eye, eye2 the bottom half's rows: both halves sure, never summed). A first-repo row with
+    no PSD stats (first) is sure only by the same look's Discord eye read, its era read (era: era_bars' row, sure by
+    its era's calibration) or a reader agreeing with the same look's sure Discord read (looks: [(how, stats)]); the
+    two readers alone share a bias on the 2020-22 templates. A creature's picture read with HP 0 is never sure."""
+    out = _check_stats(read, pic, two, square, keys, eye, eye2, first, era, looks)
+    v = out.get("value")
+    if creature and out["confidence"] == "sure" and out["method"] != "eye" and isinstance(v, dict) and v.get("hp") == 0:
+        out.update(confidence="review", why="HP 0 on a creature: a reader's miss")
+        out.pop("check", None)
+    return out
+
+
+def _check_stats(read, pic, two, square, keys, eye, eye2, first, era, looks) -> dict:
     def only(stats):
         return {k: stats[k] for k in keys} if stats and all(isinstance(stats.get(k), int) for k in keys) else None
     if two and int(two) <= 2 and eye and only(eye) and only(eye2):
@@ -716,6 +748,8 @@ def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, ey
     a, b = only(complete(pic.get("best"))), only(complete(pic.get("template")))
     if psd and a == psd:
         return field(psd, "picture", True, "psd")
+    if first and psd is None:
+        return first_stats(a, b, only, era, looks)
     if psd is None and a and a == b:
         return field(a, "picture", True, "second reader")
     if psd and a:
@@ -730,6 +764,28 @@ def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, ey
     else:
         out = field(None, "none", False, why="no stats read")
     out["reads"] = {"psd": psd, "picture": a, "second": b}
+    return out
+
+
+def first_stats(a, b, only, era, looks) -> dict:
+    """A first-repo row's stats with no PSD stats (check_stats): the same look's Discord eye read, else its era read
+    when sure on every stat, else a reader that agrees with the same look's sure Discord read; else review."""
+    seen = only({k: (s or {}).get("v") for k, s in ((era or {}).get("stats") or {}).items()})
+    era_sure = seen and all(((era or {}).get("stats") or {}).get(k, {}).get("sure") for k in seen)
+    told = [only(s) for how, s in looks if how == "eye" and only(s)]
+    disc = [only(s) for how, s in looks if how == "read" and only(s)]
+    reads = {"picture": a, "second": b, "era": seen, **({"era_name": era.get("era")} if era else {}),
+             **({"discord": told + disc} if told or disc else {})}
+    if told:
+        out = field(told[0], "eye", True, "the same look's Discord picture, by eye")
+    elif era_sure:
+        out = field(seen, "picture", True, f"era reader ({era.get('era')})")
+    elif any(x in disc for x in (a, b, seen) if x):
+        out = field(next(x for x in (a, b, seen) if x and x in disc), "picture", True, "the same look's Discord read")
+    else:
+        out = field(a or seen or b, "picture" if a or seen or b else "none", False,
+                    why="first repo, no PSD: no eye read, calibrated era read or same look's Discord read agrees")
+    out["reads"] = reads
     return out
 
 
@@ -765,7 +821,9 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
     if kind in STAT_KINDS or len(keys) >= 2:                   # an item's HP/DEF bars too
         size = (data.png.get(png["blob"]) or {}).get("size") or [0, 0]
         fields["stats"] = check_stats(read, pic, two, size[0] == size[1] and size[0] >= 2000, keys,
-                                      data.eye_bars.get(png["blob"], False), data.eye_bars2.get(png["blob"]))
+                                      data.eye_bars.get(png["blob"], False), data.eye_bars2.get(png["blob"]),
+                                      png.get("repo") == "first", data.era_reads.get(png["blob"]),
+                                      data.look_reads.get("b" + png["blob"][:20], ()), kind in STAT_KINDS)
     if kind in ABILITY_KINDS:
         fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,
@@ -1036,7 +1094,7 @@ def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
     off = picture_off(data, first["blob"], pngs[0]["blob"])
     found = {"ts": first["ts"], "date": first["date"], "commit": first["commit"], "blob": first["blob"],
              "path": first["path"], "author": first.get("author_mapped") or data.authors.get(first["author"], first["author"]),
-             "subject": first["subject"], "off": off}
+             "subject": first["subject"], "off": off, "repo": first.get("repo") or "old"}
     return found, first if off is not None and off > SAME_PICTURE else None
 
 

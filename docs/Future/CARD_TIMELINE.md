@@ -36,11 +36,17 @@ the card's Image versions on the website before the git versions. Cards that nev
    'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
    2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old
    card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
-   shared commit e-mail. Its PSDs are fetched only where needed (not yet: its rows read their fields off the picture).
+   shared commit e-mail. Its PSDs are fetched only where needed (not yet: its rows read their fields off the picture;
+   stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
+   with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a creature's HP 0
+   read off a picture is never sure).
    Its rows carry the badge "first repo"; each card's timeline stops at its first first-repo record; a Q5 text row
    whose commit now has a picture row is that row (the review page asks the owner to confirm the changed premise).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
-   (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card).
+   (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
+   one in a Meme folder: a joke on it). A lost first-repo file whose picture is a live card's card-sure Discord picture
+   joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old name; or a
+   'second picture', an older look kept as a numbered file).
 1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads with Waxwell
    (the Mac's bot token, not production; owner 11-13), resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:
@@ -98,7 +104,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
    Reposts link only pictures of one card's one look. A card-sure draft first posted in a card channel (port,
    update-NN-port, card-classification, ideas-discussion, new-cards) before any meme repost of it (its own or a
-   twin's) is the card's look, not a joke picture (`shown_first`; the pictures behind open owner questions stay as
+   twin's) is the card's look, not a joke picture (`shown_first`; never a picture the first repo filed only in a Meme
+   folder, the same bytes, or near one while the eye hasn't told it; the pictures behind open owner questions stay as
    built). Outputs under `derived/match/`.
    Then `commands/discord_morgue.py` sorts the lost cards and the old repo's into Morgue candidates (joke cards and
    cards really played: the owner's answers Q1, Q2), ideas never ported (review only) and the rest (already in
@@ -202,7 +209,7 @@ the card's Image versions on the website before the git versions. Cards that nev
    the earliest confident appearance (a named paper photo: "Before 2020", source paper card, sorting before every day;
    else a card-sure picture, the first repo, the old repo, the card repo; an exact head of a 2019 balance list whose
    card's first picture keeps that name by eye (`eye_lines.json` `heads`, source 'changelog'); a PSD the old repo added before any PNG of the card, 'old
-   repo (PSD)': `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
+   repo (PSD)', the first repo's 'first repo' (psd): `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
    date nothing) against `site/Card Creation Dates.json`: same, earlier
    (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and

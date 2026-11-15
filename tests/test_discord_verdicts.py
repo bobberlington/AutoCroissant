@@ -384,3 +384,31 @@ def test_a_look_shown_in_a_card_channel_before_its_meme_repost_is_no_joke():
                  row("fireball", [post("1013", "new-cards")])):    # an open owner question: as built
         dv.shown_first(kept, {}, {"a": 1001 if kept["card"] == "wendy" and len(kept["posts"]) == 1 else 1025})
         assert kept["joke"] and kept["joke_draft"]
+    copy = row("the-puppet", [post("1024", "ideas-discussion"), post("1030", "meme-cards", True)])
+    dv.shown_first(copy, {}, {"a": 1030}, lambda r, whole: "Cards/Meme/5 Stars/The_Puppet.png")   # the first repo's
+    assert copy["joke"] and copy["meme_file"] == "Cards/Meme/5 Stars/The_Puppet.png"            # meme file: a joke
+
+
+def test_a_meme_copy_is_the_first_repos_meme_only_file_or_near_and_untold(tmp_path):
+    """meme_files: the same bytes as a first-repo PNG filed only under Meme folders, or near one (whole within
+    TWIN_BITS) while the eye hasn't told the picture; a blob also in a card folder is no meme copy."""
+    import hashlib
+    import json
+    data, other = b"meme picture", b"card picture"
+    blob = lambda b: hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
+    (tmp_path / "attachments").mkdir()
+    (tmp_path / "attachments" / "m.png").write_bytes(data)
+    (tmp_path / "attachments" / "c.png").write_bytes(other)
+    base = tmp_path / "derived" / "oldgit"
+    base.mkdir(parents=True)
+    h = {"p": "0" * 16, "d": "0" * 16, "q": "0" * 64}
+    versions = [{"blob": blob(data), "path": "Cards/Meme/5 Stars/X.png", "ext": "png", "repo": "first"},
+                {"blob": blob(other), "path": "Cards/Meme/5 Stars/Y.png", "ext": "png", "repo": "first"},
+                {"blob": blob(other), "path": "Items/Active/2 Stars/Y.png", "ext": "png", "repo": "first"}]
+    (base / "versions.jsonl").write_text("".join(json.dumps(v) + "\n" for v in versions))
+    (base / "reads.jsonl").write_text(json.dumps({"blob": blob(data), "kind": "png", "look": {"whole": h}}) + "\n")
+    copy = dv.meme_files(str(tmp_path))
+    assert copy({"file": "attachments/m.png"}, None) == "Cards/Meme/5 Stars/X.png"
+    assert copy({"file": "attachments/c.png"}, None) is None
+    assert copy({"file": "attachments/c.png"}, dict(h)) == "near Cards/Meme/5 Stars/X.png"
+    assert copy({"file": "attachments/c.png", "eye": "eye: its own card"}, dict(h)) is None

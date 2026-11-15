@@ -261,8 +261,8 @@ def created_proposals(created: dict) -> dict:
         out[key] = {"date": c["date"], "sort": c.get("sort") or c["date"],
                     "source": "old repo" if source == "old repo (PSD)" else source,
                     "status": c["status"], "was": (c.get("file") or {}).get("date")}
-        if source == "old repo (PSD)":
-            out[key]["psd"] = True                 # the old repo's PSD, added before any PNG of the card
+        if source == "old repo (PSD)" or ours.get("psd"):
+            out[key]["psd"] = True                 # a PSD (old or first repo), added before any PNG of the card
         if ours.get("as"):
             out[key]["as"] = ours["as"]
     return out

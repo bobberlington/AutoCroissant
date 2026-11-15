@@ -31,6 +31,7 @@ PICTURE_GAP = 4.0           # bits: a picture match with nothing else behind it 
 OLD_WORD = re.compile(r"(^|_| )old(_| |$)", re.IGNORECASE)
 BACKUP = re.compile(r"(^|[_ -])(copy|bak|backup)([_ -]|$)", re.IGNORECASE)
 SECOND = re.compile(r"^(.*?\D)[ _]?([2-9])$")   # 'Grapes2', 'Bag_of_Good 2': a card's second picture file
+EYE = join(OUT, "eye.json")  # by eye: {ties: {old id: {key, status, why}}}: a lost first-repo-only file's live card
 
 
 # ========================
@@ -268,6 +269,7 @@ def map_main():
                 return ("live", k), "tracked"
         return None, None
 
+    ties = (json.load(open(EYE)) if os.path.exists(EYE) else {}).get("ties") or {}
     commits = tc_history(head)
     tracked = follow_tc(list(today_tree), commits)
     init = {p: v[0] for p, v in ls_tree(OG, TC_INIT).items()}
@@ -472,11 +474,21 @@ def map_main():
         if last_read:
             record["read"] = {k: last_read.get(k) for k in ("title", "type", "stars", "types", "stats")}
         cards[oid] = record
+        meme = any("/Meme/" in p for p in old["paths"])
         if not target and first_only:                         # the first repo's 'Grapes2': a second picture of a card
             base = SECOND.match(stems[0]) if len(stems) == 1 else None
             hit = names.get(alnum(base.group(1))) if base else None
             if hit and len(hit) == 1 and next(iter(hit))[0] == "live":
-                record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
+                if meme:                                       # a meme folder's copy: a joke on it, evidence only
+                    evidence["meme_copy"] = True
+                else:
+                    record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
+        tie = ties.get(oid) if not target and first_only and not meme else None
+        if tie and tie.get("key") in stats:                    # by eye: the picture is that live card's (Blooper)
+            record.update(key=tie["key"], status=tie.get("status") or "live", confidence="sure", how=["picture", "eye"],
+                          eye=tie.get("why"))
+            if record["status"] == "live":
+                by_key[tie["key"]].append(oid)
         if first_only:
             record["repo"] = "first"
         if target:

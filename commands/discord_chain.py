@@ -1662,9 +1662,10 @@ class Chain:
                 for pic in (p for p in e["pictures"] if p["id"] not in weak and p.get("date")):
                     found.append((dm.epoch(pic["date"]), "discord", {"picture": pic["id"], "channel": pic["channel"],
                                                                      "as": e.get("as")}))
-            elif e["kind"] == "old repo":
-                found.append((dm.epoch(e["date"]), "old repo (PSD)" if e.get("psd_only") else e.get("badge") or "old repo",
-                              {"commit": e["commit"], "as": e.get("as")}))
+            elif e["kind"] == "old repo":           # a first-repo PSD: 'first repo' (psd), else 'old repo (PSD)'
+                psd = e.get("psd_only") and e.get("badge") != "first repo"
+                found.append((dm.epoch(e["date"]), "old repo (PSD)" if psd else e.get("badge") or "old repo",
+                              {"commit": e["commit"], "as": e.get("as"), "psd": True if e.get("psd_only") else None}))
         for row in rows_all:                       # every card-sure picture counts, its look told or not
             if row.get("first") and not row.get("created_review") and not row.get("paper") and \
                     not row.get("joke_draft") and not (row.get("joke") and row["verdict"] != "version_sure") and \
@@ -1679,7 +1680,8 @@ class Chain:
                     found.append((dm.epoch(f["date"]), "changelog", {"fact": f["id"], "channel": f.get("channel")}))
         first = (getattr(inputs, "psd_first", None) or {}).get(card["key"])
         if first and first.get("ts"):              # a PSD added before any PNG: a git appearance (S6)
-            found.append((first["ts"], "old repo (PSD)", {"commit": first.get("commit")}))
+            found.append((first["ts"], "first repo" if first.get("repo") == "first" else "old repo (PSD)",
+                          {"commit": first.get("commit"), "psd": True}))
         if card.get("fs"):
             found.append((card["fs"], "old repo (PSD)" if card.get("fs_psd") else FS_SOURCE.get(card.get("fs_from"), "git"),
                           {}))

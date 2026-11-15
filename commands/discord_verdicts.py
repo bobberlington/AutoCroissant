@@ -46,6 +46,7 @@ Outputs under the archive's derived/match/ (never a repo): verdicts.jsonl, lost_
 each sheet's cells drawn), checks/. Ids are stable: P-<sha256 12> (a cell: -c<n>), LC-<sha256 10> (-c<n>). No message
 text, posters or authors anywhere (owner 2026-11-13).
 """
+import hashlib
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
 from json import loads
@@ -65,6 +66,7 @@ from global_config import DATA_BRANCH
 OUT = ("derived", "match")
 CATALOGUE_PICTURES = ("derived", "catalogue", "pictures.jsonl")
 OLD_LOST = ("derived", "oldgit", "lost.json")
+OLD_FILES = (("derived", "oldgit", "versions.jsonl"), ("derived", "oldgit", "reads.jsonl"))   # the repos' files, looks
 OLD_MAP = ("derived", "oldgit", "map.json")
 MORGUE_DIR = "MDW/The Morgue/"                   # build_site MORGUE: retired cards
 PAPER_IDS = {"1331913819563360288"}            # 'Old stuff' thread: photos of paper cards (owner Q6=A: never dates)
@@ -1040,18 +1042,51 @@ def meme_dates(images: dict, by_sha: dict, records: dict, morgue: set) -> dict:
     return found
 
 
-def shown_first(row: dict, image: dict, memes: dict) -> None:
+def shown_first(row: dict, image: dict, memes: dict, meme_copy: Callable = lambda row, whole: None) -> None:
     """A card's picture (a draft, or a look not told) shown in a played or card channel (SHOWN_FIRST) before any meme
     repost of it is the card's, dated by its other posts: no joke picture (JOKE_ASKED: kept for the owner's open
-    questions)."""
+    questions; meme_copy: a picture the first repo filed only in a Meme folder stays a joke)."""
     if not row.get("joke") or row["verdict"] not in ("draft", "version_unsure") or not row.get("card") or \
             row["card"] in JOKE_ASKED:
         return
     posts = sorted((p for p in row["posts"] if dating(p)), key=lambda p: int(p["message"]))
     meme = memes.get(row["sha256"])
     if posts and meme and SHOWN_FIRST.fullmatch(posts[0]["channel"] or "") and int(posts[0]["message"]) < meme:
+        whole = image.get("whole") if row.get("cell") is None else (image["cells"][row["cell"] - 1] or {}).get("whole")
+        found = meme_copy(row, whole)
+        if found:
+            row["meme_file"] = found
+            return
         row.update(joke=False, shown_first={"channel": posts[0]["channel"], "date": posts[0]["date"]})
         row.pop("joke_draft", None)
+
+
+def meme_files(root: str) -> Callable:
+    """meme_copy(row, whole) for shown_first: the first repo's PNG filed only in Meme folders that the picture is (the
+    same bytes), or near (whole within TWIN_BITS) when the eye hasn't told the picture (God Tamer's port picture
+    hashes 0.2 bits from the joke 'doGma T er': only its title differs); None: neither."""
+    paths = defaultdict(set)
+    for v in dm.read_jsonl(join(root, *OLD_FILES[0])):
+        if v.get("ext") == "png":
+            paths[v["blob"]].add(v["path"])
+    first = {v["blob"] for v in dm.read_jsonl(join(root, *OLD_FILES[0])) if v.get("repo") == "first"}
+    only = {b: sorted(p)[0] for b, p in paths.items() if b in first and all("/Meme/" in x for x in p)}
+    looks = [(r["look"]["whole"], only[r["blob"]]) for r in dm.read_jsonl(join(root, *OLD_FILES[1]))
+             if r.get("blob") in only and isinstance((r.get("look") or {}).get("whole"), dict)]
+
+    def meme_copy(row: dict, whole) -> Optional[str]:
+        if row.get("cell") is None and row.get("file"):
+            with open(join(root, row["file"]), "rb") as f:
+                data = f.read()
+            blob = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+            if blob in only:
+                return only[blob]
+        if isinstance(whole, dict) and not row.get("eye") and not row.get("owner"):
+            near = [p for h, p in looks if dm.hash_distance(whole, h) <= dm.TWIN_BITS]
+            if near:
+                return f"near {near[0]}"
+        return None
+    return meme_copy
 
 
 def repost_groups(rows: list, images: dict, by_sha: dict) -> dict:
@@ -1342,12 +1377,13 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         by_owner(row, owner, versions, cards)
     reposts = repost_groups(rows, images, by_sha)
     memes = meme_dates(images, by_sha, records, morgue)
+    meme_copy = meme_files(root)
     morgue_eye = {k for k, e in (dm.read_json(join(root, *MORGUE_EYE), {}) or {}).items()   # the Morgue eye's own
                   if isinstance(e, dict) and e.get("status") not in ("renamed", "live")}   # lost cards
     for row in rows:
         image = images[by_sha[row["sha256"]][0]]
         if group_id(row["sha256"], row.get("cell")) not in morgue_eye:      # its eye's entry: stays the Morgue's
-            shown_first(row, image, memes)
+            shown_first(row, image, memes, meme_copy)
         row["size_class"] = classes.get(row["sha256"])
         if row.get("cell") is None:
             row.update(whole=image.get("whole"), art=image.get("art"))
@@ -1381,7 +1417,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
              "methods", "maybe",
              "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
-             "title_read", "card_evidence", "joke_draft", "shown_first", "posts"]
+             "title_read", "card_evidence", "joke_draft", "shown_first", "meme_file", "posts"]
     rows.sort(key=lambda r: (min(int(p["message"]) for p in r["posts"]), r.get("cell") or 0))
     dm.write_text(paths.verdicts, "".join(dm.dumps({k: r[k] for k in order if r.get(k) not in (None, [], "")} |
                                                    {"joke": r["joke"]}, ensure_ascii=False) + "\n" for r in rows))
