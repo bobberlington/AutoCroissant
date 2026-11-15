@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -98,6 +98,20 @@ def test_stroke_is_the_layers_or_its_groups(records, clone):
     for rel, lid in (("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 23), ("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", 596)):
         got[rel.rsplit("/", 1)[1]] = pd._stroke(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
     assert got == {"Afraid.psd": [0, 0, 0, 6], "Dark_Matter_Swordsman.psd": None}
+
+
+def test_shadows_and_glows_that_show(records, clone):
+    """VERSION 8: what the mock-up casts under typed letters. Frog's title: its own 111 px soft shadow, and the Text
+    group's 4 px one cast round the title's Stroke (ws, wo); Mini Doomer's 4 px shadow under its 7 px Stroke and Crystal
+    Guardian's 10% one: none."""
+    from psd_tools import PSDImage
+    def fx(rel):
+        return {pd.layer_path(x): pd._text_fx(x) for x in PSDImage.open(str(clone / rel)).descendants() if x.kind == "type"}
+    assert not any(t.get("fx") for t in records[DOOMER]["text"])
+    assert fx("Creatures/Everhood/5 Stars/Frog.psd")["Text/Name"] == [
+        {"k": "shadow", "size": 2, "spread": 0, "blend": "multiply", "color": [0, 0, 0], "opacity": 100.0, "dx": 0, "dy": 4, "ws": 7, "wo": 97},
+        {"k": "shadow", "size": 111, "spread": 49, "blend": "normal", "color": [249, 166, 47], "opacity": 35.0, "dx": 0, "dy": 0}]
+    assert not any(fx("Creatures/Hollow Knight/2 Stars/Crystal_Guardian.psd").values())
 
 
 def test_effects_switch_off_marks_every_effect_off(clone):
