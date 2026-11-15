@@ -1144,18 +1144,18 @@ def build(root: str, names: Names, vocabulary: set, log=print) -> dict:
                                                              else "asked as a question" if fact.get("field")
                                                              else DOUBT["field"])})
     review.sort(key=lambda r: (r["date"], r["line"]))
-    pushes, rows = push_facts(root, names, counts)
+    pushes, notices = push_facts(root, names, counts)
     facts += pushes
     write_text(join(out, "facts.jsonl"), "".join(dumps(f, ensure_ascii=False) + "\n" for f in facts))
-    write_text(join(out, "firstrepo.jsonl"), "".join(dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    write_text(join(out, "firstrepo.jsonl"), "".join(dumps(r, ensure_ascii=False) + "\n" for r in notices))
     write_text(join(out, "review.jsonl"), "".join(dumps(r, ensure_ascii=False) + "\n" for r in review))
     summary = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "facts": len(facts),
-               "first_repo_rows": len(rows), "review": len(review), "counts": dict(sorted(counts.items())),
+               "first_repo_notices": len(notices), "review": len(review), "counts": dict(sorted(counts.items())),
                "cards": len({f["card"] for f in facts if f.get("card")} |
                             {c for f in facts for c in f.get("cards", [])}),
                "cards_with_sure_facts": len({f["card"] for f in facts if f.get("confidence") == "sure"})}
     write_json(join(out, "summary.json"), summary)
-    log(f"facts {len(facts)}, first repo rows {len(rows)}, review {len(review)}")
+    log(f"facts {len(facts)}, first repo notices {len(notices)}, review {len(review)}")
     return summary
 
 
@@ -1315,10 +1315,10 @@ def authors() -> dict:
 
 
 def push_facts(root: str, names: Names, counts: Counter) -> tuple:
-    """Evidence facts (one per commit naming cards) and first-repo rows (notices naming exactly one card: Created
+    """Evidence facts (one per commit naming cards) and first-repo push notices (naming exactly one card: Created
     hints)."""
     who = authors()
-    facts, rows = [], []
+    facts, notices = [], []
     for m in messages(root, GITHUB_ID):
         date = iso(m["timestamp"])
         if date >= OLD_START:
@@ -1350,10 +1350,10 @@ def push_facts(root: str, names: Names, counts: Counter) -> tuple:
             counts["push notices also listing other things"] += 1      # evidence only
             continue
         counts["push notices naming one card"] += 1
-        rows += [{"id": "q" + short_id(m["id"], sha), "card": union[0], "date": date, "author": who.get(raw, raw),
-                  "subject": subject.strip(), "message": m["id"], "commit": sha} for sha, subject, raw in own]
+        notices += [{"id": "q" + short_id(m["id"], sha), "card": union[0], "date": date, "author": who.get(raw, raw),
+                     "subject": subject.strip(), "message": m["id"], "commit": sha} for sha, subject, raw in own]
     counts["push cards named"] = len({c for f in facts for c in f["cards"]})
-    return facts, rows
+    return facts, notices
 
 
 def vocabulary_of(root: str) -> set:

@@ -31,10 +31,10 @@ build   Under derived/chain/:
                         every field is sure on both sides and unchanged (as the old rows; their types are never sure,
                         so they never fold).
         created.json    Created = the earliest confident appearance (a named paper photo: "Before 2020", owner Q6; a
-                        card-sure Discord picture, the old repo, the card repo) with its source, against site/Card
-                        Creation Dates.json: same, earlier (proposed), later (review only: never moved later), new (no
-                        date yet), hand (never touched). sort orders "Before 2020" first. A changelog line or a
-                        first-repo push is a hint to review only when earlier than the Created date in use (the
+                        card-sure Discord picture, the first repo, the old repo, the card repo) with its source, against
+                        site/Card Creation Dates.json: same, earlier (proposed), later (review only: never moved later),
+                        new (no date yet), hand (never touched). sort orders "Before 2020" first. A changelog line or a
+                        first-repo push notice is a hint to review only when earlier than the Created date in use (the
                         file's for 'later', the owner's pick when answered).
         review.jsonl    what the chain keeps out (stable ids): looks not told, named-only pictures before the card's
                         first picture evidence (one section to confirm in bulk), joke drafts, unsure fields, facts a
@@ -1747,8 +1747,8 @@ class Chain:
 
     def owner_created(self, cid: str, out: dict, r: dict, base: tuple) -> None:
         """The owner's answers on Created: a status item's pick (base: ours, the file's, a date given) and the earlier
-        hints said yes to (a changelog line, a first-repo row, a Morgue entry's picture); the earliest wins and its
-        source is kept (owner.source, shaped like ours: the preview's source for status 'owner'). 'hand' is never
+        hints said yes to (a changelog line, a first-repo push notice, a Morgue entry's picture); the earliest wins and
+        its source is kept (owner.source, shaped like ours: the preview's source for status 'owner'). 'hand' is never
         touched; a hint not earlier than base is never one (the review page leaves it out)."""
         if not self.rulings:
             return
@@ -1835,10 +1835,11 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
                          read_only=True, order=n, when=a.get("when"), why=f"the owner's answer ({a.get('when')})")
     dm.write_json(paths.created, {
         "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a named paper photo: 'Before "
-                 "2020', owner Q6; a card-sure Discord picture, the old repo, the card repo) with its source; status "
-                 "against site/Card Creation Dates.json: same, earlier (proposed), later (review only, the file's date "
-                 "kept), new (proposed), hand (untouched). date = what the preview uses, sort orders 'Before 2020' "
-                 "first. Named-only pictures, changelog lines and first-repo rows before it are review only.",
+                 "2020', owner Q6; a card-sure Discord picture, the first repo, the old repo, the card repo) with its "
+                 "source; status against site/Card Creation Dates.json: same, earlier (proposed), later (review only, "
+                 "the file's date kept), new (proposed), hand (untouched). date = what the preview uses, sort orders "
+                 "'Before 2020' first. Named-only pictures, changelog lines and first-repo push notices before it are "
+                 "review only.",
         "generated": dm.now_iso(), "cards": created})
     if inputs.rulings:
         dm.write_json(paths.ruled, {"about": "The review page's answers (derived/review/rulings.json) this build acted "
