@@ -9624,14 +9624,19 @@ def _vote(preview: Optional[Image.Image], png: Image.Image, profile: bytes) -> O
     """icc_vote's count over an image in the PSD's own values (its stored preview, or a render of it)."""
     if preview is None or preview.mode not in ("RGB", "RGBA") or preview.size != png.size:
         return None
-    raw, conv = _flat(preview)[..., :3].astype(np.int16), _flat(post_process(preview, None, profile))[..., :3].astype(np.int16)
-    official = _flat(png)[..., :3].astype(np.int16)
-    moved = np.abs(raw - conv).max(axis=2) >= ICC_MOVED
-    count = int(moved.sum())
+    flat = [_flat(image) for image in (preview, post_process(preview, None, profile), png)]
+    # one int16 plane per channel: numpy's max/sum over a size-3 last axis is slow
+    raw, conv = ([image[..., c].astype(np.int16) for c in range(3)] for image in flat[:2])
+    moved = np.abs(raw[0] - conv[0])
+    for c in (1, 2):
+        np.maximum(moved, np.abs(raw[c] - conv[c]), out=moved)
+    moved = moved >= ICC_MOVED
+    count = int(np.count_nonzero(moved))
     if not count:
         return 0.0, 0
-    nearer = np.abs(raw - official).sum(axis=2) < np.abs(conv - official).sum(axis=2)
-    return float(nearer[moved].mean()), count
+    official = [flat[2][..., c][moved].astype(np.int16) for c in range(3)]
+    to_raw, to_conv = (sum(np.abs(planes[c][moved] - official[c]) for c in range(3)) for planes in (raw, conv))
+    return float((to_raw < to_conv).mean()), count
 
 
 def export_icc(psd: PSDImage, png: Image.Image) -> bool:
