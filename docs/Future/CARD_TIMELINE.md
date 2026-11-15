@@ -38,8 +38,11 @@ the card's Image versions on the website before the git versions. Cards that nev
    card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
    shared commit e-mail. Its card PSDs are fetched too (11-15, one batched read-only fetch: 1,133 blobs): its rows
    read their fields from the PSD of the same commit (else the nearest) checked against the PNG, as the old repo's
-   do, a disagreement to review (stars a PSD of another look draws are sure when they are the folder's, which never
-   changes and is today's; a buff's arrow, at the top right on 2022-23 cards, is a header icon); a row whose PSD is
+   do, a disagreement to review (stars a PSD of another look draws stay in review even when the folder agrees: the
+   picture may be older, Nosk prints 3 where PSD and folder say 4; a buff's arrow, at the top right on 2022-23
+   cards, is a header icon; a type twice that today's card has once is one icon drawn as two layers, to review; an
+   item's read type no header icon shows is art, to review; a repeated layer no Types/ picture names is art beside a
+   type icon or the stars drawn as many times, else to review; '%%' reads '%': a font with no % glyph); a row whose PSD is
    missing or unread reads its fields off the picture (its
    stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
    with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read

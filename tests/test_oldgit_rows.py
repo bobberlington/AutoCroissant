@@ -85,9 +85,31 @@ def test_types_are_checked_by_their_icons_pictures(rows):
     assert rows.check_types([], sword, True, names | {"equip"}, "minion")["value"] == ["offensive_minion"]
     assert rows.check_types([], sword, True, names | {"equip"}, "item")["value"] == ["equip"]
     stars = [icon("Pinwheel", ("buff", 40.0), ("food", 41.0)), icon("Pinwheel copy", ("buff", 40.0), ("food", 41.0))]
-    assert rows.check_types([], stars, True, names)["confidence"] == "sure"
+    assert rows.check_types([], stars, True, names, stars=2)["confidence"] == "sure"      # the stars, drawn so
+    tomato_icon = [icon("tomato", ("food", 10.3), ("buff", 33.4))]
+    assert rows.check_types([], tomato_icon + stars, True, names, stars=5)["confidence"] == "sure"   # art beside
+    cubes = rows.check_types([], stars, True, names, "creature", ["unknown", "unknown"], 5)   # Kyle's: no stars
+    assert (cubes["confidence"], cubes["value"]) == ("review", [])
     unknown = rows.check_types([], [icon("Layer 3", ("debuffstack", 41.0), ("buff", 42.5))], True, names)
     assert (unknown["confidence"], unknown["value"]) == ("review", [])
+
+
+def test_one_icon_drawn_twice_and_an_items_art_go_to_review(rows):
+    """A type twice that today's card has once: one icon drawn as two layers (Smoldering's stacked debuff arrows);
+    twice today too stays (Pandora). An item's read type no header icon shows: art (Paintbrush)."""
+    names = {"debuff", "debuffupgrade", "panda", "support", "fire"}
+    icon = lambda layer, *near: {"layer": layer, "near": [list(n) for n in near]}
+    arrow = lambda layer: icon(layer, ("debuff", 0.8), ("debuffupgrade", 22.5))
+    smoldering = rows.check_types(["debuff"], [arrow("debuff"), arrow("debuff copy")], True, names, "debuff",
+                                  ["debuffupgrade"])
+    assert (smoldering["confidence"], smoldering["value"]) == ("review", ["debuff", "debuff"])
+    pandas = [icon("panda", ("panda", 1.0), ("fire", 40.0)), icon("panda copy", ("panda", 1.0), ("fire", 40.0))]
+    pandora = rows.check_types(["panda", "panda"], pandas, True, names, "creature", ["panda", "panda"])
+    assert pandora["confidence"] == "sure"
+    support = [icon("support", ("support", 2.1), ("fire", 52.9))]
+    brush = rows.check_types(["support", "fire"], support, True, names, "item", ["support"])
+    assert (brush["confidence"], brush["value"]) == ("review", ["support", "fire"])
+    assert rows.check_types(["support", "fire"], support, True, names, "creature")["confidence"] == "sure"
 
 
 class FakeData:
@@ -125,9 +147,9 @@ def test_stars_are_the_drawn_ones_checked_by_the_folder(rows):
     later = [row("a", 1, 0)]
     rows.confirm_stars(later, {"stars": 2})
     assert later[0]["fields"]["stars"]["confidence"] == "review"
-    other = {"blob": "c", "path": "Creatures/X/2 Stars/A.png", "fields": {"stars": rows.check_stars(2, 2, False, "creature")}}
-    rows.confirm_stars([other], {"stars": 2})                  # another look's PSD drawing the folder's count
-    assert other["fields"]["stars"]["confidence"] == "sure"
+    other = {"blob": "c", "path": "Creatures/X/4 Stars/A.png", "fields": {"stars": rows.check_stars(4, 4, False, "creature")}}
+    rows.confirm_stars([other], {"stars": 4})     # another look's PSD draws the folder's 4; the picture prints 3 (Nosk)
+    assert (other["fields"]["stars"]["value"], other["fields"]["stars"]["confidence"]) == (4, "review")
     off = {"blob": "d", "path": "Creatures/X/2 Stars/A.png", "fields": {"stars": rows.check_stars(2, 1, False, "creature")}}
     rows.confirm_stars([off], {"stars": 2})
     assert off["fields"]["stars"]["confidence"] == "review"
@@ -148,6 +170,7 @@ def test_the_ability_is_checked_both_ways_and_the_name_as_printed(rows):
     reworded = [line("Attacks inflict paralysis for 2 turns.", 0.75)]
     assert rows.check_ability({"ability": text}, reworded, "creature", False, vocab)["confidence"] == "review"
     assert rows.check_ability({"ability": "[undread] +2 DEF"}, [], "field")["value"] == "[undead] +2 DEF"
+    assert rows.check_ability({"ability": "a further 25%% SPD"}, [], "field")["value"] == "a further 25% SPD"
     assert rows.check_name("WX-78", "wx-", "Wx78", {"WX-78"}, True)["value"] == "WX-78"
     kit = rows.check_name("ALL-PURPOSE MEDICAL KIT", None, "All Purpose Medical Kit2", (), False)
     assert (kit["value"], kit["confidence"]) == ("All-Purpose Medical Kit", "sure")

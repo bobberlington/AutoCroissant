@@ -512,7 +512,8 @@ class Data:
             names = {key, card.get("display_name") or key, (edits.get(key) or {}).get("name") or key}
             s = card.get("stats") or {}
             self.today[key] = {"names": names, "creatures": len(card.get("creatures") or ()), "type": card.get("card_type"),
-                               "stars": card.get("stars"), "ability": card.get("ability"), "stats": valid_stats(
+                               "stars": card.get("stars"), "types": list(card.get("types") or ()),
+                               "ability": card.get("ability"), "stats": valid_stats(
                                    {k: s.get(w) for k, w in zip(ORDER, ("hp", "defense", "attack", "speed"))})}
             self.vocab.update(card_words(card.get("ability") or ""))
 
@@ -667,9 +668,9 @@ def check_stars(folder, drawn, star_look: bool, kind: str):
 
 
 def confirm_stars(rows: list, today: dict):
-    """Stars across a card's rows: one picture filed under two star folders -> review; a folder the PSD can't confirm
-    (no drawn stars, or the PSD's look is another's but it draws the folder's count) is sure when it never changes and
-    today's stars are the same."""
+    """Stars across a card's rows: one picture filed under two star folders -> review; a folder no PSD draws stars
+    for is sure when it never changes and today's stars are the same. A PSD of another look drawing the folder's
+    count stays in review: the picture may be older than both (Nosk 2023-03-19 prints 3, PSD and folder say 4)."""
     folders = defaultdict(set)
     for row in rows:
         folders[row["blob"]].add(folder_stars(row["path"]))
@@ -682,14 +683,10 @@ def confirm_stars(rows: list, today: dict):
         if len(moved) > 1:
             f.update(confidence="review", why=f"the same picture is filed under {' and '.join(map(str, moved))} Stars")
             f.pop("check", None)
-        elif f["confidence"] != "sure" and len(every) == 1 and today.get("stars") in every and f["value"] in every:
-            reads = f.get("reads") or {}
-            if f["method"] == "folder" and not reads.get("drawn"):
-                f.update(confidence="sure", check="today, never changed")
-                f.pop("why", None)
-            elif f["method"] == "psd" and reads.get("drawn") == reads.get("folder") == f["value"]:
-                f.update(confidence="sure", check="drawn, folder; today, never changed")
-                f.pop("why", None)
+        elif f["method"] == "folder" and not (f.get("reads") or {}).get("drawn") and len(every) == 1 \
+                and today.get("stars") in every and f["value"] in every:
+            f.update(confidence="sure", check="today, never changed")
+            f.pop("why", None)
 
 
 def valid_stats(stats, high: bool = False):
@@ -846,7 +843,7 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
         fields["stars"] = stars
     if read is not None:
         fields["types"] = check_types(list(read.get("types") or []), data.icons.get(psd["blob"]), same_look,
-                                      data.type_names, kind)
+                                      data.type_names, kind, today.get("types"), (stars or {}).get("value"))
     pic = data.pictures.get(png["blob"]) or {}
     count = max(len((read or {}).get("creatures") or ()), today.get("creatures") or 0)
     two = kind in STAT_KINDS and bool(count or png["old_id"] in SPLITS or (pic.get("halves") or {}).get("apart", 0) >= TWO_ROWS)
@@ -889,35 +886,52 @@ def today_types(types: list, kind: str) -> list:
     return [MINION_ICONS.get(t, t) for t in types] if kind == "minion" else types
 
 
-def check_types(read: list, icons, same_look: bool, names: set, kind: str = "") -> dict:
-    """The types (check_icons) under today's names; the icons' own names kept as raw when they differ."""
-    out = check_icons(read, icons, same_look, names)
+def check_types(read: list, icons, same_look: bool, names: set, kind: str = "", today=None, stars=None) -> dict:
+    """The types (check_icons) under today's names; the icons' own names kept as raw when they differ. A type twice
+    that today's card (today: its types; None: no card today) has fewer times goes to review: one icon drawn as two
+    layers (Smoldering's stacked 'debuff' pair is one double arrow, Mr Jawsum's two drops print one)."""
+    out = check_icons(read, icons, same_look, names, kind, stars)
     value = out["value"]
     if value is not None and today_types(value, kind) != value:
         out["raw"], out["value"] = value, today_types(value, kind)
+    twice = [t for t, n in Counter(out["value"] or ()).items() if n > 1 and n > list(today or ()).count(t)]
+    if twice and out["confidence"] == "sure":
+        out.update(confidence="review", why=f"'{twice[0]}' twice" + (", today's card has fewer" if today is not None
+                                                                      else "") + ": one icon drawn as two layers?")
+        out.pop("check", None)
     return out
 
 
-def check_icons(read: list, icons, same_look: bool, names: set) -> dict:
+def check_icons(read: list, icons, same_look: bool, names: set, kind: str = "", stars=None) -> dict:
     """The PSD's types, checked by its header icons' pictures: an icon layer's picture names its type (where the
-    parser missed the layer's name, or the name is another type's); a read type no icon layer explains stays."""
+    parser missed the layer's name, or the name is another type's); a read type no icon layer explains stays, but on
+    an item it goes to review (Paintbrush's art has layers named after types). A repeated layer no picture names is
+    art beside a type icon, or the stars when drawn as many times (stars: the row's count; Zote's flowers); else
+    review (Kyle's two glitch cubes)."""
     look = "composite" if same_look else ""
     if icons is None:
         return field(read, "psd", same_look, look, "" if same_look else "the PSD's look is not the picture's")
     base = lambda icon: re.sub(r"( copy( \d+)?)+$", "", icon["layer"].strip().lower())
     twice = Counter(base(icon) for icon in icons)
     found = [(base(icon), icon_type(icon, names)) for icon in icons]
-    unknown = [icon["layer"] for icon, (_, name) in zip(icons, found) if name is None and twice[base(icon)] < 2]   # repeated: stars
-    value, claimed = [name for _, name in found if name], set()     # left to right, each by its picture
+    typed = any(name for _, name in found)
+    spare = lambda own: twice[own] >= 2 and (typed or twice[own] == stars)
+    unknown = [icon["layer"] for icon, (own, name) in zip(icons, found) if name is None and not spare(own)]
+    value, claimed, left = [name for _, name in found if name], set(), []     # left to right, each by its picture
     for t in read:                                             # the parser's: its layer's picture replaces it ...
         hit = next((i for i, (own, name) in enumerate(found) if name and i not in claimed and t in (own, name)), None)
         if hit is None:
             value.append(t)                                    # ... or it stays (no icon layer of it found)
+            left.append(t)
         else:
             claimed.add(hit)
     if unknown:
         out = field(read, "psd", False, why="header icons not identified: " + ", ".join(unknown))
         out["icons"] = [name for _, name in found if name]
+        return out
+    if left and kind in ITEM_KINDS:
+        out = field(value, "psd", False, why="read types no header icon shows (art?): " + ", ".join(left))
+        out["read"] = read
         return out
     out = field(value, "psd" if value == read else "icon pictures", same_look, "icons" + (", " + look if look else ""),
                 "" if same_look else "the PSD's look is not the picture's")
@@ -1025,6 +1039,7 @@ def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=fr
     when it is these words with icons)."""
     R = _W.get("readers") or _W.setdefault("readers", readers())
     text = OLD_TOKENS.sub(lambda m: "[" + OLD_TYPES[m.group(1)], ((read or {}).get("ability") or "").strip())
+    text = re.sub(r"%{2,}", "%", text)       # a % in a font with no % glyph prints nothing (The Thin Man's '25%%')
     seen = ability_lines(lines, kind)
     if text:
         found = recall(R, text, seen)
