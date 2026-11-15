@@ -416,6 +416,27 @@ def test_types_add_from_types_png_and_close_up(parser, tmp_path):
         ("Water", 0, -170)]
 
 
+def test_a_made_icon_keeps_its_glow(clone, parser, tmp_path):
+    """support.png's halo past its opaque part comes along (as Photoshop draws the link), not cut square; the opaque
+    part lands where it did before."""
+    types_dir = _types_dir(tmp_path)
+    copy(clone / "Types/support.png", Path(types_dir) / "support.png")
+    path = _fixture(tmp_path)[0]
+    psd = PSDImage.open(path)
+    plan = pe.plan_types(psd, pe.parse_card(parser, path, REL, psd), ["fire", "support"], parser, types_dir=types_dir)
+    pe.set_icons(psd, plan, types_dir)
+    made = next(layer for layer in psd.descendants() if layer.name == "support")
+    old, left, top, _ = pe._icon_image(str(Path(types_dir) / "support.png"), plan.icons[0][1])
+    x0, y0 = made.offset
+    alpha = np.asarray(made.topil().getchannel("A")).astype(int)
+    inside = np.zeros(alpha.shape, bool)
+    inside[top - y0:top - y0 + old.height, left - x0:left - x0 + old.width] = True
+    assert (alpha[~inside] > 0).sum() > 1000
+    was = np.zeros(alpha.shape, bool)
+    was[inside] = (np.asarray(old.getchannel("A")) >= 128).ravel()
+    assert ((alpha >= 128) != was).sum() <= 2
+
+
 def test_stars_and_types_bake_together(parser, tmp_path):
     """Stars and types in one bake, real renders (87cfb4a3's files dict shared the icon render's name: AttributeError)."""
     paths = _fixture(tmp_path)
