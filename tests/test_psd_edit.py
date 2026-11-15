@@ -1362,6 +1362,29 @@ def test_untouched_lets_a_level_or_two_go(monkeypatch):
             pe.gate_untouched(before, None, [edit])
 
 
+def test_dirty_gate_lets_a_level_or_two_go(tmp_path):
+    """gate_dirty as gate_untouched: B, outside the edited box (A's), 2 levels off passes; 3 refuses."""
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (400, 300), color=(120, 90, 60))
+    for n, (name, colour, left, top) in enumerate((("B", 100, 20, 20), ("A", 200, 300, 200)), 1):
+        psd.append(PixelLayer.fromarray(np.full((40, 40, 3), colour, np.uint8), psd, name=name, top=top, left=left))
+        psd[-1]._record.tagged_blocks.set_data(Tag.LAYER_ID, n)
+    psd.save(str(tmp_path / "b.psd"))
+    old = PSDImage.open(str(tmp_path / "b.psd"))
+    edit = pe.Edit("name", 1, 2, [], [], (300, 200, 340, 240))
+    for off, refused in ((2, False), (3, True)):
+        new = pe.edit_copy(old, (tmp_path / "b.psd").read_bytes())
+        b = PixelLayer.fromarray(np.full((40, 40, 3), 100 + off, np.uint8), new, name="B", top=20, left=20)
+        b._record.tagged_blocks.set_data(Tag.LAYER_ID, 1)
+        new.remove(new[0])
+        new.insert(0, b)
+        if refused:
+            with pytest.raises(pe.Refused, match="1600 pixels outside"):
+                pe.gate_dirty(old, new, [edit])
+        else:
+            pe.gate_dirty(old, new, [edit])
+
+
 # ========================
 # Stats (the fork: viewport renders)
 # ========================
