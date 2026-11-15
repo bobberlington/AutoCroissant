@@ -61,7 +61,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    deletion and a new card), on to c76646e2 just before the wipe. Old card ids never change for it (a card's id is
    its last name before the lost history; a card first seen there is named after the others), and a card the lost
    history deleted keeps its path evidence from the old repo's own end (`at_own_end`: The Claw's first file). A
-   card's chain then stops at its earliest git record of the three repos.
+   card's chain then stops at its earliest git record of the three repos (a first-repo PSD before any PNG: 'first
+   repo', as Created labels it).
 1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads with Waxwell
    (the Mac's bot token, not production; owner 11-13), resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:

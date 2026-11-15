@@ -572,3 +572,8 @@ def test_weak_pictures_set_no_created_and_a_first_psd_dates_the_card():
     got.psd_first["Bolt"]["repo"] = "first"                       # the first repo's PSD: its own label
     made = chain.created("bolt", t, [weak, seen])
     assert (made["ours"]["source"], made["ours"]["psd"]) == ("first repo", True)
+    got.psd_first = {}                                            # its first record a PSD: the stop's label too
+    got.cards["bolt"].update(fs=T + DAY, fs_psd={"commit": "p0"}, fs_from="first git")
+    assert chain.created("bolt", t, [weak, seen])["ours"]["source"] == "first repo"
+    got.cards["bolt"]["fs_from"] = "old git"
+    assert chain.created("bolt", t, [weak, seen])["ours"]["source"] == "old repo (PSD)"

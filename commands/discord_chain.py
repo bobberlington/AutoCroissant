@@ -332,7 +332,8 @@ class Inputs:
             self.old_rows[row["card"]].append(row)
             cid = self.by_key.get(row["card"])
             if row.get("psd_only") and cid and row["ts"] < (self.cards[cid].get("fs") or float("inf")):
-                self.cards[cid].update(fs=row["ts"], fs_from="old git", fs_psd=row)    # its first record: a PSD
+                self.cards[cid].update(fs=row["ts"], fs_psd=row,                      # its first record: a PSD
+                                       fs_from="first git" if row.get("repo") == "first" else "old git")
         self.psd_first = (dm.read_json(p.at(PSD_FIRST), {}) or {}).get("cards") or {}
         self.owner = dm.read_json(p.at(OWNER), {}) or {}
         self.old_review = dm.read_jsonl(p.at(OLD_REVIEW))
@@ -1655,8 +1656,8 @@ class Chain:
             found.append((first["ts"], "first repo" if first.get("repo") == "first" else "old repo (PSD)",
                           {"commit": first.get("commit"), "psd": True}))
         if card.get("fs"):
-            found.append((card["fs"], "old repo (PSD)" if card.get("fs_psd") else FS_SOURCE.get(card.get("fs_from"), "git"),
-                          {}))
+            psd = "first repo" if card.get("fs_from") == "first git" else "old repo (PSD)"   # the first repo's: as psd_first
+            found.append((card["fs"], psd if card.get("fs_psd") else FS_SOURCE.get(card.get("fs_from"), "git"), {}))
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
         dated = {"date": dm.iso(when), "day": day(when), "source": source,
                  **{k: v for k, v in detail.items() if v is not None}}
