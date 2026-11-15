@@ -1598,8 +1598,8 @@ def build_truth():
             if p["ext"] != "psd":
                 continue
             psd = reads.get(("psd", p["blob"]))
-            if not psd or not psd.get("ok") or not psd.get("composite") or not psd.get("read"):
-                continue
+            if not psd or not psd.get("ok") or not isinstance(psd.get("composite"), dict) or not psd.get("read"):
+                continue                # no composite ('blank', an error)
             d = hash_distance(png["look"]["whole"], psd["composite"]["whole"])
             if d <= 2 * PAIR_BITS:
                 near.add("psd:" + p["blob"])
