@@ -575,6 +575,19 @@ def test_drawn_earlier_by_glyph_name(monkeypatch):
         assert cs._drawn_earlier(None, None, ("then.earlier",), now) == found
 
 
+def test_laid_plan_renders_earlier_fonts_only_when_they_can_count(monkeypatch):
+    """laid_plan renders the earlier icon fonts (_drawn_earlier) only when a moved icon glyph is EARLIER_GAIN off the
+    current font's render: nearer, no earlier font can draw it better."""
+    now = SimpleNamespace(layout=SimpleNamespace(glyphs=[SimpleNamespace(gid=36), SimpleNamespace(gid=714)]))
+    calls = []
+    monkeypatch.setattr(cs, "laid_advances", lambda layer, faces, earlier: [{714: 600}])
+    monkeypatch.setattr(cs, "_drawn_earlier", lambda *a: calls.append(a) or set())
+    for share, rendered in ((cs.EARLIER_GAIN - 0.001, False), (cs.EARLIER_GAIN, True)):
+        calls.clear()
+        monkeypatch.setattr(cs, "_glyph_offs", lambda layer, faces: (now, None, None, None, {1: share}))
+        assert cs.laid_plan(None, None, ("then.earlier",)) is None and bool(calls) == rendered
+
+
 def test_badge_widths_line_guards():
     """relay_badges' line guards (review 2026-11-04): a new line of badges alone is found (Wigfrid's '(1CD)' cut off from
     its cost), ink nearer the canvas edge than before is noted once inside EDGE_NEAR (Sword of Aeons), a new
