@@ -41,6 +41,9 @@ NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
 URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
+VALUE_HINTS = {"type": "creature", "subtype": "attack", "series": "kirby", "subseries": "door", "types": "fire",
+               "name": "knight", "alias": "mk", "ability": "heal", "path": "items", "created": "2025"}   # 'series~' alone
+NO_TERM = "Give text or a condition to search for: fire | ice, hp>5 & type==creature."   # '|' or '&' alone
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
             "health": "hp", "hp": "health", "star points": "sp", "sp": "star points", "primary field": "pf",
             "pf": "primary field", "counter damage": "cdmg", "cdmg": "counter damage"}   # either finds both (rulebook)
@@ -420,6 +423,9 @@ class CardRepository:
                 kept = col.notna() & {"<": day < value, "<=": day <= value, "==": day == value, ">=": day >= value,
                                       ">": day > value}[operator]
         elif operator in ("==", "~"):
+            if not value:                                # else '' finds every card with the field (website: none)
+                hint = VALUE_HINTS.get(column)
+                raise QueryError(f"{column}{operator} takes a value" + (f": {column}{operator}{hint}." if hint else "."))
             value = value.strip('"')
             for part in (col, self._field("subseries") if column == "series" else None):   # series: a subseries too
                 if part is not None:
@@ -499,6 +505,15 @@ class CardRepository:
         parts.append(text[start:])
         return parts
 
+    def _terms(self, text: str, sep: str) -> list[str]:
+        """text's sep parts, blank ones dropped as search.js ('fire || ice', 'fire |'); none left: a QueryError."""
+        parts = [part.strip() for part in self._split_unquoted(text, sep)]
+        if len(parts) > 1:
+            parts = [part for part in parts if part]
+            if not parts:
+                raise QueryError(NO_TERM)
+        return parts
+
     def ability_search_engine(self, ability: str) -> DataFrame:
         """
         Search for cards by ability text or column values.
@@ -523,22 +538,23 @@ class CardRepository:
         ability = " ".join(typed(ability, quotes=True).split())     # a space finds a line break
 
         # Handle OR queries
-        queries = self._split_unquoted(ability, "|")
+        queries = self._terms(ability, "|")
         if len(queries) > 1:
-            results = [self.ability_search_engine(q.strip()) for q in queries]
+            results = [self.ability_search_engine(q) for q in queries]
             combined = concat(results)
             combined = combined[~combined.index.duplicated(keep='first')]
             combined.attrs = {}                         # near: one text term only
             return combined
 
         # Handle AND queries
-        queries = self._split_unquoted(ability, "&")
+        queries = self._terms(queries[0], "&")
         if len(queries) > 1:
-            result = self.ability_search_engine(queries[0].strip())
+            result = self.ability_search_engine(queries[0])
             for q in queries[1:]:
-                result = result[result.index.isin(self.ability_search_engine(q.strip()).index)]
+                result = result[result.index.isin(self.ability_search_engine(q).index)]
             result.attrs = {}
             return result
+        ability = queries[0]                            # 'fire |' is 'fire'
 
         # NOT: any term, conditions too (!type==creature)
         if ability.startswith("!"):
