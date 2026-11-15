@@ -115,6 +115,7 @@ def test_disabled_skips_and_resumes():
 def test_backup_commits_once_after_saves(monkeypatch, tmp_path):
     """Saves in a row make one backup commit (only under systemd), pushed to origin; unchanged bytes commit nothing."""
     import subprocess
+    from threading import Timer
     import commands.backup as backup
 
     def git(*args, cwd=tmp_path):
@@ -129,13 +130,16 @@ def test_backup_commits_once_after_saves(monkeypatch, tmp_path):
     Path("reminder.json").write_text("{}")
     monkeypatch.setattr(backup, "BACKUP_CLONE", str(tmp_path / "backup-clone"))
     monkeypatch.setattr(backup, "BACKUP_DELAY", 0.2)
+    made = []                                       # changed()'s timers (_commit pops _timers)
+    monkeypatch.setattr(backup, "Timer", lambda *a: made.append(Timer(*a)) or made[-1])
     monkeypatch.delenv("INVOCATION_ID", raising=False)
     backup.changed("reminder.json")
     assert not backup._timers                       # not the production service: nothing scheduled
     monkeypatch.setenv("INVOCATION_ID", "x")
     for _ in range(3):
         backup.changed("reminder.json")
-    backup._timers["reminder.json"].join(10)
+    made[-1].join(300)                              # 8 git calls: slow on a loaded Mac
+    assert not made[-1].is_alive()
     origin = tmp_path / "origin.git"
     assert git("log", "--format=%s", "main", cwd=origin).splitlines() == ["Backup: reminder.json", "start"]
     assert git("show", "main:backup/reminder.json", cwd=origin) == "{}"
