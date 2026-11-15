@@ -33,8 +33,10 @@ process.stdout.write(JSON.stringify({{ n: decks.length, first: first === decks[0
 
 def test_single_key_shortcuts_turn_off(tmp_path):
     """In a card dialog 'r' and 'd' fire; turned off in the help dialog they do nothing, while Esc still closes it and
-    the arrows still change cards; the buttons' key hints go (no-keys)."""
+    the arrows still change cards; the buttons' key hints go (no-keys), and the header's."""
     app = APP_JS.read_text(encoding="utf-8")
+    page = (SITE_SRC / "site" / "index.html").read_text(encoding="utf-8")
+    html = {f"#{i}": re.search(rf'id="{i}"[^>]*?{a}="([^"]*)"', page)[1] for i, a in (("q", "placeholder"), ("random", "title"), ("keys", "title"))}
     at = app.index("let charKeys")
     keys = app[at:app.index('$("#account")', at)]
     start = app.index('document.addEventListener("keydown", e => {\n  const item')
@@ -45,17 +47,18 @@ let keydown, dialog = "", hints = false;
 const document = { activeElement: el, documentElement: { classList: { toggle: (c, on) => { hints = c === "no-keys" && on; } } },
   addEventListener: (t, h) => { keydown = h; } };
 const modal = { hidden: false, contains: () => true }, location = { hash: "#/card/the-lich-king" };
-const $ = (sel) => (sel === ".keys-off" ? note : sel.startsWith("[data-nav") ? { getAttribute: () => "#/card/next" } : ["#keys", "header.top"].includes(sel) ? el : null);
+const HTML = """ + json.dumps(html) + r""", tips = {}, hinted = sel => ({ ...el, getAttribute: () => HTML[sel], setAttribute: (a, v) => { tips[sel] = v; } });
+const $ = (sel) => (sel === ".keys-off" ? note : sel.startsWith("[data-nav") ? { getAttribute: () => "#/card/next" } : sel in HTML ? hinted(sel) : sel === "header.top" ? el : null);
 const S = { ready: true, selected: new Set(), byId: new Map([["the-lich-king", {}]]) };
 const actions = { close: () => { log.push("close"); modal.hidden = true; }, "random-from-list": () => log.push("random") };
 const parseHash = () => ({ name: "card", arg: "the-lich-king" }), editing = () => false, escField = () => false;
 const toggleDeck = () => log.push("deck"), showDialog = h => { dialog = h; }, qInput = { focus: () => log.push("search"), select() {} };
 """ + re.search(r"^const pref = .*$", app, re.M)[0] + "\n" + keys + handler + r"""
 const press = key => keydown({ key, metaKey: false, ctrlKey: false, altKey: false, preventDefault() {} });
-const r = { on: (press("r"), press("d"), log.splice(0)) };
+const r = { on: (press("r"), press("d"), log.splice(0)), tipsOn: { ...tips } };
 showKeys(); r.box = /data-action="char-keys" checked/.test(dialog);
 actions["char-keys"]({ checked: false }); showKeys();
-r.unchecked = !/char-keys" checked/.test(dialog); r.note = !note.hidden; r.hints = hints;
+r.unchecked = !/char-keys" checked/.test(dialog); r.note = !note.hidden; r.hints = hints; r.tipsOff = { ...tips };
 press("r"); press("d"); press("/"); r.off = log.splice(0);
 press("ArrowRight"); r.arrow = location.hash; press("Escape"); r.esc = log.splice(0);
 process.stdout.write(JSON.stringify(r));
@@ -63,3 +66,4 @@ process.stdout.write(JSON.stringify(r));
     assert out["on"] == ["random", "deck"] and out["box"]                       # on by default (storage blocked: no value)
     assert out["unchecked"] and out["note"] and out["hints"] and out["off"] == []
     assert out["arrow"] == "#/card/next" and out["esc"] == ["close"]
+    assert out["tipsOn"] == html and out["tipsOff"] == {"#q": "Search cards…", "#random": "Random card", "#keys": "Keyboard shortcuts"}
