@@ -1969,14 +1969,16 @@ def splice_text(layer, text: str, parts: list) -> None:
     set_text(keep="runs") one changed part at a time (edit_parts), last first: the engine restyles only what changed, so
     an edit at both ends of an ability leaves the badges and colours between them alone (in one call, everything from
     the first change to the last would take the first changed character's style). A part the engine's greedy prefix
-    would run past (deleting "+2 ATK\r" before "+25% SPD" kept "+2" in the deleted line's red: review 2026-10-24) first
-    has its first character made one no text holds, so the engine's prefix stops where the part starts.
+    would run past (deleting "+2 ATK\r" before "+25% SPD" kept "+2" in the deleted line's red: review 2026-10-24), or an
+    insertion it would run into ("(1GCD) Heal 1 HP.\r" typed above "(1GCD) Summon" retyped the kept badge in the body
+    font, 2026-11-15), first has its first character made one no text holds, so the engine's prefix stops where the
+    part starts.
     """
     current = layer.text
     for a0, a1, b0, b1, kept in reversed(parts):
         if not kept:
             nxt = current[:a0] + text[b0:b1] + current[a1:]
-            if a1 - a0 != b1 - b0 and changed_range(current, nxt)[0] > a0 + b1 - b0:
+            if a1 - a0 != b1 - b0 and changed_range(current, nxt)[0] > (a0 if a1 == a0 else a0 + b1 - b0):
                 mark = next(c for c in "\ufffc\ufffd\u2060\u2061" if c not in current + text)
                 layer.set_text(current[:a0] + mark + current[a0 + (a1 > a0):], keep="runs")
             layer.set_text(nxt, keep="runs")
