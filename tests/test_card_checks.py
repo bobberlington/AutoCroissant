@@ -420,6 +420,13 @@ def test_to_check_and_file():
     assert json.loads(cc.text_of(checks))["cards"] == checks["cards"]
 
 
+def test_cards_list_keeps_a_name_with_a_comma():
+    """--cards (Card checks, Card sync): each part's key as ever, adjacent parts joined too."""
+    keys = cc.CardAuthors.keys("Hero_Cap,The_Evil,_Fricked_Up_Cursed_Idol,Rope")
+    assert {"hero cap", "the evil", "fricked up cursed idol", "rope", "the evil, fricked up cursed idol"} <= keys
+    assert "" not in cc.CardAuthors.keys("A, ,_")                                         # blank parts: no key
+
+
 def test_blobs_of_in_reading_order():
     """The chart and manifest first, then each card's PSD, PNG, numbered PNGs and duplicates together."""
     paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "A Copy.png", "B.psd", "Types/Fire.png",

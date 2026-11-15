@@ -104,6 +104,13 @@ class CardAuthors:
         return sub(r"\s+", " ", name.replace("_", " ")).strip().lower()
 
     @classmethod
+    def keys(cls, names: str, most: int = 4) -> set:
+        """A comma-separated list's keys, runs of up to `most` adjacent parts joined too: a name with a comma matches."""
+        parts = names.split(",")
+        return {cls.key(",".join(parts[i:j])) for i in range(len(parts))
+                for j in range(i + 1, min(i + most, len(parts)) + 1)} - {""}
+
+    @classmethod
     def parse(cls, text: str) -> "CardAuthors":
         authors, section = cls(), None
         for line in text.splitlines():

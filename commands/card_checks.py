@@ -1083,7 +1083,7 @@ def main(args: Optional[list] = None) -> int:
     path = join(options.db, CHECKS_JSON)
     checks = load(path)
     shard = tuple(int(part) for part in options.shard.split("/"))
-    only = {CardAuthors.key(name) for name in options.cards.split(",") if name.strip()}
+    only = CardAuthors.keys(options.cards)
     if options.action == "save":
         for result in options.results:
             with open(result, encoding="utf-8") as fh:

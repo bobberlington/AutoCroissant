@@ -1696,7 +1696,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     archived_before = _archived(before, before_old)
     details_before = len(details)
 
-    run_build.only = {CardAuthors.key(c) for c in (cards or "").split(",") if c.strip()}
+    run_build.only = CardAuthors.keys(cards or "")
     run_build.again = set(pending_before.get("stale") or [])  # held by the last run's budget: read now
     run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}
     run_build.details = details
