@@ -1923,6 +1923,21 @@ def test_gate_fx_tells_a_token_not_shaped_as_one_icon(clone, parser):
         "unsupported-card: ability: [fire]: not drawn as one badge or icon"]
 
 
+def test_a_line_typed_above_keeps_the_badge_it_starts_like(clone, parser, chart):
+    """"(1GCD) Heal 1 HP." typed above The Hive's "(1GCD) Summon": the engine's prefix took the kept "(1GCD) " for the
+    new line's and retyped it after, in the body font (178 of 768 cards, 11-15). It stays in the icon font, untold."""
+    from psd_tools.composite.text import FontMap
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    old, psd = PSDImage.open(_card(clone, HIVE)[0]), PSDImage.open(_card(clone, HIVE)[0])
+    layer = pe.ability_layer(psd)
+    edit = pe.set_text_layer(psd, "ability", "(1GCD) Heal 1 HP.\r" + pe.normalize_ability(layer.text), fonts_dir, chart,
+                             parser=parser)
+    at = layer.text.index("(1GCD) Summon")
+    assert all(pe._char_styles(layer)[1][at:at + 6])
+    layer.rasterize(fonts=FontMap(dirs=[fonts_dir]))
+    assert pe.gate_fx(psd, [edit], fonts_dir, None, old, parser.icons) == [] and edit.notes == []
+
+
 def test_icon_text_follows_the_fonts_spellings(parser):
     """What the stoogedings font draws (its GSUB): timing tags of badge_tags() and costs of cost_tags() in any case (not
     a cost glued to a number, "2(x counters)", nor one past the font's numbers), tokens the vocabulary knows with a
