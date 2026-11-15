@@ -10413,7 +10413,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             expected[name] = value
         elif name == "types":                   # in any order: the parser lists them in layer order
             expected[name] = got.get(name) if same_types(parser, got.get(name), value) else value
-            if expected.get("type") == "aux item":     # its icon is its item type (72b4876): the icons left's
+            if expected.get("type") in ("aux item", "nme"):   # its icon is its item type (72b4876): the icons left's
                 kinds = [AUX_ITEM_TYPES[t] for t in (canonical_type(parser, t) for t in value) if t in AUX_ITEM_TYPES]
                 expected["subtype"] = got.get("subtype") if got.get("subtype") in kinds else (kinds or [None])[0]
         elif name == "ability":                 # a typed token as the parser reads it in the icon font ([Fire] -> [fire]);

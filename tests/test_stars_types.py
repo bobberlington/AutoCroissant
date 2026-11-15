@@ -883,15 +883,16 @@ def test_a_clip_layer_falling_to_another_base(tmp_path):
         pe.gate_dirty(old, new, [pe.Edit("stars", 1, 2, [], [], (500, 300, 560, 360))])
 
 
-def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path):
+@pytest.mark.parametrize("rel", [REL, "N.M.E/Fixture.psd"])
+def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path, rel):
     """Refused after the bake until 11-09 (reparse: subtype): swapping the item-type icon bakes and the item type
-    follows it; dropping it leaves none."""
+    follows it; dropping it leaves none. N.M.E. items alike."""
     types_dir = _types_dir(tmp_path)
     _icon((200, 200, 40), (200, 160)).save(Path(types_dir, "active.png"))
     paths = _fixture(tmp_path, types=(("Fragile Equip", (30, 30)), ("Fire", (30, 200))))
-    assert pe.parse_card(parser, paths[0], REL)["card"]["subtype"] == "equip"
+    assert pe.parse_card(parser, paths[0], rel)["card"]["subtype"] == "equip"
     for value, subtype in ((["active", "fire"], "active"), (["fire"], None)):
-        _, baked = _bake(parser, paths, {"types": value}, tmp_path, types_dir=types_dir)
+        _, baked = _bake(parser, paths, {"types": value}, tmp_path, rel, types_dir=types_dir)
         assert baked.reparse["card"].get("subtype") == subtype and sorted(baked.reparse["card"]["types"]) == value
 
 

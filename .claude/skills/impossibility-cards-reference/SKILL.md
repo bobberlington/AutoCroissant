@@ -51,7 +51,7 @@ live folder tree.
 | `Field/<N Stars>/x.psd` | `field` | — | leaf folder name |
 | `Items/<Subtype>/<N Stars>/x.psd` | `item` | `subtype` = `<Subtype>`.lower() | leaf folder name |
 | `Creatures/<Series>/<N Stars>/x.psd` | `creature` | `series` = `<Series>`.lower(); hp/def/atk/spd seeded −1 | leaf folder name |
-| `N.M.E/x.psd` | `nme` | — | PSD star layers |
+| `N.M.E/x.psd` | `nme` | `subtype` from its header's item-type icon, as `aux item` (its `nme` icon is none) | PSD star layers |
 | `Auxiliary/Minions/x.psd` | `minion` | hp/def/atk/spd seeded −1 | PSD star layers |
 | `Auxiliary/Items/x.psd` | `aux item` | `subtype` from its header's item-type icon (2026-11-08, below) | PSD star layers |
 | `Auxiliary/Status Effects/Debuffs/<N Stars>/x.psd` | `debuff` | — | leaf folder name |
@@ -59,10 +59,11 @@ live folder tree.
 | `Auxiliary/<AnythingElse>/x.psd` (fall-through) | literal leaf folder, lowercased | — | none |
 | anything else | `unknown` | — | none |
 
-An auxiliary item's `subtype` (owner 2026-11-08) is its header's item-type icon named as the `Items/` folders
-(`psd_parser.AUX_ITEM_TYPES`: Equip and Fragile Equip -> equip, Food -> heal, Active, Attack, Infliction, Deploy, Support,
-Counter, Negation as named, Field -> `field`, an item type of its own); of two icons the first in reading order of their
-drawn pixels (`PSDParser._aux_item_type`: Magnum Opus active, Salt heal).
+An auxiliary item's `subtype` (owner 2026-11-08), and an N.M.E. item's (2026-11-15), is its header's item-type icon
+named as the `Items/` folders (`psd_parser.AUX_ITEM_TYPES`: Equip and Fragile Equip -> equip, Food -> heal, Active,
+Attack, Infliction, Deploy, Support, Counter, Negation as named, Field -> `field`, an item type of its own); of two icons
+the first in reading order of their drawn pixels (`PSDParser._aux_item_type`: Magnum Opus active, Salt heal, Electric
+Dart attack).
 
 `subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json sets it (the website; `/update_metadata` until 2026-10-25), and a
 re-parse keeps it like `author` and `series` (§6).

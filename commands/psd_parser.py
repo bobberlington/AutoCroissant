@@ -53,7 +53,7 @@ FRAME_SHARE = 0.1                 # ink over more of the card is a frame or a fi
 TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
-# an auxiliary item's item type: its item-type icon, named as the Items/ folders (owner 11-08; Field its own)
+# an auxiliary or N.M.E. item's item type: its item-type icon, named as the Items/ folders (owner 11-08; Field its own)
 AUX_ITEM_TYPES = {"equip": "equip", "fragile equip": "equip", "food": "heal", "active": "active", "attack": "attack",
                   "infliction": "infliction", "deploy": "deploy", "support": "support", "counter": "counter",
                   "negation": "negation", "field": "field"}
@@ -740,7 +740,7 @@ class PSDParser:
         if len(placed) == 1:                    # a smart object's one type layer (Gust of Wind's blurred title)
             title = title_text(placed[0][4].text)
             card.display_name = title if title and title != card.name else None
-        if card.card_type == CardType.AUX_ITEM.value:
+        if card.card_type in (CardType.AUX_ITEM.value, CardType.NME.value):
             card.subtype = self._aux_item_type(header)
 
         if abilities:
@@ -1490,8 +1490,8 @@ class PSDParser:
     @classmethod
     def _aux_item_type(cls, icons: list) -> Optional[str]:
         """
-        An auxiliary item's item type (AUX_ITEM_TYPES) from its header's type icons; of several, the first in reading
-        order of their drawn pixels (left-most; a stack's top one). None without one.
+        An auxiliary or N.M.E. item's item type (AUX_ITEM_TYPES) from its header's type icons; of several, the first in
+        reading order of their drawn pixels (left-most; a stack's top one). None without one.
         """
         found = [(AUX_ITEM_TYPES[name], layer) for name, layer in icons if name in AUX_ITEM_TYPES]
         if len(found) < 2:

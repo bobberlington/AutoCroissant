@@ -6,6 +6,7 @@
   "hp": 6,
   "path": "N.M.E/Termination_Shock.psd",
   "stars": 3,
+  "subtype": "active",
   "timestamp": 0.0,
   "type": "nme",
   "types": [
