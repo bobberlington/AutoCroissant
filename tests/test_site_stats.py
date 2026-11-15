@@ -41,11 +41,11 @@ function analytics(cards, extra = {}) {
   for (const c of cards) if (c.type === "creature") A.cards[c.id] = { cohort: `creature|${c.stars}`, stats: [c.hp, c.def, c.atk, c.spd], flags: [], below: 0, above: 0 };
   return A;
 }
-function render(cards, A, q = "", { banned = new Map(), distPage = {} } = {}) {
-  const byId = new Map(cards.map(c => [c.id, c])), ctx = { cards, byId, banned, icons: {}, mentions: new Map(), distPage };
+function render(cards, A, q = "", { banned = new Map(), distPage = {}, narrow = false } = {}) {
+  const byId = new Map(cards.map(c => [c.id, c])), ctx = { cards, byId, banned, icons: {}, mentions: new Map(), distPage, narrow };
   const root = { innerHTML: "" }, p = new URLSearchParams(q);
   st.renderStats(root, ctx, p);
-  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", history: ins.historyHtml(ctx, p) };
+  return { top: root.innerHTML, balance: A ? bal.statsHtml(A, ctx, p) : "", history: ins.historyHtml(ctx, p) };
 }
 """
 
@@ -70,3 +70,12 @@ out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=i
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
     assert not out["item"]
+
+
+def test_narrow_charts(tmp_path):
+    """A phone's panel (narrow): every chart drawn at most 360 wide, so its labels read; desktop as before."""
+    out = node(tmp_path, """
+const cards = fixture(), A = analytics(cards), widths = r => [...new Set(Object.values(r).join("").match(/(?<=<svg viewBox="0 0 )\\d+/g).map(Number).filter(w => w > 100))].sort((a, b) => a - b);   // not the 22-wide tag rings
+out({ wide: widths(render(cards, A)), narrow: widths(render(cards, A, "", { narrow: true })) });
+""")
+    assert out == {"wide": [320, 560, 1000], "narrow": [320, 340, 360]}
