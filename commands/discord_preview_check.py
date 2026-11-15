@@ -18,6 +18,7 @@ differing ones). Nothing is changed: a field the eye rules wrong is fixed upstre
 import importlib.util
 import json
 import os
+import random
 import re
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -39,6 +40,7 @@ READ_KINDS = {"name": str, "ability": str, "stars": int, "stats": dict, "types":
 DEFAULT_STAR_RULE = {"ncc": 0.7, "mad": 45}
 TOKEN = re.compile(r"\[[^\]]*\]|\([0-9X/G-]*(?:CD|U|PT|PGT|T|GT)\)")     # icon tokens and timing tags: not OCR words
 _TT = None
+SEED = 1115
 
 
 def text_readers():
@@ -195,6 +197,7 @@ def check(root: str, workers: int = 3, redo: bool = False):
         r.get("half", 0) == j.get("half", 0)                  # a split half read from the other rows: again
     kept = {i: last[key(j)] for i, j in enumerate(jobs) if key(j) in last and fresh(last[key(j)], j)}
     todo = [j for i, j in enumerate(jobs) if i not in kept]
+    random.Random(SEED).shuffle(todo)                 # a run cut short has read a fair sample (the rows keep jobs' order)
     print(f"check: {len(jobs)} versions with sure fields, {len(todo)} to read", flush=True)
     done = {}
     with open(partial, "a", encoding="utf-8") as fh, ProcessPoolExecutor(workers) as pool:

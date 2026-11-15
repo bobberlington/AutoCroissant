@@ -201,7 +201,7 @@ def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
 
     def one(job):
         calls.append(job["card"])
-        if job["card"] == "c" and len(calls) == 3:
+        if len(calls) == 3:
             raise KeyboardInterrupt                          # the run stopped here
         return {"card": job["card"], "id": job["id"], "image": job["image"], "fields": {"stars": {"r": "same", "read": 2}}}
     monkeypatch.setattr(pc, "jobs_of", lambda root: jobs)
@@ -214,5 +214,5 @@ def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
         pass
     assert len((out / "check.partial.jsonl").read_text().splitlines()) == 2
     rows = pc.check(str(tmp_path), workers=1, redo=True)
-    assert calls == ["a", "b", "c", "c"] and [r["card"] for r in rows] == ["a", "b", "c"]
+    assert len(calls) == 4 and calls[3] == calls[2] and [r["card"] for r in rows] == ["a", "b", "c"]
     assert (out / "check.jsonl").exists() and not (out / "check.partial.jsonl").exists()
