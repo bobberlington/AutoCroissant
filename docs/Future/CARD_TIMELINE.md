@@ -36,7 +36,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
    2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old
    card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
-   shared commit e-mail. Its PSDs are fetched only where needed (not yet: its rows read their fields off the picture;
+   shared commit e-mail. Its card PSDs are fetched too (11-15, one batched read-only fetch: 1,133 blobs): its rows
+   read their fields from the PSD of the same commit (else the nearest) checked against the PNG, as the old repo's
+   do, a disagreement to review; a row whose PSD is missing or unread reads its fields off the picture (its
    stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
    with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
@@ -49,6 +51,14 @@ the card's Image versions on the website before the git versions. Cards that nev
    one in a Meme folder: a joke on it). A lost first-repo file whose picture is a live card's card-sure Discord picture
    joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old name; or a
    'second picture', an older look kept as a numbered file).
+   **The lost 2023 history** (`refs/lost2023/*` in the same store, fetched by id from GitHub's activity log): the old
+   repo's own main heads pushed 2023-10-26..11-05 and lost by the force-pushes of 11-03 and 11-05 (104 commits in no
+   other local repo). `oldgit_index` reads them as the old repo (rows 'old', badge "old repo", `lost: true`): 78
+   commits continue its main 268c2b1; then an unrelated history whose first commits '1'..'8' re-upload a43fa582's
+   tree in batches (`LOST_LINKS`: '1' follows a43fa582; `UPLOADS`: a file not re-uploaded yet is carried, never a
+   deletion and a new card), on to c76646e2 just before the wipe. Old card ids never change for it (a card's id is
+   its last name before the lost history; a card first seen there is named after the others). A card's chain then
+   stops at its earliest git record of the three repos.
 1. **Mine** (`commands/discord_archive.py`, restored from AC history at `070820f^`, with its tests): GET-only REST reads with Waxwell
    (the Mac's bot token, not production; owner 11-13), resumable, into `~/Documents/Tools/discord-archive/` (never a repo). Messages and
    attachments (images, PSDs) of every channel the bot can read, threads included. The 10-22 run reached 8.5 GB with images:

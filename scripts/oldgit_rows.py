@@ -1152,6 +1152,8 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
                "fields": fields, "psd": note}
         if png is own:
             row["psd_only"] = True                 # no PNG yet: the PSD's composite (its thumb) is the picture
+        if png.get("lost"):
+            row["lost"] = True                     # the old repo's lost 2023 history (oldgit_index LOST_GLOB)
         name, stem = fields["name"]["value"], splitext(basename(png["path"]))[0].replace("_", " ")
         if name and names and norm(name) not in names:
             row["old_name"] = name                             # printed then: shown on the row, never an alias

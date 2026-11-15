@@ -36,3 +36,25 @@ def test_a_first_repo_card_joins_the_old_card_of_its_last_name(oi):
     meme = [{"lineage": "F9", "path": "Cards/Meme/3 Stars/Something.png"},
             {"lineage": "L9", "path": "Creatures/Omori/3 Stars/SOMETHING.png"}]
     assert oi.join_first({}, lambda x: x, meme, {}) == {}                # another folder: another card
+
+
+def test_a_re_upload_in_batches_carries_the_files_it_has_not_sent_yet(oi):
+    meta = {c: {"parents": p, "repo": "old"} for c, p in (("A", []), ("R1", ["A"]), ("R2", ["R1"]), ("R3", ["R2"]))}
+    trees = {"A": {"C/x.png": "b1", "C/y.png": "b2", "C/z.PNG": "b4"},
+             "R1": {"C/x.png": "b1", "C/z.png": "b4"},                 # a batch: y not sent yet; z's case changed
+             "R2": {"C/x.png": "b1", "C/y.png": "b3", "C/z.png": "b4"},   # y sent, edited
+             "R3": {"C/x.png": "b1", "C/z.png": "b4"}}                   # after the batches: y deleted
+    state, lineages, events, deletes = oi.walk(list(meta), meta, trees, carry={"R1", "R2"})
+    got = [(e["commit"], e["path"], e["kind"]) for e in events]
+    assert got[3:] == [("R1", "C/z.png", "move"), ("R2", "C/y.png", "edit")]   # no add: one lineage each
+    assert len(lineages) == 3 and [(d["commit"], d["path"]) for d in deletes] == [("R3", "C/y.png")]
+    _, _, events, deletes = oi.walk(list(meta), meta, trees, carry=())
+    assert ("R2", "C/y.png", "add") in [(e["commit"], e["path"], e["kind"]) for e in events]
+    assert ("R1", "C/y.png") in [(d["commit"], d["path"]) for d in deletes]
+
+
+def test_lost_commits_come_after_their_parents_a_linked_root_after_its_link(oi):
+    found = [("R2", {"parents": ["R1"]}), ("R1", {"parents": ["T"]}), ("T", {"parents": ["O"]})]
+    assert [sha for sha, _ in oi.parents_first(found, {"O"})] == ["T", "R1", "R2"]
+    with pytest.raises(ValueError):
+        oi.parents_first([("X", {"parents": ["Y"]}), ("Y", {"parents": ["X"]})], set())

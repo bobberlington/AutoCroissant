@@ -44,7 +44,7 @@ HERE = dirname(os.path.abspath(__file__))
 AC = dirname(HERE)
 if AC not in sys.path:
     sys.path.insert(0, AC)
-ROOT = join(HOME, "Documents/Tools/discord-archive")
+ROOT = expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discord-archive")   # the archive
 OUT = join(ROOT, "derived/readers/text")
 OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
 if exists(join(HOME, "Documents/Tools/firstrepo.git/objects/info/alternates")):   # both repos' objects (read only)

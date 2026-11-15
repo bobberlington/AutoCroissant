@@ -26,6 +26,12 @@ old repo's (rows: repo 'first'); 'Initial No PSD's' (2023-04-02) re-made the tre
 parent here. The side branch the_restoration_project re-committed 2020 port looks in 2022 (no history of them): left out.
 Authors not in authors.json map by their commit e-mail when another name with that e-mail maps (Kittycoon,
 MichaelSrouji: panda2525252525's e-mail).
+
+The lost 2023 history (LOST_GLOB in the first repo's store, when present): main heads pushed 2023-10-26..11-05 and lost
+by the force-pushes of 11-03 and 11-05 (GitHub's activity log), fetched by id. The old repo's own history (repo
+'old', lost: true): 78 commits continue its main 268c2b1, then an unrelated history re-uploads a43fa582's tree in
+batches ('1'..'8', UPLOADS: files not re-uploaded yet are carried, not deleted) and goes on to the wipe's c76646e2.
+Output root: DISCORD_ARCHIVE (default ~/Documents/Tools/discord-archive).
 """
 import json
 import os
@@ -47,8 +53,16 @@ OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
 FIRST_GIT = join(HOME, "Documents/Tools/firstrepo.git")   # the first repo (read only; alternates: the old .git's objects)
 FIRST_REFS = ("refs/first/main-0402", "refs/first/main-0421")   # main before each force-push, oldest first
 FIRST_LINKS = {"2056706e9ac92dfc024c3fc267154d13c78f972c": "7d95f1eb94d5b4e848028ab01b7c2286312b89d0"}
+LOST_GLOB = "refs/lost2023/*"                       # the old repo's lost 2023 heads, in the first repo's store
+# '1' (a root) follows a43fa582, the tree it re-uploads
+LOST_LINKS = {"4ddc820971da13633fd79d9a64d34ddfb96b5563": "a43fa5827a238b43dedc8ad897b6548153c10032"}
+UPLOADS = frozenset((                               # '1'..'8': a43fa582's tree re-uploaded in batches
+    "4ddc820971da13633fd79d9a64d34ddfb96b5563", "eb29218e783be5c3fca42398b029526bbdb73dd9",
+    "35750bbc76496b19ea5af84189bd85f1b13b6f8e", "1295bbf82a16b8adcf5fac846af13524f1939b8d",
+    "da9fc176c31ce9ac172a387ac8fa8cb50957cb52", "bad43704fa849eb0bbb5f7b643f3fec16f8bdc9f",
+    "fbbf72d77f6d13ff93d09c6da2313fe9d0ca07bf", "e63c5231ac66cf97b563274030e168a123bae43d"))
 TC = join(HOME, "Desktop/TTSCardMaker")
-OUT = join(HOME, "Documents/Tools/discord-archive/derived/oldgit")
+OUT = join(expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discord-archive"), "derived", "oldgit")
 AUTHORS = join(HOME, "Documents/Tools/wt/scratch/s1110/timelines/authors.json")
 TC_INIT = "36d62e5336de5134f1471bb18bcca3c74cae0ef3"    # the current repo's last 'init' (2023-11-05 23:15:22 -08:00)
 CUT = "2023-11-06T07:15:30Z"
@@ -149,9 +163,23 @@ def log_commits(base, *args) -> list:
     return found
 
 
+def parents_first(found: list, known: set) -> list:
+    """found [(sha, meta)] reordered so each comes after its parents among them (a linked root after its link)."""
+    mine, out, placed = {sha for sha, _ in found}, [], set(known)
+    while found:
+        rest = [(sha, m) for sha, m in found if any(p in mine and p not in placed for p in m["parents"])]
+        out += [(sha, m) for sha, m in found if (sha, m) not in rest]
+        placed |= {sha for sha, _ in out}
+        if len(rest) == len(found):
+            raise ValueError(f"no order for {[sha[:8] for sha, _ in rest]}")
+        found = rest
+    return out
+
+
 def old_commits() -> tuple:
     """(commits parents first, {sha: meta}) of the old history before CUT, the current repo's init commits left out;
-    the first repo's main commits before them (repo 'first'; FIRST_LINKS joins its two histories)."""
+    the first repo's main commits before them (repo 'first'; FIRST_LINKS joins its two histories); the old repo's lost
+    2023 commits after them (repo 'old', lost; LOST_LINKS)."""
     own = set(git(OG, "rev-list", TC_INIT).decode().split())
     order, meta = [], {}
     if STORE is FG:
@@ -168,6 +196,16 @@ def old_commits() -> tuple:
         if sha not in own and sha not in meta:
             order.append(sha)
             meta[sha] = {**m, "repo": "old"}
+    if STORE is FG and git(FG, "for-each-ref", "--count=1", LOST_GLOB).strip():
+        lost = [(sha, {**m, "repo": "old", "lost": True}) for sha, m in log_commits(FG, "--glob=" + LOST_GLOB,
+                                                                                   "--before=" + CUT)
+                if sha not in own and sha not in meta]
+        for sha, m in lost:
+            if sha in LOST_LINKS:
+                m.update(parents=[LOST_LINKS[sha]], linked=True)
+        for sha, m in parents_first(lost, set(meta)):
+            order.append(sha)
+            meta[sha] = m
     return order, meta
 
 
@@ -193,7 +231,14 @@ def index_main():
     trees = {c: ls_tree(STORE, c) for c in order}
     sizes = {sha: size for t in trees.values() for sha, size in t.values()}
     trees = {c: {p: v[0] for p, v in t.items()} for c, t in trees.items()}
+    state, lineages, events, deletes = walk(order, meta, trees)
+    finish(order, meta, authors, sizes, state, lineages, events, deletes)
 
+
+def walk(order: list, meta: dict, trees: dict, carry=UPLOADS) -> tuple:
+    """(state {commit: {path: (blob, lineage)}}, lineages, events, deletes) of the history, parents first: edits,
+    moves (a case change, a moved and changed file of one name), copies, adds and deletions. A commit in carry keeps
+    the files it hasn't re-uploaded yet (a batch of a re-upload: no deletion, no new lineage)."""
     state, lineages, events, deletes = {}, {}, [], []
     counter = Counter()
 
@@ -280,10 +325,19 @@ def index_main():
             cur[path] = (tree[path], lid)
             event(path, "copy" if copy else "add", lid, copy_of=copy)
         for path, (blob, lid) in gone.items():                 # deleted here (a merge: gone from every side)
-            if path not in used and len(had[path]) == len(parents):
+            if path in used:
+                continue
+            if c in carry:                                     # not re-uploaded yet: still there
+                cur[path] = (blob, lid)
+            elif len(had[path]) == len(parents):
                 deletes.append({"commit": c, "path": path, "blob": blob, "lineage": lid})
         state[c] = cur
+    return state, lineages, events, deletes
 
+
+def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lineages: dict, events: list,
+           deletes: list):
+    """Old cards from the walk's lineages, then versions.jsonl and index.json."""
     # old cards: a lineage's PSD and PNG (same name), one name's lineages over time; none two at once
     parent = {lid: lid for lid in lineages}
 
@@ -336,16 +390,18 @@ def index_main():
     old_cards, of_lineage = {}, {}
     names_used = Counter()
     first_at = {}                                              # names: the old repo's cards in their old order first
-    for e in events:
+    lost = {c for c in order if meta[c].get("lost")}           # then the first repo's, then the lost 2023 ones (ids
+    for e in events:                                           # as before: HR-H, the meme Tyler)
         root = find(e["lineage"])
-        rank = (e["lineage"][0] == "F", position[e["commit"]])
+        rank = (2 if e["commit"] in lost else int(e["lineage"][0] == "F"), position[e["commit"]])
         first_at[root] = min(first_at.get(root, rank), rank)
     for root, lids in sorted(groups.items(), key=lambda kv: first_at[kv[0]]):
         mine = [e for e in events if e["lineage"] in lids]
         latest = max(mine, key=lambda e: position[e["commit"]])
-        name = splitext(basename(latest["path"]))[0].replace("_", " ")
+        named = max((e for e in mine if e["commit"] not in lost), key=lambda e: position[e["commit"]], default=latest)
+        name = splitext(basename(named["path"]))[0].replace("_", " ")
         names_used[name] += 1
-        oid = name if names_used[name] == 1 else f"{name} ({dirname(latest['path'])})"
+        oid = name if names_used[name] == 1 else f"{name} ({dirname(named['path'])})"
         while oid in old_cards:
             oid += "'"
         for lid in lids:
@@ -368,7 +424,7 @@ def index_main():
                "date": m["date"], "authored": m["authored"], "ts": m["ts"], "author": m["author"],
                "author_mapped": authors.get(m["author"]), "subject": m["subject"], "merge": len(m["parents"]) > 1,
                "path": e["path"], "ext": ext_of(e["path"]), "blob": e["blob"], "size": sizes.get(e["blob"]),
-               "kind": e["kind"], "era": m["date"][:7], "repo": m["repo"]}
+               "kind": e["kind"], "era": m["date"][:7], "repo": m["repo"], **({"lost": True} if m.get("lost") else {})}
         for key in ("from_path", "copy_of"):
             if e.get(key):
                 row[key] = e[key]

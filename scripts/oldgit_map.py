@@ -292,7 +292,7 @@ def map_main():
     lost_init = sorted(p for p, t in init_target.items() if t is None)
     morgue_old = defaultdict(list)                             # blob -> MDW/The Morgue path (old tip, init)
     for commit in (index["tip"], TC_INIT):
-        for entry in git(OG, "ls-tree", "-z", commit, "--", MORGUE).decode("utf-8", "surrogateescape").split("\0"):
+        for entry in git(STORE, "ls-tree", "-z", commit, "--", MORGUE).decode("utf-8", "surrogateescape").split("\0"):
             if "\t" in entry:
                 meta, path = entry.split("\t", 1)
                 morgue_old[meta.split()[2]].append(path)
