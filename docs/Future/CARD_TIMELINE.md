@@ -40,7 +40,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    read their fields from the PSD of the same commit (else the nearest) checked against the PNG, as the old repo's
    do, a disagreement to review (stars a PSD of another look draws stay in review even when the folder agrees: the
    picture may be older, Nosk prints 3 where PSD and folder say 4; a buff's arrow, at the top right on 2022-23
-   cards, is a header icon; a type twice that today's card has once is one icon drawn as two layers, to review; an
+   cards, is a header icon, and so is a type's picture one row lower, its middle in the header: Nailsage Sly's
+   tornado under the title (art there is not); a type twice that today's card has once is one icon drawn as two layers, to review; an
    item's read type no header icon shows is art, to review; a repeated layer no Types/ picture names is art beside a
    type icon or the stars drawn as many times, else to review; '%%' reads '%': a font with no % glyph); a row whose PSD is
    missing or unread reads its fields off the picture (its
@@ -287,7 +288,8 @@ the card's Image versions on the website before the git versions. Cards that nev
 - Every published version's fields re-read from its webp agree with timeline.json (`discord_preview check`: the
   timelines' own readers on the webp; what they can't read again is counted apart, a disagreement goes to the eye, and
   so does every version published with no types: an absent icon can't be read again, a recoloured one matching no
-  `Types/` picture).
+  `Types/` picture). It runs after every preview build (`--redo` reads only versions published otherwise since), and
+  its new disagreements are seen by eye before a publish (a wrong field: a drop in `derived/preview/eye.json`).
 - The website build and its checks pass with and without the `history` branch.
 
 ## Open questions (for the start of the task)

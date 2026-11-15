@@ -357,3 +357,30 @@ def test_a_buffs_arrow_on_the_right_is_a_header_icon(rows):
             return [Layer("Layer 39", (334, 0, 398, 57)), Layer("tomato", (10, 5, 70, 60))]
     assert [layer.name for layer in rows.header_icons(Psd())] == ["tomato"]
     assert [layer.name for layer in rows.header_icons(Psd(), right=True)] == ["tomato", "Layer 39"]
+
+
+def test_a_type_icon_one_row_lower_counts_art_there_not(rows):
+    """Nailsage Sly's 2022-23 PSDs draw the tornado under the title (bottom past HEADER, middle above): it counts
+    only as a type's picture; art there is left out as before (Layer 14 lies lower still)."""
+    class Layer:
+        def __init__(self, name, bbox):
+            self.name, self.bbox, self.kind, self.parent = name, bbox, "pixel", None
+
+        def is_group(self):
+            return False
+
+        def is_visible(self):
+            return True
+
+    class Psd:
+        width = 1200
+
+        def descendants(self):
+            return [Layer("Tornado copy", (110, 270, 244, 411)), Layer("Layer 14", (78, 378, 390, 702))]
+    assert [layer.name for layer in rows.header_icons(Psd())] == ["Tornado copy"]
+    names = {"tornado", "wind", "fire"}
+    tornado = {"layer": "Tornado copy", "low": True, "near": [["tornado", 30.5], ["wind", 40.0]]}
+    art = {"layer": "Layer 3", "low": True, "near": [["fire", 27.1], ["wind", 32.7]]}
+    assert rows.header_icon_kept(tornado, names) and not rows.header_icon_kept(art, names)
+    assert rows.header_icon_kept({**art, "low": False}, names)
+    assert rows.check_types([], [tornado], True, names, "creature", ["wind"])["value"] == ["wind"]

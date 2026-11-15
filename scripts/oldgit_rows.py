@@ -67,7 +67,8 @@ DANGLING = {"affect", "per", "against", "vs", "to", "a", "an", "the", "of", "on"
 TOKEN = re.compile(r"\[[^\]]*\]")
 LEADING = ":;,.)/"                # a line starting so: a word or icon before it not read
 TEXT_SEEN = 2               # OCR words under the bars/title: the card prints text ('-25% SPD')
-HEADER, ICON_MAX = 0.32, 0.3      # type icon layers: bottom and largest side, in card widths
+HEADER, ICON_MAX = 0.32, 0.3      # type icon layers: bottom (a type's picture: middle) and largest side, card widths
+ICONS_V = 2                 # icons.jsonl rows older than this are read again (2: low type icons)
 ICON_SIDE = 32              # type icons compared at this size; one matches a type's picture within
 ICON_SAME = 15              # mean RGBA difference (0-255) of one icon (a recolour or an older drawing: ~10) ...
 ICON_GAP = 4                # ... nearer than the next type's by this much or half as far (or its layer named so)
@@ -257,9 +258,9 @@ def type_icons() -> list:
 
 
 def header_icons(psd, right: bool = False) -> list:
-    """Visible picture layers in the header's left half or a 'Types' group (bottom within HEADER card widths of the
-    top), icon-sized, no star in their name: a card's type icons (its stars sit right of the title; right: the right
-    half too, a buff's arrow where other cards have stars, 2022-23)."""
+    """Visible picture layers in the header's left half or a 'Types' group (middle within HEADER card widths of the
+    top; one whose bottom is past it is low: header_icon_kept), icon-sized, no star in their name: a card's type icons
+    (its stars sit right of the title; right: the right half too, a buff's arrow where other cards have stars, 2022-23)."""
     w = psd.width
     found = []
     for layer in psd.descendants():
@@ -267,7 +268,7 @@ def header_icons(psd, right: bool = False) -> list:
             continue
         x0, y0, x1, y1 = layer.bbox
         typed = layer.parent is not None and "type" in getattr(layer.parent, "name", "").lower()   # a 'Types' group
-        if y1 > HEADER * w or (x0 + x1) / 2 > 0.55 * w and not typed and not right or \
+        if y0 + y1 > 2 * HEADER * w or (x0 + x1) / 2 > 0.55 * w and not typed and not right or \
                 not (0.04 * w <= x1 - x0 <= ICON_MAX * w and 0.04 * w <= y1 - y0 <= ICON_MAX * w):
             continue
         if "star" in layer.name.lower():
@@ -276,11 +277,17 @@ def header_icons(psd, right: bool = False) -> list:
     return sorted(found, key=lambda layer: (layer.bbox[0], layer.bbox[1]))
 
 
+def header_icon_kept(icon: dict, names: set) -> bool:
+    """A low header layer (its bottom past HEADER card widths, its middle above) counts only when its picture or name
+    is a type's (Nailsage Sly's tornado, 2022-23: one row lower, under the title); else it is art, left out as before."""
+    return not icon.get("low") or icon_type(icon, names) is not None
+
+
 def w_icons(job) -> dict:
     import numpy as np
     from psd_tools import PSDImage
     sha, buff = job
-    row = {"blob": sha, "icons": [], **({"buff": True} if buff else {})}
+    row = {"blob": sha, "icons": [], "v": ICONS_V, **({"buff": True} if buff else {})}
     try:
         psd = PSDImage.open(BytesIO(oi.w_blob(sha)))
         refs = _W["icons"]
@@ -290,21 +297,24 @@ def w_icons(job) -> dict:
             except Exception:
                 vec = None
             found = {"layer": layer.name[:60], "bbox": list(layer.bbox)}
+            if layer.bbox[3] > HEADER * psd.width:
+                found["low"] = True
             if vec is not None:
                 best = {}
                 for name, ref in refs:
                     d = float(np.abs(vec - ref).mean())
                     best[name] = min(d, best.get(name, d))
                 found["near"] = [[name, round(d, 1)] for name, d in sorted(best.items(), key=lambda kv: kv[1])[:ICON_NEAR]]
-            row["icons"].append(found)
+            if header_icon_kept(found, _W["names"]):
+                row["icons"].append(found)
     except Exception as e:
         row["error"] = f"{type(e).__name__}: {str(e)[:200]}"
     return row
 
 
-def w_icons_init(refs):
+def w_icons_init(refs, names):
     w_picture_init()
-    _W["icons"] = refs
+    _W["icons"], _W["names"] = refs, names
 
 
 def icons_main(workers: int):
@@ -312,14 +322,16 @@ def icons_main(workers: int):
     buffs = {r["blob"] for r in reads if (r.get("read") or {}).get("type") == "buff"}    # the right half too
     blobs = sorted({r["blob"] for r in reads})
     target = join(OUT, "icons.jsonl")
-    done = {r["blob"] for r in oi.read_jsonl(target) if r["blob"] not in buffs or r.get("buff")}   # a later row wins
+    done = {r["blob"] for r in oi.read_jsonl(target)
+            if r.get("v", 1) >= ICONS_V and (r["blob"] not in buffs or r.get("buff"))}   # a later row wins
     blobs = [(b, b in buffs) for b in blobs if b not in done]
     refs = type_icons()
+    names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
     log(f"icons: {len(blobs)} PSDs, {len(refs)} type pictures ({len({n for n, _ in refs})} types)")
     os.makedirs(OUT, exist_ok=True)
     n = 0
     with open(target, "a", encoding="utf-8") as out, ProcessPoolExecutor(
-            workers, initializer=w_icons_init, initargs=(refs,)) as pool:
+            workers, initializer=w_icons_init, initargs=(refs, names)) as pool:
         for row in pool.map(w_icons, blobs, chunksize=4):
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
             n += 1
