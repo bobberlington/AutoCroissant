@@ -903,7 +903,8 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   itself yet; `TTS/checks/lua_mock.py` tests it (since 10-30).
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 13 on the
   save, 4 at a time, in about 1 minute: structure, drift against befdf769 (`drift.py` BASELINE, moved by each deliberate hand edit; it reads Global.lua at
-  `TTS_REF`, default origin/main, so a local script change fails it until pushed: `TTS_REF=HEAD`), deck contents,
+  `TTS_REF`, default the save's own commit (an older checkout or a work branch's merge-base; with the contents checks, the website's
+  cards renamed back), else origin/main, so a local script change fails it until pushed: `TTS_REF=HEAD`), deck contents,
   backs, rules, the Lua (lupa mock of the TTS API on the save's objects: teams, shared hand zones, card details, rulebook and finder panels, markers, no Lua patterns; `lua_mock.py <save> <file.lua>` tries a Global.lua change before it reaches the save), link pins and HTTP, the updater run as the Action runs it, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
