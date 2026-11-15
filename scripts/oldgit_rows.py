@@ -707,8 +707,9 @@ def check_stats(read, pic, two, square: bool, keys: tuple = ORDER, eye=False, ey
                 looks=(), creature=False) -> dict:
     """The printed stats (keys: an item's HP/DEF bars): the bar readers' eye truth for the PNG first (eye: its
     stats, None when not readable by eye, False: none), else the picture's read (two readers), the PSD's digit rows
-    where they agree; two: a multi-creature card (True or its creature count) has none, its creatures kept apart
-    (two creatures read by eye, eye2 the bottom half's rows: both halves sure, never summed). A first-repo row with
+    where they agree (no PSD stats: both readers and a sure era read on every stat); two: a multi-creature card (True
+    or its creature count) has none, its creatures kept apart (two creatures read by eye, eye2 the bottom half's
+    rows: both halves sure, never summed). A first-repo row with
     no PSD stats (first) is sure only by the same look's Discord eye read, its era read (era: era_bars' row, sure by
     its era's calibration) or a reader agreeing with the same look's sure Discord read (looks: [(how, stats)]); the
     two readers alone share a bias on the 2020-22 templates. A creature's picture read with HP 0 is never sure."""
@@ -753,7 +754,13 @@ def _check_stats(read, pic, two, square, keys, eye, eye2, first, era, looks) -> 
     if first and psd is None:
         return first_stats(a, b, only, era, looks)
     if psd is None and a and a == b:
-        return field(a, "picture", True, "second reader")
+        if era_agrees(a, era):
+            return field(a, "picture", True, "second reader")
+        out = field(a, "picture", False, why="the picture readers agree, but its era read is not sure on every stat "
+                                             "or says otherwise")
+        out["reads"] = {"psd": None, "picture": a, "second": b,
+                        "era": {k: (s or {}).get("v") for k, s in ((era or {}).get("stats") or {}).items()} or None}
+        return out
     if psd and a:
         votes = Counter(json.dumps(x, sort_keys=True) for x in (a, b, psd) if x)
         top, n = votes.most_common(1)[0]
@@ -767,6 +774,13 @@ def _check_stats(read, pic, two, square, keys, eye, eye2, first, era, looks) -> 
         out = field(None, "none", False, why="no stats read")
     out["reads"] = {"psd": psd, "picture": a, "second": b}
     return out
+
+
+def era_agrees(stats: dict, era) -> bool:
+    """The era read (era_bars) is sure on every one of these stats and reads the same (Dogma 2023-04-21: its static
+    bars fool both readers, the era read too, but not surely)."""
+    got = (era or {}).get("stats") or {}
+    return all((got.get(k) or {}).get("sure") and got[k].get("v") == v for k, v in stats.items())
 
 
 def first_stats(a, b, only, era, looks) -> dict:

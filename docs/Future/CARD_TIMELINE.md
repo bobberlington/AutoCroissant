@@ -40,7 +40,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
    with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
-   a picture is never sure).
+   a picture is never sure; an old repo PNG with no PSD stats is sure by its two readers only when its era read is
+   sure and the same on every stat: static-noise bars fool all three).
    Its rows carry the badge "first repo"; each card's timeline stops at its first first-repo record; a Q5 text row
    whose commit now has a picture row is that row (the review page asks the owner to confirm the changed premise).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played

@@ -39,8 +39,13 @@ def test_the_printed_stats_win_and_two_creatures_never_sum(rows):
                            True, False)
     assert two["value"] is None and two["confidence"] == "review"
     assert two["creatures"]["picture"] == [stats(5, 4, 6, 5), stats(4, 2, 4, 5)]
-    only = rows.check_stats({"stats": stats(-1, -1, -1, -1)}, {"best": printed, "template": printed}, False, False)
+    era = lambda v, sure: {"era": "D2", "stats": {k: {"v": x, "sure": sure} for k, x in v.items()}}
+    pic = {"best": printed, "template": printed}
+    only = rows.check_stats({"stats": stats(-1, -1, -1, -1)}, pic, False, False, era=era(printed, True))
     assert (only["value"], only["confidence"], only["check"]) == (printed, "sure", "second reader")
+    fooled = rows.check_stats(None, pic, False, False, era=era(printed, False))     # Dogma 2023-04-21's static bars
+    assert (fooled["value"], fooled["confidence"]) == (printed, "review")
+    assert rows.check_stats(None, pic, False, False, era=era(stats(7, 4, 4, 4), True))["confidence"] == "review"
     lone = rows.check_stats(None, {"best": printed, "template": stats(6, 4, 4, 3)}, False, False)
     assert lone["confidence"] == "review"
     three = rows.check_stats({"stats": stats(10, 4, 6, 8)}, {"best": printed, "halves": two["creatures"]["picture"]}, 3, False)
@@ -260,7 +265,8 @@ def test_first_repo_stats_need_an_eye_era_or_discord_read(rows):
     part["stats"]["atk"]["sure"] = True
     assert check(era=part, looks=[("eye", shown)])["confidence"] == "review"
     zero = stats(0, 0, 4, 3)
-    assert rows.check_stats(None, {"best": zero, "template": zero}, False, False, creature=True)["confidence"] == "review"
+    assert rows.check_stats(None, {"best": zero, "template": zero}, False, False, era=era(zero, True),
+                            creature=True)["why"] == "HP 0 on a creature: a reader's miss"
 
 
 def test_two_creatures_told_by_eye_are_sure_halves(rows):
