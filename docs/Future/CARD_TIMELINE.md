@@ -38,8 +38,9 @@ the card's Image versions on the website before the git versions. Cards that nev
    card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
    shared commit e-mail. Its PSDs are fetched only where needed (not yet: its rows read their fields off the picture;
    stats with no PSD are sure only by eye, by the era bar readers' calibrated read of the PNG, or when a reader agrees
-   with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a creature's HP 0
-   read off a picture is never sure).
+   with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read
+   its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
+   a picture is never sure).
    Its rows carry the badge "first repo"; each card's timeline stops at its first first-repo record; a Q5 text row
    whose commit now has a picture row is that row (the review page asks the owner to confirm the changed premise).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played

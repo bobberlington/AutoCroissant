@@ -770,23 +770,33 @@ def _check_stats(read, pic, two, square, keys, eye, eye2, first, era, looks) -> 
 
 
 def first_stats(a, b, only, era, looks) -> dict:
-    """A first-repo row's stats with no PSD stats (check_stats): the same look's Discord eye read, else its era read
-    when sure on every stat, else a reader that agrees with the same look's sure Discord read; else review."""
-    seen = only({k: (s or {}).get("v") for k, s in ((era or {}).get("stats") or {}).items()})
-    era_sure = seen and all(((era or {}).get("stats") or {}).get(k, {}).get("sure") for k in seen)
-    told = [only(s) for how, s in looks if how == "eye" and only(s)]
+    """A first-repo row's stats with no PSD stats (check_stats): the same look's Discord eye read unless its own era
+    read is sure on a stat and says otherwise (a one-cell bar change keeps the hash: False Knight 2023-04-04), else its
+    era read when sure on every stat, else a reader that agrees with the same look's sure Discord read; else review."""
+    stats = (era or {}).get("stats") or {}
+    seen = only({k: (s or {}).get("v") for k, s in stats.items()})
+    era_sure = seen and all(stats.get(k, {}).get("sure") for k in seen)
+    own = {k: s["v"] for k, s in stats.items() if (s or {}).get("sure") and isinstance(s.get("v"), int)}
+
+    def fits(stats):
+        return not any(k in own and own[k] != v for k, v in stats.items())
+    eyes = [only(s) for how, s in looks if how == "eye" and only(s)]
+    told = [t for t in eyes if fits(t)]
     disc = [only(s) for how, s in looks if how == "read" and only(s)]
     reads = {"picture": a, "second": b, "era": seen, **({"era_name": era.get("era")} if era else {}),
-             **({"discord": told + disc} if told or disc else {})}
+             **({"discord": eyes + disc} if eyes or disc else {})}
     if told:
         out = field(told[0], "eye", True, "the same look's Discord picture, by eye")
     elif era_sure:
-        out = field(seen, "picture", True, f"era reader ({era.get('era')})")
-    elif any(x in disc for x in (a, b, seen) if x):
-        out = field(next(x for x in (a, b, seen) if x and x in disc), "picture", True, "the same look's Discord read")
+        out = field(seen, "picture", True, f"era reader ({era.get('era')})" +
+                    (", over the same look's Discord picture" if eyes else ""))
+    elif any(x in disc and fits(x) for x in (a, b, seen) if x):
+        out = field(next(x for x in (a, b, seen) if x and x in disc and fits(x)), "picture", True,
+                    "the same look's Discord read")
     else:
         out = field(a or seen or b, "picture" if a or seen or b else "none", False,
-                    why="first repo, no PSD: no eye read, calibrated era read or same look's Discord read agrees")
+                    why="first repo, no PSD: its sure era read and the same look's Discord eye read disagree" if eyes
+                    else "first repo, no PSD: no eye read, calibrated era read or same look's Discord read agrees")
     out["reads"] = reads
     return out
 

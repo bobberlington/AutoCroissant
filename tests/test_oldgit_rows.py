@@ -253,6 +253,12 @@ def test_first_repo_stats_need_an_eye_era_or_discord_read(rows):
     assert (check(looks=[("eye", shown)])["value"], check(looks=[("eye", shown)])["method"]) == (shown, "eye")
     assert check(looks=[("read", biased)])["check"] == "the same look's Discord read"
     assert check(looks=[("read", shown)])["confidence"] == "review"
+    buffed = stats(5, 3, 6, 5)                    # a one-cell change the hash misses (False Knight 2023-04-04)
+    got = check(era=era(buffed, True), looks=[("eye", shown)])
+    assert (got["value"], got["method"], got["confidence"]) == (buffed, "picture", "sure")
+    part = era(buffed, False)
+    part["stats"]["atk"]["sure"] = True
+    assert check(era=part, looks=[("eye", shown)])["confidence"] == "review"
     zero = stats(0, 0, 4, 3)
     assert rows.check_stats(None, {"best": zero, "template": zero}, False, False, creature=True)["confidence"] == "review"
 
