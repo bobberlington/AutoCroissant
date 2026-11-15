@@ -58,11 +58,12 @@ def old_blob(clone, rel: str) -> bytes:
 
 
 def old_checkout(clone, root: Path) -> Path:
-    """The OLD PSDs beside the clone's Types/, MDW/ (the manifest) and site/ (the edits file)."""
+    """The OLD PSDs beside the clone's Types/, MDW/Fonts (the manifest) and site/ (the edits file)."""
     for rel in OLD:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(old_blob(clone, rel))
-    for top in ("Types", "MDW", "site"):
+    (root / "MDW").mkdir()
+    for top in ("Types", "MDW/Fonts", "site"):
         (root / top).symlink_to(clone / top)
     return root
 

@@ -653,7 +653,7 @@ def normalised(clone, rel: str, tmp_path) -> tuple:
     import commands.card_standards as cs
     from commands.card_check import clone_vocabulary
     path, png = _card(clone, rel)
-    fonts_dir = clone / "MDW" / "Fonts"
+    fonts_dir = clone / "MDW/Fonts"
     if not fonts_dir.is_dir():
         pytest.fail("no MDW/Fonts at the pin")
     fonts = lambda names: str(fonts_dir)

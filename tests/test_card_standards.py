@@ -194,7 +194,7 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
     assert cs.every_line(name[0]) and not cs.every_line(name[1])
     drawn = [psd.composite(ignore_preview=True).tobytes() for psd in (old, new)]
     assert name[0].topil().tobytes() == name[1].topil().tobytes() and drawn[0] == drawn[1]
-    fonts = clone / "MDW" / "Fonts"
+    fonts = clone / "MDW/Fonts"
     if fonts.is_dir():                          # the fork lays it out alike (it reads no composer)
         from psd_tools.composite.text import render
         drawn = [render(layer, fonts=psd_edit.font_map(str(fonts))) for layer in name]
@@ -251,7 +251,7 @@ CURLY = "b67b8799"              # main with 42 cards' curly apostrophes (13 titl
 
 
 def _fonts(clone):
-    fonts = clone / "MDW" / "Fonts"
+    fonts = clone / "MDW/Fonts"
     return lambda names: str(fonts)
 
 
@@ -493,7 +493,7 @@ DAROACH = "Creatures/Kirby/4 Stars/Dark_Daroach.psd"
 def ring_fonts(clone, tmp_path_factory):
     """The pin's MDW/Fonts with RING's icon font: (fonts, the same with .earlier the pin's icon font, before the ring)."""
     from functools import partial
-    pinned = clone / "MDW" / "Fonts"
+    pinned = clone / "MDW/Fonts"
     folder = tmp_path_factory.mktemp("ring-fonts")
     for font in pinned.iterdir():
         if font.is_file() and font.name != "stoogedings.ttf":

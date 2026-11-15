@@ -27,7 +27,7 @@ SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: N
 def test_plates_of_a_card(clone):
     psd, png = PSDImage.open(clone / DEDEDE), Image.open(clone / DEDEDE.replace(".psd", ".png"))
     parts = card_parts(psd, DEDEDE, "Masked Dedede", _bare_parser())
-    found = cp.plates(psd, png, parts, str(clone / "MDW" / "Fonts"))
+    found = cp.plates(psd, png, parts, str(clone / "MDW/Fonts"))
     ids = [p["id"] for k in ("title", "ability") for p in parts[k]]
     assert [c["id"] for c in found["crops"] if "fx" not in c] == ids
     assert [c["fx"] for c in found["crops"] if "fx" in c] == [["Blazing"]]
@@ -87,7 +87,7 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     icc = psd_edit.export_icc(psd, png)
     ours = cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 9, icc)
     baked = psd_edit.apply_jobs(str(clone / PUZZLED), str(clone / PUZZLED.replace(".psd", ".png")), PUZZLED, {"def": 9},
-                                parsed, parser, str(tmp_path), str(clone / "MDW" / "Fonts"), psd=psd)
+                                parsed, parser, str(tmp_path), str(clone / "MDW/Fonts"), psd=psd)
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     assert cp.bar_value(psd, raw, png, parsed, parser, PUZZLED, "def", 11, icc) is None
     monkeypatch.setattr(cp, "bar_value", lambda *args: ours if args[6:8] == ("def", 9) else None)   # one value baked
@@ -129,7 +129,7 @@ def test_star_pictures_are_the_bakes(clone, tmp_path):
     ours = cp.star_value(psd, raw, png, parsed, parser, PUZZLED, 4, psd_edit.export_icc(psd, png))
     baked = psd_edit.apply_jobs(str(clone / PUZZLED), str(clone / PUZZLED.replace(".psd", ".png")),
                                 "Creatures/Other/4 Stars/Puzzled_Cat.psd", {"stars": 4}, parsed, parser, str(tmp_path),
-                                str(clone / "MDW" / "Fonts"), psd=psd)
+                                str(clone / "MDW/Fonts"), psd=psd)
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     stars = cp.with_stars(None, psd, raw, png, parsed, parser, PUZZLED, 5)["icons"]["bars"]["stars"]
     assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
@@ -150,7 +150,7 @@ def test_creature_pictures_are_the_bakes(clone, tmp_path):
     job = psd_edit.classify(parsed, {"creatures": wanted}, psd, parser).jobs["creatures"]
     ours = cp.bar_value(psd, raw, png, parsed, parser, PIX, "def", 9, icc, creature=2)
     baked = psd_edit.apply_jobs(str(clone / PIX), str(clone / PIX.replace(".psd", ".png")), PIX, {"creatures": job},
-                                parsed, parser, str(tmp_path), str(clone / "MDW" / "Fonts"), psd=psd)
+                                parsed, parser, str(tmp_path), str(clone / "MDW/Fonts"), psd=psd)
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     assert cp.bar_value(psd, raw, png, parsed, parser, PIX, "def", 11, icc, creature=2) is None
     assert cp.bar_value(psd, raw, png, parsed, parser, PIX, "hp", 5, icc, creature=2) is None

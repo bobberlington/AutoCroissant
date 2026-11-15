@@ -347,7 +347,7 @@ def test_real_card_psd(clone, tmp_path):
     fonts = fc.psd_fonts(str(path))
     assert fonts == {"BabaUI": ["6", "6", "6", "6"], "Domigorgon": ["Ability"]}   # the hidden Name layer (BabaUI) is ignored
     assert fc.psd_fonts(data) == fonts
-    index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
+    index = fc.FontIndex(str(clone / "MDW/Fonts"))
     assert index.errors == [] and index.files >= 270 and index.supplies("Domigorgon")
     assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker 92b5ae6b)
     assert all(index.supplies(font) for font in fonts)
@@ -361,6 +361,6 @@ def test_freetype_loads_before_harfbuzz(clone, module):
     probe = (f"import sys, {module}; first = 'freetype' in sys.modules; import uharfbuzz, freetype; "
              "face = freetype.Face(sys.argv[1]); face.set_char_size(48 * 64); "
              "face.load_glyph(1, freetype.FT_LOAD_TARGET_LIGHT | freetype.FT_LOAD_NO_BITMAP); print(first)")
-    font = clone / "MDW" / "Fonts" / "stoogedings.ttf"
+    font = clone / "MDW/Fonts/stoogedings.ttf"
     done = subprocess.run([executable, "-c", probe, str(font)], cwd=REPO, capture_output=True, text=True, timeout=120)
     assert (done.returncode, done.stdout.strip()) == (0, "True"), done.stderr[-2000:]

@@ -561,9 +561,9 @@ def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
     save_psd(psd, str(repo / rel))
     git("commit", "-qam", "Card sync: 1 card baked", who=psd_glyphs.BOT)
     fonts.mkdir()
-    for name in os.listdir(clone / "MDW" / "Fonts"):
+    for name in os.listdir(clone / "MDW/Fonts"):
         if name.lower().endswith((".ttf", ".otf", ".ttc")) and name != "stoogedings.ttf":
-            (fonts / name).symlink_to(clone / "MDW" / "Fonts" / name)
+            (fonts / name).symlink_to(clone / "MDW/Fonts" / name)
     (fonts / "stoogedings.ttf").write_bytes((repo / font).read_bytes())
     tree = pl._tree_at(str(repo), "HEAD")
     assert psd_glyphs.font_commits(str(repo)) == [git("rev-parse", "HEAD~1").strip()]
