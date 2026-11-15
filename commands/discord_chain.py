@@ -8,9 +8,8 @@ repo (read only):
 
 build   Under derived/chain/:
         timelines/<card id>.json  every live card: its entries oldest first, then the stop (its first git record:
-                        the old repo's, else the card repo's) and its Created date. Entries:
-                          paper       a paper card's photo named as the card (the matcher, or by eye in
-                                      derived/readers/paper/eye.json): owner Q6, dated "Before 2020" (no day), first
+                        the old repo's, else the card repo's) and its Created date. Entries (the physical card
+                        photos never: owner Q6, 11-14, discord_match.LEFT_OUT):
                           discord     one look posted before the card's first git record: a git look (version_sure) or
                                       a look not in git (draft); its reposts merged (looks: hash, counted numbers,
                                       words, class line, no local edit; the earliest post dates
@@ -30,15 +29,16 @@ build   Under derived/chain/:
                         Discord looks fold as minor only when
                         every field is sure on both sides and unchanged (as the old rows; their types are never sure,
                         so they never fold).
-        created.json    Created = the earliest confident appearance (a named paper photo: "Before 2020", owner Q6; a
-                        card-sure Discord picture, the first repo, the old repo, the card repo) with its source, against
+        created.json    Created = the earliest confident appearance (a card-sure Discord picture, the first repo, the
+                        old repo, the card repo; "Before 2020" from a physical card photo for PHOTO_CREATED only, the
+                        owner's ruling of 11-14 22:20) with its source, against
                         site/Card Creation Dates.json: same, earlier (proposed), later (review only: never moved later),
                         new (no date yet), hand (never touched). sort orders "Before 2020" first. A changelog line or a
                         first-repo push notice is a hint to review only when earlier than the Created date in use (the
                         file's for 'later', the owner's pick when answered).
         review.jsonl    what the chain keeps out (stable ids): looks not told, named-only pictures before the card's
                         first picture evidence (one section to confirm in bulk), joke drafts, unsure fields, facts a
-                        picture contradicts, Created changes, splits, unnamed paper photos, and the owner's answers
+                        picture contradicts, Created changes, splits, and the owner's answers
                         (Q1-Q6, read only).
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
@@ -80,7 +80,6 @@ OLD_ROWS, OLD_REVIEW = ("derived", "oldrows", "rows.jsonl"), ("derived", "oldrow
 FACTS = ("derived", "facts", "facts.jsonl")
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")     # push notices naming one card: Created hints only
 EYE_LINES = ("derived", "facts", "eye_lines.json")        # heads: 2019 list heads whose first picture keeps the name
-PAPER_EYE = ("derived", "readers", "paper", "eye.json")   # paper photos named by eye: {photos: {picture id: {card}}}
 PSDS = ("derived", "psds", "psds.jsonl")                    # card PSDs posted on Discord (commands/discord_psds.py)
 HEADER = ("derived", "readers", "types", "header.jsonl")    # types by the git versions' header (header_types.py)
 HEADER_MISS = 0.6                                           # a header this unlike every git version's: other icons
@@ -118,7 +117,10 @@ ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "at
               "negation", "deploy", "offense", "protective"}  # an item's kind (its subtype; the last two the old
                                                               # repo's): never a fact or a version's change here
 ITEM_CARDS = ("item", "aux item", "nme")                      # cards whose types are item kinds
-PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"           # owner Q6: paper photos' date, sorting before every day
+BEFORE_DAY, BEFORE_SORT = "Before 2020", "0000-00-00"         # owner Q6 (11-14 22:20): a Created with no day, first
+PHOTO_SOURCE = "physical card photo"                          # its source (the photos themselves are in no timeline)
+PHOTO_CREATED = {"pep-drink": "Pep Drink", "wham-bam-bone": "Wham Bam Bone"}   # the live cards dated so: only these
+PHOTO_MORGUE = {"LC-1c11be0504": "M'uru"}                     # the Morgue candidate dated so (discord_morgue)
 ERA_RANK = {"A": 1, "B": 1, "C": 1, "A-item": 1, "B-item": 1, "C-item": 1, "D1": 2, "D2": 3, "D3": 3,
             "D-item": 3}                                      # template eras in time (A, B, C overlapped 2020-22)
 REPOST_DAYS = 60                                              # D1 after D2 this long after D2's first: a repost
@@ -134,8 +136,11 @@ OWNER_ANSWERS = (                                             # STAGE1's questio
                                     "dated 'ability changed' mark without text; never the line's text."),
     ("Q5", "picture rows", "2026-11-14 21:55", "The first repo's commits: picture rows badged 'first repo', like the "
                                                "old repo's; no text-only rows. Its push notices are evidence only."),
-    ("Q6", "A", "2026-11-13 08:15", "Paper card photos: dated 'Before 2020' (no day), shown first; they set Created = "
-                                    "'Before 2020' (source: paper card), sorting before every dated card."))
+    ("Q6", "photos left out", "2026-11-14 22:20", "Physical card photos (the 16 of the 'Old stuff' thread, nothing "
+                                                 "else): in no timeline, review item or Morgue evidence, never cropped. "
+                                                 "Created 'Before 2020' (sorting first, source: physical card photo) "
+                                                 "for exactly Pep Drink, Wham Bam Bone and M'uru (a Morgue candidate); "
+                                                 "no other Created comes from them."))
 
 
 # ========================
@@ -340,7 +345,6 @@ class Inputs:
         self.facts = dm.read_jsonl(p.at(FACTS))
         self.first_repo = dm.read_jsonl(p.at(FIRST_REPO))
         self.heads = (dm.read_json(p.at(EYE_LINES), {}) or {}).get("heads") or {}
-        self.paper_eye = (dm.read_json(p.at(PAPER_EYE), {}) or {}).get("photos") or {}
         self.header_rows = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER))}
         self.header = {k: r for k, r in self.header_rows.items() if r.get("sure")}
         self.header_eye = {r["id"]: r for r in dm.read_jsonl(p.at(HEADER_EYE)) if r.get("sure")}
@@ -804,7 +808,7 @@ def confirms(r: Optional[dict], value) -> bool:
 def owner_rows(inputs) -> Counter:
     """The owner's answers that change what enters, applied to the inputs in place: a picture's card named, its look
     told (a git look by its first version's key, or a draft), a named-only picture confirmed, 'not this card', a joke
-    picture that is the live card's, a paper photo named, an unsure changelog fact right or wrong, an unsure old map's
+    picture that is the live card's, an unsure changelog fact right or wrong, an unsure old map's
     rows given to a card. A picture's answers (but a git look's key) and a map's 'yes' carry the card they were given
     on: another card now, not applied. Fields, older templates, facts against pictures and Created are answered where
     the chain makes them. The ids acted on go into inputs.used (ruled.json: the review page tells an answer taken in
@@ -816,8 +820,8 @@ def owner_rows(inputs) -> Counter:
     cards = inputs.cards
     for row in inputs.verdicts:
         rid = row["id"]
-        ids = {k: review_id(k, rid) for k in ("named only", "look not told", "joke picture", "paper photo")}
-        named, told, joke, paper = (rulings.get(ids[k]) for k in ids)
+        ids = {k: review_id(k, rid) for k in ("named only", "look not told", "joke picture")}
+        named, told, joke = (rulings.get(ids[k]) for k in ids)
         match = rulings.get("match:" + rid)
         mine = lambda r: r.get("choice") == "look" or confirms(r, row.get("card"))        # given on its card
         if match and match.get("choice") == "card" and match.get("value") in cards and \
@@ -862,10 +866,6 @@ def owner_rows(inputs) -> Counter:
             row.update(joke=False, owner="the live card's picture")
             used.add(ids["joke picture"])
             done["owner: a joke picture is the live card's"] += 1
-        if paper and paper.get("choice") == "card" and paper.get("value") in cards:
-            inputs.paper_eye[rid] = {"card": paper["value"], "how": "named by the owner"}
-            used.add(ids["paper photo"])
-            done["owner: a paper photo named"] += 1
     facts = {f["id"]: f for f in inputs.facts}
     maps = {i["id"]: i for i in inputs.old_review if i.get("kind") == "unsure map" and not i.get("split")}
     live = {c.get("key") for c in cards.values()}
@@ -910,7 +910,7 @@ def named_on_or_after(inputs) -> int:
 
 
 def created_sort(date: Optional[str]) -> str:
-    return PAPER_SORT if date == PAPER_DAY else date or "9999"
+    return BEFORE_SORT if date == BEFORE_DAY else date or "9999"
 
 
 # ========================
@@ -965,9 +965,6 @@ class Chain:
         found, split = defaultdict(list), defaultdict(list)
         for row in inputs.verdicts:
             cid, first = row.get("card"), row.get("first")
-            if row.get("paper"):
-                self.paper_row(row, found)
-                continue
             if row["verdict"] == "lost" and row.get("lost_group") in self.splits and first:
                 self.to_halves(self.splits[row["lost_group"]], row, split)
                 continue
@@ -1004,25 +1001,6 @@ class Chain:
             else:
                 found[cid].append(row)
         return found, split
-
-    def paper_row(self, row: dict, found: dict) -> None:
-        """A paper card's photo (owner Q6): named as a live card by eye (derived/readers/paper/eye.json decides the
-        photos it lists) or by the matcher (card sure): that card's first entry, "Before 2020"; else to review."""
-        cards = self.inputs.cards
-        if row["id"] in self.inputs.paper_eye:
-            eye = self.inputs.paper_eye[row["id"]] or {}
-            cid, how, note = eye.get("card"), "eye", eye.get("how")
-        else:
-            eye, how, note = {}, "matcher", None
-            cid = row.get("card") if row["verdict"] in SURE_CLASSES else None
-        if cid in cards:
-            found[cid].append({**row, "card": cid, "paper_how": how, "paper_note": note})
-            self.tally[f"paper: named as a live card ({how})"] += 1
-            return
-        self.add_review("paper photo", row["id"], picture=row["id"], maybe=row.get("maybe"), title=eye.get("title"),
-                        note=eye.get("how"), why="a paper card's photo: name its card to show it first, 'Before "
-                                                 "2020', and set its Created (owner Q6)")
-        self.tally["paper: not named as a live card (review)"] += 1
 
     def to_halves(self, group: dict, row: dict, split: dict) -> None:
         """A split card's picture into each half's chain, before that half's first git record."""
@@ -1071,11 +1049,6 @@ class Chain:
 
     def picture(self, cid: str, row: dict) -> dict:
         card = self.inputs.cards[cid]
-        if row.get("paper"):                   # owner Q6: its name only (as named), nothing read
-            how = "eye (its hand-written title)" if row.get("paper_how") == "eye" else "matcher"
-            return {"row": row, "fields": {"name": sure(card.get("name") or card["key"], how)}, "git": None,
-                    "when": None, "marks": None, "words": set(), "labels": set(), "class": None,
-                    "ability_words": set()}
         fields = picture_fields(self.inputs, row, card.get("type"))
         git = None
         if row["verdict"] == "version_sure" and not row.get("as"):     # a split's look is the old card's
@@ -1096,7 +1069,7 @@ class Chain:
                 "ability_words": set(findall(r"[a-z]+", str(ability.get("value") or "").lower()))}
 
     def looks(self, cid: str, rows: list) -> list:
-        """Pictures grouped into looks, oldest first: one git look each, a card's paper photos one; a draft into its
+        """Pictures grouped into looks, oldest first: one git look each; a draft into its
         nearest group (the hash to its first picture) near_look and without a conflict, whose every picture prints the
         same words and class line (same_words) with no local edit (Chain.local_edit)."""
         groups = []
@@ -1104,8 +1077,7 @@ class Chain:
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))
         for pic in pictures:
             row = pic["row"]
-            key = ("paper",) if row.get("paper") else ("git", row["version"].get("look")) \
-                if row["verdict"] == "version_sure" and not row.get("as") else None
+            key = ("git", row["version"].get("look")) if row["verdict"] == "version_sure" and not row.get("as") else None
             if key:
                 home = next((g for g in groups if g["key"] == key), None)
             else:
@@ -1122,7 +1094,7 @@ class Chain:
                            default=None)
             if home is None:
                 groups.append({"key": key, "pictures": [pic], "fields": dict(pic["fields"]), "git": pic["git"],
-                               "paper": bool(row.get("paper")), "as": row.get("as")})
+                               "as": row.get("as")})
             else:
                 home["pictures"].append(pic)
                 home["fields"] = merge_fields(home["fields"], pic["fields"], "repost " + row["id"],
@@ -1152,16 +1124,8 @@ class Chain:
             first = group["pictures"][0]["row"]
             if group["as"]:
                 self.split_stats(cid, group)
-            entry = {"id": "D-" + first["id"], "kind": "paper" if group["paper"] else "discord"}
-            if group["paper"]:                 # owner Q6: no day
-                entry.update(date=None, day=None, label=PAPER_DAY, sort=PAPER_SORT, source="paper card",
-                             named=first.get("paper_how"))
-                notes = sorted({p["row"]["paper_note"] for p in group["pictures"] if p["row"].get("paper_note")})
-                if notes:
-                    entry["note"] = "; ".join(notes)
-            else:
-                entry.update(date=dm.iso(group["pictures"][0]["when"]), day=day(group["pictures"][0]["when"]),
-                             channel=first["first"]["channel"])
+            entry = {"id": "D-" + first["id"], "kind": "discord", "date": dm.iso(group["pictures"][0]["when"]),
+                     "day": day(group["pictures"][0]["when"]), "channel": first["first"]["channel"]}
             if group["as"]:
                 entry["as"] = group["as"]
             entry["look"] = {"git": {k: v for k, v in group["git"].items() if v is not None}} if group["git"] else \
@@ -1176,8 +1140,7 @@ class Chain:
             entry["fields"] = {k: v for k, v in group["fields"].items() if v}
             if card.get("type") in NO_BARS:
                 entry["fields"].pop("stats", None)
-            era = None if group["paper"] else next((self.era(p["row"]) for p in group["pictures"]
-                                                     if self.era(p["row"])), None)
+            era = next((self.era(p["row"]) for p in group["pictures"] if self.era(p["row"])), None)
             if era:
                 entry["era"] = era
             out.append(entry)
@@ -1478,14 +1441,11 @@ class Chain:
         return [e for e in entries if e["id"] not in gone]
 
     def diff(self, entries: list, kind: Optional[str] = None) -> None:
-        """Each version against the one before (text rows aside; a paper photo, its name only read, is no before);
-        Discord looks fold when settled. kind: the card's (an item's kinds are no change)."""
+        """Each version against the one before (text rows aside); Discord looks fold when settled. kind: the card's (an
+        item's kinds are no change)."""
         before = None
         for e in entries:
             if e["kind"] == "text":
-                continue
-            if e["kind"] == "paper":
-                e["changes"], e["minor"] = {}, False
                 continue
             if before is None:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
@@ -1506,7 +1466,7 @@ class Chain:
         old row's: every read), they get no review item ('not collected')."""
         card_kind = self.inputs.cards[cid].get("type")
         for e in entries:
-            field = e["fields"].get("types") if e["kind"] in ("discord", "paper", "old repo") else None
+            field = e["fields"].get("types") if e["kind"] in ("discord", "old repo") else None
             kind = card_kind if card_kind in ITEM_CARDS else \
                 "item" if is_sure(field) and kinds_only(field["value"], "item") else None
             if kind is None:
@@ -1542,7 +1502,7 @@ class Chain:
         proposed (else not applied: the page asks again), a value given takes that (both sure, method 'owner'); no
         leaves it to review."""
         for e in entries if self.rulings else []:
-            if e["kind"] not in ("discord", "paper", "old repo"):
+            if e["kind"] not in ("discord", "old repo"):
                 continue
             for key, field in list(e["fields"].items()):
                 if field.get("confidence") != "review":
@@ -1566,7 +1526,7 @@ class Chain:
         """Every field to review gets its item (an old row's from oldrows, else the chain's own); types with nothing
         read are 'unread' (nothing to confirm)."""
         for e in entries:
-            if e["kind"] not in ("discord", "paper", "old repo"):
+            if e["kind"] not in ("discord", "old repo"):
                 continue
             for key, field in e["fields"].items():
                 if field.get("confidence") != "review" or field.get("review"):
@@ -1584,7 +1544,7 @@ class Chain:
         card = self.inputs.cards[cid]
         entries = self.discord_entries(cid, rows, split) + self.text_entries(cid) + self.old_entries(cid)
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
-                                    {"paper": 0, "discord": 1, "text": 2, "old repo": 3}[e["kind"]], e["id"]))
+                                    {"discord": 1, "text": 2, "old repo": 3}[e["kind"]], e["id"]))
         weak = {r["id"]: r["no_created"] for r in rows if r.get("no_created")}
         for e in entries:                                # the owner's weak link: shown, sets no Created
             if e["kind"] == "discord" and e.get("pictures") and all(p["id"] in weak for p in e["pictures"]):
@@ -1623,8 +1583,9 @@ class Chain:
 
     # Created
     def created(self, cid: str, timeline: dict, rows_all: list) -> dict:
-        """Created = the earliest confident appearance with its source (a named paper photo first: "Before 2020",
-        owner Q6); against the file. sort orders "Before 2020" before every day."""
+        """Created = the earliest confident appearance with its source, or "Before 2020" from a physical card photo for
+        PHOTO_CREATED only (owner Q6, 11-14 22:20: read only on the review page; dated: the earliest appearance); against
+        the file. sort orders "Before 2020" before every day."""
         card, inputs = self.inputs.cards[cid], self.inputs
         found, weak = [], {r["id"] for r in rows_all if r.get("no_created")}     # owner: these set no Created
         for e in timeline["entries"]:
@@ -1640,7 +1601,7 @@ class Chain:
                 found.append((dm.epoch(e["date"]), "old repo (PSD)" if psd else e.get("badge") or "old repo",
                               {"commit": e["commit"], "as": e.get("as"), "psd": True if e.get("psd_only") else None}))
         for row in rows_all:                       # every card-sure picture counts, its look told or not
-            if row.get("first") and not row.get("created_review") and not row.get("paper") and \
+            if row.get("first") and not row.get("created_review") and \
                     not row.get("joke_draft") and not (row.get("joke") and row["verdict"] != "version_sure") and \
                     not row.get("no_created"):
                 found.append((dm.epoch(row["first"]["date"]), "discord", {"picture": row["id"],
@@ -1661,13 +1622,12 @@ class Chain:
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
         dated = {"date": dm.iso(when), "day": day(when), "source": source,
                  **{k: v for k, v in detail.items() if v is not None}}
-        paper = next((e for e in timeline["entries"] if e["kind"] == "paper"), None)
-        ours = {"date": None, "day": PAPER_DAY, "source": "paper card", "picture": paper["pictures"][0]["id"],
-                "named": paper.get("named")} if paper else dated
-        key = PAPER_SORT if paper else ours["day"]
+        photo = cid in PHOTO_CREATED              # the owner's ruling: no picture or entry of the photo is used
+        ours = {"date": None, "day": BEFORE_DAY, "source": PHOTO_SOURCE, "owner": "Q6"} if photo else dated
+        key = BEFORE_SORT if photo else ours["day"]
         file = inputs.created_file.get(card["key"])
         out = {"ours": ours, "file": file}
-        if paper:
+        if photo:
             out["dated"] = dated                   # the earliest dated appearance, for reference
         if file and file.get("from") == "hand":
             out.update(status="hand", date=file["date"], proposed=False)
@@ -1679,22 +1639,24 @@ class Chain:
             out.update(status="earlier", date=ours["day"], proposed=True)
         else:
             out.update(status="later", date=file["date"], proposed=False)
-        out["sort"] = PAPER_SORT if out["date"] == PAPER_DAY else out["date"]
+        out["sort"] = BEFORE_SORT if out["date"] == BEFORE_DAY else out["date"]
         if out["status"] in ("earlier", "later", "new"):
-            hint = None if paper else self.maybe.get(cid)
+            hint = None if photo else self.maybe.get(cid)
             hint = {"picture": hint["id"], "date": hint["first"]["date"], "channel": hint["first"]["channel"]} \
                 if hint and dm.epoch(hint["first"]["date"]) < when else None
             why = {"earlier": "an earlier confident appearance: proposed (the preview uses it)",
                    "later": "our earliest is later than the file's date: the file's kept (never moved later)",
                    "new": "no date in the file yet: proposed"}[out["status"]]
-            if paper and out["status"] != "later":
-                why = f"a paper card's photo: Created '{PAPER_DAY}' (owner Q6), proposed (the preview uses it)"
+            if photo and out["status"] != "later":
+                why = f"the owner's ruling (Q6, 11-14 22:20): Created '{BEFORE_DAY}' from its physical card photo " \
+                      "(the photo itself is in no timeline); the preview uses it"
             elif ours.get("source") == "changelog" and out["status"] != "later":
                 why = "a 2019 balance list names it exactly (its first picture keeps that name, by eye): proposed"
             elif ours.get("source") == "first repo" and out["status"] != "later":
                 why = "the first repo's file (2022-08..2023-04, refound on GitHub): proposed"
             out["review"] = self.add_review(f"created {out['status']}", cid, card=cid, ours=ours, file=file,
-                                            earlier_unsure=hint, why=why)
+                                            earlier_unsure=hint, why=why, **({"read_only": True, "answer": "Q6"}
+                                                                             if photo else {}))
         named = [r for r in rows_all if r.get("created_review") and r.get("first")]
         if named:
             row = min(named, key=lambda r: dm.epoch(r["first"]["date"]))
@@ -1778,7 +1740,7 @@ class Chain:
             ruled.append(hid)
             self.used.add(hid)
             if h.get("choice") == "yes":
-                picks.append((when, {"day": when, "source": "paper card" if when == PAPER_DAY else "discord",
+                picks.append((when, {"day": when, "source": "discord",
                                      "from": "morgue picture", "entry": item.get("entry"),
                                      **{x: item[x] for x in ("picture", "channel") if item.get(x)}}))
         date, source = min(picks, key=lambda p: created_sort(p[0]))
@@ -1835,8 +1797,9 @@ def build(root: str, cards_repo: str = LOCAL_DIR_LOC, log: Callable = print) -> 
         chain.add_review("owner's answer", a["id"], question=a["title"], answer=a["answer"], ruling=a["ruling"],
                          read_only=True, order=n, when=a.get("when"), why=f"the owner's answer ({a.get('when')})")
     dm.write_json(paths.created, {
-        "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a named paper photo: 'Before "
-                 "2020', owner Q6; a card-sure Discord picture, the first repo, the old repo, the card repo) with its "
+        "about": "Created dates (STAGE1 S6): ours = the earliest confident appearance (a card-sure Discord picture, "
+                 "the first repo, the old repo, the card repo; 'Before 2020' from a physical card photo only for Pep "
+                 "Drink and Wham Bam Bone, owner Q6 11-14, dated: their earliest appearance) with its "
                  "source; status against site/Card Creation Dates.json: same, earlier (proposed), later (review only, "
                  "the file's date kept), new (proposed), hand (untouched). date = what the preview uses, sort orders "
                  "'Before 2020' first. Named-only pictures, changelog lines and first-repo push notices before it are "
@@ -1882,10 +1845,6 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
                  f"{sum(1 for e in olds if e.get('as'))})")
     firsts = [sum(e.get("repo") == "first" for e in t["entries"]) for t in timelines.values()]
     lines.append(f"  the first repo's {sum(firsts)} (cards {sum(1 for n in firsts if n)})")
-    papers = [(t["name"], e) for t in timelines.values() for e in t["entries"] if e["kind"] == "paper"]
-    lines.append(f"paper entries {len(papers)} ('{PAPER_DAY}'): " + ", ".join(
-        f"{name} ({len(e['pictures'])} photo{'s' if len(e['pictures']) > 1 else ''}, {e.get('named')})"
-        for name, e in papers))
     texts = [e for t in timelines.values() for e in t["entries"] if e["kind"] == "text"]
     lines.append(f"text entries {len(texts)}: " + ", ".join(
         f"{k} {n}" for k, n in Counter(e["change"].get("field") or "ability" for e in texts).most_common()) +
@@ -1909,8 +1868,8 @@ def stats_text(timelines: dict, created: dict, items: list, tally: Counter, kind
               f"  changelog line earlier (review): {sum(1 for c in created.values() if c.get('changelog_earlier'))}",
               f"  first repo push earlier (review): {sum(1 for c in created.values() if c.get('first_repo_earlier'))}"]
     for key, c in sorted(created.items()):
-        if c["ours"]["source"] == "paper card":
-            lines.append(f"  paper Created: {key}: {c['status']} {c['date']} (file "
+        if c["ours"]["source"] == PHOTO_SOURCE:
+            lines.append(f"  {PHOTO_SOURCE} Created: {key}: {c['status']} {c['date']} (file "
                          f"{(c.get('file') or {}).get('date')} {(c.get('file') or {}).get('from')})")
     lines += ["", "REVIEW ITEMS: " + ", ".join(f"{k} {n}" for k, n in Counter(i["kind"] for i in items).most_common())]
     lines += ["", "TALLY"] + [f"  {k}: {n}" for k, n in sorted(tally.items())]

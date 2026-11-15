@@ -203,3 +203,23 @@ def test_the_owner_s_later_answers_show_read_only():
     tr.owner_notes(inputs, items)
     assert items[0]["meta"] == ["The owner's answer (2026-11-13 23:15): Meme = not sure: left open"] and \
         items[1]["meta"] == []
+
+
+def test_the_photo_created_dates_show_read_only_and_no_paper_items(tmp_path):
+    """Owner Q6 (11-14 22:15/22:20): the physical card photos are no review item (no paper part); the Created
+    'Before 2020' of the three shows read only with the answer, no radio; a typed 'Before 2020' elsewhere still parses."""
+    assert "paper" not in {part[0] for parts in tr.SUBS.values() for part in parts}
+    inputs = tr.Inputs(str(tmp_path))
+    inputs.cards = {"pep-drink": {"key": "Pep Drink", "name": "Pep Drink"}}
+    made = {"id": "chain-c9", "kind": "created earlier", "card": "pep-drink", "file": {"date": "2020-07-22",
+                                                                                      "from": "discord"},
+            "ours": {"date": None, "day": "Before 2020", "source": "physical card photo", "owner": "Q6"},
+            "read_only": True, "answer": "Q6", "why": "the owner's ruling"}
+    it = tr.created_item(inputs, made)
+    assert it["read_only"] and not it["choices"] and it["other"] is None and not any(it["pics"])   # no photo
+    assert "ours: Before 2020 from physical card photo" in it["meta"][0]
+    assert any(m.startswith("The owner's answer Q6 (2026-11-14 22:20): Physical card photos") for m in it["meta"])
+    assert "type=radio" not in tr.item_html({**it, "pics": []})                # gather drops the empty pictures
+    asked = tr.created_item(inputs, {**made, "read_only": False})             # no ruling: asked as before
+    assert [c["c"] for c in asked["choices"]] == ["ours", "file"] and not asked["read_only"]
+    assert load().parse("date", "before 2020", {}) == "Before 2020"

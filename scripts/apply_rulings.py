@@ -27,7 +27,7 @@ sys.path.insert(0, dirname(dirname(abspath(__file__))))         # AutoCroissant,
 from commands import discord_match as dm                        # noqa: E402
 from commands import timeline_review as tr                      # noqa: E402
 
-PAPER_DAY = "Before 2020"                                       # discord_chain.PAPER_DAY (owner Q6)
+BEFORE_DAY = "Before 2020"                                      # discord_chain.BEFORE_DAY (owner Q6)
 FIRST_DAY = date(2018, 1, 1)                                    # no card is older than the server (2019)
 STATS = ("hp", "def", "atk", "spd")
 
@@ -85,12 +85,12 @@ def parse(kind: str, text, cards: dict, shape: str = None):
     if kind == "card":
         return card(text, cards)
     if kind == "date":
-        if text.casefold() == PAPER_DAY.casefold():
-            return PAPER_DAY
+        if text.casefold() == BEFORE_DAY.casefold():
+            return BEFORE_DAY
         try:
             day = datetime.strptime(text, "%Y-%m-%d").date()
         except ValueError:
-            raise ValueError(f"{text!r} is not YYYY-MM-DD or {PAPER_DAY!r}") from None
+            raise ValueError(f"{text!r} is not YYYY-MM-DD or {BEFORE_DAY!r}") from None
         if not FIRST_DAY <= day <= datetime.now(timezone.utc).date():
             raise ValueError(f"{text} is out of range")
         return day.isoformat()

@@ -1,5 +1,5 @@
-"""discord_verdicts on a made-up archive whose pairs.json is given: one verdict per picture, jokes, paper cards, lost
-cards, sheets."""
+"""discord_verdicts on a made-up archive whose pairs.json is given: one verdict per picture, jokes, the physical card
+photos never read, lost cards, sheets."""
 import json
 from pathlib import Path
 
@@ -12,7 +12,7 @@ PORT, NEW, MEME = ("735328279619436666", "port"), ("875055733161488444", "new-ca
                                                                                      "meme-cards")
 H = {"p": "0" * 16, "d": "0" * 16, "q": "0" * 64}   # one look's hashes
 FAR = {"p": "f" * 16, "d": "f" * 16, "q": "f" * 64}  # another's
-IDEAS, PAPER = ("664256411907391509", "ideas-discussion"), ("1088034453319843840", "record-book")
+IDEAS, RECORDS = ("664256411907391509", "ideas-discussion"), ("1088034453319843840", "record-book")
 
 
 def sha(n: int) -> str:
@@ -66,7 +66,7 @@ def rows_of(root: Path) -> dict:
     return {r["id"]: r for r in map(json.loads, (root / "derived/match/verdicts.jsonl").read_text().splitlines())}
 
 
-def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_path):
+def test_one_verdict_a_picture_jokes_follow_the_picture_photos_never_read(tmp_path):
     cards = {"fang": {"id": "fang", "name": "Fang", "key": "Fang", "fs": T + 400 * 86400}}
     versions = [{"key": "now", "card": "fang", "commit": "c2", "ts": T + 86400, "current": True, "look": 0,
                  "whole": H}, {"key": "old", "card": "fang", "commit": "c1", "ts": T + 86400, "current": False,
@@ -83,21 +83,22 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_paper_never_dates(tmp_pa
               {"twins": [[f"{snowflake(T)}:1", 1.0, 1.0]]}, None),              # another look: no repost
              (T + 4 * 86400, MEME, 3, seen("fang", ["now"], by="hash"), {}, None),
              (T - 86400, MEME, 4, seen("fang", [], by="draft"), {"whole": FAR}, None),  # 4: a meme of Fang, no git look
-             (T + 900 * 86400, PAPER, 5, seen("fang", ["old"]), {}, old_stuff),     # 5: a paper card's photo
+             (T + 900 * 86400, RECORDS, 5, seen("fang", ["old"]), {}, old_stuff),   # 5: a physical card photo
              (T + 7 * 86400, MEME, 6, [], {"lines": ["when the"]}, None)]        # 6: a meme, not a card
     root = tmp_path / "archive"
     archive(root, posts, cards, versions, {PORT[0]: "port", MEME[0]: "meme/joke"},
             texts={"old": ["Fang", "Bite for 2"], "now": ["Fang", "Bite for 3"]})
     dv.build(str(root), log=lambda *a: None, cards_repo="")
     rows = rows_of(root)
-    one, two, three, four, five = (rows[dv.picture_id(sha(n))] for n in range(1, 6))
+    one, two, three, four = (rows[dv.picture_id(sha(n))] for n in range(1, 5))
     assert (one["verdict"], one["card"], one["first"]["channel"], len(one["posts"])) == ("version_sure", "fang",
                                                                                          "port", 2)
     assert one["first"]["date"].startswith("2020-09-13") and one["version"]["commits"] == ["c1"]
     assert two["verdict"] == "morgue" and two["joke"] and two["review"] == "morgue"   # the ideas post too
     assert three["verdict"] == "version_sure" and three["meme_repost"] and three["first"]["channel"] == "port"
     assert four["verdict"] == "morgue" and four["looks_like"] == ["fang"] and four.get("first") is None
-    assert five["verdict"] == "version_sure" and five["paper"] and five.get("first") is None    # never dates
+    assert dv.picture_id(sha(5)) not in rows                     # owner Q6 (11-14): the photo is in no timeline
+    assert all("paper" not in r for r in rows.values())
     assert "repost_of" not in three and rows[dv.picture_id(sha(6))]["verdict"] == "none"
     groups = json.loads((root / "derived/match/lost_groups.json").read_text())["groups"]
     joke = next(g for g in groups if g["title"])
@@ -370,7 +371,7 @@ def test_the_local_gate_tells_a_stored_versions_look_and_drafts_far_ones():
 
 def test_a_look_shown_in_a_card_channel_before_its_meme_repost_is_no_joke():
     post = lambda mid, channel, meme=False: {"message": mid, "channel": channel, "date": f"2020-08-{mid[-2:]}",
-                                             "bot": False, "morgue": meme, "paper": False}
+                                             "bot": False, "morgue": meme}
     row = lambda card, posts: {"id": "P-1", "sha256": "a", "verdict": "draft", "card": card, "joke": True,
                                "joke_draft": True, "posts": posts}
     shown = row("wendy", [post("1013", "update-02-port"), post("1025", "cursed", True)])

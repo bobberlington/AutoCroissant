@@ -9,8 +9,8 @@ preview's eye.json: its leave_out pictures, no version of the card, are not aske
     index.html   the page (open it in a browser: its pictures are the archive's own thumbnails, by relative path)
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
 Sections: the owner's answers (Q1-Q6 and the later ones, read only), the unsure old maps, unsure matches and
-versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, paper
-photos, unsure fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
+versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, unsure
+fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
 earlier than the Created date in use), the Morgue list (candidates, ideas never ported, the rest) and splits. A name
 two cards share shows its id; a git look is answered by its first version's key (look numbers shift when a version is
 added), and a confirming answer carries what it confirms (a field's value, a Created day, a picture's card): a rerun
@@ -46,7 +46,6 @@ RULINGS = ("derived", "review", "rulings.json")
 OWNER = ("derived", "review", "owner.json")           # the owner's rulings outside the page (answers shown read only)
 EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
-PAPER_DAY, PAPER_SORT = "Before 2020", "0000-00-00"   # discord_chain's (owner Q6)
 RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
 GUILD = "545138546021892096"                          # Impossibility Simulator (a changelog line's Discord link)
 FORMAT = "card-timelines-rulings/1"                   # the export's format (apply_rulings checks it)
@@ -65,7 +64,7 @@ SUBS = {                                              # section -> its parts in 
     "matches": (("card", "Which card is it?", None), ("looks", "Which look is it?", None),
                 ("named", "Named only: is this the card? (confirm in bulk)", "yes"),
                 ("jokes", "Joke pictures", None), ("older", "An older template posted later", None),
-                ("paper", "Paper card photos", None), ("fields", "Fields read on Discord versions", None),
+                ("fields", "Fields read on Discord versions", None),
                 ("facts", "Changelog lines", None)),
     "created": (("earlier", "Earlier than the website's date (proposed: the preview uses ours)", None),
                 ("new", "No date on the website yet", None),
@@ -182,7 +181,7 @@ def when(stamp) -> str:
 
 
 def created_sort(date: Optional[str]) -> str:
-    return PAPER_SORT if date == PAPER_DAY else date or "9999"
+    return dc.created_sort(date)
 
 
 def stats_shape(*values) -> Optional[str]:
@@ -269,7 +268,7 @@ def match_items(inputs: Inputs) -> list:
     taken = {t["picture"] for t in inputs.morgue.get("taken") or []}
     out = []
     for row in sorted(inputs.verdicts.values(), key=lambda r: ((r.get("first") or {}).get("date") or "", r["id"])):
-        if row["verdict"] != "unsure" or not row.get("first") or row["id"] in taken or row.get("paper"):
+        if row["verdict"] != "unsure" or not row.get("first") or row["id"] in taken:
             continue
         maybe = [c for c in row.get("maybe") or [] if c in inputs.cards]
         date = dm.epoch(row["first"]["date"])
@@ -333,15 +332,6 @@ def chain_items(inputs: Inputs) -> list:
             it["pics"].append(card_pic(inputs, cid))
             it["choices"] = [choice("out", "an old look posted again: leave it out"),
                              choice("show", "a real version: show it")]
-        elif kind == "paper photo":
-            it = item(kind, r["id"], "matches", "paper", f"Paper photo {r.get('picture')}", picture=r.get("picture"))
-            it["meta"] = [f"title as photographed: {r.get('title')}" if r.get("title") else "", r.get("note") or "",
-                          r.get("why") or ""]
-            it["pics"] = [row_pic(row, "the photo")]
-            it["choices"] = [choice("card", inputs.label(c), c, card_pic(inputs, c))
-                             for c in (r.get("maybe") or [])[:4] if c in inputs.cards]
-            it["choices"].append(choice("none", "no live card"))
-            it["other"] = {"c": "card", "kind": "card", "label": "a live card"}
         elif kind == "field":
             it = field_item(inputs, r)
         elif kind == "fact vs picture":
@@ -539,6 +529,10 @@ def created_item(inputs: Inputs, r: dict) -> dict:
             row = next((q for q in inputs.first_repo if "Q-" + q["id"] == r.get("row")), {})
             it["meta"].append(f"first repo push: {row.get('author')}: {row.get('subject')}")
         it["choices"] = [choice("yes", f"yes: Created {when(r.get('date'))}", when(r.get("date"))), choice("no", "no")]
+    answer = next((a for a in dc.OWNER_ANSWERS if a[0] == r.get("answer")), None) if r.get("read_only") else None
+    if answer:                                    # the owner's ruling (Q6's three): shown, not asked
+        it.update(read_only=True, choices=[], other=None)
+        it["meta"].append(f"The owner's answer {answer[0]} ({answer[2]}): {answer[3]}")
     return it
 
 

@@ -27,7 +27,7 @@ build   A picture is one stored file (its sha256: every post of it, reposts in o
         meme-cards, joke-ideas, cursed, idea-graveyard; ai-images and patty-vault are never read) never date a live
         card; one that is a live card stays its card, or goes to review when not sure (named so by its posts outside
         meme channels, or a git version's look and text: MEME_LIVE), never the Morgue; a meme that is no card is
-        none. Paper-card photos ('Old stuff', owner Q6=A) are matched but never date anything.
+        none. The physical card photos ('Old stuff' thread, owner Q6 11-14) are never read (discord_match.LEFT_OUT).
         Rules pages and app screenshots are never lost cards.
         Lost pictures are grouped into lost cards by title, else by look (ids from the earliest picture's hash and
         cell), each with its first date, channels, whether it was played (port, update or classification channels, an
@@ -69,7 +69,6 @@ OLD_LOST = ("derived", "oldgit", "lost.json")
 OLD_FILES = (("derived", "oldgit", "versions.jsonl"), ("derived", "oldgit", "reads.jsonl"))   # the repos' files, looks
 OLD_MAP = ("derived", "oldgit", "map.json")
 MORGUE_DIR = "MDW/The Morgue/"                   # build_site MORGUE: retired cards
-PAPER_IDS = {"1331913819563360288"}            # 'Old stuff' thread: photos of paper cards (owner Q6=A: never dates)
 PLAYED_KINDS = {"port", "update"}               # the catalogue's kinds whose pictures were played (owner Q2=A)
 PLAYED_NAMES = {"card-classification", "minion classification"}
 SHOWN_FIRST = re_compile(r"port|update-\d+-port|card-classification|ideas-discussion|new-cards")   # a look shown
@@ -244,14 +243,13 @@ def post_row(record: dict, morgue: set, kind: Optional[str] = None) -> dict:
     thread = record.get("thread") or {}
     return {"message": record["id"], "channel_id": record.get("channel_id"), "channel": record.get("channel_name"),
             "thread": thread.get("name"), "date": record.get("timestamp"), "jump_url": record.get("jump_url"),
-            "bot": dm.is_bot(record), "morgue": dm.in_morgue(record, morgue), "embed": kind == "embed",
-            "paper": record.get("channel_id") in PAPER_IDS or thread.get("id") in PAPER_IDS}
+            "bot": dm.is_bot(record), "morgue": dm.in_morgue(record, morgue), "embed": kind == "embed"}
 
 
 def dating(post: dict) -> bool:
-    """A post that may date a live card: no bot's, no meme channel's, no paper card's photo, no embed's (fetched
-    when archived: it may be a later picture than the post's)."""
-    return not (post["bot"] or post["morgue"] or post["paper"] or post.get("embed"))
+    """A post that may date a live card: no bot's, no meme channel's, no embed's (fetched when archived: it may be a
+    later picture than the post's)."""
+    return not (post["bot"] or post["morgue"] or post.get("embed"))
 
 
 # ========================
@@ -822,7 +820,7 @@ def judge_picture(sha: str, keys: list, joke: bool, run: Run) -> dict:
     live = [verdicts[k] for k, p in zip(keys, posts) if not p["morgue"]]
     row = {"id": picture_id(sha), "sha256": sha, "file": image["file"], "thumb": image.get("thumb"),
            "w": image.get("w"), "h": image.get("h"), "shape": image.get("shape"), "posts": posts,
-           "joke": joke, "paper": any(p["paper"] for p in posts)}
+           "joke": joke}
     found = sure_cards(live, cards)
     meme_only = False
     if not found and joke:                     # posted only in meme channels: its own verdict, if a git look
@@ -972,7 +970,7 @@ def judge_cells(sha: str, keys: list, joke: bool, run: Run) -> list:
         cid = v["cards"][0] if v["status"] == "confident" and len(v["cards"]) == 1 else None
         row = {"id": picture_id(sha, n), "sha256": sha, "cell": n, "box": cell["box"], "file": image["file"],
                "thumb": image.get("thumb"), "w": cell.get("w"), "h": cell.get("h"), "shape": cell.get("shape"),
-               "posts": posts, "joke": joke, "paper": any(p["paper"] for p in posts), "sheet": image.get("sheet")}
+               "posts": posts, "joke": joke, "sheet": image.get("sheet")}
         conf = (scored_of(v, cid) or {}).get("conf", 0.0) if cid else 0.0
         named = {c: (1.0, None) for t in cell.get("title") or [] for c in run.names.fuzzy(t, dm.TITLE_LINE, limit=1)}
         mixed = len(unrelated(named, cards)) > 1           # the grid cut through cards: other cells' titles in it
@@ -1253,7 +1251,7 @@ def lost_groups(rows: list, images: dict, by_sha: dict, records: dict, cards: di
         sha = first["sha256"]
         title = next((m["title_read"] for m in members if m["title_read"]), "")
         posts = [p for m in members for p in m["posts"]]
-        dated = sorted((p for p in posts if not (p["bot"] or p["paper"] or p.get("embed"))),
+        dated = sorted((p for p in posts if not (p["bot"] or p.get("embed"))),
                        key=lambda p: int(p["message"]))
         when = dated[0] if dated else min(posts, key=lambda p: int(p["message"]))
         played = any(played_place(records[p["message"]], kinds, channels) for p in posts if not p["bot"])
@@ -1405,15 +1403,13 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         row["review"] = REVIEW.get(row["verdict"]) if not row.get("joke_draft") else "a joke picture's draft look"
         if row.get("meme_live"):
             row["review"] = MEME_LIVE
-        if row["paper"] and row["verdict"] not in SURE_CLASSES:
-            row["review"] = "a paper card's photo (owner Q6=A: shown undated once named)"
     created_reviews(rows, cards)
     old_lost = (dm.read_json(join(root, *OLD_LOST), {}) or {}).get("cards") or []
     groups = lost_groups(rows, images, by_sha, records, cards, versions_list, kinds, channels, old_lost, root,
                          cards_repo)
     makedirs(paths.out, exist_ok=True)
     order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "name_only", "created_review",
-             "eye", "owner", "no_created", "joke", "meme_repost", "meme_live", "paper", "family", "version",
+             "eye", "owner", "no_created", "joke", "meme_repost", "meme_live", "family", "version",
              "methods", "maybe",
              "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
@@ -1502,7 +1498,6 @@ def summary(rows: list, groups: list, images: dict) -> dict:
             "meme_live": sum(1 for r in rows if r.get("meme_live")),
             "name_only": sum(1 for r in rows if r.get("name_only")),
             "created_review": sum(1 for r in rows if r.get("created_review")),
-            "paper": dict(Counter(r["verdict"] for r in rows if r["paper"])),
             "families": dict(Counter(r["family"] for r in rows if r.get("family") and r["verdict"] in SURE_CLASSES)),
             "lost_groups": len(groups), "morgue_candidates": sum(1 for g in groups if g["morgue_candidate"]),
             "renamed_hints": sum(1 for g in groups if g.get("old_name_of")),

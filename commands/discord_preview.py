@@ -11,8 +11,8 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
         candidates.json):
           index.json             every card with a history (its folder, counts), the Morgue's new entries, the MDW
                                  Morgue cards' Discord pictures, and the Created dates the chain proposes (earlier or
-                                 new only; "Before 2020" for a paper card, owner Q6)
-          <card id>/timeline.json  its entries oldest first: paper, discord, text (owner Q4: data only) and old repo
+                                 new only; "Before 2020" from a physical card photo for the three the owner named, Q6)
+          <card id>/timeline.json  its entries oldest first: discord, text (owner Q4: data only) and old repo
                                  (the first repo's badged 'first repo', owner Q5); each picture's version names its webp
           <card id>/<picture>.webp one per version, at most WEBP_W wide (never a full-size copy)
           _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card
@@ -57,7 +57,6 @@ CREATED = ("derived", "chain", "created.json")
 MORGUE = ("derived", "morgue", "candidates.json")
 MORGUE_DIR = ("derived", "morgue")
 EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why},
-#                                             "covered": {"<card>|<entry id>": why}: a photo whose card lies under another,
 #                                             "leave_out": {"<card>|<entry id>": why}: no version of the card}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
@@ -65,18 +64,17 @@ OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> toda
 MDW_FOLDER = "MDW/The Morgue/"
 BEFORE_GIT = ("discord", "text")                             # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
-PICTURE_KINDS = ("discord", "old repo", "paper")
-BADGE = {"discord": "Discord", "old repo": "old repo", "paper": "paper card", "first repo": "first repo",
+PICTURE_KINDS = ("discord", "old repo")
+BADGE = {"discord": "Discord", "old repo": "old repo", "first repo": "first repo",
          "text": "changelog"}                       # first repo: an old repo row's (repo 'first')
 WEBP_W, WEBP_Q = 720, 80                   # the website's card view width; quality
 MAX_PIXELS = 40_000_000                    # a picture past this is shrunk on open (phone photos)
 KINDS_OF = {"name": str, "stars": int, "types": list, "stats": dict, "ability": str}   # another kind: left out
 CHANGE_KEYS = ("name", "stars", "types", "stats", "bal", "buffs", "nerfs", "ability_change", "unknown")
 FACT_KEYS = ("field", "from", "to", "by", "op", "unit")
-PAPER_DAY = "Before 2020"                  # owner Q6 (discord_chain.PAPER_DAY)
 ABOUT = ("Card timelines before the card repo (preview): per card its versions from Discord (date and channel), the "
-         "old pre-wipe repo and the first repo (date, mapped author, commit subject), paper cards (Before 2020) "
-         "and changelog facts (data only). Only sure fields; no message text, posters or links.")
+         "old pre-wipe repo and the first repo (date, mapped author, commit subject) and changelog facts (data "
+         "only). Only sure fields; no message text, posters or links.")
 
 
 def log(text: str):
@@ -104,7 +102,7 @@ def changes_of(e: dict) -> dict:
 
 
 def picture_name(e: dict) -> str:
-    """A version's webp: its first picture's id (a Discord or paper post), or the old repo's blob."""
+    """A version's webp: its first picture's id (a Discord post), or the old repo's blob."""
     if e["kind"] == "old repo":
         return f"O-{e['blob'][:12]}.webp"
     return sub(r"[^A-Za-z0-9_-]", "_", e["pictures"][0]["id"]) + ".webp"
@@ -125,8 +123,6 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
     """One timeline entry as published."""
     kind = e["kind"]
     out = {"id": e["id"], "kind": kind, "date": e.get("date"), "day": e.get("day"), "badge": BADGE[kind]}
-    if kind == "paper":
-        out.update(label=e.get("label") or PAPER_DAY, sort=e.get("sort"))
     if kind in ("discord", "text"):
         out["channel"] = e.get("channel")
     if kind == "old repo":
@@ -171,12 +167,10 @@ def printed_name(value, files: list, reads: dict, today: str):
 CHANGE_OF = {"stats": ("stats", "bal", "buffs", "nerfs"), "stars": ("stars",), "types": ("types",), "name": ("name",)}
 
 
-def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, reads: Optional[dict] = None,
-                 covered=()) -> tuple:
+def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, reads: Optional[dict] = None) -> tuple:
     """(the published timeline, [(webp name, picture job)]). eye: the eye's drops for this card {entry id: {field}}:
     the field is left out, and so are the changes it made (its own against the version before, the next version's
-    against it). reads: the title OCR by file (printed_name). covered: entry ids whose photo shows the card under
-    another one (the eye's "covered": the website says so under the picture)."""
+    against it). reads: the title OCR by file (printed_name)."""
     entries, jobs = [], []
     for e in t["entries"]:
         image = None
@@ -188,8 +182,6 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
         if e["kind"] == "discord" and name and str(name["method"]).startswith("ocr+name"):
             name["value"] = printed_name(name["value"], [p["file"] for p in e.get("pictures") or () if not p.get("box")],
                                          reads or {}, t.get("name"))
-        if e["id"] in covered:
-            out["covered"] = True
         entries.append(out)
     pictures = [e for e in entries if e["kind"] in PICTURE_KINDS]
     for i, e in enumerate(pictures):
@@ -233,8 +225,6 @@ def leave_out(t: dict, ids, versions: list = ()) -> list:
             if e.get("confirmed_by") in ids:
                 e.pop("confirmed_by")
             continue
-        if e["kind"] == "paper":
-            continue
         if redo:
             e["changes"] = dc.compare(before["fields"], e["fields"], t.get("kind")) if before else \
                 ({"ability_change": "first"} if e["fields"].get("ability") else {})
@@ -268,8 +258,8 @@ def created_proposals(created: dict) -> dict:
 
 
 def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
-    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, oldest first (a paper photo
-    first, a printed card's photo undated)."""
+    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, oldest first; its first
+    (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day)."""
     entries, jobs = [], []
     for p in entry.get("pictures") or ():
         if p.get("source") == "old repo":
@@ -278,20 +268,15 @@ def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
         else:
             row = files.get(p["id"])
             source = ("file", row[0], row[1]) if row else ("thumb", p["thumb"], None)
-            kind_of = "paper" if p.get("paper") else "discord"
+            kind_of = "discord"
         name = sub(r"[^A-Za-z0-9_-]", "_", p["id"]) + ".webp"
         jobs.append((name, source))
-        e = {"id": p["id"], "kind": kind_of, "date": p.get("date"),
-             "day": (p.get("day") if p.get("paper") else (p.get("date") or "")[:10] or None),
+        e = {"id": p["id"], "kind": kind_of, "date": p.get("date"), "day": (p.get("date") or "")[:10] or None,
              "badge": BADGE[kind_of], "image": name, "fields": {}, "changes": {}, "minor": False}
-        if kind_of == "paper":
-            e.update(date=None, day=None, label=PAPER_DAY, sort=p.get("sort") or "0000-00-00")
-        elif kind_of == "discord":
+        if kind_of == "discord":
             e["channel"] = p.get("channel")
-            if p.get("printed"):
-                e.update(date=None, day=None, printed=True)
         entries.append(e)
-    entries.sort(key=lambda e: (e.get("sort") or e.get("date") or "9999"))
+    entries.sort(key=lambda e: e.get("date") or "9999")
     first = entry.get("first") or {}
     out = {"card": entry.get("slug") or entry["id"], "key": entry["name"], "name": entry["name"], "morgue": kind,
            "first": {"date": first.get("date"), "day": first.get("day") or (first.get("date") or "")[:10] or None,
@@ -541,7 +526,6 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
     for key in rulings.get("drop") or {}:
         card, entry, field = key.split("|")
         eye.setdefault(card, {}).setdefault(entry, set()).add(field)
-    covered = {tuple(key.split("|")) for key in rulings.get("covered") or {}}
     out_of = defaultdict(set)                    # {card: {entry id}}: the eye's leave_out
     for key in rulings.get("leave_out") or {}:
         card, entry = key.split("|")
@@ -592,7 +576,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
                 continue
         mine = {"date": c.get("date"), "sort": c.get("sort"), "source": (c.get("ours") or {}).get("source"),
                 "status": c.get("status")} if c else None
-        out, pics = timeline_out(t, mine, eye.get(t["card"]), reads, {e for card, e in covered if card == t["card"]})
+        out, pics = timeline_out(t, mine, eye.get(t["card"]), reads)
         folder = t["card"]
         want[folder] = set()
         for image, e in pics:

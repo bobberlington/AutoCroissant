@@ -152,8 +152,9 @@ GIT_EARLIER_DAYS = 14                             # Discord first post this much
 NOTES_PER_CARD = 12
 MORGUE = re_compile(r"meme|joke|cursed|graveyard")   # morgue channels: meme, joke and scrapped cards, never a live
 MORGUE_IDS = {"835450716947873823", "914367916676366406"}   # card's (owner 2026-11-13: meme-cards, joke-ideas)
-LEFT_OUT = {"1087297393403371550": "ai-images", "1092987235256766494": "patty-vault"}   # never read (owner Q1=C,
-                                                  # 11-13: AI copies of real cards; reaction pictures, no cards)
+LEFT_OUT = {"1087297393403371550": "ai-images", "1092987235256766494": "patty-vault",    # never read (owner Q1=C,
+            "1331913819563360288": "Old stuff thread"}   # 11-13: AI copies of real cards; reaction pictures, no cards;
+                                                  # Q6 11-14: the physical card photos, in no timeline)
 MENTION_ROUND = 600                               # seconds: a poster's message this close to an image is its caption
 
 CREATION = re_compile(r"\b(new (card|creature|item|field|minion|status|buff|debuff)s?|introducing|made (a|this|another|my)|"

@@ -1,8 +1,9 @@
 """discord_preview build on a made-up archive: only sure fields are published (value, method, confidence; not one of
 the wrong kind or one the eye dropped; a title snapped to an old casing as the picture prints it), no message, poster,
 note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read from its git
-dir); the Morgue's candidates and MDW cards; Created proposals only when earlier or new; the eye's leave_out (no version
-of the card: the next one diffed again, no Created from it). Stop at git: a card moved and redrawn in one commit starts
+dir); the Morgue's candidates (M'uru's first 'Before 2020', owner Q6) and MDW cards; Created proposals only when
+earlier or new (the physical card photo's 'Before 2020'); the eye's leave_out (no version of the card: the next one
+diffed again, no Created from it). Stop at git: a card moved and redrawn in one commit starts
 at its first file."""
 import json
 import subprocess
@@ -62,7 +63,10 @@ def test_build(tmp_path):
     (root / "derived" / "chain" / "timelines" / "bolt.json").write_text(json.dumps(t))
     created = {"cards": {"Bolt": {"status": "earlier", "proposed": True, "date": "2021-01-01", "sort": "2021-01-01",
                                   "ours": {"source": "discord", "picture": "P-a"}, "file": {"date": "2021-05-05"}},
-                         "Pike": {"status": "later", "proposed": False, "date": "2020-01-01", "ours": {"source": "discord"}}}}
+                         "Pike": {"status": "later", "proposed": False, "date": "2020-01-01", "ours": {"source": "discord"}},
+                         "Pep Drink": {"status": "earlier", "proposed": True, "date": "Before 2020", "sort": "0000-00-00",
+                                       "ours": {"date": None, "day": "Before 2020", "source": "physical card photo",
+                                                "owner": "Q6"}, "file": {"date": "2020-07-22"}}}}
     (root / "derived" / "chain" / "created.json").write_text(json.dumps(created))
     (root / "derived" / "match").mkdir(parents=True)
     (root / "derived" / "match" / "verdicts.jsonl").write_text(json.dumps({"id": "P-m", "file": "attachments/a.png"}) + "\n")
@@ -70,13 +74,16 @@ def test_build(tmp_path):
     morgue = {"candidates": [{"id": "LC-1", "name": "Joke", "slug": "joke", "kind": "joke", "status": "candidate",
                               "first": {"date": "2020-01-01T00:00:00+00:00", "channel": "meme-cards", "source": "discord"},
                               "why": ["x"], "eye": {"note": "x"},
-                              "pictures": [{"id": "P-m", "date": "2020-01-01T00:00:00+00:00", "channel": "meme-cards", "source": "discord"}]}],
+                              "pictures": [{"id": "P-m", "date": "2020-01-01T00:00:00+00:00", "channel": "meme-cards", "source": "discord"}]},
+                             {"id": "LC-1c11be0504", "name": "M'uru", "slug": "m-uru", "kind": "played", "status": "candidate",
+                              "first": {"date": None, "channel": None, "thread": None, "source": "physical card photo",
+                                        "day": "Before 2020", "dated": {"date": "2020-07-18T00:00:00+00:00", "channel": "port"}},
+                              "pictures": [{"id": "P-m", "date": "2020-07-18T00:00:00+00:00", "channel": "port", "source": "discord"}]}],
               "not_candidates": [{"id": "LC-2", "name": "Old One", "card": "Old One", "status": "morgue", "first": {},
-                                  "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord", "printed": True}]}]}
+                                  "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord"}]}]}
     (root / "derived" / "morgue" / "candidates.json").write_text(json.dumps(morgue))
     (root / "derived" / "preview").mkdir(parents=True)
-    eye = {"drop": {"bolt|O-1|stats": "the eye: another value"}, "covered": {"bolt|D-P-a": "under another card"},
-           "leave_out": {"bolt|D-P-x": "an AI restyle"}}
+    eye = {"drop": {"bolt|O-1|stats": "the eye: another value"}, "leave_out": {"bolt|D-P-x": "an AI restyle"}}
     (root / "derived" / "preview" / "eye.json").write_text(json.dumps(eye))
     (root / "derived" / "readers" / "text").mkdir(parents=True)
     (root / "derived" / "readers" / "text" / "reads.jsonl").write_text(json.dumps(
@@ -90,7 +97,7 @@ def test_build(tmp_path):
     assert not (out / "bolt" / "P-x.webp").exists()
     first, cell, fact, old = got["entries"]
     assert first["fields"] == {"name": {"value": "Bolt", "method": "ocr+name", "confidence": "sure"}}   # the review field left out
-    assert first["covered"] and "covered" not in cell and fact["confirmed_by"] == "O-1"
+    assert fact["confirmed_by"] == "O-1" and {e["badge"] for e in got["entries"]} == {"Discord", "changelog", "old repo"}
     assert dp.printed_name("DooPliss", ["f"], {"f": "O DooPliss"}, "Doopliss") == "DooPliss"     # printed so: kept
     assert cell["git_look"] and fact["change"] == {"field": "atk", "from": 5, "to": 4} and old["minor"] and old["author"] == "Maker"
     assert "name" not in cell["fields"] and "stats" not in old["fields"]          # the wrong kind; the eye's drop
@@ -100,10 +107,16 @@ def test_build(tmp_path):
     assert sizes["P-s-c2.webp"] == (400, 600)                                       # the sheet's cell 2 alone
     assert Image.open(out / "bolt" / "P-s-c2.webp").convert("RGB").getpixel((200, 500))[1] > 150   # green
     assert index["created"] == {"Bolt": {"date": "2021-01-01", "sort": "2021-01-01", "source": "discord", "status": "earlier",
-                                         "was": "2021-05-05"}}
-    assert [m["name"] for m in index["morgue"]] == ["Joke"] and [m["card"] for m in index["mdw"]] == ["Old One"]
+                                         "was": "2021-05-05"},
+                                "Pep Drink": {"date": "Before 2020", "sort": "0000-00-00", "source": "physical card photo",
+                                              "status": "earlier", "was": "2020-07-22"}}       # owner Q6: no picture of it
+    assert [m["name"] for m in index["morgue"]] == ["Joke", "M'uru"] and [m["card"] for m in index["mdw"]] == ["Old One"]
+    assert index["morgue"][1]["first"] == {"date": None, "day": "Before 2020", "channel": None,
+                                           "source": "physical card photo"}
+    muru = json.loads((out / "_morgue" / "m-uru" / "timeline.json").read_text())
+    assert [(e["kind"], e["day"]) for e in muru["entries"]] == [("discord", "2020-07-18")]
     mdw = json.loads((out / index["mdw"][0]["dir"] / "timeline.json").read_text())
-    assert mdw["entries"][0]["date"] is None and mdw["entries"][0]["printed"]       # a printed card's photo: no day
+    assert mdw["entries"][0]["date"] is None and "printed" not in mdw["entries"][0]
     # a rebuild keeps the webps, and drops one no entry names any more
     (out / "bolt" / "stale.webp").write_bytes(b"x")
     dp.build(str(root), str(git), workers=1, cards_repo=None)
@@ -111,7 +124,7 @@ def test_build(tmp_path):
     # the eye leaves out the picture Created came from: no proposal from it
     eye["leave_out"]["bolt|D-P-a"] = "not this card"
     (root / "derived" / "preview" / "eye.json").write_text(json.dumps(eye))
-    assert dp.build(str(root), str(git), workers=1, cards_repo=None)["created"] == {}
+    assert set(dp.build(str(root), str(git), workers=1, cards_repo=None)["created"]) == {"Pep Drink"}
     got = json.loads((out / "bolt" / "timeline.json").read_text())
     assert [e["id"] for e in got["entries"]] == ["D-P-s-c2", "F-1", "O-1"] and not (out / "bolt" / "P-a.webp").exists()
     assert "created" not in got
@@ -175,7 +188,7 @@ def test_stop_at_git(tmp_path):
     assert firsts == {"whitepalace": dm.epoch("2023-10-24T21:43:59+00:00"), "ech": 1750000000}
     entry = {"pictures": [{"id": "P-1", "source": "discord", "date": "2023-10-24T18:34:59+00:00"},
                           {"id": "P-2", "source": "discord", "date": "2026-06-19T04:06:58+00:00"},
-                          {"id": "P-3", "source": "discord", "date": None, "printed": True}]}
+                          {"id": "P-3", "source": "discord", "date": None}]}
     assert dp.mdw_cut(entry, firsts["whitepalace"]) == ["P-2"] and [p["id"] for p in entry["pictures"]] == ["P-1", "P-3"]
 
 

@@ -26,6 +26,15 @@ the card's Image versions on the website before the git versions. Cards that nev
   ones; unsure readings are marked.
 - **Stop at git:** nothing from Discord after a card's first git record.
 
+## Physical card photos (Q6, final: owner 2026-11-14 22:15 and 22:20)
+
+The 16 JPGs of the 'Old stuff' thread (#record-book, thread 1331913819563360288, 2025-01-23) are the only physical card
+photos; nothing else is one. They are in no timeline, review item or Morgue evidence and are never cropped: the
+matcher never reads the thread (`discord_match.LEFT_OUT`, as ai-images and patty-vault). Created = "Before 2020" (no
+day, sorting first, source 'physical card photo') for exactly Pep Drink and Wham Bam Bone (`discord_chain.PHOTO_CREATED`;
+their earliest appearance kept as `dated`; the review page shows the item read only) and M'uru, a Morgue candidate
+(`PHOTO_MORGUE`, LC-1c11be0504, slug m-uru: its entry's first); no other Created comes from the photos.
+
 ## Pipeline
 
 0. **The first repo** (2022-08-24..2023-04-21): the same GitHub repo's history before the old .git, cut by the
@@ -143,8 +152,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    entry's), so those pictures leave the live cards' review too (`taken`); an entry holding an MDW card's PNG but
    ruled another card is listed in `mdw_clash`, which must be empty. Renamed and live entries' first dates are
    `created_hints` for Created (weak links only by the owner; `meme`: dated only by meme channels, so never a live
-   card's Created). A paper card's photo (owner Q6) is dated "Before 2020" and comes first; a later photo of a
-   printed card (eye `not_paper`) has no day. Candidates go only to the website's Morgue list (cards.json morgue),
+   card's Created). M'uru's first is "Before 2020" (source 'physical card photo', sorting first; its earliest post
+   kept as `dated`; Q6). Candidates go only to the website's Morgue list (cards.json morgue),
    never cards[], decks, Unused, the default search or Mentioned by.
 3. **Read:** a posted PSD through `PSDParser` (exact: `commands/discord_psds.py`, its name, ability and types, stats
    off its composite; stars left out, 2022 PSDs keep hidden star layers; an ability kept in layers named after their
@@ -188,7 +197,7 @@ the card's Image versions on the website before the git versions. Cards that nev
    read overlapped or unlike stars as one; a star bar with under 8 truths at or above it is none: F, D3. B-item's
    overlapped clusters, 93 eye truths: no bar, its stars publish only as 'eye'). Every field keeps its method (psd, picture, ocr, text) and a
    confidence.
-4. **Chain** (`commands/discord_chain.py build`, outputs under `derived/chain/`; the owner's answers of 11-13, Q1-Q6):
+4. **Chain** (`commands/discord_chain.py build`, outputs under `derived/chain/`; the owner's answers of 11-13 and 11-14, Q1-Q6):
    per live card, the Discord looks posted before its first git record (a git look, or a draft; a later git look posted
    early is the git part's; an older template posted after a newer one goes to review). Reposts of one look merge, the
    earliest post dating it: a draft joins the nearest look (whole-card hash) with the same numbers and timing tags
@@ -202,8 +211,7 @@ the card's Image versions on the website before the git versions. Cards that nev
    to review, as do icon-read counts in the run of versions just before a sure changelog line that changes the stars
    to that count (none of them eye or PSD, the last over 3 days before the line). Then the sure changelog facts before it (Q4; item kinds
    never), the old repo's rows (the first repo's among them, badge "first repo"), a split card's versions "as <old name>" on
-   both halves (Q3), and first a paper card's photo named as the card (by the matcher or by eye,
-   `derived/readers/paper/eye.json`), dated "Before 2020" with no day (Q6). Only card- and look-sure pictures enter
+   both halves (Q3); never a physical card photo (Q6). Only card- and look-sure pictures enter
    (never one the Morgue's eye took for a joke or lost card: `taken`); a stat-less card's picture reading no bar
    label has no stats field (not printed);
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
@@ -225,8 +233,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    `lines`: 'Maxwell', 'PoD', the Warcraftian class prefixes): evidence only, never aliases. The 2019 February balance
    list (a docx, `CHANGELOG_DOCUMENTS`) is read like the pictures' lists (`<message>:doc<n>`, no text kept). HP/DEF units come from the card's
    sure bar reads near the line (git looks and drafts, the old repo's rows). **Created:**
-   the earliest confident appearance (a named paper photo: "Before 2020", source paper card, sorting before every day;
-   else a card-sure picture, the first repo, the old repo, the card repo; an exact head of a 2019 balance list whose
+   the earliest confident appearance (a card-sure picture, the first repo, the old repo, the card repo; "Before
+   2020" from a physical card photo for Pep Drink and Wham Bam Bone only, Q6, sorting before every day; an exact head of a 2019 balance list whose
    card's first picture keeps that name by eye (`eye_lines.json` `heads`, source 'changelog'); a PSD the old repo added before any PNG of the card, 'old
    repo (PSD)', the first repo's 'first repo' (psd): `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
@@ -239,7 +247,7 @@ the card's Image versions on the website before the git versions. Cards that nev
    items the owner answered show read only, listed by id, the joke edits of live cards each by eye; an open item a
    later answer bears on says so), the unsure old maps,
    unsure matches and versions (a picture's card, its look, named-only pictures confirmed in bulk, joke pictures, older
-   templates, paper photos, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
+   templates, unsure fields, changelog lines), the old repo's PSD-vs-picture fields (an item card's kinds
    never asked), Created dates (earlier,
    new, later, and earlier hints: only those earlier than the Created date in use), the Morgue list (candidates, ideas
    never ported, the rest) and splits; stable ids, the archive's thumbnails, radio answers kept in the browser and
@@ -255,8 +263,8 @@ the card's Image versions on the website before the git versions. Cards that nev
    day or card) is not applied either.
 6. **Publish** (`commands/discord_preview.py build`, the preview first, owner 11-13): `derived/preview/history/` in the
    `history` branch's layout: `index.json` (each card's folder; the Morgue's entries from Discord, owner Q1/Q2; the MDW
-   Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" for a paper
-   card), `<card id>/timeline.json` (entries oldest first: paper, discord, text, old repo; only sure fields,
+   Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" from a
+   physical card photo, Q6), `<card id>/timeline.json` (entries oldest first: discord, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
    wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
@@ -267,19 +275,19 @@ the card's Image versions on the website before the git versions. Cards that nev
    its rename); an MDW Morgue card's Discord pictures end at its
    first record in the old repo (oldgit `map.json`) or the card repo. A confirmed changelog fact names its version
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
-   so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field, caption a covered photo, and leave out a
+   so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field and leave out a
    picture that is no version of the card (OMORI's 16 AI restyles; the next version is diffed again, the review page
    doesn't ask about it). The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
    lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo",
-   the first repo's "first repo"; Discord: date and channel; a paper card "Before 2020"), each compared with the current card
+   the first repo's "first repo"; Discord: date and channel), each compared with the current card
    as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
    version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
    joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
    first posts as Pacific days), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
-   one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020" counts in
-   a "Before 2020" year of its own).
+   one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
+   photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page).
 
 ## Verification
 

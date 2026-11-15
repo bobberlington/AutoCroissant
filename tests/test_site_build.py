@@ -471,10 +471,10 @@ def test_theme_colours_pass_the_contrast_test():
 
 
 def _timelines(root):
-    """A HISTORY_DIR: Alpha's paper card (under another card), Discord look, changelog facts (one its
+    """A HISTORY_DIR: Alpha's stale paper row (none since owner Q6, 11-14), Discord look, changelog facts (one its
     old-repo version confirms), old-repo version, git_first and a Discord post after its first version here; one Morgue
-    joke card; White Palace's (MDW) Discord pictures, one after its PNG's first record; Alpha's Created proposed as a
-    paper card's."""
+    joke card and M'uru ('Before 2020'); White Palace's (MDW) Discord pictures, one after its PNG's first record;
+    Alpha's Created proposed as a physical card photo's."""
     from PIL import Image
 
     def pic(folder, name):
@@ -484,7 +484,7 @@ def _timelines(root):
     stats = lambda hp, atk: {"value": {"hp": hp, "def": 2, "atk": atk, "spd": 1}, "method": "picture", "confidence": "sure"}
     alpha = {"card": "alpha", "key": "Alpha", "name": "Alpha", "kind": "creature", "entries": [
         {"id": "D-P-1", "kind": "paper", "date": None, "day": None, "label": "Before 2020", "image": pic("alpha", "P-1.webp"),
-         "w": 40, "h": 80, "fields": {"name": {"value": "Alpha", "method": "eye", "confidence": "sure"}}, "changes": {}, "covered": True},
+         "w": 40, "h": 80, "fields": {"name": {"value": "Alpha", "method": "eye", "confidence": "sure"}}, "changes": {}},
         {"id": "D-P-2", "kind": "discord", "date": "2021-03-04T05:06:07+00:00", "channel": "new-cards", "image": pic("alpha", "P-2.webp"),
          "w": 40, "h": 80, "fields": {"stats": stats(3, 5), "ability": {"method": "ocr", "confidence": "review"}}, "changes": {}},
         {"id": "F-1", "kind": "text", "date": "2022-10-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "atk", "from": 5, "to": 4}},
@@ -502,15 +502,20 @@ def _timelines(root):
             "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
+    muru = {"card": "m-uru", "key": "M'uru", "name": "M'uru", "kind_of": "played",
+            "first": {"date": None, "day": "Before 2020", "channel": None, "source": "physical card photo"},
+            "entries": [{"id": "P-10", "kind": "discord", "date": "2020-07-18T00:00:00+00:00", "channel": "port",
+                         "image": pic("_morgue/m-uru", "P-10.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
     palace = {"card": "white-palace", "key": "White Palace", "name": "White Palace", "morgue": "mdw", "entries": [
         {"id": f"P-{n}", "kind": "discord", "date": when, "channel": "new-cards", "image": pic("_morgue/white-palace", f"P-{n}.webp"),
          "w": 40, "h": 80, "fields": {}, "changes": {}} for n, when in ((7, "2026-01-01T00:00:00+00:00"), (8, "2027-06-01T00:00:00+00:00"))]}
-    for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke), ("_morgue/white-palace", palace)):
+    for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke), ("_morgue/m-uru", muru),
+                      ("_morgue/white-palace", palace)):
         (root / folder / "timeline.json").write_text(json.dumps(t), encoding="utf-8")
     index = {"version": 1, "cards": {"alpha": {"key": "Alpha", "dir": "alpha"}},
-             "morgue": [{"dir": "_morgue/joke-card", "name": "Joke Card"}],
+             "morgue": [{"dir": "_morgue/joke-card", "name": "Joke Card"}, {"dir": "_morgue/m-uru", "name": "M'uru"}],
              "mdw": [{"dir": "_morgue/white-palace", "name": "White Palace", "card": "White Palace"}],
-             "created": {"Alpha": {"date": "Before 2020", "source": "paper card"}}}
+             "created": {"Alpha": {"date": "Before 2020", "source": "physical card photo"}}}
     (root / "index.json").write_text(json.dumps(index), encoding="utf-8")
     return root
 
@@ -519,8 +524,9 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     """The card timelines before the card repo (HISTORY_DIR, AutoCroissant discord_preview's layout): Image versions rows
     after the repo's (versions.json early) with their webps, none at or after the card's first version here, the Morgue's
     entries from Discord (never cards[], never on a renamed card's old page), an MDW Morgue card's pictures after its
-    PNG's current version (none after its first record here), a paper card's Created ("Before 2020") and their changes
-    under Recorded changes (a type fact's "remove" as a removal), a confirmed fact once; without HISTORY_DIR, none of it."""
+    PNG's current version (none after its first record here), a physical card photo's Created ("Before 2020", owner Q6:
+    a live card's and M'uru's; no paper rows) and their changes under Recorded changes (a type fact's "remove" as a
+    removal), a confirmed fact once; without HISTORY_DIR, none of it."""
     if not hasattr(bs, "HISTORY_DIR"):
         pytest.skip("a site before HISTORY_DIR")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
@@ -529,19 +535,23 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
     rows = out["versions.json"]["early"][alpha["id"]]
-    # after the repo's rows, newest first, the undated paper card last; no review field, no link
-    assert [r["k"] for r in rows] == ["old repo", "discord", "paper"]
-    assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[1]["ch"] == "new-cards" and rows[2]["label"] == "Before 2020"
-    assert rows[2]["cov"] == 1 and "cov" not in rows[1]
+    # after the repo's rows, newest first; the stale paper row left out; no review field, no link
+    assert [r["k"] for r in rows] == ["old repo", "discord"] and not any("label" in r or "cov" in r for r in rows)
+    assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[1]["ch"] == "new-cards"
     assert rows[1]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
     assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows)
-    assert alpha["ive"] == 3 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
-    # Created: a paper card's "Before 2020" sorts first; the file's date is kept as createdWas
-    assert (alpha["created"], alpha["createdFrom"], alpha["createdBefore"]) == ("2019-01-01", "paper", 2020)
+    assert alpha["ive"] == 2 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
+    # Created: a physical card photo's "Before 2020" sorts first; the file's date is kept as createdWas
+    assert (alpha["created"], alpha["createdFrom"], alpha["createdBefore"]) == ("2019-01-01", "photo", 2020)
+    assert "paper card" not in bs.HISTORY_FROM and "paper" not in bs.HISTORY_ROWS
     # the Morgue's entry from Discord: picture only, never a live card
     joke = [c for c in out["cards.json"]["morgue"] if c["name"] == "Joke Card"]
     assert joke and joke[0]["lost"] == "joke" and joke[0]["pic"] == "history/_morgue/joke-card/P-9.webp"
     assert joke[0]["first"] == "2020-07-13"                                         # the Pacific day, as its rows
+    muru = next(c for c in out["cards.json"]["morgue"] if c["name"] == "M'uru")     # owner Q6: Created, no first day
+    assert (muru["created"], muru["createdFrom"], muru["createdBefore"], muru["lost"]) == ("2019-01-01", "photo", 2020,
+                                                                                          "played") and "first" not in muru
+    assert "M'uru" not in _by_name(out["cards.json"]["cards"])
     taken = bs.history_morgue({"morgue": [("_morgue/joke-card", json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()))]},
                               bs.slugify, {"joke-card"})[0]
     assert taken[0]["id"] == "joke-card-morgue"                                      # a renamed card's old page stays its
