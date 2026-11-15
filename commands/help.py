@@ -36,7 +36,8 @@ card_commands = {
     "/sync_emojis [refresh] [prune]":        "Uploads the icons in Types/ as the bot's emojis (admin).",
     "Query syntax":                          "\n  \"exact text\"  !not  a | b  a & b"
                                              "\n  hp>5  def<=10  atk==3  spd>=7  stars<6  total>=25"
-                                             "\n  type==creature  series==kirby  subseries~door  alias~mk  (== exact, ~ contains)"
+                                             "\n  type==creature  series==kirby  subseries~door  alias~mk  (== or = exact, ~ contains)"
+                                             "\n  series== and series~ find a subseries too"
                                              "\n  created>=2025, 2023-10 or 2021-06-01; values with & or | in quotes"
                                              "\n  damage/DMG, defense/DEF, speed/SPD, health/HP, star points/SP,"
                                              "\n  primary field/PF, counter damage/CDMG find each other"
