@@ -140,6 +140,8 @@ def test_the_ability_is_checked_both_ways_and_the_name_as_printed(rows):
     assert rows.check_name("WX-78", "wx-", "Wx78", {"WX-78"}, True)["value"] == "WX-78"
     kit = rows.check_name("ALL-PURPOSE MEDICAL KIT", None, "All Purpose Medical Kit2", (), False)
     assert (kit["value"], kit["confidence"]) == ("All-Purpose Medical Kit", "sure")
+    near = rows.check_name("Himphrey's belly", None, "Hupmphreys Belly", {"Humphrey's Belly"}, False)
+    assert near["value"] == "Humphrey's Belly"                    # the nearest name, not the first near one
 
 
 def test_rows_fold_minor_looks_merge_formatting_and_show_the_old_name(rows):

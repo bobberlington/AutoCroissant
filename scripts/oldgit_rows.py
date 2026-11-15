@@ -618,7 +618,7 @@ def with_separators(name: str, ocr: str) -> str:
 def check_name(ocr_title: str, printed, stem: str, today, same_look: bool) -> dict:
     """The printed name: of the PSD's title, the file name (a trailing picture number dropped too) and today's names,
     one the OCR'd title spells letter for letter (one with its separators first; else it takes the OCR'd ones), else
-    the first near it."""
+    the nearest of those near it."""
     names = [(printed, "psd"), (stem, "file name")]
     bare = re.sub(r"\s*\d+$", "", stem)
     if bare and bare != stem and not re.search(r"\d$", norm(ocr_title)):
@@ -631,8 +631,10 @@ def check_name(ocr_title: str, printed, stem: str, today, same_look: bool) -> di
         if how != "psd" and shape(n) != shape(ocr_title):
             n = with_separators(n, ocr_title)
         return field(n, how, True, "ocr")
-    hit = next(((n, how) for n, how in names if title_match(ocr_title, n)), None)
-    if hit:
+    near = [(n, how) for n, how in names if title_match(ocr_title, n)]
+    if near:                                                   # the nearest ('Himphrey's belly': today's, not the file's)
+        from difflib import SequenceMatcher
+        hit = max(near, key=lambda nh: SequenceMatcher(None, want, norm(nh[0]), autojunk=False).ratio())
         return field(hit[0], hit[1], True, "ocr")
     if printed and same_look and text_key(printed) == text_key(stem):
         return field(printed, "psd", True, "composite, file name")
