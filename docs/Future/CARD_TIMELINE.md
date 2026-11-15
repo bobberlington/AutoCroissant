@@ -288,8 +288,9 @@ the card's Image versions on the website before the git versions. Cards that nev
 - Every published version's fields re-read from its webp agree with timeline.json (`discord_preview check`: the
   timelines' own readers on the webp; what they can't read again is counted apart, a disagreement goes to the eye, and
   so does every version published with no types: an absent icon can't be read again, a recoloured one matching no
-  `Types/` picture). It runs after every preview build (`--redo` reads only versions published otherwise since), and
-  its new disagreements are seen by eye before a publish (a wrong field: a drop in `derived/preview/eye.json`).
+  `Types/` picture). It runs after every preview build (`--redo` reads only versions published otherwise since, in a
+  seeded random order, each read kept as it goes: a run cut short goes on where it stopped and has read a fair sample),
+  and its new disagreements are seen by eye before a publish (a wrong field: a drop in `derived/preview/eye.json`).
 - The website build and its checks pass with and without the `history` branch.
 
 ## Open questions (for the start of the task)
