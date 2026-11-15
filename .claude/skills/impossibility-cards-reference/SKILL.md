@@ -811,7 +811,8 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    `MDW/Old Rules/`, not cards since 2026-10-30). It posts the matching LINES under their chapter names (`rulebook_lines`; long lines cut to SNIPPET
    around the match, the match in bold outside emoji markup), first the chapters with the most lines where the text
    starts a word (`ring`, not `during`; since 2026-11-04), then the most lines.
-10. One result posts its image URL alone (a preview, via `get_card_url`; its name when the PNG is not in the tree).
+10. One result (or `limit` 1) posts as /query does since 2026-11-15 (`_post_card`: one embed, the count line above it,
+    'Card page' + the website button, no ambiguity line; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
     300 px wide, numbered and named under each), one message per grid listing `**n.** [name](<site /c/<slug>/>)`, the
     count first and "Displayed ..." with the website button last. From 2026-10-21 to 2026-10-23 they were listed as
@@ -917,3 +918,5 @@ change, sections 4-5 are stale until rewritten.
 2026-11-12 (asks-1112, owner G4): /set_ratio deleted (match_ratio is DEFAULT_MATCH_RATIO only); query_card's DEFAULT_REPOSITORY folded into CARD_REPO.
 
 2026-11-12 (asks-1112, owner G5/G6): Card Ratings.json data only (`tts_ratings` deleted); the `ability_art` field deleted (`art` keeps reading an older record's one string: Soul of Eden's).
+
+2026-11-15: §7.2 gotcha 10: one result posts as /query does (one embed), 'Found 1 result'.

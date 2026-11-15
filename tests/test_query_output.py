@@ -1,5 +1,5 @@
-"""/query_ability output: one card as its image URL alone (Discord previews it); more as grid images of 20, each message
-listing its cards, in order."""
+"""/query_ability output: one card as /query posts it; more as grid images of 20, each message listing its cards, in
+order."""
 import pytest
 from io import BytesIO
 from PIL import Image
@@ -36,10 +36,16 @@ def _url(i):
 # ========================
 # Message count and contents
 # ========================
-def test_one_card_is_its_image_link(repo):
+def test_one_card_is_posted_as_query_does(repo, monkeypatch):
+    """One result: one message, /query's embed (title, ban) with its Card page and the search's button; no ambiguity line."""
+    monkeypatch.setattr(qc.stats_db, "stats", {"Card 0": SimpleNamespace(name="Card 0", display_name="CARD 0", series="kirby")})
+    repo.git_files, repo.ambiguous_names = {"card_0.png": "Items/Card_0.png"}, {"card_0.png": ("a/card_0.png", "b/card_0.png")}
+    repo.site_ids, repo.banned = {"card_0.png": ("card-0", "")}, {"card-0": ""}
+    repo.site_url, repo.get_card_url = lambda key: f"https://site/c/{key[:-4]}/", lambda key: f"https://img/{key}"
     out, kwargs = _search(repo, 1)
-    assert out == ["Found 1 results for 'Fire'!", _url(0), "Displayed 1 of 1 results for 'Fire'."]
-    assert "links" in kwargs[2]
+    assert out == ["Found 1 result for 'Fire'!"] and kwargs[0]["embed"].image.url == "https://img/card_0.png"
+    assert kwargs[0]["embed"].title == "CARD 0" and kwargs[0]["embed"].description == "kirby\nBanned in constructed"
+    assert [label for label, _ in kwargs[0]["links"]] == ["Card page", "All results on the website"]
 
 
 def test_nothing_found_is_one_reply_with_the_websites_guesses(repo, monkeypatch):

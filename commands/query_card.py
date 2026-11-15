@@ -1058,11 +1058,13 @@ def art_text(text: str) -> str:
     return " ".join("".join(out).split())
 
 
-def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None) -> None:
+def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None,
+               more: Optional[list] = None, others: bool = True) -> None:
     """The card's image (in an embed with its series, created date, notes... when it has data) and any ambiguity;
-    url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
+    url: an image other than today's (/query as_of); note: a line above it (a guess, a rename); more: buttons after
+    'Card page'; others: False leaves out the ambiguity line (a search result)."""
     url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
-    links = [("Card page", page)] if page else None
+    links = ([("Card page", page)] if page else []) + (more or []) or None
     card = _stats_card(closest)
     shown = getattr(card, "display_name", None) if card else None
     subseries = getattr(card, "subseries", None) if card else None
@@ -1086,7 +1088,7 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
         queue_message(interaction, f"{note}\n{url}" if note else url, links=links)
 
     # Notify if name is ambiguous
-    options = card_repo.other_cards(closest)
+    options = card_repo.other_cards(closest) if others else None
     if options:
         queue_message(interaction, "Ambiguous name found. If this wasn't the card you wanted, try:\n" + "\n".join(options))
 
@@ -1361,7 +1363,7 @@ def query_ability(interaction: Interaction,
         queue_message(interaction, f"No cards match '{ability}'.{more}", links=links)
         return
 
-    found = f"Found {total_results} results for '{ability}'!"
+    found = f"Found {total_results} result{'s' * (total_results != 1)} for '{ability}'!"
     if results.attrs.get("near"):                         # no card has the text: the closest abilities
         found = f"No card has the text '{ability}'; " + (f"{total_results} cards have a similar ability, closest first:"
                                                            if total_results > 1 else "1 card has a similar ability:")
@@ -1372,10 +1374,13 @@ def query_ability(interaction: Interaction,
         post_grids(interaction, shown, found, done, links, labels=[title for _, title in rows])
         return
 
-    queue_message(interaction, found)
-    for name in shown:                                   # one card: its image link, previewed
-        queue_message(interaction, card_repo.get_card_url(name) or name)   # its name when the PNG is not in the tree
-    queue_message(interaction, done, links=links)
+    note = f"{found}\n{done}" if results_to_show < total_results else found
+    key = card_repo._normalize_card_name(shown[0]) if shown else ""
+    key = key if key in card_repo.git_files else key.replace("_", " ")
+    if key in card_repo.git_files:                       # one card: as /query posts it
+        _post_card(interaction, key, note=note, more=links, others=False)
+    else:                                                # limit 0, or its PNG not in the tree: its name
+        queue_message(interaction, "\n".join([note, *shown]), links=links)
 
 
 def _site_order(results: DataFrame, query: str) -> list:
