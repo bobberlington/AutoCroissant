@@ -77,6 +77,32 @@ out(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Buffer.from(v).toSt
     assert out == {**{k: v.hex() for k, v in files.items()}, "before.avif": b"stored".hex()}
 
 
+def test_the_warm_lane_is_named_and_checked(tmp_path):
+    """The press's lane (owner D22): laneCheck is the lane's check_of and the title card-preview.yml's run-name makes
+    parses back to the press; laneOf names the run that handed over the newest result while it has LANE_SAFE_MS left
+    (its idle end, its start's cap); pollDelay looks for a named lane's hand-over from LANE_FIRST_MS every LANE_POLL."""
+    import re
+    import yaml
+    from commands.card_preview_lane import check_of, press_of
+    request, card, edit = "zomoroko-mw5qp6i1-xk2v", "Odd {Card}", json.dumps({"ability": "Deal 2 {fire} — damage", "hp": 7}, ensure_ascii=False, separators=(",", ":"))
+    out = node(tmp_path, f"""const now = 1e12, s = 1000;
+const own = {{ request: "r-00000001", at: now - 500 * s, hash: "h", state: "baked", run: {{ id: 101, started: now - 500 * s }}, from: 101, fromAt: now - 480 * s }};
+const next = fromAt => ({{ request: "r-00000002", at: now - 70 * s, hash: "h", state: "baked", lane: 101, from: 101, fromAt }});
+const lane = (age, extra = {{}}) => ({{ c: [{{ request: "r-00000003", at: now - age, hash: "h", state: "running", lane: 101, ...extra }}] }});
+out([await p.laneCheck({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edit)}),
+  p.laneOf({{ a: [own, next(now - 60 * s)] }}, now), p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 580 * s }} }}, next(now - 60 * s)] }}, now),
+  p.laneOf({{ a: [own, next(now - 230 * s)] }}, now), p.laneOf({{}}, now),
+  p.pollDelay(lane(1 * s), now), p.pollDelay(lane(5 * s), now), p.pollDelay(lane(5 * s, {{ fromAt: now }}), now), p.pollDelay(lane(16 * s), now)]);""")
+    check, named, capped, idle, none, *delays = out
+    assert check == check_of(request, card, edit)
+    run_name = yaml.safe_load((SITE / ".github" / "workflows" / "card-preview.yml").read_text(encoding="utf-8"))["run-name"]
+    assert run_name == "Card preview ${{ inputs.request }}${{ inputs.lane && format(' lane {0} {1} {2}', inputs.lane, inputs.card, inputs.edit) || '' }}"
+    title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{check} {card} {edit}", run_name.replace("${{ inputs.request }}", request))
+    assert press_of(title) == (request, 101, card, edit)
+    assert (named, capped, idle, none) == (101, None, None, None)
+    assert delays == [2000, 500, 7000, 1000]
+
+
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
     empty line; a long text shrinks until it fits, a name keeps its line count."""

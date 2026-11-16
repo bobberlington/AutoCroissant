@@ -681,6 +681,153 @@ def test_the_direct_hand_over(tmp_path, monkeypatch, capsys):
 
 
 # ========================
+# The warm lane
+# ========================
+def test_a_lanes_title_and_what_it_takes():
+    """The title's card is what precedes the " {" that checks (a card with " {" in it too); a cut or changed title names
+    the lane but doesn't check; fits() takes only a press named to this run, by its editor, on its commit, not done."""
+    from commands.card_preview_lane import check_of, fits, press_of
+    edit = '{"ability":"Deal 2 {fire} damage.","hp":7}'
+    for card in ("Mini Doomer", "Odd {Card}"):
+        title = f"Card preview {REQUEST} lane 100-{check_of(REQUEST, card, edit)} {card} {edit}"
+        assert press_of(title) == (REQUEST, 100, card, edit)
+        assert press_of(title[:-3]) == (REQUEST, 100, None, None) and press_of(title.replace("2", "3")).card is None
+    assert press_of(f"Card preview {REQUEST}") is None
+    run = {"status": "queued", "triggering_actor": {"login": "ed"}, "head_sha": "h"}
+    press = press_of(f"Card preview {REQUEST} lane 100-{check_of(REQUEST, 'A', '{}')} A {{}}")
+    assert fits(run, press, 100, "ed", "h") == ""
+    assert [fits({**run, **change}, p, 100, "ed", "h") for change, p in (
+        ({}, None), ({}, press._replace(lane=99)), ({}, press._replace(card=None)), ({"status": "completed"}, press),
+        ({"triggering_actor": {"login": "other"}}, press), ({"head_sha": "g"}, press))] == [
+        "a newer press named no lane", "a newer press named lane 99", "a newer press's title doesn't check",
+        "a newer press was done before the lane saw it", "a newer press by another editor", "the card repo moved"]
+
+
+def test_the_warm_lane(cards, tmp_path, monkeypatch):
+    """--code then --lane against a stand-in API: the first press's code is written before the lane; the lane takes its
+    editor's next press named to it (title, commit, bot's main and records checked; its out dir, then <request>.code),
+    bakes it as a cold preview does (the same result less took_s, at and run, the same images; run: the press's own),
+    and ends at a newer press that names no lane, whose dir it never makes."""
+    import commands.card_preview_lane as lane_mod
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from time import time
+    bot = _git(REPO, "rev-parse", "HEAD").strip()
+    records = tmp_path / "records"
+    records.mkdir()
+    for name in early.RECORDS:
+        (records / name).write_text("{}\n")
+    second, third = "0f8e7d6c-5b4a-4321-9876-00000000aaaa", "0f8e7d6c-5b4a-4321-9876-00000000bbbb"
+    edit = '{"hp": 7}'
+    runs = [{"id": 99, "display_title": "Card preview older-press-1"},
+            {"id": 101, "status": "queued", "triggering_actor": {"login": "web-ed"}, "head_sha": cards.head,
+             "created_at": "2026-11-16T00:00:00Z",
+             "display_title": f"Card preview {second} lane 100-{lane_mod.check_of(second, 'Mini Doomer', edit)} Mini Doomer {edit}"},
+            {"id": 102, "status": "queued", "triggering_actor": {"login": "web-ed"}, "head_sha": cards.head,
+             "display_title": f"Card preview {third}"}]
+    asked = []
+
+    class Api(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            body = (json.dumps({"workflow_runs": runs[::-1]}) if path.endswith("/runs") else
+                    json.dumps({"object": {"sha": bot}}) if path.endswith("/git/ref/heads/main") else
+                    (records / path.rsplit("/", 1)[1]).read_text() if "/contents/db/" in path else None)
+            tag = f'"{hash(body)}"'
+            status = 404 if body is None else 304 if self.headers.get("If-None-Match") == tag else 200
+            asked.append((path.rsplit("/", 1)[1], status))
+            self.send_response(status)
+            self.send_header("ETag", tag)
+            self.end_headers()
+            if status == 200:
+                self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+    import _socket
+    import socket
+
+    def loopback(self, address, _real=_socket.socket.connect):              # the stand-in alone (offline's refusal else)
+        assert address[0] == "127.0.0.1", "network access in an offline test"
+        return _real(self, address)
+    monkeypatch.setattr(socket.socket, "connect", loopback)
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *a, **k: _socket.getaddrinfo("127.0.0.1", *a, **k) if host == "127.0.0.1" else loopback(None, (host,)))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Api)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        for key, value in {"GITHUB_RUN_ID": "100", "GITHUB_TRIGGERING_ACTOR": "web-ed", "GITHUB_TOKEN": "tok",
+                           "GITHUB_API_URL": base, lane_mod.RECORDS_ENV: str(records)}.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.setattr(early, "API", base + "/repos/")
+        monkeypatch.setattr(pe, "_RECORDS", {})
+        monkeypatch.setattr(lane_mod, "_log_to", lambda path: None)
+        monkeypatch.setattr(lane_mod, "POLL", 0.01)
+        (tmp_path / "hand.done").write_text("ok\n")         # Hand's first hand-over
+        (tmp_path / "first.json").write_text('{"hp": 8}')
+        codes = []
+        monkeypatch.setattr(lane_mod, "take", lambda *a, _f=lane_mod.take, **k: codes.append((tmp_path / "code").read_text()) or _f(*a, **k))
+        code = cp.main(["--card", "Mini Doomer", "--edit", str(tmp_path / "first.json"), "--out", str(tmp_path / "out"),
+                        "--clone", str(cards.repo), "--request", REQUEST, "--head", cards.head, "--code", str(tmp_path / "code"),
+                        "--lane", str(tmp_path / "lane"), "--lane-until", str(time() + 300)])
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert code == 0 and codes == ["0\n"] and (tmp_path / "lane.end").read_text() == "a newer press named no lane\n"
+    assert sorted(p.name for p in (tmp_path / "lane").iterdir()) == [second, f"{second}.code"]
+    assert (tmp_path / "lane" / f"{second}.code").read_text() == "0\n"
+    assert [a for a in asked if a[0] in ("runs", "main")] == [("main", 200), ("runs", 200), ("main", 304), ("runs", 304)]
+    warm = json.loads((tmp_path / "lane" / second / cp.RESULT).read_text())
+    assert warm["run"] == f"https://github.com/{cb.CARD_REPO}/actions/runs/101" and warm["reason"] == "hp 5 -> 7"
+    monkeypatch.delenv("GITHUB_RUN_ID")
+    _, cold, out = _preview(cards, tmp_path, edit.encode(), request=second, name="cold")
+    assert {k: v for k, v in warm.items() if k not in ("took_s", "at", "run")} == {k: v for k, v in cold.items() if k not in ("took_s", "at", "run")}
+    for name in (cp.SMALL, cp.BEFORE):
+        assert (tmp_path / "lane" / second / name).read_bytes() == (out / name).read_bytes()
+
+
+def test_the_lanes_hand_overs(tmp_path, monkeypatch):
+    """--hand ... --lane: after the first hand-over, each press's dir in the lane as card-preview-<request> (created at
+    once, finalized once its result.json is in); one the lane skipped (its .code, no result) is never finalized; it ends
+    at lane.end, hand.lane saying how many it handed over."""
+    import base64
+    import io
+    claims = base64.urlsafe_b64encode(json.dumps({"scp": "Actions.Results:run-1:job-2"}).encode()).decode().rstrip("=")
+    lane, first = tmp_path / "lane", tmp_path / "preview"
+    for out in (first, lane / "req-0000a", lane / "req-0000b"):
+        out.mkdir(parents=True)
+    for out in (first, lane / "req-0000a"):
+        (out / br.RESULT).write_text('{"state": "baked"}')
+    (lane / "req-0000b.code").write_text("skipped\n")
+    (tmp_path / "lane.end").write_text("idle 240 s\n")
+    sent = []
+
+    class Connection:
+        def __init__(self, host, timeout=None):
+            self.host = host
+
+        def connect(self):
+            pass
+
+        def request(self, method, path, body=None, headers=None):
+            sent.append((self.host, path.rsplit("/", 1)[-1], json.loads(body).get("name") if self.host == "r.example" else None))
+
+        def getresponse(self):
+            body = {"ok": True, "signed_upload_url": "https://blob.example/a?sig=s"}
+            return SimpleNamespace(status=201 if sent[-1][0] == "blob.example" else 200, read=lambda: json.dumps(body).encode(),
+                                   getheader=lambda name, default=None: default)
+
+        def close(self):
+            pass
+    monkeypatch.setattr(br, "HTTPSConnection", Connection)
+    monkeypatch.setattr(br, "stdin", io.StringIO(f"h.{claims}.s\nhttps://r.example/\n"))
+    assert br.main(["--hand", str(first), "--lane", str(lane)]) == 0
+    assert (tmp_path / br.HAND_DONE).read_text() == "ok\n" and (tmp_path / br.LANE_HANDED).read_text() == "1\n"
+    assert [s for s in sent if s[1] == "CreateArtifact"] == [("r.example", "CreateArtifact", n) for n in (
+        br.ARTIFACT, br.LANE_ARTIFACT + "req-0000a", br.LANE_ARTIFACT + "req-0000b")]
+    assert [s[1] for s in sent].count("FinalizeArtifact") == 2 and [s[0] for s in sent].count("blob.example") == 2
+
+
+# ========================
 # card-preview.yml
 # ========================
 def _workflow() -> tuple:
@@ -691,7 +838,7 @@ def _workflow() -> tuple:
 def _expand(value: str, inputs: dict, workspace: Path) -> str:
     """The ${{ }} expressions the steps' env use; any other fails the test (the runner would read it, this would not)."""
     known = {"inputs.card": inputs["card"], "inputs.edit": inputs["edit"], "inputs.request": inputs["request"],
-             "secrets.GITHUB_TOKEN": "", "github.workspace": str(workspace)}
+             "inputs.lane": inputs.get("lane", ""), "secrets.GITHUB_TOKEN": "", "github.workspace": str(workspace)}
 
     def one(match):
         assert match.group(1) in known, f"the job runner here does not know ${{{{ {match.group(1)} }}}}"
@@ -792,6 +939,7 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     assert files[f"previews/{REQUEST}/{br.BEFORE}"][4:12] == b"ftypavif"
     assert result["files"] == {"webp": br.SMALL, "before": br.BEFORE} and result["runner"]["fonts"] is True
     assert "**Baked**: hp 5 -> 8" in (tmp_path / "run1" / "preview" / "summary.md").read_text()
+    assert (tmp_path / "run1" / "preview" / "lane.end").read_text() == "not on a runner\n"     # no run id: no lane
     assert "Published `previews/" in (tmp_path / "run1" / "publish" / "summary.md").read_text()
 
     before = _git(remote.bare, "rev-parse", "previews").strip()
