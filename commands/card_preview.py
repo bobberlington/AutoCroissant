@@ -6,6 +6,7 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
 
     python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> --clone <checkout>
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
+                                    [--code <file>] [--lane <dir> --lane-until <epoch s> --lane-named <lane>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
 pixels the bake would commit, saved at PNG_LEVEL; never published), preview.avif
@@ -18,7 +19,8 @@ the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `t
 value printed goes through clean().
 No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and
 requirements-cards.txt. card-preview.yml starts it beside the font restore: it waits in ready() for the reads
-(READS_ENV), its first font for the fonts (WAIT_ENV).
+(READS_ENV), its first font for the fonts (WAIT_ENV). --code writes the exit code to a file once the preview is done;
+--lane then keeps the process up for its editor's next presses (card_preview_lane, owner D22).
 """
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -56,7 +58,8 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt",
                 "commands/psd_links.py", "commands/card_preview_reads.py",    # the Reads step's (stdlib)
-                "commands/ability_place.py", "commands/ability_index.json")    # a "+ability" (card_bake imports it)
+                "commands/ability_place.py", "commands/ability_index.json",    # a "+ability" (card_bake imports it)
+                "commands/card_preview_lane.py")                                # --lane (owner D22)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # a picture's page files these under its PSD's entry (edit.js routeOps)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
@@ -383,7 +386,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
 
 
 def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, *, clone: str, request: str = "",
-            head: str = "") -> dict:
+            head: str = "", run: str = "") -> dict:
     """
     One card's edit through the bake (bake_card) on a temp work dir; the card repo is only read.
 
@@ -395,6 +398,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         clone: A checkout of it (blobless is enough): the tree and blobs from it, a missing blob by REST
         request: The client's id, echoed (REQUEST)
         head: The commit to preview on ("" = the clone's HEAD)
+        run: The press's run URL ("" = this run's: a warm lane bakes another run's press)
 
     Returns:
         result.json's dict (written); never raises for a card's or the runner's failure
@@ -406,7 +410,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         if exists(join(out, name)):
             remove(join(out, name))
     result = blank(request, card)
-    result.update(v=RESULT_V, variant=None, parts={})
+    result.update(v=RESULT_V, variant=None, parts={}, **({"run": run} if run else {}))
     work = mkdtemp(prefix="card-preview_", dir=environ.get(card_bake.WORK_ENV) or None)
     early, level, made = None, psd_edit.PNG_LEVEL, {}
     try:
@@ -530,6 +534,10 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--request", default="local-preview", help="the client's id (8-64 of A-Z a-z 0-9 -)")
     parser.add_argument("--repo", default=CARD_REPO, help=f"owner/name of the card repo (default {CARD_REPO})")
     parser.add_argument("--head", default="", help="the commit to preview on (default: the clone's HEAD)")
+    parser.add_argument("--code", help="write the exit code to this file once the preview is done")
+    parser.add_argument("--lane", help="then the warm lane in this folder: this editor's next presses (card_preview_lane)")
+    parser.add_argument("--lane-until", type=float, default=0, help="the lane's end at the latest (epoch seconds)")
+    parser.add_argument("--lane-named", default="", help="the lane this press named (card-preview.yml's inputs.lane)")
     options = parser.parse_args(args)
     try:
         with open(options.edit, "rb") as fh:
@@ -539,10 +547,22 @@ def main(args: Optional[list] = None) -> int:
     result = preview(options.card, raw, options.out, options.repo, clone=options.clone, request=options.request,
                      head=options.head)
     print(render(result), end="")
+    code = 0
     if result["state"] == "error":
         print(f"card_preview: {clean(result['reason'], 2000)}", file=stderr)
-        return 2 if result["reason"].startswith("input:") else 1
-    return 0
+        code = 2 if result["reason"].startswith("input:") else 1
+    if options.code:                            # done: the job goes on while the lane stays up
+        stdout.flush()
+        stderr.flush()
+        with open(options.code + ".tmp", "w", encoding="utf-8") as fh:
+            fh.write(f"{code}\n")
+        replace(options.code + ".tmp", options.code)
+    if options.lane:
+        from commands.card_preview_lane import serve
+        serve(options.lane, bake=preview, out=options.out, clone=options.clone, repository=options.repo,
+              head=options.head or result["base"]["commit"], request=options.request, named=options.lane_named,
+              until=options.lane_until, code=code, limit=MAX_EDIT)
+    return code
 
 
 if __name__ == "__main__":

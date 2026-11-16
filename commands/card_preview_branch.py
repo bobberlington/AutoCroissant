@@ -8,13 +8,15 @@ which keeps a dispatched value on one line of the job's log.
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
     python -m commands.card_preview_branch --warm [--git <checkout>]
     python -m commands.card_preview_branch --take <dir>
-    python -m commands.card_preview_branch --hand <dir>      (stdin: ACTIONS_RUNTIME_TOKEN, then ACTIONS_RESULTS_URL)
+    python -m commands.card_preview_branch --hand <dir> [--lane <dir>]   (stdin: ACTIONS_RUNTIME_TOKEN, ACTIONS_RESULTS_URL)
 
 --warm reads the branch while the job waits for the preview: publish's first try then builds on that head, no network
 until the push (a refused push: the usual tries from the head then). --take is the job's wait: this run's hand-over
 (the preview job's artifact) listed by conditional GETs on one connection, then its zip unzipped into <dir> (take_over);
 `go=` and `took=` lines on stdout for $GITHUB_OUTPUT. --hand is that hand-over made by the preview job itself, from a
-process of its own (hand(); TTSCardMaker .github/actions/hand-over), hand.done beside <dir> saying ok, none or fail.
+process of its own (hand(); TTSCardMaker .github/actions/hand-over), hand.done beside <dir> saying ok, none or fail;
+with --lane, then the warm lane's presses (card_preview_lane), each <lane>/<request>/ as LANE_ARTIFACT-<request>, until
+<lane>.end (hand_lane).
 
 Standard library and git only (never PIL, psd-tools, requests or card_bake): card-preview.yml's publish job runs it with
 the runner's own python3 and no pip install, so a preview that never ran (a failed install, a timeout) is still published,
@@ -25,11 +27,11 @@ from argparse import ArgumentParser
 from base64 import urlsafe_b64decode
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-from http.client import HTTPException, HTTPSConnection
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from io import BytesIO
 from json import dumps, loads
-from os import environ, makedirs, replace
-from os.path import abspath, dirname, isfile, join
+from os import environ, listdir, makedirs, replace
+from os.path import abspath, dirname, isdir, isfile, join
 from random import uniform
 from re import compile as re_compile
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
@@ -75,6 +77,9 @@ WAIT = 715                                      # s at most (the step's 5 s befo
 LOW = 100                                       # rate limit left under which listings slow to POLL_LATE
 HAND_POLL, HAND_WAIT = 0.02, 600                # s between looks for result.json; s at most (the preview's 480 s, then)
 HAND_DONE = "hand.done"                         # beside the out dir: ok, none or fail
+LANE_ARTIFACT = "card-preview-"                 # + the request: a warm lane's hand-over (card_preview_lane)
+LANE_END, LANE_HANDED = ".end", "hand.lane"     # <lane>.end: the lane stopped; hand.lane beside it: its hand-overs ended
+LANE_WAIT = 640                                 # s at most (the preview job's 11 minutes)
 RPC = "/twirp/github.actions.results.api.v1.ArtifactService/"     # upload-artifact v7's (Twirp JSON, proto names)
 BLOB_VERSION = "2026-02-06"                     # x-ms-version: its @azure/storage-blob's
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
@@ -308,12 +313,17 @@ def publish(out: str, request: str, where: str = ".", now: Optional[datetime] = 
 # ========================
 # The hand-over
 # ========================
+def _local(url) -> bool:
+    """A plain-HTTP stand-in on this machine (the tests' and a local lane's)."""
+    return url.scheme == "http" and url.hostname in ("127.0.0.1", "localhost")
+
+
 class _Api:
     """GETs on one kept HTTPS connection to the API host (the token's only host), conditional where asked."""
 
     def __init__(self, base: str, token: str):
         url = urlsplit(base)
-        self.host, self.root = url.netloc, url.path.rstrip("/")
+        self.host, self.root, self.plain = url.netloc, url.path.rstrip("/"), _local(url)
         self.headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "card-preview-publish"}
         self.connection = None
@@ -325,7 +335,7 @@ class _Api:
         headers = {**self.headers, **({"If-None-Match": self.tags[path]} if conditional and path in self.tags else {})}
         for retry in (False, True):
             if self.connection is None:
-                self.connection = HTTPSConnection(self.host, timeout=10)
+                self.connection = (HTTPConnection if self.plain else HTTPSConnection)(self.host, timeout=10)
             try:
                 self.connection.request("GET", self.root + path, headers=headers)
                 reply = self.connection.getresponse()
@@ -459,8 +469,8 @@ class _Kept:
     """One HTTPS connection kept to a host, its TLS made at once; a request on one the host closed goes once more on a
     new one."""
 
-    def __init__(self, host: str):
-        self.host, self.connection = host, None
+    def __init__(self, host: str, plain: bool = False):
+        self.host, self.plain, self.connection = host, plain, None
         try:
             self.open()
         except OSError:                         # made at the first request
@@ -468,7 +478,7 @@ class _Kept:
 
     def open(self) -> None:
         self.close()
-        self.connection = HTTPSConnection(self.host, timeout=30)
+        self.connection = (HTTPConnection if self.plain else HTTPSConnection)(self.host, timeout=30)
         self.connection.connect()
 
     def send(self, method: str, path: str, body: bytes, headers: dict) -> tuple:
@@ -523,7 +533,7 @@ def _utc() -> str:
     return datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
 
 
-def hand(out: str, token: str, results: str, limit: float = HAND_WAIT) -> str:
+def hand(out: str, token: str, results: str, limit: float = HAND_WAIT, name: str = ARTIFACT) -> str:
     """
     The preview job's hand-over as upload-artifact v7 makes it, from a process of its own started while the preview
     bakes: ARTIFACT created at once and both hosts' connections made; the moment result.json is in out (looked for every
@@ -533,24 +543,25 @@ def hand(out: str, token: str, results: str, limit: float = HAND_WAIT) -> str:
 
     Args:
         token, results: ACTIONS_RUNTIME_TOKEN and ACTIONS_RESULTS_URL (never logged; the token to the service alone)
+        name: The artifact's (a lane's press: LANE_ARTIFACT + its request)
 
     Returns:
         "ok" (finalized) or "none" (no result.json); raises ValueError, OSError or HTTPException otherwise
     """
     started = monotonic()
-    ids = dict(zip(("workflow_run_backend_id", "workflow_job_run_backend_id"), _backend_ids(token)), name=ARTIFACT)
+    ids = dict(zip(("workflow_run_backend_id", "workflow_job_run_backend_id"), _backend_ids(token)), name=name)
     service = urlsplit(results)
-    if service.scheme != "https" or not service.netloc:
+    if (service.scheme != "https" and not _local(service)) or not service.netloc:
         raise ValueError("no results URL")
-    api = _Kept(service.netloc)
+    api = _Kept(service.netloc, _local(service))
     store = None
     try:
         expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         made = _rpc(api, token, "CreateArtifact", {**ids, "expires_at": expires, "version": 7, "mime_type": "application/zip"})
         upload = urlsplit(str(made.get("signed_upload_url") or made.get("signedUploadUrl") or ""))
-        if upload.scheme != "https" or not upload.netloc:
+        if (upload.scheme != "https" and not _local(upload)) or not upload.netloc:
             raise ValueError("CreateArtifact gave no upload URL")
-        store = _Kept(upload.netloc)
+        store = _Kept(upload.netloc, _local(upload))
         created = monotonic()
         result = join(out, RESULT)
         while not isfile(result) and not isfile(out.rstrip("/") + ".code") and monotonic() - started < limit:
@@ -582,7 +593,7 @@ def hand(out: str, token: str, results: str, limit: float = HAND_WAIT) -> str:
             print(f"card_preview_branch: {clean(error, 300)}: once more", file=stderr)
             done = _rpc(api, token, "FinalizeArtifact", body)
         end = monotonic()
-        print(f"Handed over {len(data)} bytes (artifact {clean(done.get('artifact_id', '?'), 40)}): created "
+        print(f"Handed over {name} {len(data)} bytes (artifact {clean(done.get('artifact_id', '?'), 40)}): created "
               f"{created - started:.3f} s after start; result.json seen {seen_at} UTC, put {put - seen:.3f} s on, "
               f"finalized {end - put:.3f} s later ({_utc()} UTC).", file=stderr)
         return "ok"
@@ -590,6 +601,31 @@ def hand(out: str, token: str, results: str, limit: float = HAND_WAIT) -> str:
         api.close()
         if store is not None:
             store.close()
+
+
+def hand_lane(lane: str, token: str, results: str, limit: float = LANE_WAIT) -> int:
+    """
+    The warm lane's hand-overs (card_preview_lane), one at a time: each new <lane>/<request>/ (made as the lane takes the
+    press) is handed over as LANE_ARTIFACT + request (hand(): created at once, its files the moment result.json is in;
+    <lane>/<request>.code with no result.json: none), until <lane>.end or limit s. Returns how many were handed over.
+    """
+    started, done, handed = monotonic(), set(), 0
+    while monotonic() - started < limit:
+        ended = isfile(lane + LANE_END)         # before the listing: a press made before the end is handed over
+        for request in sorted(listdir(lane)) if isdir(lane) else []:
+            if request in done or not REQUEST.fullmatch(request) or not isdir(join(lane, request)):
+                continue
+            done.add(request)
+            try:
+                handed += hand(join(lane, request), token, results, limit - (monotonic() - started),
+                               LANE_ARTIFACT + request) == "ok"
+            except (ValueError, OSError, HTTPException) as error:
+                why = clean(error, 300) if isinstance(error, (ValueError, OSError)) else type(error).__name__
+                print(f"card_preview_branch: {request} not handed over ({why})", file=stderr)
+        if ended:
+            break
+        sleep(HAND_POLL)
+    return handed
 
 
 # ========================
@@ -608,6 +644,8 @@ def main(args: Optional[list] = None) -> int:
                                                       "GITHUB_RUN_ID, GH_TOKEN); go= and took= lines on stdout")
     parser.add_argument("--hand", metavar="DIR", help="hand DIR's preview over as the artifact once its result.json is "
                                                       "in (stdin: the runtime token, the results URL); hand.done beside it")
+    parser.add_argument("--lane", metavar="DIR", help="with --hand, once that is handed over: the warm lane's presses in "
+                                                      "DIR, each its own artifact, until DIR.end; hand.lane beside it")
     options = parser.parse_args(argv[1:] if args is None else args)
     if options.hand:
         token, results, state = stdin.readline().strip(), stdin.readline().strip(), "fail"
@@ -621,6 +659,10 @@ def main(args: Optional[list] = None) -> int:
             with open(done + ".tmp", "w", encoding="utf-8") as fh:
                 fh.write(state + "\n")
             replace(done + ".tmp", done)
+        if options.lane and state == "ok":      # the lane waits for that ok
+            handed = hand_lane(abspath(options.lane), token, results)
+            with open(join(dirname(abspath(options.lane)), LANE_HANDED), "w", encoding="utf-8") as fh:
+                fh.write(f"{handed}\n")
         return 0
     if options.take:
         state = take_over(options.take, environ["GITHUB_REPOSITORY"], environ["GITHUB_RUN_ID"],
@@ -664,6 +706,7 @@ __all__ = [
     'blank',
     'clean',
     'hand',
+    'hand_lane',
     'kept',
     'main',
     'publish',

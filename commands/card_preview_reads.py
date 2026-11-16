@@ -38,6 +38,7 @@ RECORDS = ("render_record.json", "spot_record.json", "verdicts.json")  # psd_edi
 PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # card_preview's
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}
+API = environ["GITHUB_API_URL"].rstrip("/") + "/repos/" if environ.get("GITHUB_API_URL") else API_BASE   # the runner's
 
 
 # ========================
@@ -113,7 +114,7 @@ def _get(url: str) -> bytes:
 
 def read_record(repository: str, name: str, folder: str) -> None:
     """db/<name> from the data branch to folder/<name> (temp file, then rename); raises when it is not a JSON object."""
-    data = _get(f"{API_BASE}{repository}/contents/db/{name}?ref={DATA_BRANCH}")
+    data = _get(f"{API}{repository}/contents/db/{name}?ref={DATA_BRANCH}")
     if not isinstance(loads(data), dict):
         raise ValueError(f"db/{name} is not a JSON object")
     temp = join(folder, f"{name}.{getpid()}")
@@ -131,7 +132,7 @@ def missing(clone: str, shas: list) -> set:
 
 def read_blob(repository: str, sha: str, clone: str) -> bytes:
     """A blob by REST into the clone's object store; raises when it does not hash to sha."""
-    data = _get(f"{API_BASE}{repository}/git/blobs/{sha}")
+    data = _get(f"{API}{repository}/git/blobs/{sha}")
     if sha1(b"blob %d\0" % len(data) + data).hexdigest() != sha:
         raise ValueError(f"blob {sha[:8]} does not hash to its sha")
     run(["git", "-C", clone, "hash-object", "-w", "--stdin"], input=data, capture_output=True, env=NO_LAZY, check=True,
