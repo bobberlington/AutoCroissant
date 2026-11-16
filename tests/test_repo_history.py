@@ -133,8 +133,9 @@ def test_single_pass_matches_ls_tree_walk(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
     tree = functools.cache(rh._tree)                                                   # a commit's tree never changes
     full = {c: _ls_tree_walk(c, "", {}, tree) for c in commits}
+    reach = {c: set(rh._git("rev-list", c).split()) for c in commits}                  # not a merge-base per pair
     for i, head in enumerate(commits):
         assert rh._walk(head, "", {}) == full[head]
         for last in commits[:i]:
-            if rh._is_ancestor(last, head):
+            if last in reach[head]:
                 assert rh._walk(head, last, full[last]) == _ls_tree_walk(head, last, full[last], tree) == full[head]
