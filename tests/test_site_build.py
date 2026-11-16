@@ -13,6 +13,7 @@ import sys
 import time
 from collections import defaultdict
 from html import unescape as html_unescape
+from io import BytesIO
 from os import environ
 from pathlib import Path
 
@@ -166,22 +167,43 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
 
 
-def test_older_versions_copied_by_the_versions_job(bs, repo, tmp_path, monkeypatch):
-    """site.yml's build makes no older-version copies (VERSION_BUDGET 0): it lists every older version's PNG blob, newest
-    first (VERSION_LIST), for its versions job (--versions); the next build links that job's copies (app.js versionCopy)."""
-    listed, (c1, c2, _) = tmp_path / "copies.txt", repo["commits"]
-    monkeypatch.setattr(bs, "VERSION_BUDGET", 0)
+def test_older_versions_copied_onto_the_plates_branch(bs, repo, tmp_path, monkeypatch):
+    """site.yml's build lists every older version's PNG blob and plates file, newest first (VERSION_LIST), while the plates
+    branch's v/ (VERSION_PLATES) lacks one, and puts none in the site; its versions job (--versions, a blobless depth-1
+    checkout) commits the copies onto the branch beside the plates (app.js versionCopy). All there: no commit, no list."""
+    listed, have, (c1, c2, _) = tmp_path / "copies.txt", tmp_path / "plates-v.txt", repo["commits"]
+    origin, job = tmp_path / "origin.git", tmp_path / "job"
+    for key in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{key}_NAME", "t")
+        monkeypatch.setenv(f"GIT_{key}_EMAIL", "t@t")
+    git = lambda where, *a, data=None: subprocess.run(["git", "-C", str(where), *a], input=data, capture_output=True,
+                                                      check=True).stdout.decode().strip()
+    git(tmp_path, "init", "-q", "--bare", str(origin))
+    for key in ("allowFilter", "allowAnySHA1InWant"):
+        git(origin, "config", f"uploadpack.{key}", "true")
+    git(repo["root"], "push", "-q", str(origin), "HEAD:refs/heads/main")
+    plate = f"{'a' * 40}.json"                    # card_plates' file, kept
+    tree = git(origin, "mktree", data=f"100644 blob {git(origin, 'hash-object', '-w', '--stdin', data=b'{}')}\t{plate}\n".encode())
+    git(origin, "update-ref", "refs/heads/plates", git(origin, "commit-tree", tree, "-m", "plates"))
     monkeypatch.setattr(bs, "VERSION_LIST", str(listed))
+    monkeypatch.setattr(bs, "VERSION_PLATES", str(have))
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    copies = tmp_path / "a" / "dist" / "thumbs" / "v"
-    blob = lambda c: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{ALPHA}.png"], capture_output=True,
-                                    text=True, check=True).stdout.strip()
-    assert listed.read_text().split() == [blob(c2), blob(c1)] and not any(copies.iterdir())
-    bs.version_copies(listed.read_text().split(), 60)                 # the versions job
+    alpha, tag = _by_name(out["cards.json"])["Alpha"]["id"], out["cards.json"]["thumbs"]["v"]
+    files = [f"v/{alpha}/{c[:10]}-{tag}.avif" for c in (c2, c1)]
+    blob = lambda c: git(repo["root"], "rev-parse", f"{c}:{ALPHA}.png")
+    assert listed.read_text().split() == [blob(c2), files[0], blob(c1), files[1]]
+    assert not (tmp_path / "a" / "dist" / "thumbs" / "v").exists()
+    git(tmp_path, "clone", "-q", "--filter=blob:none", "--depth", "1", f"file://{origin}", str(job))
+    monkeypatch.setattr(bs, "REPO", str(job))
+    assert bs.publish_versions(str(listed))
+    assert git(origin, "ls-tree", "-r", "--name-only", "plates").split() == sorted([plate, *files])
+    from PIL import Image
+    assert Image.open(BytesIO(subprocess.run(["git", "-C", str(origin), "show", f"plates:{files[1]}"], capture_output=True,
+                                             check=True).stdout)).format == "AVIF"
+    assert bs.publish_versions(str(listed)) == ""                       # nothing missing
+    have.write_text("\n".join(files))
     listed.unlink()
     _build(bs, monkeypatch, repo, tmp_path / "a")
-    alpha, tag = _by_name(out["cards.json"])["Alpha"]["id"], out["cards.json"]["thumbs"]["v"]
-    assert sorted(p.name for p in copies.iterdir()) == sorted(f"{alpha}-{c[:10]}-{tag}.avif" for c in (c1, c2))
     assert not listed.exists()
 
 
