@@ -5016,9 +5016,9 @@ def no_glyph(layer, text: str, changed: list, fonts) -> list:
             and text[glyph.cluster - offset] not in " \t\r\x03"]
 
 
-def plain_marks(text: str) -> str:
-    """text with every PLAIN_MARKS mark plain: how the read-back gates compare."""
-    for mark, plain in PLAIN_MARKS.items():
+def plain_marks(text):
+    """text with every PLAIN_MARKS mark plain (the read-back gates compare so); a non-str as it is."""
+    for mark, plain in PLAIN_MARKS.items() if isinstance(text, str) else ():
         text = text.replace(mark, plain)
     return text
 
