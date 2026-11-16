@@ -73,3 +73,20 @@ def test_the_owner_s_old_maps_rule_over_the_evidence(monkeypatch):
                                                                                 "a2000-fire-bomb")
     assert om.owner_map("Eldman", maps, stats) == (("live", "Elmadan"), "a1940-eldman")
     assert om.owner_map("Gone", maps, stats) is None and om.owner_map("Fire Bomb", maps, stats) is None
+
+
+def test_a_first_repo_meme_file_joins_its_name_only_in_its_own_folder(oi, tmp_path, monkeypatch):
+    """The joke item Items/Meme/2 Stars/pain.png is not the debuff Auxillary/.../Pain.png (another kind's folder: two
+    old cards); Alex YIIK's Cards/Meme file moved to Cards/Other stays one card."""
+    monkeypatch.setattr(oi, "OUT", str(tmp_path))
+    meta = {c: {"parents": p, "repo": "first", "date": f"2023-04-0{n}T00:00:00-07:00", "authored": None, "ts": n,
+                "author": "Michael", "subject": "s"} for n, (c, p) in enumerate((("A", []), ("B", ["A"]), ("C", ["B"])), 1)}
+    trees = {"A": {"Items/Meme/2 Stars/pain.png": "b1", "Cards/Meme/5 Stars/Alex_YIIK.png": "b2"}, "B": {},
+             "C": {"Auxillary/Status Effects/Debuffs/1 Stars/Pain.png": "b3", "Cards/Other/5 Stars/Alex_YIIK.png": "b4"}}
+    state, lineages, events, deletes = oi.walk(["A", "B", "C"], meta, trees, carry=())
+    assert len(lineages) == 4
+    oi.finish(["A", "B", "C"], meta, {}, {}, state, lineages, events, deletes)
+    cards = oi.json.load(open(tmp_path / "index.json"))["old_cards"]
+    assert {k: v["paths"] for k, v in cards.items()} == {
+        "pain": ["Items/Meme/2 Stars/pain.png"], "Pain": ["Auxillary/Status Effects/Debuffs/1 Stars/Pain.png"],
+        "Alex YIIK": ["Cards/Meme/5 Stars/Alex_YIIK.png", "Cards/Other/5 Stars/Alex_YIIK.png"]}
