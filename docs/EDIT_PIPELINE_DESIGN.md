@@ -895,6 +895,10 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   colour off its paragraph 553 -> 4 (rewrites), 520 -> 33 (a line added), 513 -> 28 (one deleted), 271 -> 0 (two
   swapped); the previews branch's 142 previews (91 bake): 86 the same, Pot Full of Spiders!'s 3 fixed, 2 differ in
   blanks only. Tests: `test_text_align.py`, `test_a_rewritten_paragraph_keeps_its_own_colour`.
+  Line joins and splits (2026-11-15): an edit whose only changes are blanks with a break lines up letter by letter, so
+  both lines keep each letter's colour, font, underline and size, as Photoshop's edit does (20 joins: kept letters
+  restyled on 17 -> 2, only status words' swatch and a fit). Tests: `test_a_line_join_or_split_is_one_changed_break`,
+  `test_a_line_join_or_split_keeps_every_letters_look`.
   A text layer with tabs bakes (owner 2026-10-24): the fork lays them to Photoshop's 36 pt default stops (before,
   Michael's Blessing's arrows collapsed) and `keep_breaks` makes the website's spaces the layer's tabs again.
   Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
