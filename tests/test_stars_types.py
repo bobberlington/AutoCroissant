@@ -1152,6 +1152,22 @@ def test_stars_back_to_the_makers_count_undo_the_bakes_moves(parser, tmp_path):
     assert not pe.plan_stars(moved, parsed, 3, parser).undo
 
 
+def test_a_plate_takes_a_delete_only_undo(parser, tmp_path):
+    """D14: a pair given a third (a copy, nothing moved) and asked for two again: the undo only deletes, and the
+    mock-up's plate picture of two (card_plates.star_value) is the card's own pair again."""
+    import commands.card_plates as card_plates
+    paths = _xmp_card(_fixture(tmp_path))
+    (tmp_path / "three").mkdir()
+    _, three = _bake(parser, paths, {"stars": 3}, tmp_path / "three")
+    psd, png = PSDImage.open(three.psd_path), Image.open(three.png_path)
+    with open(three.psd_path, "rb") as fh:
+        raw = fh.read()
+    parsed = pe.parse_card(parser, three.psd_path, REL, psd)
+    merged = card_plates.star_value(psd, raw, png, parsed, parser, REL, 2, pe.export_icc(psd, png))
+    was = np.asarray(Image.open(paths[1]).convert("RGB"), np.int16)
+    assert merged is not None and np.abs(np.asarray(merged.convert("RGB"), np.int16) - was).max() <= 2
+
+
 def test_a_real_row_comes_back(clone, parser, tmp_path):
     """D14 on Wolf, one of the 11 three-star cards whose 3 -> 4 -> 3 came back laid out otherwise: the maker's three come
     back as drawn, and the previews' paths take the same undo (plan_stars: classify, card_plates, psd_details)."""
