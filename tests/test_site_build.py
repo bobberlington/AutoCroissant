@@ -507,6 +507,9 @@ def _timelines(root):
             "entries": [{"id": "P-10", "kind": "discord", "date": "2020-07-18T00:00:00+00:00", "channel": "port",
                          "image": pic("_morgue/m-uru", "P-10.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
     palace = {"card": "white-palace", "key": "White Palace", "name": "White Palace", "morgue": "mdw", "entries": [
+        {"id": "O-p1", "kind": "old repo", "repo": "first", "date": "2023-03-01T00:00:00+00:00", "author": "Croissant",
+         "subject": "Palace art", "image": pic("_morgue/white-palace", "O-p1.webp"), "w": 40, "h": 80,
+         "fields": {"name": {"value": "White Palace", "method": "psd", "confidence": "sure"}}, "changes": {}}] + [
         {"id": f"P-{n}", "kind": "discord", "date": when, "channel": "new-cards", "image": pic("_morgue/white-palace", f"P-{n}.webp"),
          "w": 40, "h": 80, "fields": {}, "changes": {}} for n, when in ((7, "2026-01-01T00:00:00+00:00"), (8, "2027-06-01T00:00:00+00:00"))]}
     for folder, t in (("alpha", alpha), ("_morgue/joke-card", joke), ("_morgue/m-uru", muru),
@@ -564,8 +567,10 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
     palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")
     assert [out["versions.json"]["commits"][r[0]][0] for r in out["versions.json"]["cards"][palace["id"]]] == [palace_commit]
-    assert [r["img"] for r in out["versions.json"]["early"][palace["id"]]] == ["history/_morgue/white-palace/P-7.webp"]
-    assert (palace["iv"], palace["ive"]) == (1, 1)
+    early = out["versions.json"]["early"][palace["id"]]                              # its first repo row stays
+    assert [r["img"] for r in early] == ["history/_morgue/white-palace/P-7.webp", "history/_morgue/white-palace/O-p1.webp"]
+    assert (early[1]["r"], early[1]["a"], early[1]["f"]) == ("first", "Croissant", {"name": "White Palace"})
+    assert (palace["iv"], palace["ive"]) == (1, 2)
     # Recorded changes: the old repo's nerf and the changelog's fact (data, never its text), each saying where from
     changes = out["analytics.json"]["cards"][alpha["id"]]["changes"]
     assert {"ts": 1682899200, "stats": [[3, 2, 5, 1], [3, 2, 4, 1]], "bal": "nerf", "early": "old repo"} in changes
