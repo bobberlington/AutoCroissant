@@ -9,6 +9,13 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "oldgit_rows.py"
 
 
+_MODULE = {}
+
+
+def rows_module():
+    return _MODULE["rows"]
+
+
 @pytest.fixture(scope="module")
 def rows():
     spec = importlib.util.spec_from_file_location("oldgit_rows", SCRIPT)
@@ -19,6 +26,7 @@ def rows():
         labels=lambda lines: {}, words=words, strip_tokens=lambda t: re.sub(r"\[[^\]]*\]", " ", t or ""),
         ability_of=lambda lines, y0, y1=1.0, drop_class=True: " ".join(l[0] for l in lines if y0 <= l[3] <= y1),
         word_score=lambda truth, got: (sum(w in words(got) for w in words(truth)) / len(words(truth))) if words(truth) else None)
+    _MODULE["rows"] = module
     return module
 
 
@@ -118,6 +126,10 @@ class FakeData:
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
         self.eye_bars, self.eye_bars2, self.era_reads, self.look_reads = {}, {}, {}, {}
+        self.text_raw, self.text_cal, self.header = {}, {}, {}
+
+    def text_bar(self, era, name):
+        return rows_module().Data.text_bar(self, era, name)
 
     def ocr_of(self, blob):
         return self._ocr.get(blob, {})
@@ -418,3 +430,31 @@ def test_an_owner_mapped_psd_alone_is_its_commit_s_psd_or_a_look_of_its_own(rows
     assert found[0]["psd_file"] == f"{mine}.psd" and found[0]["psd"]["how"] == "same commit, the owner's PSD"
     assert found[0]["fields"]["ability"]["value"] == "Freeze 2." and found[0]["fields"]["ability"]["confidence"] == "sure"
     assert found[1]["thumb"] == "oldgit/thumbs/o2.webp" and data.psd_firsts == {}
+
+
+def test_a_png_with_no_psd_text_takes_the_text_readers_and_its_header(rows):
+    """No PSD (the first repo's 2022 files): the ability is the text readers' read, sure when its words are one of
+    the card's own texts (today's, its PSDs': 'ocr+known') or at its era's stored bar, else proposed; the types are
+    a git version's when the header matches it (header_types rows), proposed when under the bar."""
+    path = "Cards/Kirby/3 Stars/Pix"
+    v = lambda ext, blob, ts: {"id": f"{blob}:{path}.{ext}", "old_id": "Pix", "commit": blob * 20, "ts": ts,
+                               "date": "2022-08-24T00:00:00-07:00", "author": "Michael", "subject": "s",
+                               "path": f"{path}.{ext}", "ext": ext, "blob": blob, "kind": "add", "new_look": True,
+                               "repo": "first"}
+    versions = {"Pix": [v("png", "g1", 100), v("png", "g2", 200)]}
+    ocr = {b: {"title": [["PIX", 1.0]], "lines": [["Deal 3 damage.", 1.0, 0.1, 0.8, 0.8, 0.05]]} for b in ("g1", "g2")}
+    data = FakeData(versions, {}, {}, {}, ocr)
+    data.psd_firsts = {}
+    read = lambda text, conf: {"era": "D2", "src": "old", "id": "o:x", "ability_fix": {"text": text, "minconf": conf,
+                                                                                      "odd": 0}, "ability_raw": {"text": text}}
+    data.text_raw = {"g1": read("Deal 3 damage.", 1.0), "g2": read("Deal 4 damoge.", 0.5)}
+    data.text_cal = {"D2/old": {"ability": {"how": {"variant": "fix"}, "bar": 1.0}}}
+    data.header = {"g1": {"types": ["light"], "sure": True, "version": "bv", "ncc": 0.97},
+                   "g2": {"types": ["dark"], "sure": False, "version": "bw", "ncc": 0.5}}
+    got = rows.card_rows(data, "Pix", ["Pix"], {"names": {"Pix"}, "type": "creature", "ability": "Deal 3 damage."})
+    a, b = (r["fields"] for r in got)
+    assert (a["ability"]["value"], a["ability"]["method"], a["ability"]["confidence"]) == ("Deal 3 damage.", "ocr+known",
+                                                                                            "sure")
+    assert (b["ability"]["value"], b["ability"]["confidence"]) == ("Deal 4 damoge.", "review")
+    assert (a["types"]["value"], a["types"]["method"], a["types"]["confidence"]) == (["light"], "git header", "sure")
+    assert b["types"]["confidence"] == "review"

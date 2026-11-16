@@ -46,6 +46,9 @@ CARD_CACHE = join(DERIVED, "matcher", "match", "cache", "cards.jsonl")
 BAR_TRUTH = join(DERIVED, "readers", "bars", "truth")   # the bar readers' by-eye stats (eye_*.json, by PNG blob)
 BAR_READS = join(DERIVED, "readers", "bars", "reads.jsonl")   # the era bar readers' calibrated reads (era_bars)
 VERDICTS = join(DERIVED, "match", "verdicts.jsonl")     # Discord pictures told as a git look (version_sure)
+TEXT_RAW = join(DERIVED, "readers", "text", "raw.jsonl")        # the text readers' raw reads (o:<blob>: old PNGs)
+TEXT_CAL = join(DERIVED, "readers", "text", "calibration.json")  # their eras' bars (never fitted here)
+HEADER_ROWS = join(DERIVED, "readers", "types", "header_rows.jsonl")   # header_types rows: types by a git header
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
@@ -497,6 +500,10 @@ class Data:
             if v.get("verdict") == "version_sure" and not v.get("joke") and file in discord:
                 for key in (v.get("version") or {}).get("keys") or ():
                     self.look_reads[key].append(discord[file])
+        self.text_raw = {r["id"][2:]: r for r in oi.read_jsonl(TEXT_RAW)
+                         if str(r.get("id", "")).startswith("o:") and not r.get("error")} if exists(TEXT_RAW) else {}
+        self.text_cal = json.load(open(TEXT_CAL)).get("eras") or {} if exists(TEXT_CAL) else {}
+        self.header = {r["blob"]: r for r in oi.read_jsonl(HEADER_ROWS)} if exists(HEADER_ROWS) else {}
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
         self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
         for r in list(self.psd.values()) + list(self.rereads.values()):
@@ -528,6 +535,15 @@ class Data:
                                "ability": card.get("ability"), "stats": valid_stats(
                                    {k: s.get(w) for k, w in zip(ORDER, ("hp", "defense", "attack", "speed"))})}
             self.vocab.update(card_words(card.get("ability") or ""))
+
+    def text_bar(self, era, name: str) -> tuple:
+        """(how, bar) of the text readers' era for an old PNG (its old-repo era, else the Discord era's: never
+        lower than calibrate would borrow); none: (None, None)."""
+        for src in ("old", "discord"):
+            entry = (self.text_cal.get(f"{era}/{src}") or {}).get(name)
+            if entry and "how" in entry:
+                return entry["how"], entry.get("bar")
+        return None, None
 
     def ocr_of(self, blob: str) -> dict:
         return self.ocr.get("b" + blob[:20]) or {}
@@ -870,6 +886,12 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
                                       data.look_reads.get("b" + png["blob"][:20], ()), kind in STAT_KINDS)
     if kind in ABILITY_KINDS:
         fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
+        if fields["ability"]["method"] == "none" or read is None:     # no PSD text: the text readers' read
+            fields["ability"] = text_ability(data, png["blob"], today.get("known") or ()) or fields["ability"]
+    got = data.header.get(png["blob"]) if read is None else None
+    if got:                                                    # no PSD: its header against a git version's
+        fields["types"] = field(sorted(got["types"]), "git header", got["sure"], f"{got['version']} ncc {got['ncc']}",
+                                "" if got["sure"] else "its header under the bar, or near a version with other types")
     note = {"blob": psd["blob"], "commit": psd["commit"], "how": pick, "read": how,
             **({"off": off} if off is not None else {})} if psd else None
     return fields, kind, two, note
@@ -1087,6 +1109,47 @@ def check_ability(read, lines: list, kind: str, same_look: bool = True, vocab=fr
     return field("", "psd", read is not None, "ocr", "" if read is not None else "no PSD")
 
 
+def text_readers():
+    if "text" not in _W:
+        import timeline_text
+        _W["text"] = timeline_text
+    return _W["text"]
+
+
+def text_ability(data: Data, blob: str, known) -> dict:
+    """A PNG whose PSD gives no text: the text readers' read (timeline_text read; its era's stored bar, no refit): sure
+    when its words are one of the card's own texts ('ocr+known': today's, its PSDs'), or at its era's OCR bar; else
+    proposed for review. None: not read."""
+    rd = data.text_raw.get(blob)
+    if not rd:
+        return None
+    tt = text_readers()
+    words = {tuple(tt.ability_words(k)) for k in known if k}
+    for variant in ("icons", "fix", "raw"):
+        text = (tt.ability_variant(rd, variant) or {}).get("text")
+        if text and tuple(tt.ability_words(text)) in words:
+            return {**field(text, "ocr+known", True, "a known text of the card"), "conf": 1.0}
+    how, bar = data.text_bar(rd.get("era"), "ability")
+    if how is None:
+        return None
+    val, method, conf = tt.field_read(rd, "ability", how)
+    if not val:
+        return None
+    sure = bar is not None and conf >= bar and not tt.no_sure(rd, ())
+    return {**field(val, method, sure, why="" if sure else "the text readers' read, under its era's bar"),
+            "conf": conf}
+
+
+def known_texts(data: Data, versions: list, today: dict) -> list:
+    """The card's own ability texts: today's and every read of its PSDs (an old PNG's OCR equal to one is sure)."""
+    found = {today.get("ability")}
+    for v in versions:
+        if v["ext"] == "psd":
+            for r in (data.psd.get((v["blob"], v["path"])), data.rereads.get((v["blob"], v["path"]))):
+                found.add(((r or {}).get("read") or {}).get("ability"))
+    return sorted(t for t in found if t)
+
+
 def creature_reads(f: dict):
     """A multi-creature card's stats as read (each creature's picture half, the PSD's rows); None unless every half
     is read in full."""
@@ -1175,6 +1238,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
+    today = {**today, "known": known_texts(data, versions, today)}
     rows = []
     first, own = psd_first(data, key, versions, pngs)
     if first:

@@ -9,6 +9,7 @@ boxes are unknown is never a sure match.
     python -m commands.header_types calibrate [--root <dir>] [--old-git <dir>] [--n 400]
     python -m commands.header_types read      [--root <dir>]
     python -m commands.header_types eye       [--root <dir>]
+    python -m commands.header_types rows      [--root <dir>] [--old-git <dir>]
 
 calibrate  Old repo PNG versions (the old .git, read only) as Discord shows them (a 400 px JPEG, discord_match.degrade)
            against the matcher's thumbs: its own version (the same icons) and the card's other versions whose sure
@@ -25,6 +26,8 @@ eye        Eras A-C (no git version prints them): pictures typed by eye (derived
            pair with other types (a check against its card's reference, references of other cards of the era) +
            MARGIN; a match also needs no reference with other types within MARGIN -> derived/readers/types/
            eye_calibration.json and header_eye.jsonl {picture id, card, era, types, ref, ncc, rival, sure}.
+rows       The old and first repo's PNG rows with no PSD (oldrows) of era D1-D3: each against its card's other versions
+           with known types as read does (its own version left out) -> derived/readers/types/header_rows.jsonl.
 Nothing here talks to Discord; outputs stay under the archive's derived/.
 """
 from argparse import ArgumentParser
@@ -341,6 +344,64 @@ def read(root: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> list:
     return out
 
 
+def old_rows(root: str, old_git: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> list:
+    """rows: the old and first repo's PNG rows with no types read (no PSD: oldrows rows.jsonl) of era D1-D3 (the bar
+    readers' era of the PNG), each a Discord-like copy as calibrate makes, against its card's other versions with
+    known types (read's rule and bar) -> derived/readers/types/header_rows.jsonl {blob, card, era, types, version,
+    ncc, rival, boxes, sure}."""
+    from PIL import Image
+    pairs = dm.read_json(dm.Paths(root).pairs, {}) or {}
+    cards, versions = pairs.get("cards") or {}, pairs.get("versions") or []
+    cal = dm.read_json(join(root, *OUT, "calibration.json"), {}) or {}
+    if not cal.get("bar"):
+        raise SystemExit("no calibration: run python -m commands.header_types calibrate first")
+    types = known_types(root, cards_repo, cards, versions)
+    boxes = icon_boxes(root, cards_repo, cards, versions)
+    slots = card_slots(versions, boxes)
+    by_card = defaultdict(list)
+    for v in versions:
+        if v["key"] in types and v.get("thumb"):
+            by_card[v["card"]].append(v)
+    cid_of = {c.get("key"): cid for cid, c in cards.items()}
+    eras = {r["blob"]: r["era"] for r in dm.read_jsonl(join(root, "derived", "readers", "bars", "reads.jsonl"))
+            if r.get("src") == "oldgit" and r.get("variant") == "png" and r.get("era")}
+    todo = {}
+    for r in dm.read_jsonl(join(root, "derived", "oldrows", "rows.jsonl")):
+        cid = cid_of.get(r.get("card"))
+        if "types" not in (r.get("fields") or {}) and eras.get(r["blob"]) in TEMPLATE_ERAS and by_card.get(cid):
+            todo.setdefault(r["blob"], (r, cid))
+    blobs, bands, out = Blobs(expanduser(old_git)), {}, []
+    try:
+        for blob, (r, cid) in sorted(todo.items()):
+            try:
+                with Image.open(BytesIO(blobs.get(blob))) as im:
+                    mine = head(dm.degrade(im.convert("RGB"), *JPEG))
+            except Exception:
+                continue
+            scores = []
+            for v in by_card[cid]:
+                if v["key"] == "b" + blob[:20]:
+                    continue                    # its own version
+                if v["key"] not in bands:
+                    bands[v["key"]] = thumb_head(root, v)
+                own = compared(v["key"], v["card"], types, boxes, slots)
+                scores.append((score(mine, bands[v["key"]], own or []), v["key"], own))
+            if not scores:
+                continue
+            scores.sort(key=lambda t: t[:2], reverse=True)
+            best, key, own = scores[0]
+            rival = max((x for x, k, _ in scores if types[k] != types[key]), default=-1.0)
+            out.append({"blob": blob, "row": r["id"], "card": r["card"], "era": eras[blob], "ncc": best, "version": key,
+                        "types": types[key], "rival": round(rival, 4), "boxes": None if own is None else len(own),
+                        "sure": best >= cal["bar"] and best - rival >= MARGIN and "unknown" not in types[key] and
+                        own is not None})
+    finally:
+        blobs.close()
+    dm.write_text(join(root, *OUT, "header_rows.jsonl"), "".join(dm.dumps(r) + "\n" for r in out))
+    log(f"rows: {len(out)} repo rows with no PSD, {sum(r['sure'] for r in out)} over the bar {cal['bar']}")
+    return out
+
+
 def picture_eras(root: str) -> dict:
     """{picture file: era}: the bar readers' era, else the text readers'."""
     eras = {}
@@ -418,7 +479,7 @@ def eye_read(root: str) -> list:
 
 def main(argv: Optional[list] = None) -> int:
     ap = ArgumentParser(prog="python -m commands.header_types", description="Types by the git versions' header.")
-    ap.add_argument("step", choices=("calibrate", "read", "eye"))
+    ap.add_argument("step", choices=("calibrate", "read", "eye", "rows"))
     ap.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
     ap.add_argument("--old-git", default=dm.old_store())
     ap.add_argument("--n", type=int, default=400)
@@ -428,6 +489,8 @@ def main(argv: Optional[list] = None) -> int:
         calibrate(root, a.old_git, a.n)
     elif a.step == "eye":
         eye_read(root)
+    elif a.step == "rows":
+        old_rows(root, a.old_git)
     else:
         read(root)
     return 0
