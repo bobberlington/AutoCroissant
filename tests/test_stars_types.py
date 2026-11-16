@@ -1097,3 +1097,66 @@ def test_a_bakes_own_hidden_star_comes_back(parser, tmp_path):
     plan = _plan(parser, paths[0], REL, "stars", 4)
     assert [tuple(layer.bbox) for layer in plan.show] == [(970, 125, 1070, 225)] and not plan.copies
     assert [(tuple(layer.bbox), dx, dy) for layer, dx, dy in plan.moves] == [((1025, 125, 1125, 225), 55, 0)]
+
+
+XMP = (b'<x:xmpmeta xmlns:x="adobe:ns:meta/">\n   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+       b'      <rdf:Description rdf:about="" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmpMM:InstanceID="xmp.iid:a"/>\n'
+       b'   </rdf:RDF>\n</x:xmpmeta>\n')
+
+
+def _xmp_card(paths: tuple, xmp: bytes = XMP) -> tuple:
+    """The fixture card with an XMP packet (Photoshop's, where the bake keeps its star memo)."""
+    from psd_tools.constants import Resource
+    from psd_tools.psd.image_resources import ImageResource
+    psd = PSDImage.open(paths[0])
+    psd._record.image_resources[Resource.XMP_METADATA] = ImageResource(key=Resource.XMP_METADATA, data=xmp)
+    psd.save(paths[0])
+    return paths
+
+
+def _layers_of(path) -> list:
+    return [(layer.layer_id, layer.name, tuple(layer.bbox), layer.visible) for layer in PSDImage.open(path).descendants()]
+
+
+def test_stars_back_to_the_makers_count_undo_the_bakes_moves(parser, tmp_path):
+    """D14: 3 -> 4 -> 5 -> 3 restores the card maker's row exactly (layers, pixels, the XMP byte for byte); a card
+    changed in Photoshop since (another InstanceID) or with a memo'd star moved plans afresh."""
+    paths = _xmp_card(_fixture(tmp_path, stars=((1080, 20), (970, 20), (860, 20))))
+    was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
+    assert pe.star_memo(original) is None
+    for k, value in enumerate((4, 5, 3)):
+        (tmp_path / f"s{k}").mkdir()
+        _, baked = _bake(parser, paths, {"stars": value}, tmp_path / f"s{k}")
+        paths = (baked.psd_path, baked.png_path)
+        memo = pe.star_memo(PSDImage.open(baked.psd_path))
+        assert (memo["count"], memo["now"]) == (3, value) if value != 3 else memo is None
+    assert baked.icons == {"stars": "the card maker's own layout"} and _layers_of(paths[0]) == was
+    saved = PSDImage.open(paths[0])
+    assert saved.image_resources.get_data(pe.Resource.XMP_METADATA) == XMP
+    assert (pe.render_all(saved) == pe.render_all(original)).all()
+    (tmp_path / "again").mkdir()
+    _, four = _bake(parser, paths, {"stars": 4}, tmp_path / "again")
+    parsed = pe.parse_card(parser, four.psd_path, REL)
+    assert pe.plan_stars(PSDImage.open(four.psd_path), parsed, 3, parser).undo
+    changed = PSDImage.open(four.psd_path)
+    pe.set_star_memo(changed, {**pe.star_memo(changed), "iid": "xmp.iid:b"})     # Photoshop saved it since
+    assert not pe.plan_stars(changed, parsed, 3, parser).undo
+    moved = PSDImage.open(four.psd_path)
+    next(layer for layer in moved.descendants() if layer.name == "Star copy").left += 5
+    assert not pe.plan_stars(moved, parsed, 3, parser).undo
+
+
+def test_a_real_row_comes_back(clone, parser, tmp_path):
+    """D14 on Wolf, one of the 11 three-star cards whose 3 -> 4 -> 3 came back laid out otherwise: the maker's three come
+    back as drawn, and the previews' paths take the same undo (plan_stars: classify, card_plates, psd_details)."""
+    rel = "Auxiliary/Minions/Wolf.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
+    (tmp_path / "four").mkdir()
+    _, four = _bake(parser, paths, {"stars": 4}, tmp_path / "four", rel)
+    plan = pe.plan_stars(PSDImage.open(four.psd_path), pe.parse_card(parser, four.psd_path, rel), 3, parser)
+    assert plan.undo and len(plan.removed) == 1 and len(plan.centres) == 3
+    (tmp_path / "back").mkdir()
+    _, back = _bake(parser, (four.psd_path, four.png_path), {"stars": 3}, tmp_path / "back", rel)
+    assert back.icons == {"stars": "the card maker's own layout"} and _layers_of(back.psd_path) == was
+    assert (pe.render_all(PSDImage.open(back.psd_path)) == pe.render_all(original)).all()
