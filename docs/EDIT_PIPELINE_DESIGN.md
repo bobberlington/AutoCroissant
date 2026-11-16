@@ -1322,9 +1322,10 @@ branch adds only its commits and trees to them; the local clones fetch main only
 
 **Warm lane (owner D22, 2026-11-16; `commands/card_preview_lane.py`).** After a press that went well and was handed
 over directly, the preview job's process (Start's, `--code` then `--lane`) stays up 240 s for its editor's next
-presses, until its job's 11 minutes less 70 s. It bakes each in process with `preview()`: the same venv, fonts, trees,
-bot files and records, with no setup or imports. The website names the lane for a press (input `lane` =
-`<run id>-<blob sha>`): the run that handed over the editor's newest result, while it should still be up. The press
+presses, taking none in its job's last 2 minutes (Start stops it 35 s before the 11-minute cap). It bakes each in
+process with `preview()`: the same venv, fonts, trees, bot files and records, with no setup or imports. The website
+names the lane for a press (input `lane` = `<run id>-<blob sha>`): the run that handed over the editor's newest
+result, while it should still be up. The press
 itself (`request\ncard\nedit`, UTF-8) goes as a git blob the website posts beside the dispatch (no ref: no push, no
 Discord post), because GitHub cuts run titles at 512 characters (72 of the 104 real presses of actbake-r31 would not
 fit with their card and edit); the run-name is `Card preview <request> lane <lane>`, under 150 characters. The lane
@@ -1348,8 +1349,8 @@ Idle, the lane's listings were all 304s (594 of 594 over its last 240 s) and it 
 blob (the same day, `s1110/d22/r2/`, titles cut at 512 as GitHub does): 22 more real presses, 14 of them too long for a
 title (up to 1,806 characters), all byte-identical, all 21 repeat presses served warm (one blob 2 s late), titles at
 most 98 characters; idle, 590 of 590 listings were 304s and the lane ended by itself. Under the built rules
-(warm only after the website saw the lane's result), 106 of the 194 real presses of 10-24..11-12 would have gone warm
-(55%), with 88 lanes of about 5.3 runner-minutes each; every real press's title fits (99 characters at most). A blob
+(warm only after the website saw the lane's result), 104 of the 194 real presses of 10-24..11-12 would have gone warm
+(54%), with 90 lanes of about 5.2 runner-minutes each; every real press's title fits (99 characters at most). A blob
 that never comes ends the lane and the press goes cold; a failed blob post names no lane again on that page. A 422 on
 a dispatch with `lane` is sent again without it.
 
