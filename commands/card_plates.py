@@ -737,7 +737,7 @@ def on_branch(where: str) -> dict:
     """{PSD blob: its plates file's blob} on the branch as last fetched to LOCAL_REF (card-checks.yml's To check); {}
     without it."""
     try:
-        return {name[:-5]: sha for name, sha in _files(where, LOCAL_REF).items() if name.endswith(".json")}
+        return {name[:-5]: entry.split()[2] for name, entry in _files(where, LOCAL_REF).items() if _plate(name)}
     except Unpublished:
         return {}
 
