@@ -571,7 +571,7 @@ def test_a_stored_png_band_cant_take_is_saved_deflated(tmp_path, monkeypatch):
     banded = cb._smaller(str(path))
     assert pe.banded(banded) and banded == path.read_bytes() == cb._smaller(str(path)) == pe.encode(art(), like)
     assert banded == pe.band(deflated.getvalue())
-    monkeypatch.setattr(pe, "band", lambda data: None)
+    monkeypatch.setattr(pe, "band", lambda data, old=None: None)
     path.write_bytes(stored.getvalue())
     assert cb._smaller(str(path)) == path.read_bytes() == deflated.getvalue() == pe.encode(art(), like)
     assert len(deflated.getvalue()) * 3 < len(stored.getvalue())
