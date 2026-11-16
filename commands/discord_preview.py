@@ -335,10 +335,16 @@ def row_entry(r: dict) -> tuple:
     """(an old or first repo row as a Morgue timeline's entry, its webp name and job)."""
     name = f"O-{r['blob'][:12]}.webp"
     job = ("file", r["thumb"], None) if r.get("psd_only") else ("blob", r["blob"], None)
+    fields = published(r.get("fields"))
+    if r.get("card_kind") in dc.ITEM_CARDS and "types" in fields:     # an item's kinds are never collected
+        left = [t for t in fields["types"]["value"] if str(t).lower() not in dc.ITEM_KINDS]
+        if left:
+            fields["types"] = {**fields["types"], "value": left}
+        else:
+            fields.pop("types")
     e = {"id": "O-" + r["id"], "kind": "old repo", "date": dm.iso(r["ts"]), "day": dc.day(r["ts"]),
          "badge": BADGE["first repo" if r.get("repo") == "first" else "old repo"], "author": r.get("author"),
-         "subject": r.get("subject"), "image": name, "fields": published(r.get("fields")), "changes": {},
-         "minor": bool(r.get("minor"))}
+         "subject": r.get("subject"), "image": name, "fields": fields, "changes": {}, "minor": bool(r.get("minor"))}
     if r.get("repo") == "first":
         e["repo"] = "first"
     return e, (name, job)

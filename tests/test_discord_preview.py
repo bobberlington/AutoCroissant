@@ -242,7 +242,8 @@ def test_morgue_entries_show_their_old_and_first_repo_versions():
     sure = {"name": {"value": "Clock", "method": "psd", "confidence": "sure"},
             "stars": {"value": 9, "method": "folder", "confidence": "review"}}
     old = {"card": {"clock": [row("b", 1.7e9, "b" * 40, fields=sure), row("a", 1.6e9, "a" * 40, minor=True)]},
-           "lost": {"Battery": [row("c", 1.69e9, "c" * 40, fields=sure)]},
+           "lost": {"Battery": [row("c", 1.69e9, "c" * 40, card_kind="item", fields={
+               **sure, "types": {"value": ["equip"], "method": "icon pictures", "confidence": "sure"}})]},
            "first": {"Book1": [row("d", 1.66e9, "d" * 40, repo="first", fields={})]}}
     mdw = {"id": "LC-9", "name": "Clock", "card": "Clock", "pictures": []}
     out, jobs = dp.morgue_out(mdw, {}, "mdw", rows=dp.entry_rows(mdw, "mdw", old))
@@ -257,6 +258,7 @@ def test_morgue_entries_show_their_old_and_first_repo_versions():
     out, jobs = dp.morgue_out(lost, {}, "candidate", rows=dp.entry_rows(lost, "candidate", old))
     assert [(e["id"], e.get("repo")) for e in out["entries"]] == [("P-1", None), ("O-d", "first"), ("O-c", None)]
     assert out["entries"][1]["badge"] == "first repo" and not keys(out["entries"]) & BAD_KEYS
+    assert "types" not in out["entries"][2]["fields"]                          # an item's kind: never collected
     assert "commit" not in keys(out["entries"]) and "path" not in keys(out["entries"])
 
 
