@@ -313,3 +313,20 @@ def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, cap
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["cards"] == [] and data["checked"] == 0 and data["errors"][0].startswith(expected)
     assert json.loads(disc.read_text(encoding="utf-8")) == {}
+
+
+def test_pin_reads_share_one_batch(clone, monkeypatch):
+    """at_rev reads the pin through its one cat-file --batch (no git per read), from threads at once too; a path the
+    rev lacks still fails."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+    from conftest import CARDS_REV
+    rels = ["site/Card Edits.json", "Types/active.png", "Types/buff.png", "Types/Counter.png"]
+    want = [at_rev(clone, CARDS_REV, rel) for rel in rels]
+    assert want == [(clone / rel).read_bytes() for rel in rels]
+    with monkeypatch.context() as m:
+        m.setattr(subprocess, "run", lambda *a, **k: pytest.fail("a git per read"))
+        with ThreadPoolExecutor(8) as pool:
+            assert list(pool.map(lambda rel: at_rev(clone, CARDS_REV, rel), rels * 8)) == want * 8
+    with pytest.raises(pytest.fail.Exception, match="not in its history"):
+        at_rev(clone, CARDS_REV, "Types/none.png")

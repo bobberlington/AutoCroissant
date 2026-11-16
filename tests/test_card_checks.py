@@ -346,13 +346,13 @@ def test_bar_style_by_art_fill(monkeypatch):
 OMORI_LOST = "8aa924d3fbbc43ea5308a14026de11e5533c3afb"     # omori 11-10: its rows deleted, the arm pictures left
 
 
-def test_drawn_bars_no_row_reads(monkeypatch):
+def test_drawn_bars_no_row_reads(monkeypatch, clone):
     """Drawn stat bars no row reads (omori's 11-10 arms) keep the bars flag; no stat read is a hand note until the data
     has all four again. A stat not drawn: no bars."""
     from io import BytesIO
     from psd_tools import PSDImage
-    from conftest import CLONE, card_blob
-    psd = PSDImage.open(BytesIO(card_blob(CLONE, OMORI_LOST)))
+    from conftest import card_blob
+    psd = PSDImage.open(BytesIO(card_blob(clone, OMORI_LOST)))
     assert cc.bar_style(psd, None) == ("custom", "pictures")
     monkeypatch.setattr(cc, "drawn_bar", lambda psd, stat: stat != "spd")
     assert cc.bar_style(psd, None) == ("", "")
@@ -525,15 +525,15 @@ OWN_LOOKS = ("193ca223f27b71fe410e702c0ef9c1023fa1eb2f",     # King Bob-omb: a s
              "2746abaa00679647b385787c4bb4e384b135ad87")     # Baba: word bars printing 'IS 6'
 
 
-def test_hidden_bar_looks_are_flagged():
+def test_hidden_bar_looks_are_flagged(clone):
     """A bar's hidden cells a stat edit bakes unlike the card's look (cardissues 11-13): Abigail's DEF before its repaint
     (plain white under the darks), not after; Halberd Reactor's DEF at 10 (a plain dark). A card maker's own looks
     flag at no value of any bar (cardfix2's sweep). A row of its own colour, a texture across every bar and one stopping
     at the value (PoD05 Lead Bloon) read as they are."""
     from io import BytesIO
     from psd_tools import PSDImage
-    from conftest import CLONE, card_blob
-    psd = lambda sha: (PSDImage.open(BytesIO(raw := card_blob(CLONE, sha))), raw)
+    from conftest import card_blob
+    psd = lambda sha: (PSDImage.open(BytesIO(raw := card_blob(clone, sha))), raw)
     assert cc.look_notes(*psd(ABIGAIL[0])) == [cc.LIT_LOOK_NOTE.format("DEF bar's")]
     assert cc.look_notes(*psd(ABIGAIL[1])) == []
     assert cc.look_notes(*psd(HALBERD)) == [cc.DARK_LOOK_NOTE.format("DEF bar's")]

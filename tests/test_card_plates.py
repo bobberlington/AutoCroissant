@@ -54,10 +54,10 @@ def test_plates_of_a_card(clone):
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
 
 
-def test_a_tagged_cards_other_pictures_titles():
+def test_a_tagged_cards_other_pictures_titles(clone):
     """A Snack (Name #1/#2/#3): picture 1's crops as without pictures; Name #2 and #3 cut against A_Snack2/3.png."""
-    from conftest import CLONE, card_blob
-    psd, *pngs = (io.BytesIO(card_blob(CLONE, sha)) for sha in SNACK)
+    from conftest import card_blob
+    psd, *pngs = (io.BytesIO(card_blob(clone, sha)) for sha in SNACK)
     psd, pngs = PSDImage.open(psd), dict(zip((1, 2, 3), map(Image.open, pngs)))
     parts = card_parts(psd, "Items/Heal/2 Stars/A_Snack.psd", "A Snack", _bare_parser())
     own = [p["id"] for n in (2, 3) for p in parts["title"] if p["variants"] == [n]]

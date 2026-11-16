@@ -147,13 +147,13 @@ def test_a_card_with_its_own_psd_marked_a_duplicate():
 KIT_REV = "e9b00260fd030fb30e8e968605cf1d1a18ec0d87"     # the card repo before All_Purpose_Medical_Kit was renamed
 
 
-def test_a_variant_picture_printing_its_files_name():
+def test_a_variant_picture_printing_its_files_name(clone):
     """Picture 2 of All-Purpose_Medical_Kit.psd (renamed 11-11) prints the file's name: as the card
     All-Purpose Medical Kit2 that is its title; picture 1's stays None (the name)."""
     from io import BytesIO
     from psd_tools import PSDImage
-    from conftest import CLONE, at_rev
-    psd = PSDImage.open(BytesIO(at_rev(CLONE, KIT_REV, "Items/Heal/2 Stars/All_Purpose_Medical_Kit.psd")))
+    from conftest import at_rev
+    psd = PSDImage.open(BytesIO(at_rev(clone, KIT_REV, "Items/Heal/2 Stars/All_Purpose_Medical_Kit.psd")))
     rel, p = "Items/Heal/2 Stars/All-Purpose_Medical_Kit.psd", parser()
     assert [p.parse(psd, rel, variant=n).display_name for n in (1, 2)] == [None, "All-Purpose Medical Kit"]
 
