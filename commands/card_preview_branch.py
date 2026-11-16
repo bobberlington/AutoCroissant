@@ -8,11 +8,13 @@ which keeps a dispatched value on one line of the job's log.
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>]
     python -m commands.card_preview_branch --warm [--git <checkout>]
     python -m commands.card_preview_branch --take <dir>
+    python -m commands.card_preview_branch --hand <dir>      (stdin: ACTIONS_RUNTIME_TOKEN, then ACTIONS_RESULTS_URL)
 
 --warm reads the branch while the job waits for the preview: publish's first try then builds on that head, no network
 until the push (a refused push: the usual tries from the head then). --take is the job's wait: this run's hand-over
 (the preview job's artifact) listed by conditional GETs on one connection, then its zip unzipped into <dir> (take_over);
-`go=` and `took=` lines on stdout for $GITHUB_OUTPUT.
+`go=` and `took=` lines on stdout for $GITHUB_OUTPUT. --hand is that hand-over made by the preview job itself, from a
+process of its own (hand(); TTSCardMaker .github/actions/hand-over), hand.done beside <dir> saying ok, none or fail.
 
 Standard library and git only (never PIL, psd-tools, requests or card_bake): card-preview.yml's publish job runs it with
 the runner's own python3 and no pip install, so a preview that never ran (a failed install, a timeout) is still published,
@@ -20,22 +22,23 @@ as a try-again error. It uses the checkout's git and credentials (actions/checko
 without delta search). SPARSE_FILES is its import closure (the publish job's checkout).
 """
 from argparse import ArgumentParser
+from base64 import urlsafe_b64decode
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from http.client import HTTPException, HTTPSConnection
 from io import BytesIO
 from json import dumps, loads
-from os import environ, makedirs
-from os.path import isfile, join
+from os import environ, makedirs, replace
+from os.path import abspath, dirname, isfile, join
 from random import uniform
 from re import compile as re_compile
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
-from sys import argv, stderr
+from sys import argv, stderr, stdin
 from time import monotonic, sleep
 from typing import Optional
 from unicodedata import category
 from urllib.parse import urlsplit
-from zipfile import BadZipFile, ZipFile
+from zipfile import ZIP_STORED, BadZipFile, ZipFile
 from zlib import error as ZlibError
 
 from commands.repo_history import batch_env
@@ -70,6 +73,10 @@ POLL_LATE, LATE = 3, 55                         # ... then 1 s, POLL_LATE from L
 JOB_FIRST, JOB_EVERY = 10, 15                   # s: the preview job looked at (ended without a hand-over?)
 WAIT = 715                                      # s at most (the step's 5 s before it: 12 minutes)
 LOW = 100                                       # rate limit left under which listings slow to POLL_LATE
+HAND_POLL, HAND_WAIT = 0.02, 600                # s between looks for result.json; s at most (the preview's 480 s, then)
+HAND_DONE = "hand.done"                         # beside the out dir: ok, none or fail
+RPC = "/twirp/github.actions.results.api.v1.ArtifactService/"     # upload-artifact v7's (Twirp JSON, proto names)
+BLOB_VERSION = "2026-02-06"                     # x-ms-version: its @azure/storage-blob's
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
                  "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.avif` and "
                  "`before.avif` (the card before the edit, for the Diff); "
@@ -448,6 +455,143 @@ def take_over(out: str, repo: str, run: str, token: str, base: str = "https://ap
     return state
 
 
+class _Kept:
+    """One HTTPS connection kept to a host, its TLS made at once; a request on one the host closed goes once more on a
+    new one."""
+
+    def __init__(self, host: str):
+        self.host, self.connection = host, None
+        try:
+            self.open()
+        except OSError:                         # made at the first request
+            self.close()
+
+    def open(self) -> None:
+        self.close()
+        self.connection = HTTPSConnection(self.host, timeout=30)
+        self.connection.connect()
+
+    def send(self, method: str, path: str, body: bytes, headers: dict) -> tuple:
+        """(status, reply, body)."""
+        try:
+            return self._once(method, path, body, headers)
+        except (OSError, HTTPException):
+            self.open()
+            return self._once(method, path, body, headers)
+
+    def _once(self, method: str, path: str, body: bytes, headers: dict) -> tuple:
+        if self.connection is None:
+            self.open()
+        self.connection.request(method, path, body=body, headers=headers)
+        reply = self.connection.getresponse()
+        return reply.status, reply, reply.read()
+
+    def close(self) -> None:
+        if self.connection is not None:
+            self.connection.close()
+        self.connection = None
+
+
+def _backend_ids(token: str) -> tuple:
+    """(run, job): the runtime token's scp claim `Actions.Results:<run>:<job>`, as upload-artifact reads it."""
+    try:
+        part = token.split(".")[1]
+        scopes = str(loads(urlsafe_b64decode(part + "=" * (-len(part) % 4))).get("scp") or "").split(" ")
+    except (IndexError, ValueError, AttributeError) as error:
+        raise ValueError("an unreadable runtime token") from error
+    for scope in scopes:
+        bits = scope.split(":")
+        if bits[0] == "Actions.Results" and len(bits) == 3:
+            return bits[1], bits[2]
+    raise ValueError("no Actions.Results scope in the runtime token")
+
+
+def _rpc(api: _Kept, token: str, method: str, body: dict) -> dict:
+    """One call of the artifact service, as upload-artifact v7's; raises ValueError unless it answers ok."""
+    status, _, data = api.send("POST", RPC + method, dumps(body).encode(), {
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "card-preview-hand"})
+    try:
+        reply = loads(data)
+    except ValueError:
+        reply = None
+    if status != 200 or not isinstance(reply, dict) or reply.get("ok") is not True:
+        raise ValueError(f"{method} answered {status} {clean(reply.get('msg', '') if isinstance(reply, dict) else '', 200)}")
+    return reply
+
+
+def _utc() -> str:
+    return datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+
+
+def hand(out: str, token: str, results: str, limit: float = HAND_WAIT) -> str:
+    """
+    The preview job's hand-over as upload-artifact v7 makes it, from a process of its own started while the preview
+    bakes: ARTIFACT created at once and both hosts' connections made; the moment result.json is in out (looked for every
+    HAND_POLL s), HANDED's files there zipped (stored, at the root), the zip put on the blob store's connection and the
+    artifact finalized (size, sha256: --take's digest) on the service's, a failed put or finalize once more. A preview
+    that ended (<out>.code, card-preview.yml's) or ran past limit with no result.json: nothing handed.
+
+    Args:
+        token, results: ACTIONS_RUNTIME_TOKEN and ACTIONS_RESULTS_URL (never logged; the token to the service alone)
+
+    Returns:
+        "ok" (finalized) or "none" (no result.json); raises ValueError, OSError or HTTPException otherwise
+    """
+    started = monotonic()
+    ids = dict(zip(("workflow_run_backend_id", "workflow_job_run_backend_id"), _backend_ids(token)), name=ARTIFACT)
+    service = urlsplit(results)
+    if service.scheme != "https" or not service.netloc:
+        raise ValueError("no results URL")
+    api = _Kept(service.netloc)
+    store = None
+    try:
+        expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        made = _rpc(api, token, "CreateArtifact", {**ids, "expires_at": expires, "version": 7, "mime_type": "application/zip"})
+        upload = urlsplit(str(made.get("signed_upload_url") or made.get("signedUploadUrl") or ""))
+        if upload.scheme != "https" or not upload.netloc:
+            raise ValueError("CreateArtifact gave no upload URL")
+        store = _Kept(upload.netloc)
+        created = monotonic()
+        result = join(out, RESULT)
+        while not isfile(result) and not isfile(out.rstrip("/") + ".code") and monotonic() - started < limit:
+            sleep(HAND_POLL)
+        if not isfile(result):
+            print(f"No result.json at {_utc()}: nothing handed.", file=stderr)
+            return "none"
+        seen, seen_at = monotonic(), _utc()
+        zipped = BytesIO()
+        with ZipFile(zipped, "w", ZIP_STORED) as archive:
+            for name in HANDED:
+                if isfile(join(out, name)):
+                    archive.write(join(out, name), name)
+        data = zipped.getvalue()
+        headers = {"x-ms-blob-type": "BlockBlob", "x-ms-version": BLOB_VERSION, "x-ms-blob-content-type": "application/zip"}
+        for _ in (1, 2):
+            status, reply = store.send("PUT", upload.path + (f"?{upload.query}" if upload.query else ""), data, headers)[:2]
+            if status == 201:
+                break
+            print(f"card_preview_branch: the blob store answered {status} {clean(reply.getheader('x-ms-error-code') or '', 80)}",
+                  file=stderr)
+        else:
+            raise ValueError("the zip was not put")
+        put = monotonic()
+        body = {**ids, "size": str(len(data)), "hash": "sha256:" + sha256(data).hexdigest()}
+        try:
+            done = _rpc(api, token, "FinalizeArtifact", body)
+        except (ValueError, OSError, HTTPException) as error:
+            print(f"card_preview_branch: {clean(error, 300)}: once more", file=stderr)
+            done = _rpc(api, token, "FinalizeArtifact", body)
+        end = monotonic()
+        print(f"Handed over {len(data)} bytes (artifact {clean(done.get('artifact_id', '?'), 40)}): created "
+              f"{created - started:.3f} s after start; result.json seen {seen_at} UTC, put {put - seen:.3f} s on, "
+              f"finalized {end - put:.3f} s later ({_utc()} UTC).", file=stderr)
+        return "ok"
+    finally:
+        api.close()
+        if store is not None:
+            store.close()
+
+
 # ========================
 # Public API Functions
 # ========================
@@ -462,7 +606,22 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--warm", action="store_true", help="only read the branch, for a publish later (no --out or --request)")
     parser.add_argument("--take", metavar="DIR", help="wait for this run's hand-over, unzipped into DIR (env GITHUB_REPOSITORY, "
                                                       "GITHUB_RUN_ID, GH_TOKEN); go= and took= lines on stdout")
+    parser.add_argument("--hand", metavar="DIR", help="hand DIR's preview over as the artifact once its result.json is "
+                                                      "in (stdin: the runtime token, the results URL); hand.done beside it")
     options = parser.parse_args(argv[1:] if args is None else args)
+    if options.hand:
+        token, results, state = stdin.readline().strip(), stdin.readline().strip(), "fail"
+        try:
+            state = hand(options.hand, token, results)
+        except (ValueError, OSError, HTTPException) as error:     # never a URL (InvalidURL's would hold it)
+            why = clean(error, 300) if isinstance(error, (ValueError, OSError)) else type(error).__name__
+            print(f"card_preview_branch: no hand-over ({why}): upload-artifact's", file=stderr)
+        finally:
+            done = join(dirname(abspath(options.hand)), HAND_DONE)
+            with open(done + ".tmp", "w", encoding="utf-8") as fh:
+                fh.write(state + "\n")
+            replace(done + ".tmp", done)
+        return 0
     if options.take:
         state = take_over(options.take, environ["GITHUB_REPOSITORY"], environ["GITHUB_RUN_ID"],
                           environ.get("GH_TOKEN") or environ.get("GITHUB_TOKEN", ""),
@@ -504,6 +663,7 @@ __all__ = [
     'Unpublished',
     'blank',
     'clean',
+    'hand',
     'kept',
     'main',
     'publish',
