@@ -103,6 +103,45 @@ out([await p.laneCheck({json.dumps(request)}, {json.dumps(card)}, {json.dumps(ed
     assert delays == [2000, 500, 7000, 1000]
 
 
+def test_the_editor_takes_the_lanes_hand_over(tmp_path):
+    """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
+    press 2 names that run (its check the lane's) and shows the lane's card-preview-<request> 3 s after the press, one
+    toast each; a 422 with a lane dispatches again without it, and no lane is named after that."""
+    from commands.card_preview_lane import check_of
+    out = node(tmp_path, """let T = 1e12; const q = []; Date.now = () => T;
+globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
+const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
+const mem = new Map(); globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
+globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible" }; URL.createObjectURL = () => "blob:x";
+const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text), h = Buffer.alloc(30), c = Buffer.alloc(46), e = Buffer.alloc(22);
+  h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
+  e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
+const sent = [], toasts = [], listed = [];
+let refuse = false;
+const github = async (path, o = {}) => {
+  if (o.method === "POST") { sent.push({ ...o.body.inputs }); if (refuse && o.body.inputs.lane) { const e = new Error("GitHub 422"); e.status = 422; throw e; } return null; }
+  if (path.includes("/contents/")) { const e = new Error("404"); e.status = 404; throw e; }
+  if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + sent[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(1e12).toISOString() }] };
+  const z = path.split("/zip/")[1];
+  if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {} }));
+  const name = path.split("name=")[1], own = name === "card-preview" ? sent[0].request : name.slice(13);
+  listed.push([T - 1e12, name]);
+  return { artifacts: path.includes("/runs/101/") && (name === "card-preview" || own === sent[1].request) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
+};
+const app = { S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github }, toast: m => toasts.push(m), badges() {} };
+const pv = p.createPreviews(app), card = id => ({ id, key: "Mini Doomer", name: "Mini Doomer" });
+await pv.start(card("c0"), { hp: 8 }); await run(T + 20000);
+const second = T;
+await pv.start(card("c1"), { hp: 7 }); await run(T + 20000);
+refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"), { hp: 5 });
+out({ sent, toasts, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)) });""")
+    sent = out["sent"]
+    assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{check_of(sent[1]['request'], 'Mini Doomer', sent[1]['edit'])}"
+    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [3000]     # the lane's, 3 s on
+    assert out["toasts"].count("Preview ready: Mini Doomer") == 2
+    assert "lane" in sent[2] and "lane" not in sent[3] and "lane" not in sent[4]      # the 422's retry, then none named
+
+
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
     empty line; a long text shrinks until it fits, a name keeps its line count."""

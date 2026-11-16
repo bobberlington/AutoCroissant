@@ -24,7 +24,7 @@ from http.client import HTTPException
 from json import loads
 from os import O_APPEND, O_CREAT, O_WRONLY, close, dup2, environ, makedirs, open as os_open, replace
 from os.path import abspath, dirname, join
-from re import DOTALL, compile as re_compile, fullmatch
+from re import DOTALL, compile as re_compile
 from resource import RUSAGE_SELF, getrusage
 from shutil import rmtree
 from subprocess import run as run_process
