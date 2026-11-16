@@ -567,6 +567,19 @@ def test_references_take_the_old_repo_first(tmp_path):
                                                       str(old / ".git"), log=lambda *a: None))
 
 
+def test_the_first_repo_s_store_or_an_error(tmp_path, monkeypatch):
+    store = tmp_path / "ext" / "firstrepo.git"
+    (store / "objects" / "info").mkdir(parents=True)                # no alternates: self-contained after the Wrap
+    monkeypatch.setattr(dm, "FIRST_GIT", str(store))
+    with pytest.raises(SystemExit, match="store is missing"):        # no refs/first: never the old .git alone
+        dm.old_store()
+    (store / "packed-refs").write_text("# pack-refs\n" + "a" * 40 + " refs/first/main-0421\n")
+    assert dm.old_store() == str(store)
+    monkeypatch.setattr(dm, "FIRST_GIT", str(tmp_path / "unmounted"))
+    with pytest.raises(SystemExit, match="unmounted"):
+        dm.first_store()
+
+
 def test_root_inside_git_is_refused(tmp_path):
     (tmp_path / "repo" / ".git").mkdir(parents=True)
     (tmp_path / "repo" / "archive").mkdir()

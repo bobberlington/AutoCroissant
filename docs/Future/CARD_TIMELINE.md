@@ -42,7 +42,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
 0. **The first repo** (2022-08-24..2023-04-21): the same GitHub repo's history before the old .git, cut by the
    force-pushes of 2023-04-02 and 2023-04-21, still served by GitHub by commit id. Fetched read only (blobless, then its
    card PNGs in one batched fetch) into a bare repo outside every repo (`~/Documents/Tools/firstrepo.git`; its
-   alternates read the old .git's objects, so one store holds both; its remote URL disabled: no lazy fetch).
+   alternates read the old .git's objects, so one store holds both; its remote URL disabled: no lazy fetch; one path, `discord_match.FIRST_GIT`, env `TIMELINES_FIRST_GIT` after a
+   move: a step that reads it stops with an error when its `refs/first` (or the lost 2023 refs) are missing, never
+   the old .git alone).
    `scripts/oldgit_index.py` indexes its main history before the old repo's as one history (its rows: repo 'first';
    'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
    2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old

@@ -19,7 +19,7 @@ TC 36d62e53, the last 'init', 2023-11-05 23:15 PST), minus those init commits th
 Runs with the fork's Python from AC's scripts/ (else AC = the timelines worktree); oldgit_diag.py explains empty reads. Output under
 ~/Documents/Tools/discord-archive/derived/oldgit (never a repo). Card repo: GIT_NO_LAZY_FETCH=1, trees only.
 
-The first repo (FIRST_GIT, when present): the same GitHub repo's history before the old .git, cut by the force-pushes of
+The first repo (FIRST_GIT: discord_match.FIRST_GIT, env TIMELINES_FIRST_GIT; missing: an error): the same GitHub repo's history before the old .git, cut by the force-pushes of
 2023-04-02 and 2023-04-21 (2022-08-24..2023-04-21), fetched read only into a bare repo of its own (blobless, its card PNGs
 fetched; its objects/info/alternates reads the old .git's objects). Its main commits come first, as one history with the
 old repo's (rows: repo 'first'); 'Initial No PSD's' (2023-04-02) re-made the tree before it, so that commit is its
@@ -27,7 +27,7 @@ parent here. The side branch the_restoration_project re-committed 2020 port look
 Authors not in authors.json map by their commit e-mail when another name with that e-mail maps (Kittycoon,
 MichaelSrouji: panda2525252525's e-mail).
 
-The lost 2023 history (LOST_GLOB in the first repo's store, when present): main heads pushed 2023-10-26..11-05 and lost
+The lost 2023 history (LOST_GLOB in the first repo's store; missing: an error): main heads pushed 2023-10-26..11-05 and lost
 by the force-pushes of 11-03 and 11-05 (GitHub's activity log), fetched by id. The old repo's own history (repo
 'old', lost: true): 78 commits continue its main 268c2b1, then an unrelated history re-uploads a43fa582's tree in
 batches ('1'..'8', UPLOADS: files not re-uploaded yet are carried, not deleted) and goes on to the wipe's c76646e2.
@@ -50,7 +50,6 @@ HOME = expanduser("~")
 HERE = dirname(os.path.abspath(__file__))
 AC = dirname(HERE) if exists(join(dirname(HERE), "commands", "psd_parser.py")) else join(HOME, "Documents/Tools/wt/timelines-1113")
 OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
-FIRST_GIT = join(HOME, "Documents/Tools/firstrepo.git")   # the first repo (read only; alternates: the old .git's objects)
 FIRST_REFS = ("refs/first/main-0402", "refs/first/main-0421")   # main before each force-push, oldest first
 FIRST_LINKS = {"2056706e9ac92dfc024c3fc267154d13c78f972c": "7d95f1eb94d5b4e848028ab01b7c2286312b89d0"}
 LOST_GLOB = "refs/lost2023/*"                       # the old repo's lost 2023 heads, in the first repo's store
@@ -76,9 +75,11 @@ TASK_SECONDS = 600
 
 sys.path.insert(0, AC)
 os.environ["GIT_NO_LAZY_FETCH"] = "1"                     # the first repo is blobless: a missing blob is never fetched
+from commands.discord_match import FIRST_GIT as FIRST_PATH, first_store  # noqa: E402  (the one store path)
+FIRST_GIT = expanduser(FIRST_PATH)                        # the first repo (read only; it holds the old .git's objects)
 OG = ["git", "--git-dir", OLD_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
 FG = ["git", "--git-dir", FIRST_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
-STORE = FG if exists(join(FIRST_GIT, "objects", "info", "alternates")) else OG   # both repos' objects
+STORE = FG                                                # both repos' objects (old_commits stops when it is missing)
 TG = ["git", "-C", TC, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "core.quotePath=false", "--no-pager"]
 TENV = {**os.environ, "GIT_NO_LAZY_FETCH": "1"}
 
@@ -180,6 +181,7 @@ def old_commits() -> tuple:
     """(commits parents first, {sha: meta}) of the old history before CUT, the current repo's init commits left out;
     the first repo's main commits before them (repo 'first'; FIRST_LINKS joins its two histories); the old repo's lost
     2023 commits after them (repo 'old', lost; LOST_LINKS)."""
+    first_store()                                              # no store, no index: never the old .git alone
     own = set(git(OG, "rev-list", TC_INIT).decode().split())
     order, meta = [], {}
     if STORE is FG:
@@ -196,7 +198,9 @@ def old_commits() -> tuple:
         if sha not in own and sha not in meta:
             order.append(sha)
             meta[sha] = {**m, "repo": "old"}
-    if STORE is FG and git(FG, "for-each-ref", "--count=1", LOST_GLOB).strip():
+    if not git(FG, "for-each-ref", "--count=1", LOST_GLOB).strip():
+        raise SystemExit(f"no {LOST_GLOB} in {FIRST_GIT}: the lost 2023 history is missing")
+    if STORE is FG:
         lost = [(sha, {**m, "repo": "old", "lost": True}) for sha, m in log_commits(FG, "--glob=" + LOST_GLOB,
                                                                                    "--before=" + CUT)
                 if sha not in own and sha not in meta]

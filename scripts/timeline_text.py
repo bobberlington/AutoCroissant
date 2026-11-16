@@ -46,9 +46,8 @@ if AC not in sys.path:
     sys.path.insert(0, AC)
 ROOT = expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discord-archive")   # the archive
 OUT = join(ROOT, "derived/readers/text")
-OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
-if exists(join(HOME, "Documents/Tools/firstrepo.git/objects/info/alternates")):   # both repos' objects (read only)
-    OLD_GIT = join(HOME, "Documents/Tools/firstrepo.git")
+from commands.discord_match import FIRST_GIT, first_store  # noqa: E402  (the one store path)
+OLD_GIT = expanduser(FIRST_GIT)                  # both old repos' objects (read only; first_store() before a read)
 TC = join(HOME, "Desktop/TTSCardMaker")
 OLD_ICONS = ("86cd22b2d86586d51464d7cfe4e59ca3dc0fca46", "268c2b12")   # the old repo's first and last Types/ trees
 CARD_CLASSES = ("ps1200", "gen400", "gen350", "shot", "cardshape")      # the catalogue's card-shaped pictures
@@ -230,6 +229,7 @@ class Blobs:
 
     def get(self, sha):
         if self.p is None:
+            first_store()                        # a missing store stops: its blobs never read as missing ones
             self.p = subprocess.Popen(["git", "--git-dir", OLD_GIT, "-c", "core.fsmonitor=false", "cat-file",
                                        "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                       env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
@@ -374,6 +374,7 @@ def build_icons():
         im.thumbnail((128, 128), Image.LANCZOS)
         im.save(join(OUT, "icons", kind, f"{stem}~{digest}.png"))
     tc_git = join(TC, ".git")
+    first_store()
     for tree, store in [("origin/main", tc_git)] + [(c, OLD_GIT) for c in OLD_ICONS]:
         listing = git(store, "ls-tree", "-r", tree, "--", "Types") or b""
         for line in listing.decode().splitlines():

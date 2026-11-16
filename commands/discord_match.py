@@ -47,7 +47,7 @@ from io import BytesIO
 from json import dumps, load, loads
 from math import log
 from multiprocessing import get_context
-from os import cpu_count, environ, makedirs, replace
+from os import cpu_count, environ, listdir, makedirs, replace
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, realpath, splitext
 from re import IGNORECASE, compile as re_compile, findall, finditer, fullmatch, split as re_split, sub
 from sys import stderr, stdin
@@ -70,13 +70,23 @@ PAIRS_VERSION = 4
 STATS_FILE = "db/stats.json"                      # the data branch's card data
 CARD_TOPS = ("Creatures", "Items", "Field", "N.M.E", "Auxiliary")   # tts_save.CARD_FOLDERS
 OLD_GIT = "~/Downloads/Old TTSCardMaker/.git"     # the pre-wipe repo: read only
-FIRST_GIT = "~/Documents/Tools/firstrepo.git"      # the first repo (read only; its alternates: the old .git's objects)
+FIRST_GIT = environ.get("TIMELINES_FIRST_GIT", "~/Documents/Tools/firstrepo.git")   # the first repo's store: both
+                                                  # old repos' objects (read only; moved: point the env at it)
+
+
+def first_store() -> str:
+    """The first repo's store (refs/first; it holds the old repo's objects too). Missing: stop, never the old .git
+    alone (a rerun would drop every first-repo version)."""
+    path = expanduser(FIRST_GIT)
+    refs, packed = join(path, "refs", "first"), join(path, "packed-refs")
+    if (isdir(refs) and listdir(refs)) or (exists(packed) and " refs/first/" in open(packed).read()):
+        return path
+    raise SystemExit(f"the first repo's store is missing: no refs/first in {path} (set TIMELINES_FIRST_GIT)")
 
 
 def old_store() -> str:
-    """The store of the old repo's blobs: the first repo's (both repos' objects) when fetched, else the old .git."""
-    first = expanduser(FIRST_GIT)
-    return first if exists(join(first, "objects", "info", "alternates")) else OLD_GIT
+    """The store of the old repos' blobs: the first repo's (both repos' objects)."""
+    return first_store()
 OLD_CUTOFF = 1699254922                           # TTSCardMaker's last 'init' (36d62e53): old commits after it unused
 OLDGIT = ("derived", "oldgit")                    # the old-git pass's outputs under the root
 CATALOGUE = ("derived", "catalogue", "channels.json")   # the channel pass's kinds (meme/joke: the morgue)
