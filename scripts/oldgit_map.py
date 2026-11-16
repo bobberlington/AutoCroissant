@@ -36,6 +36,12 @@ EYE = join(OUT, "eye.json")  # by eye: {ties: {old id: {key, status, why}}}: a l
 OWNER = join(os.path.dirname(OUT), "review", "owner.json")  # the owner's rulings: maps {old id: {key, answer}}
 
 
+def tie_applies(tie, target, confidence, meme: bool, stats) -> bool:
+    """An eye tie (eye.json ties) rules a lost file or one only unsure evidence maps (the debuff Pain: Thinned by its
+    picture alone), never a meme folder's copy; its card must be live today."""
+    return bool(tie) and not meme and (not target or confidence == "unsure") and tie.get("key") in stats
+
+
 def owner_map(oid: str, maps: dict, stats: dict):
     """The owner's ruling on an old card (owner.json maps): (('live', key), answer) when its card is live, else None."""
     ruled = maps.get(oid) or {}
@@ -504,12 +510,13 @@ def map_main():
                     evidence["meme_copy"] = True
                 else:
                     record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
-        tie = ties.get(oid) if not target and not meme else None
-        if tie and tie.get("key") in stats:                    # by eye: the picture is that live card's (Blooper, Eldman)
+        tie = ties.get(oid)
+        if tie_applies(tie, target, confidence, meme, stats):  # by eye: the picture is that live card's (Blooper, Eldman)
             record.update(key=tie["key"], status=tie.get("status") or "live", confidence="sure", how=["picture", "eye"],
-                          eye=tie.get("why"))
+                          eye=tie.get("why"), why_unsure=None)
             if record["status"] == "live":
                 by_key[tie["key"]].append(oid)
+            target, confidence = None, "sure"                  # over unsure evidence (the debuff Pain -> Thinned)
         if first_only:
             record["repo"] = "first"
         if target:

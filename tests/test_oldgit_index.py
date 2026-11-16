@@ -73,6 +73,10 @@ def test_the_owner_s_old_maps_rule_over_the_evidence(monkeypatch):
                                                                                 "a2000-fire-bomb")
     assert om.owner_map("Eldman", maps, stats) == (("live", "Elmadan"), "a1940-eldman")
     assert om.owner_map("Gone", maps, stats) is None and om.owner_map("Fire Bomb", maps, stats) is None
+    tie = {"key": "Elmadan", "status": "live"}                 # an eye tie: a lost file, or over unsure evidence
+    assert om.tie_applies(tie, None, None, False, stats) and om.tie_applies(tie, ("live", "Firebomb"), "unsure", False, stats)
+    assert not om.tie_applies(tie, ("live", "Firebomb"), "sure", False, stats)
+    assert not om.tie_applies(tie, None, None, True, stats) and not om.tie_applies({"key": "Gone"}, None, None, False, stats)
 
 
 def test_a_first_repo_meme_file_joins_its_name_only_in_its_own_folder(oi, tmp_path, monkeypatch):
