@@ -158,6 +158,16 @@ card's lone stars or types edit renders only `dirty_box(old, new)` and its regio
 copy only as its source's record moved (new id and name), a moved layer only with its rect and mask moved and its
 transform and anchor blocks changed, a made icon only as a pixel record with the reference's effect blocks; the
 re-parse reads the stars back and the types in any order.
+**Stars back to the card maker's count (owner 2026-11-15, D14).** A stars bake remembers its own moves in the PSD's
+XMP (`psd_edit.star_memo`: an `autocroissant:starMoves` packet with the maker's count, the bake's net moves of the
+maker's star layers, their first visibility, the layers it added, where it left each one and the XMP InstanceID then;
+`memo_after`, built on the memo it was planned with). When a later stars edit asks for the maker's count again and
+the memo still holds (`_memo_holds`: no Photoshop save since, the stars it left, each named layer where and as shown
+as it left it), `plan_stars` undoes them instead of planning a layout (`_undo_stars`: its added layers deleted with
+their FEid items, `gate_bytes` taking them as removed records; the maker's layers moved back and shown or hidden as
+they were): the maker's layout and XMP come back as drawn. A shrink (option B), a split or a text copy can't be
+undone: such a bake drops the memo. The previews take the same path (`card_plates.star_value`, `psd_details`' header
+centres, the Rendered preview's bake).
 
 Classification is value-aware: PSD-kind only when the value differs from a fresh offline parse of the PSD (the goldens' route,
 `tests/golden_cards.py:62-76`: `PSDParser` on an empty `StatsDatabase` + `IconVocabulary.build` from the committing tree's
