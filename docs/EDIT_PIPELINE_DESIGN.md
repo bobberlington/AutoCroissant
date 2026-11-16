@@ -1320,6 +1320,33 @@ listens for branch creation, workflow_run or checks, a GITHUB_TOKEN
 push starts no workflow anyway, and the full-depth checkouts (site, guards, card sync, TTS save) are blobless, so the
 branch adds only its commits and trees to them; the local clones fetch main only.
 
+**Warm lane (owner D22, 2026-11-16; `commands/card_preview_lane.py`).** After a press that went well and was handed
+over directly, the preview job's process (Start's, `--code` then `--lane`) stays up 240 s for its editor's next
+presses, until its job's 11 minutes less 70 s. It bakes each in process with `preview()`: the same venv, fonts, trees,
+bot files and records, with no setup or imports. The website names the lane for a press (input `lane` =
+`<run id>-<check>`): the run that handed over the editor's newest result, while it should still be up. The run-name
+then carries the card and edit, `Card preview <request> lane <lane> <card> <edit>`. `check` is sha256 of
+`request\ncard\nedit`, cut to 16 hex digits, so a title GitHub cut or changed doesn't check. The lane lists its
+editor's card-preview runs every 0.3 s with If-None-Match; a 304 isn't counted. It takes a newer run only when the
+title names it and checks, the editor is its own, `head_sha` is its commit, and the bot's main (a conditional ref read)
+and the data's records (read again beside the card's blobs, as the Reads step does) are the ones it read. Any other
+newer run of its editor ends it, and that run is the next lane. A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
+and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
+`card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
+press's own run). Every press is still dispatched, baked cold and published as ever. A run whose named lane handed its
+press over starts no lane of its own. The lane also ends past 2 GB peak memory, or after 30 s of failed listings.
+Measured (2026-11-16, this Mac at load 64-80 while the owner gamed, TTSCardMaker bdc78630, data 05de2e10; scratch
+`s1110/d22/`): 27 real presses (name, ability, stats, stars, types, creatures, a redundant one) baked cold, each in a
+fresh process, and warm, by one lane process against a stand-in GitHub, its hand-overs made by the real `--hand --lane`
+process. All 27 were byte-identical: result.json less `took_s`, `at` and `run`, preview.avif and before.avif. The 26 warm
+ones took a median 11.5 s from the run's creation to the finalized artifact, against 24.7 s for a cold process (26 of
+26 faster): reads 1.0 s, bake 9.9 s under that load. On a runner the bake is about 1.7-3 s, so a repeat press should
+show in about 5-7 s, against 17-18 s today; the land's dry dispatch measures it (`s1110/d22/tools/lane_probe.py`).
+Idle, the lane's listings were all 304s (594 of 594 over its last 240 s) and it ended by itself. Under the built rules
+(warm only after the website saw the lane's result), 106 of the 194 real presses of 10-24..11-12 would have gone warm
+(55%), with 88 lanes of about 5.3 runner-minutes each. GitHub's cap on a run title is not documented: a cut title
+doesn't check, and that press goes cold. A 422 on a dispatch with `lane` is sent again without it.
+
 **Budget.** The preview reads its blobs through the REST API with GITHUB_TOKEN (1,000 requests an hour for the repo,
 shared with card-edits and card-sync): the icon manifest, the PSD and the PNG (3 for a stat edit, a test), plus the
 status chart for an ability and the added Types/ icons for a types edit. Fine at hobby volume; a burst of a hundred
