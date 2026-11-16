@@ -296,7 +296,8 @@ class IconPlan:
     copies: list = field(default_factory=list)   # (source, dx, dy, name): a star copied above itself, then moved
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
     done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy), ("made", layer,
-    #                                              blocks), ("masked copy", texture, copy, dx, dy): _texture_copies
+    #                                              blocks), ("masked copy", texture, copy, dx, dy): _texture_copies,
+    #                                              ("removed", layer, its records, FEid IDs): an undo's (D14)
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
     centres: list = field(default_factory=list)  # plan_stars(): the header stars' centres once applied, reading order
     notes: list = field(default_factory=list)    # told with the bake: stars or icons stepped down, shrunk, off banner
@@ -7861,7 +7862,8 @@ def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optio
 STAR_MEMO_NS = "https://github.com/MichaelJSr/AutoCroissant/xmp/1.0/"     # the bake's star memo in the PSD's XMP
 STAR_MEMO = re_compile(rb' *<rdf:Description rdf:about="" xmlns:autocroissant="[^"]*">\s*<autocroissant:starMoves>'
                        rb'([^<]*)</autocroissant:starMoves>\s*</rdf:Description>\n?')
-STRAY_MEMO = re_compile(rb'\s*<autocroissant:starMoves>[^<]*</autocroissant:starMoves>|\s+autocroissant:starMoves="[^"]*"')
+STRAY_MEMO = re_compile(rb'\s*<autocroissant:starMoves>[^<]*</autocroissant:starMoves>'
+                        rb'|\s+autocroissant:starMoves="[^"]*"')    # one Photoshop merged into its own on a save
 INSTANCE_ID = re_compile(rb'xmpMM:InstanceID(?:="|>)([^"<]*)')
 
 
@@ -7952,7 +7954,8 @@ def _undo_stars(psd: PSDImage, memo: dict, parser: Optional[PSDParser]) -> IconP
     layers = _by_id(psd)
     plan = IconPlan("stars", memo["now"], memo["count"], "the card maker's own layout", memo=memo, undo=True)
     added = {int(key) for key in memo["added"]}
-    plan.removed = [layers[key] for key in added if not any(up.layer_id in added for up in _ancestors(layers[key]))]
+    plan.removed = [layers[key] for key in sorted(added)
+                    if not any(up.layer_id in added for up in _ancestors(layers[key]))]
     plan.moves = [(layers[int(key)], -dx, -dy) for key, (dx, dy) in memo["moved"].items() if dx or dy]
     for key, was in memo["shown"].items():
         layer = layers[int(key)]
@@ -7975,9 +7978,9 @@ def _undo_stars(psd: PSDImage, memo: dict, parser: Optional[PSDParser]) -> IconP
 
 def memo_after(psd: PSDImage, plan: IconPlan) -> Optional[dict]:
     """
-    The star memo once set_icons applied plan on psd (D14): the plan's moves, shows, hides and added layers on top of the
-    memo it was planned with (else the card maker's stars, plan.old); None after an undo, or when it shrank or split a
-    star or copied text (no undoing those).
+    The star memo once set_icons applied plan on psd (D14): the plan's moves, shows, hides and added layers on top of
+    the memo it was planned with (else the card maker's stars, plan.old); None after an undo, or when it shrank or split
+    a star or copied text (no undoing those).
     """
     if plan.undo or plan.scaled or any(done[0] in ("split", "masked", "scaled") for done in plan.done):
         return None
