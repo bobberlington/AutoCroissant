@@ -9,22 +9,25 @@ editor it doesn't take.
 
 A press names the lane in its run's title (card-preview.yml's run-name, from the website's inputs.lane):
 
-    Card preview <request> lane <run id>-<check> <card> <edit>
+    Card preview <request> lane <run id>-<blob>
 
-check = the first CHECK hex digits of sha256 of the request, card and edit, one line each (the website's laneCheck): a
-title GitHub cut or changed doesn't check. The lane takes a run only when its title names this run and checks, its editor
-is this run's, it runs on this run's commit, and the bot's main and the data's records are still the ones this process
-read; any other newer run of its editor ends the lane (that run, not served, starts the next one). A run whose press its
-named lane served starts none.
+blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each; no
+ref, so no push): GitHub cuts run titles at 512 characters, so the press itself never rides in one. The lane takes a run
+only when its title names this run, its editor is this run's, it runs on this run's commit, its blob hashes to its sha
+and names its request, and the bot's main and the data's records are still the ones this process read; any other newer
+run of its editor ends the lane (that run, not served, starts the next one). A run whose press its named lane served
+starts none.
 """
+from base64 import b64decode
+from binascii import Error as Base64Error
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from hashlib import sha256
+from hashlib import sha1
 from http.client import HTTPException
 from json import loads
 from os import O_APPEND, O_CREAT, O_WRONLY, close, dup2, environ, makedirs, open as os_open, replace
 from os.path import abspath, dirname, join
-from re import DOTALL, compile as re_compile
+from re import compile as re_compile
 from resource import RUSAGE_SELF, getrusage
 from shutil import rmtree
 from subprocess import run as run_process
@@ -48,41 +51,57 @@ LISTED = 10                                     # runs per listing
 FAILING = 30                                    # s of failed listings that end the lane
 HAND_WAIT = 10                                  # s for the first press's hand-over (hand.done ok)
 MAX_RSS = 2 << 30                               # bytes of peak memory past which it takes no more presses
-CHECK = 16                                      # hex digits of the title's check
+BLOB_WAIT, BLOB_POLL = 5, 0.25                  # s a press's blob may lag its run (posted beside the dispatch)
+MAX_BLOB = 1 << 16                              # bytes of a press's blob (an edit is card_preview.MAX_EDIT at most)
 WORKFLOW = "card-preview.yml"
 RECORDS_ENV = "CARD_RECORDS_DIR"                # psd_edit.RECORDS_DIR: the data's records the first press read
-TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]{16}) (.+)", DOTALL)
-NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{16}")  # inputs.lane
+TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]{40})")
+NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
 
 
 class Press(NamedTuple):
-    """A run's press as its title gives it (card and edit None: it names a lane but doesn't check)."""
+    """A run's press as its title names it: the request, the lane, the sha of its blob."""
     request: str
     lane: int
-    card: Optional[str]
-    edit: Optional[str]
+    blob: str
 
 
 # ========================
-# The title
+# The press
 # ========================
-def check_of(request: str, card: str, edit: str) -> str:
-    """The title's check: sha256 of the request, card and edit (UTF-8, one line each), its first CHECK hex digits."""
-    return sha256(f"{request}\n{card}\n{edit}".encode("utf-8")).hexdigest()[:CHECK]
+def press_blob(request: str, card: str, edit: str) -> tuple:
+    """(bytes, sha) of a press's blob: the request, card and edit, UTF-8, one line each (the website's laneBlob)."""
+    data = f"{request}\n{card}\n{edit}".encode("utf-8")
+    return data, sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
 def press_of(title: str) -> Optional[Press]:
-    """A run title's press, None when it names no lane; the card is whatever precedes the edit's " {" that checks."""
+    """A run title's press, None when it names no lane."""
     match = TITLE.fullmatch(title or "")
-    if not match:
-        return None
-    request, lane, check, rest = match.groups()
-    at = rest.find(" {")
-    while at > 0:
-        if check_of(request, rest[:at], rest[at + 1:]) == check:
-            return Press(request, int(lane), rest[:at], rest[at + 1:])
-        at = rest.find(" {", at + 1)
-    return Press(request, int(lane), None, None)
+    return Press(match.group(1), int(match.group(2)), match.group(3)) if match else None
+
+
+def read_press(api: _Api, repository: str, press: Press) -> tuple:
+    """(card, edit, "") from the press's blob (a 404 tried again for BLOB_WAIT s), else (None, None, why)."""
+    deadline = monotonic() + BLOB_WAIT
+    status, _, body = api.get(f"/repos/{repository}/git/blobs/{press.blob}")
+    while status == 404 and monotonic() < deadline:
+        sleep(BLOB_POLL)
+        status, _, body = api.get(f"/repos/{repository}/git/blobs/{press.blob}")
+    if status != 200:
+        return None, None, f"the press's blob not read ({status})"
+    try:
+        reply = loads(body)
+        data = b64decode(reply["content"]) if reply.get("encoding") == "base64" and reply.get("size", 0) <= MAX_BLOB else b""
+    except (ValueError, KeyError, TypeError, AttributeError, Base64Error):
+        data = b""
+    if sha1(b"blob %d\0" % len(data) + data).hexdigest() != press.blob:
+        return None, None, "the press's blob doesn't hash to its sha"
+    try:
+        request, card, edit = data.decode("utf-8").split("\n", 2)
+    except ValueError:
+        return None, None, "the press's blob isn't a press"
+    return (card, edit, "") if request == press.request else (None, None, "the press's blob names another request")
 
 
 # ========================
@@ -144,8 +163,6 @@ def fits(run: dict, press: Optional[Press], me: int, actor: str, head: str) -> s
         return "a newer press named no lane"
     if press.lane != me:
         return f"a newer press named lane {press.lane}"
-    if press.card is None:
-        return "a newer press's title doesn't check"
     if run.get("status") == "completed":
         return "a newer press was done before the lane saw it"
     if (run.get("triggering_actor") or run.get("actor") or {}).get("login") != actor:
@@ -172,21 +189,26 @@ def _log_to(path: str) -> None:
 def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone: str, repository: str, head: str,
          kept: dict, bot_repo: str, bot: str, limit: int) -> str:
     """
-    One press: its out dir made (the hand-over's artifact created then), its reads (card_preview_reads, as the Reads step)
-    beside the bot's check, then bake() into it; <out>.code after. Returns "" when baked, else why the lane ends.
+    One press: its out dir made (the hand-over's artifact created then), its blob (read_press), its reads
+    (card_preview_reads, as the Reads step) beside the bot's check, then bake() into it; <out>.code after. Returns ""
+    when baked, else why the lane ends.
     """
     out, seen = join(lane, press.request), monotonic()
     makedirs(out, exist_ok=True)
     records = mkdtemp(prefix="card-preview-lane-")
     why, code = "", "skipped"
     try:
+        card, text, why = read_press(api, repository, press)
+        if why:
+            return why
+        blob = monotonic()
         try:
-            edit = loads(press.edit)
+            edit = loads(text)
         except ValueError:
             edit = {}
         fields = {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
         with ThreadPoolExecutor(1) as pool:
-            done = pool.submit(reads, press.card, fields, clone, repository, head, records)
+            done = pool.submit(reads, card, fields, clone, repository, head, records)
             why = bot_moved(api, bot_repo, bot)
             done.result()
         for name in RECORDS if not why else ():
@@ -196,11 +218,12 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
             return why
         read = monotonic()
         url = f"{environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repository}/actions/runs/{run['id']}"
-        result = bake(press.card, press.edit.encode("utf-8")[:limit + 1], out, repository, clone=clone,
+        result = bake(card, text.encode("utf-8")[:limit + 1], out, repository, clone=clone,
                       request=press.request, head=head, run=url)
         code = "0" if result.get("state") != "error" else "2" if str(result.get("reason", "")).startswith("input:") else "1"
         made, now = _epoch(run.get("created_at")), monotonic()
-        _say(f"{press.request} ({clean(press.card, 80)}): {result.get('state')} in {now - seen:.2f} s (reads {read - seen:.2f} s, "
+        _say(f"{press.request} ({clean(card, 80)}): {result.get('state')} in {now - seen:.2f} s (blob {blob - seen:.2f} s, "
+             f"reads {read - blob:.2f} s, "
              f"bake {now - read:.2f} s)" + (f"; seen {time() - (now - seen) - made:.1f} s after its run was made (to the "
                                             "second)" if made else ""))
         return ""
@@ -306,10 +329,11 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
 __all__ = [
     'Press',
     'bot_moved',
-    'check_of',
     'fits',
     'listen',
+    'press_blob',
     'press_of',
+    'read_press',
     'serve',
     'served_elsewhere',
     'take',
