@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import sys
+import threading
 import types
 from importlib import import_module
 from os import cpu_count, environ, getpid
@@ -141,6 +142,8 @@ def no_lazy() -> dict:
 class Pinned(type(Path())):
     """The card repo at CARDS_REV: `pinned / rel` writes rel (a file or a folder) from the pin on first use."""
     batch = None                                          # this process's git cat-file --batch
+    owner = None                                          # its pid (a forked child starts its own)
+    lock = threading.Lock()                               # one read at a time on the pipe
     done: set = set()                                     # folders written by this process
 
     def __truediv__(self, key):
@@ -149,24 +152,37 @@ class Pinned(type(Path())):
         return Path(path)
 
 
-def _blob(root: Path, spec: str):
-    """(type, bytes) of rev:path through one cat-file --batch per process; None when the pin has no such path."""
+def _read(root: Path, spec: str):
+    """(type, bytes) of an object through one cat-file --batch per process on the pin; None when missing."""
     import subprocess
-    if Pinned.batch is None:
-        Pinned.batch = subprocess.Popen(["git", "-C", str(root), "cat-file", "--batch"], stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, env=no_lazy())
-    pipe = Pinned.batch
-    pipe.stdin.write(spec.encode() + b"\n")
-    pipe.stdin.flush()
-    head = pipe.stdout.readline().split()
-    if head[-1] == b"missing":
-        sha = subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", spec], capture_output=True, text=True).stdout.strip()
-        if sha:
-            raise RuntimeError(f"{spec} is in the pin's tree, but neither {CLONE} nor {HISTORY} has its blob: missing blob {sha}")
-        return None
-    data = pipe.stdout.read(int(head[2]))
-    pipe.stdout.read(1)
-    return head[1].decode(), data
+    with Pinned.lock:
+        if Pinned.owner != getpid():
+            Pinned.batch = subprocess.Popen(["git", "-C", str(root), "cat-file", "--batch"], stdin=subprocess.PIPE,
+                                            stdout=subprocess.PIPE, env=no_lazy())
+            Pinned.owner = getpid()
+        pipe = Pinned.batch
+        pipe.stdin.write(spec.encode() + b"\n")
+        pipe.stdin.flush()
+        head = pipe.stdout.readline().split()
+        if head[-1] in (b"missing", b"ambiguous"):
+            return None
+        data = pipe.stdout.read(int(head[2]))
+        pipe.stdout.read(1)
+        return head[1].decode(), data
+
+
+def _sha(root, spec: str) -> str:
+    import subprocess
+    return subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", spec], capture_output=True, text=True,
+                          env=no_lazy()).stdout.strip()
+
+
+def _blob(root: Path, spec: str):
+    """(type, bytes) of rev:path from the pin (_read); None when the pin has no such path."""
+    found = _read(root, spec)
+    if found is None and (sha := _sha(root, spec)):
+        raise RuntimeError(f"{spec} is in the pin's tree, but neither {CLONE} nor {HISTORY} has its blob: missing blob {sha}")
+    return found
 
 
 def _write(path: Path, data: bytes) -> None:
@@ -224,14 +240,18 @@ def pinned_clone() -> Pinned:
 
 
 def card_blob(clone, spec: str) -> bytes:
-    """A card repo object (rev:path or a blob id) from the clone's objects. Missing fails, naming the blob: the run's
-    summary gives one fetch for them all."""
+    """A card repo object (rev:path or a blob id) from the clone's objects (the pin's through its batch). Missing fails,
+    naming the blob: the run's summary gives one fetch for them all."""
     import subprocess
-    done = subprocess.run(["git", "-C", str(clone), "cat-file", "blob", spec], capture_output=True, env=no_lazy())
-    if done.returncode == 0:
-        return done.stdout
-    sha = subprocess.run(["git", "-C", str(clone), "rev-parse", "-q", "--verify", spec], capture_output=True, text=True,
-                         env=no_lazy()).stdout.strip()
+    if isinstance(clone, Pinned):                         # no git spawn per read
+        found = _read(clone, spec)
+        if found and found[0] == "blob":
+            return found[1]
+    else:
+        done = subprocess.run(["git", "-C", str(clone), "cat-file", "blob", spec], capture_output=True, env=no_lazy())
+        if done.returncode == 0:
+            return done.stdout
+    sha = _sha(clone, spec)
     pytest.fail(f"{CLONE} lacks {spec}: " + (f"missing blob {sha}" if sha else f"not in its history or {HISTORY}"), pytrace=False)
 
 
