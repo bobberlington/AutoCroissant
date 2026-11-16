@@ -62,7 +62,7 @@ def test_an_icons_drawing_keeps_the_layout(clone, monkeypatch):
     from psd_tools.composite.text.geometry import text_geometry
     import commands.card_standards as cs
     layer = next(x for x in PSDImage.open(clone / DEDEDE).descendants() if x.kind == "type" and x.name.strip() == "Ability")
-    fonts = str(clone / "MDW" / "Fonts")
+    fonts = str(clone / "MDW/Fonts")
     faces, kept, real = psd_edit.font_map(fonts, layer), cp.layout(layer, fonts), text.render
     icons = [g["ink"] for g in text_geometry(layer, faces)["glyphs"] if g["font"].startswith("stoogedings") and g["ink"]]
 
