@@ -68,6 +68,7 @@ CUT = "2023-11-06T07:15:30Z"
 CARD_DIRS = ("Creatures", "Auxillary", "Auxiliary", "Items", "Field", "N.M.E", "Cards")   # Cards: the first repo's
                                                                                            # creatures (to 2023-04-20)
 EXTS = ("psd", "png")
+MEME = "/meme/"                                             # the first repo's joke folders (Items/Meme, Cards/Meme)
 NOT_CARDS = ("Rules", "Rulebook", "Markers")               # rule pages and markers: no cards (build_site, discord_match)
 OLD_FOLDERS = (("Auxillary/", "Auxiliary/"), ("Cards/", "Creatures/"))   # old spellings: today's classifier reads today's
 THUMB = 480
@@ -361,12 +362,27 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
             if len(lids) > 1:
                 clash.add(key[0])
                 together[key] |= lids
+    top = lambda path: today_rel(path).split("/", 1)[0].lower()
     for repo in ("L", "F"):                                    # each repo's lineages by name, as the old repo's were
-        by_name = defaultdict(list)                            # (the first repo's by their last name: a misnamed file
+        by_name, memes = defaultdict(list), []                 # (the first repo's by their last name: a misnamed file
         for lid, lin in lineages.items():                      # renamed must not join two cards: Metal Shield)
             if lid[0] == repo:
+                if repo == "F" and MEME in lin["paths"][-1].lower():
+                    memes.append(lid)
+                    continue
                 for path in lin["paths"] if repo == "L" else lin["paths"][-1:]:
                     by_name[stem_key(path)].append(lid)
+        alone = defaultdict(list)                              # a Meme file joins its name in its top folder alone
+        for lid in memes:                                      # (Alex YIIK's Cards/Meme -> Cards/Other), never another
+            path = lineages[lid]["paths"][-1]                  # kind's: the joke item pain.png is not the debuff Pain
+            same = [o for o in by_name.get(stem_key(path), ()) if top(lineages[o]["paths"][-1]) == top(path)]
+            if same and stem_key(path) not in clash:
+                parent[find(lid)] = find(same[0])
+            else:
+                alone[folder_stem(path) if stem_key(path) in clash else (stem_key(path), top(path))].append(lid)
+        for lids in alone.values():
+            for lid in lids[1:]:
+                parent[find(lid)] = find(lids[0])
         for name, lids in by_name.items():
             if name in clash:                                  # two files of one name at once: by folder only
                 groups = defaultdict(list)
