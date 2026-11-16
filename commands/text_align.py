@@ -18,6 +18,9 @@ paired "When damaged, spend all spider counters" with leftover letters of the pa
        one with the paragraph next to it (Morpho Knight's deleted first line took the rewritten second line's start
        into its colour). moves(): an added paragraph alike a deleted one (MOVE_MIN) is that one moved; the bake
        colours it as it was.
+    5. An edit that only joins or splits lines (its changes are blanks with a break: a break made a space, a space a
+       break, a break typed or deleted) is aligned letter by letter: the break is the one change, so both lines keep
+       their letters' looks, as Photoshop's own edit does (The Structure's joined line took line 2's font, 11-15).
 
 blocks() is difflib's get_matching_blocks() and opcodes() its get_opcodes() (consecutive changes possible), so callers
 swap them in.
@@ -32,11 +35,13 @@ from typing import Optional
 # Configuration
 # ========================
 BREAKS = "\r\n\x03"
+BLANKS = BREAKS + " "   # what a line join or split changes (rule 5)
 UNIT = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|\(-?[0-9A-Za-z/]{2,8}\)|[^\W_]+(?:['’][^\W_]+)*|.", DOTALL)
 WORD = re_compile(r"[^\W_]")
 PAIR_BONUS = 0.05       # a pair's worth beyond its likeness: paragraphs pair in place unless added or deleted ones
 REFINE_MIN = 0.5        # one word into one word: letters compared when this alike (difflib ratio)
 MOVE_MIN = 0.6          # an added paragraph this alike a deleted one is it moved
+_NO_BLANKS = str.maketrans("", "", BLANKS)
 
 
 # ========================
@@ -184,6 +189,18 @@ def _word_blocks(old: str, new: str, a: tuple, b: tuple) -> list:
     return out
 
 
+def break_ops(old: str, new: str) -> Optional[list]:
+    """difflib's letter opcodes of an edit that only joins or splits lines (rule 5), else None."""
+    if old == new or old.translate(_NO_BLANKS) != new.translate(_NO_BLANKS):
+        return None
+    ops = SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
+    for tag, i1, i2, j1, j2 in ops:
+        changed = old[i1:i2] + new[j1:j2]
+        if tag != "equal" and (changed.strip(BLANKS) or not any(c in BREAKS for c in changed)):
+            return None
+    return ops
+
+
 def _blocks(lay: Layout) -> list:
     old, new, found = lay.old, lay.new, []
     for i, j in lay.pairs:
@@ -204,6 +221,9 @@ def blocks(old: str, new: str) -> list:
     difflib's get_matching_blocks() for an edit old -> new, by paragraphs then words (the module's rules): [(i, j, n)]
     in order, adjacent ones merged, ending with (len(old), len(new), 0).
     """
+    ops = break_ops(old, new)
+    if ops is not None:
+        return [(i1, j1, i2 - i1) for tag, i1, i2, j1, _ in ops if tag == "equal"] + [(len(old), len(new), 0)]
     return _blocks(Layout(old, new))
 
 
@@ -238,6 +258,9 @@ def segments(old: str, new: str) -> list:
     The edit's opcodes, each change split where its group changes (rule 4): [(tag, i1, i2, j1, j2, group)], tags
     equal, replace, delete, insert, in order over both texts.
     """
+    ops = break_ops(old, new)
+    if ops is not None:                         # each change a group of its own
+        return [op + (("brk", k),) for k, op in enumerate(ops)]
     lay = Layout(old, new)
     out, i, j = [], 0, 0
     for a, b, n in _blocks(lay):
@@ -272,6 +295,8 @@ def moves(old: str, new: str) -> list:
     [((old start, end), (new start, end), blocks)]: each added paragraph that is a deleted one moved (MOVE_MIN alike,
     the likeliest first), paragraph texts only; blocks: the letters it kept, [(i, j, n)] from each paragraph's start.
     """
+    if break_ops(old, new) is not None:         # nothing moved
+        return []
     lay = Layout(old, new)
     paired_a, paired_b = {i for i, _ in lay.pairs}, {j for _, j in lay.pairs}
     gone = [k for k, (s, e) in enumerate(lay.pa) if k not in paired_a and old[s:e].strip()]
@@ -292,9 +317,11 @@ def moves(old: str, new: str) -> list:
 # Module Exports
 # ========================
 __all__ = [
+    'BLANKS',
     'BREAKS',
     'Layout',
     'blocks',
+    'break_ops',
     'likeness',
     'moves',
     'opcodes',
