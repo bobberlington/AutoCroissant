@@ -578,7 +578,7 @@ Bot (AutoCroissant, `main.py` + `commands/query_card.py`):
 - `/query_rulebook search_text [limit]`: plain case-insensitive substring over the chapters (`db/rulebook.json`,
   `rulebook_dff`); no DSL; the reply quotes the matching lines under their chapter names, the chapters with the most
   matches first, as written, with `render_type_tokens` (icons as emojis). An empty search asks for a word or phrase.
-- `/export_rulebook`: a text file of every chapter, in book order (non-ASCII stripped).
+- `/export_rulebook`: a UTF-8 text file of every chapter, in book order, then the ban list (★, −, emojis kept).
 - `/query name`: card image by fuzzy file-name match (works for status effect cards, e.g. "poison", and for Types/ icons).
 - `/query_ability query [limit] [howmany]`: the DSL over every non-rulebook card with ability text. For status effects
   and types: `type==debuff`, `type==buff`, `type==debuff & stars==3`, `types~debuffstack`, `types~debuffupgrade`,
