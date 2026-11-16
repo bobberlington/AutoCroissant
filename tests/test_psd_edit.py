@@ -209,6 +209,28 @@ def test_apostrophes_read_and_bake_straight():
     assert pe.normalize_ability("Don’t.") == "Don't."
 
 
+def test_typed_marks_plain_only_where_the_font_lacks_them(clone, parser, chart):
+    """Owner D13 (2026-11-15): a typed \u2014 \u2013 \u2026 \u201c \u201d its font has no glyph for bakes plain (- ... "),
+    never a box; one its font has stays. Morpho Knight's ability font has all but \u2013, its title's lacks \u2014;
+    PoD04 Zebra Bloon's Oetztype has none. The read-back gates compare marks as plain, the redundancy checks do not."""
+    fonts_dir = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, MORPHO)[0])
+    old = pe.normalize_ability(pe.ability_layer(psd).text)
+    edit = pe.set_text_layer(psd, "ability", old + " Heal 1\u20132 HP \u2014 \u201ctwice\u201d\u2026", fonts_dir, chart,
+                             parser=parser)
+    assert edit.new.endswith(" Heal 1-2 HP \u2014 \u201ctwice\u201d\u2026") and not any("glyph" in n for n in edit.notes)
+    title = pe.name_layer(psd, "Morpho Knight")
+    edit = pe.set_text_layer(psd, "name", title.text + " \u2014 II", fonts_dir, parser=parser)
+    assert edit.new.endswith(" - II") and not any("glyph" in n for n in edit.notes), edit.notes
+    psd = PSDImage.open(_card(clone, "Auxiliary/Minions/PoD04Zebra_Bloon.psd")[0])
+    layer = pe.ability_layer(psd)
+    typed = layer.text + " Then\u2026 \u201cPop\u201d."
+    assert pe.plain_typed(layer, "ability", layer.text, typed, fonts_dir) == layer.text + ' Then... "Pop".'
+    assert pe.plain_typed(layer, "ability", layer.text, layer.text + " Pop.", fonts_dir) == layer.text + " Pop."
+    assert pe._part_same("a \u2014 \u201cb\u201d", 'a - "b"', None, True) and not pe._part_same("a \u2014 b", "a - b", None)
+    assert pe.classify({"card": {"ability": "Hit - run."}}, {"ability": "Hit \u2014 run."}).jobs == {"ability": "Hit \u2014 run."}
+
+
 def test_keep_ends_puts_back_blank_first_and_last_paragraphs():
     """The website and Discord trim an ability's ends: the layer's blank first and last paragraphs come back (PoD10BFB)."""
     old = "\r(1GCD)(2U) Intercept.\r(2CD) Summon."
