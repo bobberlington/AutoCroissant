@@ -163,6 +163,11 @@ def review_id(kind: str, key: str) -> str:
     return "chain-" + sha1(f"{kind}|{key}".encode()).hexdigest()[:12]
 
 
+def row_item_id(row: str, key: str) -> str:
+    """An old row's field item id (oldgit_rows.review_items: 'oldrows-' + stable_id('field', row, field))."""
+    return "oldrows-" + sha1("\x1f".join(("field", row, key)).encode()).hexdigest()[:12]
+
+
 def picture_id(kind: str, picture: str, card: Optional[str], issued: dict) -> str:
     """A picture-keyed item's id (PICTURE_KINDS): the picture's alone while the page showed it for that card (or
     never showed it); asked about another card, a new id keyed by the card too: an answered id keeps its meaning."""
@@ -1097,6 +1102,10 @@ class Chain:
                 own = fields
                 fields = {k: {**v, "method": f"git look: {v['method']}"} if is_sure(v) else v for k, v in exact.items()}
                 for key, mine in own.items():
+                    if key not in fields and is_sure(mine):     # its git version has none (a PNG with no PSD)
+                        fields[key] = mine
+                        self.tally[f"discord: git look, its version has no {key}: the picture's own"] += 1
+                for key, mine in own.items():
                     if key in fields and not is_sure(fields[key]) and is_sure(mine):
                         fields[key] = unsure(fields[key].get("method") or "psd", "its git version's field is to "
                                              f"review ({fields[key].get('why')}); the picture reads it", mine["value"])
@@ -1545,6 +1554,8 @@ class Chain:
             if e["kind"] not in ("discord", "old repo"):
                 continue
             for key, field in list(e["fields"].items()):
+                if key == "ability" and is_sure(field) and "known" in str(field.get("method")):
+                    self.keep_transcription(cid, e, key, field)
                 if field.get("confidence") != "review":
                     continue
                 own = review_id("field", f"{cid}|{e['id']}|{key}")
@@ -1564,6 +1575,22 @@ class Chain:
                         self.used.add(rid)
                         self.tally[f"owner: {e['kind']} field {key} given"] += 1
                         break
+
+    def keep_transcription(self, cid: str, e: dict, key: str, field: dict) -> None:
+        """A text a reader made sure as one of the card's known texts ('ocr+known') keeps the answer given on its
+        item before (the entry's own, or its git row's) when that answer has the same words (text_key): the answer
+        was typed off the picture, the known text is the PSD's form (spacing, case, punctuation)."""
+        row = e["id"][2:] if e["kind"] == "old repo" else ((e.get("look") or {}).get("git") or {}).get("row")
+        ids = [review_id("field", f"{cid}|{e['id']}|{key}")] + ([row_item_id(row, key)] if row else [])
+        for rid in ids:
+            r = self.rulings.get(rid) or {}
+            value = r.get("value") if r.get("choice") in ("value", "yes") else None
+            if isinstance(value, str) and value != field["value"] and \
+                    text_key(dm.strip_tokens(value)) == text_key(dm.strip_tokens(field["value"])):
+                e["fields"][key] = sure(value, ruled_by(r), ruled=rid, check=f"same words as {field['method']}")
+                self.used.add(rid)
+                self.tally[f"owner: {e['kind']} field {key} kept as answered (a known text, same words)"] += 1
+                return
 
     def field_reviews(self, cid: str, entries: list) -> None:
         """Every field to review gets its item (an old row's from oldrows, else the chain's own); types with nothing

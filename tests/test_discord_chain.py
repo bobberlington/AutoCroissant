@@ -452,6 +452,26 @@ def test_a_git_look_s_row_item_or_the_picture_s_own_answer():
     assert (e["fields"]["name"]["value"], e["fields"]["name"]["ruled"]) == ("Bolt", "oldrows-nm")
 
 
+def test_a_git_look_takes_the_picture_s_own_field_and_keeps_a_typed_answer():
+    """A field the git look's row has none of (a PNG with no PSD: no types) is the picture's own sure read; a known
+    text (ocr+known) keeps an answer typed off the picture with the same words (its row's item or its own)."""
+    row = old_row("Bolt", T + 100 * DAY, "a" * 40, 5)
+    row["fields"]["ability"] = {"value": "Bite 3.(OPT)", "method": "ocr+known", "confidence": "sure"}
+    got = inputs([picture(1, T, "version_sure", look=1)], old_rows=[row])
+    got.text_truth = {"d:" + "1".zfill(64): {"types": ["ice"]}}
+    own = dc.review_id("field", "bolt|D-P-000000000001|ability")
+    got.rulings = {own: {"choice": "value", "value": "Bite 3. (OPT)", "source": "triage (owner-delegated)"},
+                   dc.row_item_id(row["id"], "ability"): {"choice": "value", "value": "Bite 4. (OPT)"}}
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    e = next(e for e in chain.card("bolt", found["bolt"], [])["entries"] if e["id"] == "D-P-000000000001")
+    assert (e["fields"]["types"]["value"], e["fields"]["types"]["method"]) == (["ice"], "eye")
+    assert (e["fields"]["ability"]["value"], e["fields"]["ability"]["method"], e["fields"]["ability"]["ruled"]) == (
+        "Bite 3. (OPT)", "triage", own)
+    o = next(e for e in chain.card("bolt", found["bolt"], [])["entries"] if e["kind"] == "old repo")
+    assert o["fields"]["ability"]["value"] == "Bite 3.(OPT)"                       # other words: the known text
+
+
 def test_a_picture_s_id_keeps_its_card_and_the_triage_s_method():
     """BRIEF 11-15 20:50: a picture-keyed item (look not told, named only, joke picture) keeps its id while the page
     asks about the card it was first shown with (derived/review/ids.json); asked about another card it gets a new id,
