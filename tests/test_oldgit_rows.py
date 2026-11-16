@@ -384,3 +384,37 @@ def test_a_type_icon_one_row_lower_counts_art_there_not(rows):
     assert rows.header_icon_kept(tornado, names) and not rows.header_icon_kept(art, names)
     assert rows.header_icon_kept({**art, "low": False}, names)
     assert rows.check_types([], [tornado], True, names, "creature", ["wind"])["value"] == ["wind"]
+
+
+def test_an_owner_mapped_psd_alone_is_its_commit_s_psd_or_a_look_of_its_own(rows):
+    """Old cards of PSDs alone the owner gave a card (Items/Freeze_Spell.psd, 'sumo outside'): a PSD whose composite
+    is the same commit's PNG of the card (its own PSD another look) becomes that row's PSD ('replaces'); one that is
+    no PNG's look is a psd_only row of its own; base rows are left alone."""
+    v = lambda oid, path, ext, blob, ts: {"id": f"{blob}:{path}.{ext}", "old_id": oid, "commit": f"c{ts}" * 8, "ts": ts,
+                                          "date": f"2023-04-{ts // 10:02d}T00:00:00-04:00", "author": "Michael",
+                                          "subject": "s", "path": f"{path}.{ext}", "ext": ext, "blob": blob,
+                                          "kind": "add", "new_look": True}
+    own, mine = "Items/Attack/3 Stars/Spell", "Items/Spell"
+    versions = {"Spell": [v("Spell", own, "png", "g1", 100), v("Spell", own, "psd", "s1", 100)],
+                "Spell (Items)": [v("Spell (Items)", mine, "psd", "o1", 100), v("Spell (Items)", mine, "psd", "o2", 200)]}
+    read = lambda n: {"read": {"type": "item", "name": "Spell", "printed_title": "Spell", "stars": 3, "types": [],
+                               "ability": f"Freeze {n}."}}
+    reads = {("s1", f"{own}.psd"): read(1), ("o1", f"{mine}.psd"): read(2), ("o2", f"{mine}.psd"): read(3)}
+    ocr = {"g1": {"title": [["SPELL", 1.0]], "lines": [["Freeze 2.", 1.0, 0.1, 0.8, 0.8, 0.05]]}}
+
+    class Looks(FakeData):
+        def thumb(self, blob):
+            import numpy as np
+            return np.full((64, 32, 3), {"s1": 90, "o2": 200}.get(blob, 0), dtype=np.int16)
+    data = Looks(versions, reads, {}, {}, ocr, {"s1": 3, "o1": 3, "o2": 3})
+    data.psd_firsts, data.map = {}, {"cards": {}}
+    today = {"names": {"Spell"}, "type": "item"}
+    base = rows.card_rows(data, "Spell", ["Spell"], today)
+    assert [r["psd"]["blob"] for r in base] == ["s1"] and base[0]["fields"]["ability"]["confidence"] != "sure"
+    assert rows.psd_alone(data, "Spell (Items)") and not rows.psd_alone(data, "Spell")
+    found = rows.psd_rows(data, "Spell", "Spell (Items)", today, ["Spell"], base)
+    assert [(r["blob"], r["psd"]["blob"], r.get("replaces"), bool(r.get("psd_only"))) for r in found] == \
+        [("g1", "o1", base[0]["id"], False), ("o2", "o2", None, True)]
+    assert found[0]["psd_file"] == f"{mine}.psd" and found[0]["psd"]["how"] == "same commit, the owner's PSD"
+    assert found[0]["fields"]["ability"]["value"] == "Freeze 2." and found[0]["fields"]["ability"]["confidence"] == "sure"
+    assert found[1]["thumb"] == "oldgit/thumbs/o2.webp" and data.psd_firsts == {}

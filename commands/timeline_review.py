@@ -245,7 +245,9 @@ def old_maps(inputs: Inputs) -> list:
         it["meta"] = [f"matched by: {', '.join(r.get('how') or [])}", *(r.get("why") or [])]
         rows = r.get("rows") or []
         it["meta"].append(f"{len(rows)} version{'s' if len(rows) != 1 else ''}: " + "; ".join(
-            f"{when(x.get('date'))} {x.get('path')}" for x in rows[:4]))
+            f"{when(x.get('date'))} {x.get('path')}" + (f" (its PSD: {x['psd_file']})" if x.get("replaces") else
+                                                     " (a PSD's own look)" if x.get("psd_only") else "")
+            for x in rows[:4]))
         it["pics"] = [pic("../" + x["thumb"], f"old repo {when(x.get('date'))}") for x in rows[:4] if x.get("thumb")]
         it["pics"].append(card_pic(inputs, cid))
         if r.get("split"):

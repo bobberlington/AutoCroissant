@@ -1160,9 +1160,17 @@ def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
     return found, first if off is not None and off > SAME_PICTURE else None
 
 
-def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
+def psd_alone(data: Data, old_id: str) -> bool:
+    """An old card of PSDs alone (no PNG version: 'sumo outside', Items/Freeze_Spell.psd)."""
+    found = data.versions.get(old_id) or []
+    return bool(found) and all(v["ext"] == "psd" for v in found)
+
+
+def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset()) -> list:
     """The rows of one card's old files' PNG versions, oldest first; a PSD added before any PNG whose composite is a
-    look of its own first (psd_only: its composite and read; Tainted Lazarus 2023-09-10)."""
+    look of its own first (psd_only: its composite and read; Tainted Lazarus 2023-09-10). psd_from: old cards of
+    PSDs alone the owner gave this card: each PSD the card's PSD of its commit when its composite is that commit's
+    PNG (and the PNG's own PSD is not), else a psd_only row when a look of its own."""
     from commands.png_changes import VISIBLE
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
     pngs = [v for v in versions if v["ext"] == "png"]
@@ -1171,14 +1179,33 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
     first, own = psd_first(data, key, versions, pngs)
     if first:
         data.psd_firsts[key] = {k: v for k, v in first.items() if v is not None}
-    for png in ([own] if own else []) + pngs:
-        if png is own:                             # the composite is the picture: read and look the same
-            psd, pick, off = own, "its own composite", 0.0
+    extra, seen = [], set()
+    for v in versions:                             # the owner's PSDs alone: one per blob, its first version
+        if v["ext"] == "psd" and v["old_id"] in psd_from and v["blob"] not in seen:
+            seen.add(v["blob"])
+            extra.append(v)
+    picked, used = {}, set()
+    for png in pngs:
+        psds = [v for v in versions if v["ext"] == "psd" and v["old_id"] == png["old_id"]]
+        until = next((p["ts"] for p in pngs[pngs.index(png) + 1:] if p["old_id"] == png["old_id"] and
+                      p["ts"] > png["ts"]), float("inf"))
+        psd, pick, off = pick_psd(data, png, psds, until)
+        if off is None or off > SAME_PICTURE:      # an owner's PSD of the same commit that is this picture
+            alt = [(picture_off(data, s["blob"], png["blob"]), s) for s in extra if s["commit"] == png["commit"]]
+            alt = sorted((o, s["path"], s) for o, s in alt if o is not None and o <= SAME_PICTURE)
+            if alt:
+                off, _, psd = alt[0]
+                pick = "same commit, the owner's PSD"
+                used.add(psd["blob"])
+        picked[png["id"]] = (psd, pick, off)
+    alone = [s for s in extra if s is not own and s["blob"] not in used and not any(
+        (o := picture_off(data, s["blob"], p["blob"])) is not None and o <= SAME_PICTURE for p in pngs)]
+    alone_ids = {s["id"] for s in alone}
+    for png in sorted(([own] if own else []) + alone + pngs, key=lambda v: (v["ts"], v["ext"] == "png", v["path"])):
+        if png is own or png["id"] in alone_ids and png["ext"] == "psd":    # the composite is the picture
+            psd, pick, off = png, "its own composite", 0.0
         else:
-            psds = [v for v in versions if v["ext"] == "psd" and v["old_id"] == png["old_id"]]
-            until = next((p["ts"] for p in pngs[pngs.index(png) + 1:] if p["old_id"] == png["old_id"] and
-                          p["ts"] > png["ts"]), float("inf"))
-            psd, pick, off = pick_psd(data, png, psds, until)
+            psd, pick, off = picked[png["id"]]
         fields, kind, two, note = check_fields(data, png, psd, pick, off, today)
         row = {"id": png["id"], "card": key, "old_id": png["old_id"], "date": png["date"], "ts": png["ts"],
                "author": png.get("author_mapped") or data.authors.get(png["author"], png["author"]), "subject": png["subject"],
@@ -1186,8 +1213,8 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
                "link": None, "commit": png["commit"], "path": png["path"], "blob": png["blob"], "kind": png["kind"],
                "new_look": png["new_look"], "thumb": f"oldgit/thumbs/{png['blob']}.webp", "card_kind": kind,
                "fields": fields, "psd": note}
-        if png is own:
-            row["psd_only"] = True                 # no PNG yet: the PSD's composite (its thumb) is the picture
+        if png is own or png["ext"] == "psd":
+            row["psd_only"] = True                 # no PNG of it: the PSD's composite (its thumb) is the picture
         if png.get("lost"):
             row["lost"] = True                     # the old repo's lost 2023 history (oldgit_index LOST_GLOB)
         name, stem = fields["name"]["value"], splitext(basename(png["path"]))[0].replace("_", " ")
@@ -1213,6 +1240,28 @@ def card_rows(data: Data, key, old_ids: list, today: dict) -> list:
             run += row["ability_change"] in ("changed", "unknown")
         row["text_run"] = run                                  # one text, formatting aside: its last form, dated by its first
     return rows
+
+
+def psd_rows(data: Data, key, old_id: str, today: dict, ids: list, base: list) -> list:
+    """An unsure map's old card of PSDs alone (its rows wait for the owner): the card's rows with its PSDs
+    (card_rows psd_from) that differ from base, the card's own rows: a row it gave its PSD ('replaces' that row,
+    psd_file) and its own looks (psd_only)."""
+    kept = data.psd_firsts.get(key)
+    found = card_rows(data, key, list(ids) + [old_id], today, psd_from={old_id})
+    if kept is None:
+        data.psd_firsts.pop(key, None)
+    else:
+        data.psd_firsts[key] = kept
+    before = {r["id"]: r for r in base}
+    path = {v["blob"]: v["path"] for v in data.versions.get(old_id) or ()}
+    out = []
+    for r in found:
+        if r["id"] not in before:
+            out.append(r)
+        elif (r.get("psd") or {}).get("blob") in path and (r["psd"] or {}).get("blob") != \
+                (before[r["id"]].get("psd") or {}).get("blob"):
+            out.append({**r, "replaces": r["id"], "psd_file": path[r["psd"]["blob"]]})
+    return out
 
 
 def unsure(row: dict) -> list:
@@ -1293,9 +1342,20 @@ def rows_main():
     log(f"{sum(len(v) for v in data.versions.values())} versions, {len(data.pictures)} pictures read, "
         f"{len(data.rereads)} rereads, {len(data.ocr)} OCR'd versions")
     live_rows, archived_rows, review = [], [], []
-    for what, key, old_ids in groups(data):
+    found = groups(data)
+    live_ids = {key: ids for what, key, ids in found if what == "live"}
+    of_card = defaultdict(list)
+    for what, key, old_ids in found:
         today = data.today.get(key) or {"names": {key or old_ids[0]}}
-        rows = card_rows(data, key, old_ids, today if what in ("live", "unsure map") else {"names": {key or old_ids[0]}})
+        owners = {o for o in old_ids if what == "live" and psd_alone(data, o) and
+                  "owner" in (data.map["cards"][o].get("how") or ())}
+        if what == "unsure map" and psd_alone(data, old_ids[0]) and key in live_ids:
+            rows = psd_rows(data, key, old_ids[0], today, live_ids[key], of_card[key])
+        else:
+            rows = card_rows(data, key, old_ids, today if what in ("live", "unsure map") else
+                             {"names": {key or old_ids[0]}}, owners)
+        if what == "live":
+            of_card[key] = rows
         if what == "live":
             live_rows += rows
             review += review_items(rows)

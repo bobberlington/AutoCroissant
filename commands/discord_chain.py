@@ -904,8 +904,25 @@ def owner_rows(inputs) -> Counter:
             if key not in live and r.get("choice") != "no":
                 done["owner: an unsure old map's card is no live card (nothing added)"] += 1
                 continue
-            for row in maps[rid].get("rows") or [] if key else []:
-                inputs.old_rows[key].append({**row, "card": key, "owner": True})
+            rows = [row for row in maps[rid].get("rows") or [] if key and (not row.get("replaces") or
+                                                                            key == maps[rid].get("card"))]
+            if key and not rows:               # a PSD alone that gives the card nothing: never counted as applied
+                done[f"owner: an unsure old map {r.get('choice')}, no rows (nothing added)"] += 1
+                continue
+            for row in rows:
+                mine, given = inputs.old_rows[key], {**row, "card": key, "owner": True}
+                at = next((n for n, x in enumerate(mine) if x["id"] == row.get("replaces")), None)
+                if row.get("replaces") and at is None:
+                    done["owner: an unsure old map's PSD, its row gone (not applied)"] += 1
+                    continue
+                if at is not None:             # the owner's PSD of that commit is the picture's (Freeze Spell)
+                    mine[at] = given
+                    continue
+                mine.append(given)
+                cid = inputs.by_key.get(key)
+                if row.get("psd_only") and cid and row["ts"] < (cards[cid].get("fs") or float("inf")):
+                    cards[cid].update(fs=row["ts"], fs_psd=given,
+                                      fs_from="first git" if row.get("repo") == "first" else "old git")
             used.add(rid)
             done[f"owner: an unsure old map {r.get('choice')}"] += 1
     return done

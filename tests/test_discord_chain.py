@@ -416,6 +416,23 @@ def test_the_owner_s_answers():
                 [i["picture"] for i in chain.review.values() if i["kind"] == "look not told"] == ["P-000000000002"]
 
 
+def test_an_owner_mapped_psd_gives_its_row_or_counts_apart():
+    """An unsure map of PSDs alone (oldgit_rows psd_rows): a 'yes' puts its PSD on the card's row of that commit
+    (replaces) or adds its own look; a 'yes' with no rows adds nothing and is never counted as applied."""
+    base = old_row("Bolt", T + 60 * DAY, "e" * 40, 5)
+    given = {**old_row("Bolt", T + 60 * DAY, "e" * 40, 6), "replaces": base["id"], "psd_file": "Items/Bolt.psd"}
+    alone = {**old_row("Bolt", T + 70 * DAY, "f" * 40, 5), "psd_only": True}
+    maps = [{"id": "oldrows-p1", "kind": "unsure map", "card": "Bolt", "status": "live", "rows": [given, alone]},
+            {"id": "oldrows-p2", "kind": "unsure map", "card": "Bolt", "status": "live", "rows": []}]
+    got = inputs([picture(1, T)], old_rows=[base], old_review=maps)
+    got.rulings = {"oldrows-p1": {"kind": "unsure map", "choice": "yes", "value": "Bolt"},
+                   "oldrows-p2": {"kind": "unsure map", "choice": "yes", "value": "Bolt"}}
+    done = dc.owner_rows(got)
+    assert [(r["blob"][0], r["fields"]["stats"]["value"]["hp"], r.get("owner")) for r in got.old_rows["Bolt"]] == \
+        [("e", 6, True), ("f", 5, True)] and got.used == {"oldrows-p1"}
+    assert done["owner: an unsure old map yes"] == 1 and done["owner: an unsure old map yes, no rows (nothing added)"] == 1
+
+
 def test_a_picture_s_id_keeps_its_card_and_the_triage_s_method():
     """BRIEF 11-15 20:50: a picture-keyed item (look not told, named only, joke picture) keeps its id while the page
     asks about the card it was first shown with (derived/review/ids.json); asked about another card it gets a new id,
