@@ -24,6 +24,7 @@ from conftest import SITE_SRC
 
 BUILD_SITE = SITE_SRC / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
+STYLE_CSS = BUILD_SITE.parents[1] / "assets" / "style.css"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
 ALPHA = "Creatures/Other/2 Stars/Alpha"
@@ -374,3 +375,36 @@ def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
     assert ps.main(second, out) == 0 and asked == [git("rev-parse", f"{second}:A").strip()]
     assert sorted(bs.psd_sizes(out).values()) == [4, 5]
     assert sorted(json.loads((tmp_path / "cache" / "psd" / "sizes.json").read_text()).values()) == [4, 5]
+
+
+def _contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio of two #rgb / #rrggbb colours."""
+    def lum(h):
+        h = h[1:] if len(h) == 7 else "".join(c * 2 for c in h[1:])
+        c = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        c = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    lo, hi = sorted((lum(a), lum(b)))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_theme_colours_pass_the_contrast_test():
+    """Owner D1/D2 2026-11-15: grey text, links and red 4.5:1 on each theme's page and surfaces, white 4.5:1 on the blue
+    fill (and the light red); light stars keep the yellow with a thin dark edge, 3:1 on every light surface (non-text),
+    on all four sides, the star picker's lit stars too."""
+    css = STYLE_CSS.read_text(encoding="utf-8")
+    for theme in ("dark", "light"):
+        block = re.search(r':root\[data-theme="%s"\] \{(.*?)\n\}' % theme, css, re.S)[1]
+        props = dict(re.findall(r"(--[\w-]+):\s*([^;]+);", block))
+        col = lambda k, p=props: col(p[k][4:-1]) if p[k].startswith("var(") else p[k]
+        for fg in ("--muted", "--accent", "--danger"):
+            for bg in ("--page", "--surface", "--surface-2"):
+                assert _contrast(col(fg), col(bg)) >= 4.5, (theme, fg, bg)
+        assert _contrast(col("--accent-ink"), col("--accent-fill")) >= 4.5, theme
+    assert _contrast("#fff", col("--danger")) >= 4.5                    # light, from here on
+    for bg in ("--page", "--surface", "--surface-2", "--surface-3"):
+        assert _contrast(col("--star-edge"), col(bg)) >= 3, bg
+    for side in ("var(--star-o) 0", "var(--star-n) 0", "0 var(--star-o)", "0 var(--star-n)"):
+        assert f"{side} var(--star-edge)" in props["--star-shadow"]
+    assert ".stars { color: #f5c542;" in css and ':root[data-theme="light"] .stars { text-shadow: var(--star-shadow); }' in css
+    assert re.search(r':root\[data-theme="light"\] :is\(\.star-pick i\.on,[^{]*\{ text-shadow: var\(--star-shadow\); \}', css)
