@@ -539,7 +539,9 @@ value (Baba), and template bars the mock-up may not find): the bake's own pictur
 site's 720 px view), pasted by the mock-up instead of
 shifting cells; a value with none (the bake refuses it) shows nothing, silently (owner 11-11). Knockout cards get none
 until the fork draws knockout (`psd_links.fork_draws_knockout()`); then a Card checks dispatch (`cards` or `all`) makes
-them (`to_check` re-reads only a PSD with no result or a changed PNG).
+them (`to_check` re-reads only a PSD with no result or a changed PNG). Card checks' To check fetches the branch (depth 1)
+to `LOCAL_REF` `refs/card-plates/head`: a bars/icons sheet whose pixels equal the card's published one keeps that WebP
+(`_same`; no encode, since 2026-11-16).
 
 ### psd_edit parity and card_bake limits (the bake and the guards)
 
