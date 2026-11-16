@@ -62,14 +62,25 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    with the same look's sure Discord read: its two readers share a bias on the 2020-22 templates; a Discord eye read
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
    a picture is never sure; an old repo PNG with no PSD stats is sure by its two readers only when its era read is
-   sure and the same on every stat: static-noise bars fool all three).
+   sure and the same on every stat: static-noise bars fool all three; its ability, with no PSD text, is the text
+   readers' read of the PNG, `timeline_text read-ability`: sure when its words are one of the card's own texts,
+   today's or its PSDs', method 'ocr+known', or at its era's stored bar, never fitted again, else proposed for review;
+   its types, with no PSD, a git version's when its header matches that version's, `header_types rows` on D1-D3 as
+   for Discord pictures, else proposed).
    Its rows carry the badge "first repo" (owner Q5, 11-14: picture rows, no text-only rows; its push notices in
    github-updates are evidence only: Created hints); each card's timeline stops at its first first-repo record.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
-   one in a Meme folder: a joke on it). A lost first-repo or old-repo file whose picture is a live card's card-sure
+   one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
+   YIIK's Cards/Meme -> Cards/Other, while the joke item Items/Meme/pain.png and the debuff Pain are two old cards). A
+   lost first-repo or old-repo file, or one only unsure evidence maps (the debuff Pain -> Thinned, its picture alone), whose picture is a live card's card-sure
    Discord picture joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old
-   name; or a 'second picture', an older look kept as a numbered file), so it is never a Morgue candidate too. The
+   name; or a 'second picture', an older look kept as a numbered file), so it is never a Morgue candidate too. An old
+   card of PSDs alone the owner gave a card (an owner map, or the page's 'yes' on its unsure map: 'sumo outside',
+   Items/Freeze_Spell.psd) gives that card its PSD: the card's PSD of its commit when its composite is that commit's
+   PNG and the PNG's own PSD is another look (Freeze Spell 2023-04-11), else a psd_only row of its composite; an unsure
+   map's rows wait in its item (`replaces`: the row it re-reads) and a 'yes' with no rows is counted apart, never as
+   applied. The
    owner's map rulings (`derived/review/owner.json` `maps`, read only on the review page) come over all the evidence:
    sure, how 'owner', the old name shown on the rows, never an alias (11-15: Eldman -> Elmadan, its first file under a
    misspelt title, the same PSD document; Dark_Matter.png of Cards/Kirby/4 Stars -> Dark Nebula; Fire_Bomb.png of
@@ -192,7 +203,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    boxes aren't known never matches; a repost whose header matches no git version keeps them off the look). On eras
    A-C (no git version prints them) one picture per card and era is typed by eye (`derived/readers/types/eye.json`)
    and carried to the card's other pictures of that era by the same score (`header_types eye`, method 'eye header';
-   the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Picked by-eye bar
+   the bar: the highest pair with other types, the eye's checks and other cards' references, + 0.02). Entries whose
+   types no reader made sure are typed by eye from their header beside the icons' pictures (`derived/readers/text/eye/
+   val_gap1_types.json`, gap round 1: [] where no icon is printed; an item kind's icon is no type; a held-out file, never
+   fitted). Picked by-eye bar
    readings (a truth file with `"calibrate": false`, gap round 5's reads in review) are their pictures' truth and never
    fit a bar. Item and
    status eras count stars as yellow blobs in a row that fill their box as stars do, calibrated on eye truths (a
@@ -293,7 +307,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    physical card photo, Q6), `<card id>/timeline.json` (entries oldest first: discord, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
    wide (the website's card view), `_morgue/<slug>/` the same (the Morgue list with the review page's answers: a
-   candidate answered 'no' off it, an idea or the rest answered 'yes' on it; an entry's changelog marks, data only). Stop at git holds here too: a card's entries end at its
+   candidate answered 'no' off it, an idea or the rest answered 'yes' on it; an entry's changelog marks, data only; its
+   old and first repo versions as 'old repo'/'first repo' entries: an MDW Morgue card's rows by its name, a lost
+   old-repo card's rows, the first repo's files linked by name or by eye, `derived/morgue/eye.json` `first_files`:
+   Wickerbottom's Book1..5; a picture row when the file has no rows: date, mapped author, subject). Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
    committed, approximate when the card had versions before that one (no rename when the last look is that first

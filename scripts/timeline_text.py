@@ -8,6 +8,8 @@ makes a read "sure" (>= 98% right on that era's truth). By hand, on the Mac (mac
     python timeline_text.py ocr [-j N]     Vision OCR of every input (whole card twice: language correction on and
                                            off; the title band) -> ocr.jsonl (cached, resumable)
     python timeline_text.py read [-j N]    raw reads (era, title, ability, stars, types + their scores) -> raw.jsonl
+    python timeline_text.py read-ability --ids F   era, title and ability alone of these inputs -> raw_ability.jsonl
+                                           (the repo rows with no PSD text: oldgit_rows; no calibration from it)
                                            (eye files: eye/*.json {id: {title, stars, types, ability}} by hand)
     python timeline_text.py truth          truth.jsonl: old-repo PNGs with their PSD's read, today's cards, eye files
     python timeline_text.py calibrate      calibration.json (per era per field: bar, n, accuracy at the bar, share
@@ -1536,6 +1538,17 @@ def read_task(args):
         return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
 
 
+def ability_read_task(args):
+    """read_task's era, title and ability alone (the repo rows with no PSD text: raw_ability.jsonl)."""
+    item, rec = args
+    if rec.get("error"):
+        return {"id": item["id"], "error": rec["error"]}
+    try:
+        return read_one(item, rec, parts=("ability",))
+    except Exception as e:
+        return {"id": item["id"], "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
 def run_reads(which, workers, path=None, ids=None, task=None):
     """raw.jsonl (task read_task), or stars.jsonl (task star_task: the stars read again; calibrate takes them)."""
     task = task or read_task
@@ -2076,8 +2089,8 @@ def calibrate():
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("step", choices=("icons", "ocr", "read", "stars", "edges", "types", "abilities", "truth",
-                                     "calibrate"))
+    ap.add_argument("step", choices=("icons", "ocr", "read", "read-ability", "stars", "edges", "types", "abilities",
+                                     "truth", "calibrate"))
     ap.add_argument("-j", "--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
     ap.add_argument("--ids", help="a file of input ids (o:<blob>, d:<sha>): ocr and read only these")
@@ -2093,6 +2106,8 @@ def main(argv):
                  join(OUT, "ocr.jsonl"), "ocr")
     elif a.step == "read":
         run_reads(which, a.workers, ids=ids)
+    elif a.step == "read-ability":
+        run_reads(which, a.workers, join(OUT, "raw_ability.jsonl"), ids=ids, task=ability_read_task)
     elif a.step == "stars":
         run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
     elif a.step == "edges":

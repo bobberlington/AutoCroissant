@@ -46,7 +46,8 @@ CARD_CACHE = join(DERIVED, "matcher", "match", "cache", "cards.jsonl")
 BAR_TRUTH = join(DERIVED, "readers", "bars", "truth")   # the bar readers' by-eye stats (eye_*.json, by PNG blob)
 BAR_READS = join(DERIVED, "readers", "bars", "reads.jsonl")   # the era bar readers' calibrated reads (era_bars)
 VERDICTS = join(DERIVED, "match", "verdicts.jsonl")     # Discord pictures told as a git look (version_sure)
-TEXT_RAW = join(DERIVED, "readers", "text", "raw.jsonl")        # the text readers' raw reads (o:<blob>: old PNGs)
+TEXT_RAW = (join(DERIVED, "readers", "text", "raw.jsonl"),       # the text readers' raw reads (o:<blob>: old PNGs),
+            join(DERIVED, "readers", "text", "raw_ability.jsonl"))   # and their ability-alone reads (read-ability)
 TEXT_CAL = join(DERIVED, "readers", "text", "calibration.json")  # their eras' bars (never fitted here)
 HEADER_ROWS = join(DERIVED, "readers", "types", "header_rows.jsonl")   # header_types rows: types by a git header
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
@@ -500,8 +501,8 @@ class Data:
             if v.get("verdict") == "version_sure" and not v.get("joke") and file in discord:
                 for key in (v.get("version") or {}).get("keys") or ():
                     self.look_reads[key].append(discord[file])
-        self.text_raw = {r["id"][2:]: r for r in oi.read_jsonl(TEXT_RAW)
-                         if str(r.get("id", "")).startswith("o:") and not r.get("error")} if exists(TEXT_RAW) else {}
+        self.text_raw = {r["id"][2:]: r for path in TEXT_RAW for r in oi.read_jsonl(path)
+                         if str(r.get("id", "")).startswith("o:") and not r.get("error")}
         self.text_cal = json.load(open(TEXT_CAL)).get("eras") or {} if exists(TEXT_CAL) else {}
         self.header = {r["blob"]: r for r in oi.read_jsonl(HEADER_ROWS)} if exists(HEADER_ROWS) else {}
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
