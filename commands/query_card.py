@@ -177,12 +177,14 @@ class CardRepository:
         self._renamed: dict[str, tuple] = {}             # an old name's key -> (today's key, old name, today's name)
         self.choices: tuple = ()                         # autocomplete: (lowercase, shown, value), replaced whole
         self.cards_dff: DataFrame = DataFrame()
+        self.pictures_dff: DataFrame = DataFrame()       # second pictures (duplicate_of): found by their own names
+        self._was: dict = {}                             # card name -> the names renamed into it (website's was)
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
-        self._hay: tuple = (None, "", None, [], [])     # (cards_dff, Card Edits.json sha, haystack, squashed names,
-                                                         # series and subseries names) for text terms
+        self._hay: tuple = (None, "", None, [], [], None, [], None)   # (cards_dff, Card Edits.json sha, haystack,
+        # squashed names, series and subseries names; pictures' names haystack, their squashed names, pictures_dff)
 
     def populate_files(self) -> int:
         """
@@ -454,29 +456,49 @@ class CardRepository:
         return df[column] if column in df else None
 
     def _haystack(self) -> Series:
-        """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, ability
-        (its line breaks and space runs as one space)."""
-        df, sha = self.cards_dff, self._edit_names[0]
+        """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, old
+        names (renamed into it), ability (its line breaks and space runs as one space). Second pictures: their names."""
+        df, sha, pictures = self.cards_dff, self._edit_names[0], self.pictures_dff
         if self._hay[0] is not df or self._hay[1] != sha:
-            names = self._edit_names[1]
-            titles = df["display_name"] if "display_name" in df else Series(None, index=df.index, dtype=object)
+            names, was = self._edit_names[1], self._was
+            titles = lambda f: f["display_name"] if "display_name" in f else [None] * len(f)
+            parts = lambda label, title: [str(label)] + ([title] if isinstance(title, str) else []) + \
+                list(names.get(CardAuthors.key(str(label)), [])) + list(was.get(label, ()))
+            flat = lambda p: "\n" + "\n".join(map(squash, p)) + "\n"
             series = [df[c] if c in df else [None] * len(df) for c in ("series", "subseries")]
-            rows, flat = [], []
-            for label, title, ability in zip(df.index, titles, df["ability"]):
-                parts = [str(label)] + ([title] if isinstance(title, str) else []) + list(names.get(CardAuthors.key(str(label)), []))
-                rows.append("\n".join(parts + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
-                flat.append("\n" + "\n".join(map(squash, parts)) + "\n")
-            self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flat,
-                         [series_names(s) | series_names(u) for s, u in zip(*series)])
+            rows, flats = [], []
+            for label, title, ability in zip(df.index, titles(df), df["ability"]):
+                p = parts(label, title)
+                rows.append("\n".join(p + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
+                flats.append(flat(p))
+            pics = [parts(label, title) for label, title in zip(pictures.index, titles(pictures))]
+            self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flats,
+                         [series_names(s) | series_names(u) for s, u in zip(*series)],
+                         Series(["\n".join(p).lower() for p in pics], index=pictures.index, dtype=object),
+                         [flat(p) for p in pics], pictures)
         return self._hay[2]
 
-    def _plain_matches(self, text: str):
+    def _plain_matches(self, text: str, pictures: bool = False):
         """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer: a
-        whole name), or a series' or subseries' name, so 'moms knife' and 'hollow knight' find their cards."""
+        whole name), or a series' or subseries' name, so 'moms knife' and 'hollow knight' find their cards.
+        pictures: second pictures' names instead."""
         self._haystack()
         term = squash(text)
         probe = term if len(term) > 3 else "\n" + term + "\n"
-        return array([bool(term) and (probe in flat or term in series) for flat, series in zip(*self._hay[3:])], dtype=bool)
+        if pictures:
+            return array([bool(term) and probe in flat for flat in self._hay[6]], dtype=bool)
+        return array([bool(term) and (probe in flat or term in series) for flat, series in zip(*self._hay[3:5])], dtype=bool)
+
+    def _with_pictures(self, found, pattern: str, plain: str = "") -> DataFrame:
+        """cards_dff's found rows, then the second pictures whose own names hold pattern (plain: or its letters), as the
+        website lists them (Breakfast); never by ability or a condition (counted once)."""
+        rows, hay, pictures = self.cards_dff[found], self._hay[5], self._hay[7]
+        if pictures is None or not len(pictures):
+            return rows
+        hit = hay.str.contains(pattern, na=False).values
+        if plain:
+            hit = hit | self._plain_matches(plain, pictures=True)
+        return concat([rows, pictures[hit]]) if hit.any() else rows
 
     @staticmethod
     def _text_pattern(text: str) -> str:
@@ -572,9 +594,10 @@ class CardRepository:
             term = ability.strip('"')
             edge = lambda ch: r"\b" if ch.isalnum() or ch == "_" else ""   # a word's edge; a tag's ( and ) are their own
             pattern = edge(term[:1]) + escape(term) + edge(term[-1:])
-            return self.cards_dff[hay.str.contains(pattern, na=False).values]
-        found = hay.str.contains(self._text_pattern(ability), na=False).values | self._plain_matches(ability)
-        exact_matches = self.cards_dff[found]
+            return self._with_pictures(hay.str.contains(pattern, na=False).values, pattern)
+        pattern = self._text_pattern(ability)
+        found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
+        exact_matches = self._with_pictures(found, pattern, ability)
         if len(exact_matches):
             return exact_matches
         # nothing has the text: near-whole abilities (a pasted ability with a typo), closest first
@@ -846,11 +869,19 @@ class CardRepository:
                     cards_df = cards_df.assign(**{column: None})
             if "hidden" in cards_df:                    # hidden on the website
                 cards_df = cards_df[cards_df["hidden"] != True]
-            if "duplicate_of" in cards_df:              # same card as its original
+            pictures = cards_df.iloc[0:0]
+            if "duplicate_of" in cards_df:              # same card as its original: a picture, by its own names
+                pictures = cards_df[cards_df["duplicate_of"].notna()]
                 cards_df = cards_df[cards_df["duplicate_of"].isna()]
+            try:
+                self._was = renamed_into(stats_db.old_stats, stats_db.stats)
+            except RuntimeError:                        # /update_stats writing meanwhile
+                self._was = {}
+            self.pictures_dff = pictures[pictures["ability"].notna()]   # before cards_dff: _haystack keys on it
 
-            self.cards_dff = cards_df[cards_df["ability"].notna()].copy()
-            self.cards_dff["ability"] = self.cards_dff["ability"].str.lower()
+            frame = cards_df[cards_df["ability"].notna()].copy()
+            frame["ability"] = frame["ability"].str.lower()
+            self.cards_dff = frame
 
             print(f"Loaded {len(self.cards_dff)} cards")
         # the rulebook: its chapters (db/rulebook.json), as written: /query_rulebook quotes their lines
@@ -1384,17 +1415,18 @@ def query_ability(interaction: Interaction,
 
 
 def _site_order(results: DataFrame, query: str) -> list:
-    """(name, printed title) per result, in the website's order: a card whose title, name or website name/alias is the
-    query first (search.js exactFirst), then A-Z by title (grid.js nameKey). Near matches keep their order (closest first)."""
+    """(name, printed title) per result, in the website's order: a card whose title, name, website name/alias or old name
+    is the query first (search.js exactFirst), then A-Z by title (grid.js nameKey). Near matches keep their order
+    (closest first)."""
     norm = lambda text: WEB_NORM.sub("", text.lower())
     query = typed(query, quotes=True).strip()
     query = norm(query[1:-1] if len(query) > 1 and query[0] == query[-1] == '"' else query)
-    titles, edits = results.get("display_name", [None] * len(results)), card_repo._edit_names[1]
+    titles, edits, was = results.get("display_name", [None] * len(results)), card_repo._edit_names[1], card_repo._was
     rows = []
     for label, title in zip(results.index, titles):
         name = basename(label)                           # index: the card's name
         title = title if isinstance(title, str) and title else name
-        spellings = (title, name, *edits.get(CardAuthors.key(name), ()))      # Card Edits names and aliases
+        spellings = (title, name, *edits.get(CardAuthors.key(name), ()), *was.get(name, ()))   # Card Edits names, aliases
         rows.append((not (query and query in map(norm, spellings)), title.lower(), title, name))
     if not results.attrs.get("near"):
         rows.sort()

@@ -745,11 +745,14 @@ card_data's duplicate names) and aliases are edited on the website (`/alias` and
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
 :575): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 the rulebook's chapters in a separate `rulebook_dff` (gotcha 9), and rows with no ability text (MDW-style)
-excluded entirely. Refreshed at startup and queued after every `/update_stats`.
+excluded entirely. Refreshed at startup and queued after every `/update_stats`. Since 2026-11-15 (as the website's
+search) a text term also finds a card by a name renamed into it (`renamed_into`, the website's `was`: `magalor`,
+listed first), and a second picture (`duplicate_of`, kept out of `cards_dff` in `pictures_dff`) by its own names
+only (`breakfast` lists A Snack2 itself; never by ability or a condition: counted once).
 
 | Syntax | Meaning | Example |
 |---|---|---|
-| bare text | substring of name, printed title, website names/aliases, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
+| bare text | substring of name, printed title, website names/aliases, old names, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
 | `"quoted text"` | word-boundary-ish regex match on the same text | `"draw 2"` |
 | `!expr` | NOT — any term, conditions too | `!die`, `!type==creature` |
 | `a & b` | AND (index intersection) | `type==creature & hp>7` |

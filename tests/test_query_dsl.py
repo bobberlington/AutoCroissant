@@ -133,6 +133,26 @@ def test_space_finds_line_break(repo, monkeypatch):
     assert list(repo.ability_search_engine('"damage. die"').index) == ["Meta Knight"]
 
 
+def test_old_names_and_second_pictures(monkeypatch):
+    """A text term finds a card by a name renamed into it (first, as search.js exactFirst), and a second picture by its
+    own name, listed itself as the website does; never by its ability (counted once)."""
+    card = lambda name, path, **kw: cm.CardInfo(name=name, card_type="item", path=f"X/{path}.psd", **kw)
+    monkeypatch.setattr(cm.stats_db, "stats", {
+        "Magolor": card("Magolor", "Magolor", ability="Float."),
+        "Kirby": card("Kirby", "Kirby", ability="Beat Magalor."),
+        "A Snack": card("A Snack", "A_Snack", ability="Heal 3 HP."),
+        "A Snack2": card("A Snack2", "A_Snack", ability="Heal 3 HP.", display_name="Breakfast", duplicate_of="A Snack",
+                         variant_of="A Snack")})
+    monkeypatch.setattr(cm.stats_db, "old_stats", {"Magalor": [card("Magalor", "Magalor", archived={"renamed_to": "Magolor"})]})
+    repo = qc.CardRepository()
+    repo.prep_dataframes()
+    monkeypatch.setattr(qc, "card_repo", repo)
+    find = lambda q: list(repo.ability_search_engine(q).index)
+    assert [n for n, _ in qc._site_order(repo.ability_search_engine("magalor"), "magalor")] == ["Magolor", "Kirby"]
+    assert find("breakfast") == find('"breakfast"') == find("break-fast") == ["A Snack2"]
+    assert find("heal 3 hp") == ["A Snack"]
+
+
 def test_near_matches_say_so(repo, monkeypatch):
     """No card has the text: the near abilities, closest first, called near (reply and howmany)."""
     import commands.card_grid as cg
