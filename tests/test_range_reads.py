@@ -181,10 +181,10 @@ def test_forked_workers_read_as_threads_do(cards, monkeypatch, capsys):
     monkeypatch.setattr(cd.CardBuild, "_fetch_read", fetched)
     monkeypatch.setattr(cd.CardBuild, "_keep", kept)
     monkeypatch.setenv("no_proxy", "*")                           # macOS: no proxy lookup in a fork
-    monkeypatch.setattr(cd, "FORK_WAIT", 15)                      # under load a healthy fork may take seconds; the hung one sleeps 60
     found = []
     for forked, hung in ((False, []), (True, []), (True, [FREEZER])):
         hang[:] = hung
+        monkeypatch.setattr(cd, "FORK_WAIT", 2 if hung else 120)  # short only where a read hangs (sleeps 60)
         monkeypatch.setattr(cd, "_forks", lambda: forked)
         cards.db = cards.tmp / f"data{forked}{len(hung)}" / "db"
         cards.db.mkdir(parents=True)
