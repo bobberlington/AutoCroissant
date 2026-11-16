@@ -1047,7 +1047,7 @@ class Names:
         grams = trigrams(q)
         counts = Counter(form for gram in grams for form in self.grams.get(gram, ()))
         best: dict = {}
-        for form, n in counts.most_common(40):
+        for form, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:40]:   # ties by form: no hash order
             if n < max(1, len(grams) // 4):
                 break
             r = ratio(q, form)
@@ -1057,7 +1057,7 @@ class Names:
                 for cid in self.forms[form]:
                     if r > best.get(cid, (0, ""))[0]:
                         best[cid] = (r, form)
-        return dict(sorted(best.items(), key=lambda kv: -kv[1][0])[:limit])
+        return dict(sorted(best.items(), key=lambda kv: (-kv[1][0], kv[0]))[:limit])
 
     def best_ratio(self, cid: str, texts: list, swaps: bool = False) -> tuple:
         """(ratio, text, form) of texts against one card's names; ties go to the longer text. swaps: a text with a
@@ -1065,7 +1065,7 @@ class Names:
         found = (0.0, "", "")
         for text in texts:
             q = squash(text)
-            for form in self.card_forms.get(cid, ()):
+            for form in sorted(self.card_forms.get(cid, ())):
                 if swaps and swapped(text, self.form_words.get(form) or []):
                     continue
                 r = ratio(q, form)
@@ -1081,7 +1081,7 @@ class Names:
             q = squash(text)
             if len(q) < 4:
                 continue
-            for form in self.card_forms.get(cid, ()):
+            for form in sorted(self.card_forms.get(cid, ())):
                 if swaps and swapped(text, self.form_words.get(form) or []):
                     continue
                 if len(form) > len(q):
@@ -1155,8 +1155,8 @@ class Bodies:
     def scores(self, text: str) -> dict:
         """{card: (score, shared words)}."""
         found, shared = defaultdict(float), Counter()
-        for w in set(words(text).split()):
-            for cid in self.post.get(w, ()):
+        for w in sorted(set(words(text).split())):     # sorted: float sums and ties never by the hash seed
+            for cid in sorted(self.post.get(w, ())):
                 found[cid] += self.idf[w]
                 shared[cid] += 1
         return {cid: (ramp(v / self.weight[cid], BODY_FLOOR, BODY_FULL), shared[cid]) for cid, v in found.items()
@@ -1287,7 +1287,8 @@ class CardIndex:
     def text_candidates(self, found: set, limit: int = 3) -> list:
         """Cards whose versions' text has most of an image's 4-grams."""
         counts = Counter(cid for g in found for cid in self.gram_cards.get(g, ()))
-        return [cid for cid, n in counts.most_common(limit) if n >= OCR_FLOOR * len(found)]
+        return [cid for cid, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+                if n >= OCR_FLOOR * len(found)]
 
     def text_fit(self, cid: str, found: set) -> float:
         """The share of an image's 4-grams in the card's nearest version."""
@@ -1644,7 +1645,7 @@ def score_image(index: CardIndex, feat: dict, filename: str = "", record: Option
     if len(post_grams) < OCR_GRAMS:
         post_grams = set()
     if shape:
-        pool.update(c for c, _ in sorted(bodies.items(), key=lambda kv: -kv[1][0])[:3])
+        pool.update(c for c, _ in sorted(bodies.items(), key=lambda kv: (-kv[1][0], kv[0]))[:3])
         pool.update(index.text_candidates(post_grams) if post_grams else ())
     files = file_scores(names, filename)
     pool.update(files)
@@ -1665,7 +1666,7 @@ def score_image(index: CardIndex, feat: dict, filename: str = "", record: Option
                 r = min(r, r * len(form) / len(read))
         reads[cid] = (r, text, form)
     found = []
-    for cid in pool:
+    for cid in sorted(pool):                    # a set: its order would break ties by the hash seed
         if cid not in index.cards:
             continue
         s, why = {}, {}
@@ -1703,7 +1704,7 @@ def score_image(index: CardIndex, feat: dict, filename: str = "", record: Option
         for c in alone:                         # names read, nothing shown: a list, a meme's caption
             c["s"]["line"], c["why"]["line_alone"] = round(c["s"]["line"] * LINE_ALONE, 3), True
     found = [c for c in found if max(WEIGHTS[m] * v for m, v in c["s"].items()) >= 0.12]
-    found.sort(key=lambda c: -confidence(c["s"]))
+    found.sort(key=lambda c: (-confidence(c["s"]), c["card"]))
     found = found[:CANDIDATES]
     for c in found if shape else ():            # the version shown, for the cards it may be
         if confidence(c["s"]) >= PLAUSIBLE:
@@ -1898,7 +1899,7 @@ def score(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr
                     for c in found:
                         if confidence(c["s"]) > confidence(merged.get(c["card"], {"s": {}})["s"]):
                             merged[c["card"]] = c
-                entry["candidates"] = sorted(merged.values(), key=lambda c: -confidence(c["s"]))[:CANDIDATES]
+                entry["candidates"] = sorted(merged.values(), key=lambda c: (-confidence(c["s"]), c["card"]))[:CANDIDATES]
             else:
                 entry["candidates"] = score_image(index, feat, image.get("filename") or "", record, ctx)
             if n % 2000 == 0:

@@ -84,6 +84,14 @@ def test_names_fuzzy_exact_and_mentions():
     assert names.mentions("bobcat, bob and zealotry") == {"indoctrination": "zealotry"}   # 3-letter words skipped
 
 
+def test_names_fuzzy_ties_go_by_card_not_hash_order():
+    """Equal ratios list by card id (a set's order once moved a tied picture's card between reruns)."""
+    names = dm.Names({"zz": {"id": "zz", "name": "Bolt Lance", "key": "Bolt Lance"},
+                      "aa": {"id": "aa", "name": "Bolt Lancr", "key": "Bolt Lancr"}})
+    got = names.fuzzy("Bolt Lanc", 0.6)
+    assert list(got) == ["aa", "zz"] and got["aa"][0] == got["zz"][0]
+
+
 def test_file_names():
     names = dm.Names(CARDS)
     assert dm.file_scores(names, "Stone_Golem.png") == {"stone-golem": (1.0, "Stone_Golem")}
