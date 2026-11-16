@@ -85,7 +85,7 @@ out({ wide: widths(render(cards, A)), narrow: widths(render(cards, A, "", { narr
 
 def test_auxiliary_creature_by_printed_stars(tmp_path):
     """Owner D21: an auxiliary creature is compared with the creatures of its printed stars, counted only in all
-    creatures (nobody else's numbers move); its Balance line has no 'no star level' sentence."""
+    creatures (nobody else's numbers move, nor the 4★ list's cards); its Balance line has no 'no star level' sentence."""
     spec = importlib.util.spec_from_file_location("site_analytics", SITE / "build" / "analytics.py")
     an = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(an)
@@ -97,5 +97,8 @@ def test_auxiliary_creature_by_printed_stars(tmp_path):
     assert A["cards"] == without["cards"] and A["cohorts"]["creature|4"] == without["cohorts"]["creature|4"]
     assert A["cohorts"]["creature|all"]["n"] == 6
     A["cards"]["mett"] = mine
-    line = node(tmp_path, f"out(text(bal.balanceBlock({json.dumps(aux)}, {json.dumps(A)})));")
-    assert "in the top 10% of 4★ creatures: 5 of the 5 have a lower total" in line and "star level" not in line
+    out = node(tmp_path, f"""const A = {json.dumps(A)}, aux = {json.dumps(aux)}, plain = {json.dumps(plain[0])};
+out({{ line: text(bal.balanceBlock(aux, A)), aux: ["creature|4", "creature|all", "any"].map(k => bal.inCohort(A, aux, k)),
+  plain: bal.inCohort(A, plain, "creature|4") }});""")
+    assert "in the top 10% of 4★ creatures: 5 of the 5 have a lower total" in out["line"] and "star level" not in out["line"]
+    assert (out["aux"], out["plain"]) == ([False, True, True], True)   # the cohort= list holds the n it counts
