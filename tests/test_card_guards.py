@@ -6,12 +6,15 @@ push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12
 Action's sparse copy (SPARSE_FILES, card-guards.yml's checkouts of it), the steps that run the bot's own code against a
 fake gh and curl (one post per push, the pushed blobs and earlier fonts the checks read, the fonts wait), and actionlint.
 """
+import contextlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import types
 from io import BytesIO
 from pathlib import Path
@@ -1580,12 +1583,67 @@ def _fake_tools(tmp_path) -> Path:
     return bin_dir
 
 
+_SESSIONS: set = set()                          # the test's steps: a session each, with their background jobs
+
+
 def _shell(step, env, cwd=None):
     out = Path(env["GITHUB_OUTPUT"])
     out.write_text("")
-    done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env, cwd=cwd,
-                          capture_output=True, text=True, timeout=60)
+    run = subprocess.Popen(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env, cwd=cwd,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    _SESSIONS.add(run.pid)
+    try:
+        stdout, stderr = run.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        _end({run.pid})
+        run.communicate()
+        raise
+    done = subprocess.CompletedProcess(run.args, run.returncode, stdout, stderr)
     return done, dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
+
+
+def _running(sessions) -> list:
+    """The live processes in those sessions, by PID (no command lines read)."""
+    rows = subprocess.run(["ps", "-A", "-o", "pid=,stat="], capture_output=True, text=True, check=True).stdout.split("\n")
+    found = []
+    for pid, stat in (row.split() for row in rows if row.strip()):
+        with contextlib.suppress(OSError):
+            if not stat.startswith("Z") and os.getsid(int(pid)) in sessions:
+                found.append(int(pid))
+    return found
+
+
+def _end(sessions, kill=True, seconds=5) -> list:
+    """Waits for those sessions to empty, if kill killing what runs there by PID, again for a loop's next fork (timeout's
+    own group too); what is still alive after."""
+    until = time.monotonic() + seconds
+    while (left := _running(sessions)) and time.monotonic() < until:
+        for pid in left if kill else ():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+        time.sleep(0.05)
+    return left
+
+
+@pytest.fixture(autouse=True)
+def steps_end_with_the_test():
+    """What a step left running (Pushed blobs start's poller and fetches) is killed after the test, passed or failed, and
+    none of it may outlive the test (11-16: failed runs left that poller on for hours)."""
+    yield
+    sessions = set(_SESSIONS)
+    _SESSIONS.clear()
+    assert not (sessions and _end(sessions)), "a step's processes outlived the test"
+
+
+def test_a_steps_background_jobs_end_with_the_test(tmp_path):
+    """A step's background loop and a timeout (a process group of its own) are found by session and killed by PID."""
+    step = {"run": """( until false; do sleep 0.02; done ) < /dev/null > /dev/null 2>&1 &
+                      timeout 60 sh -c 'touch "$0"; exec sleep 60' "$RUNNER_TEMP/up" < /dev/null > /dev/null 2>&1 &
+                      until [ -e "$RUNNER_TEMP/up" ]; do sleep 0.02; done"""}
+    done, _ = _shell(step, {"PATH": os.environ["PATH"], "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(tmp_path / "out")})
+    sessions = set(_SESSIONS)
+    assert done.returncode == 0 and _running(sessions)
+    assert _end(sessions) == [] and _running(sessions) == []
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
@@ -1635,7 +1693,9 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
         _git(repo, "config", "remote.origin.uploadpack", "sleep 1; git-upload-pack")      # GitHub's time
         env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp), "BEFORE": shas[0],
                "GITHUB_SHA": shas[1], "GITHUB_OUTPUT": str(temp / "output")}
+        sessions = set(_SESSIONS)
         done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
+        start = _SESSIONS - sessions
         assert done.returncode == 0 and not (temp / "blobs.done").exists(), (done.stdout, done.stderr)
         _until(temp / "blobs.ready")
         monkeypatch.setenv(gh.PENDING_ENV, str(temp / "blobs"))
@@ -1647,6 +1707,7 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
         assert len(rest) == (len(listed) if code else 0)            # waited for, from the clone; a failed fetch: REST
         done, _ = _shell(steps["Pushed blobs"], env, cwd=repo)
         assert (done.returncode != 0) == bool(code) and said in " ".join(done.stdout.split()), (done.stdout, done.stderr)
+        assert _end(start, kill=False) == []                       # its background job ended by itself once counted
     rest.clear()                                                    # the two checks, a blob not fetched: one REST read
     fetch = gh.fetch_blob
     monkeypatch.setattr(gh, "fetch_blob", lambda *a, **k: subprocess.run(["/bin/sleep", "0.5"]) and fetch(*a, **k))
