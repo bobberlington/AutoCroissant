@@ -129,7 +129,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    given outside the review page (`derived/review/owner.json`, kept apart from the eye's files; 11-13: the 2020
    'PIZZA' item is Pepperoni Pizza's draft, the 2020 item 'Frozen in time' Standstill's, Wind's Blessing's five
    pictures Second Wind's, which set no Created: `no_created`; `ruled_out`: cards a ruling rules out of an untold
-   picture's maybe list, e.g. the creature Pizza for a 2023 Pepperoni Pizza look) come after the eye.
+   picture's maybe list, e.g. the creature Pizza for a 2023 Pepperoni Pizza look) come after the eye (D8, 11-15:
+   the 2020-08-24 flying-trees 'Gust of Wind' is Gust of Trees' first version: its row shows the title it prints, an
+   eye truth, never an alias; the first repo's Gust_of_Wind4.png, the same picture, is Gust of Trees' second picture).
    A version key is taken only when the picture is that version by eye:
    `discord_verdicts eyekeys` puts each beside the version's whole blob (its thumb when the clone lacks it) with the
    3 most different areas zoomed; a picture drawn otherwise in any way (a word, the title's spelling or colour, an
@@ -240,7 +242,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    head that is no card's name, or one the eye doubts, goes to review) and name cards by the old names the timelines
    settled too (the Morgue's renamed entries, eye.json `titled`, owner.json `old_names`; 'Frozen in time' meant
    Standstill until Standstill's first picture) and a line's short form told by eye (`derived/facts/eye_lines.json`
-   `lines`: 'Maxwell', 'PoD', the Warcraftian class prefixes): evidence only, never aliases. The 2019 February balance
+   `lines`: 'Maxwell', 'PoD', the Warcraftian class prefixes): evidence only, never aliases. A line naming no sure
+   card ('ambiguous card', owner D9) takes the card it is given on the review page (a card picker, or none: left out),
+   the owner's `owner.json` `lines` over it (2019 'Lightning' = Lightning Bolt, 'Frozen in Time' = Standstill, 2023
+   'Dark Matter' = Dark Nebula; 'Computer virus 2.0' = the Morgue's Computer Virus 2.0, `morgue:<entry id>`: its
+   marks go to that entry, never to the live Computer Virus). The 2019 February balance
    list (a docx, `CHANGELOG_DOCUMENTS`) is read like the pictures' lists (`<message>:doc<n>`, no text kept). HP/DEF units come from the card's
    sure bar reads near the line (git looks and drafts, the old repo's rows). **Created:**
    the earliest confident appearance (a card-sure picture, the first repo, the old repo, the card repo; "Before
@@ -261,22 +267,30 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    never asked), Created dates (earlier,
    new, later, and earlier hints: only those earlier than the Created date in use), the Morgue list (candidates, ideas
    never ported, the rest) and splits; stable ids, the archive's thumbnails, radio answers kept in the browser and
-   exported as JSON. `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores
-   nothing; a typed card is its id or a name only one card has), keeps them in `derived/review/rulings.json`, reruns the
-   chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
+   exported as JSON. An id keeps its meaning: `derived/review/ids.json` lists every id the page has shown with the card
+   it was first shown for, and a picture's item (look not told, named only, joke picture) asked about another card
+   gets a new id; any item `owner.json` `read_only` lists shows the owner's answer, not asked.
+   `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores nothing; a typed card
+   is its id or a name only one card has; listed and skipped, never an error: an answer whose item left the page at a
+   rebuild, one now read only, and, from an older page's export, one whose choice now offers another value), keeps
+   them in `derived/review/rulings.json` with the file's source (owner > triage > triage guess: a lower one never
+   replaces a higher; a field so given is method 'owner' or 'triage'), reruns the facts when a line was given a card,
+   the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
    item left the page shows as taken in (in `ruled.json`) or as not applied (its item changed: answer it again). A git
    look is answered by its first version's key, not its number (numbers shift when a version is added), and a
    confirming answer carries what it confirms (a field's 'yes' its value, a Created pick or hint its day, a picture's
    or a map's answer its card): an answer no radio takes any more (that version gone, a rerun proposing another value,
-   day or card) is not applied either.
+   day or card) is not applied either. The APPLY ORDER (11-15 ~21:50): the owner's page exports, the BRIEF owner lines
+   (owner.json), the triage's two-judge answers, then its guesses.
 6. **Publish** (`commands/discord_preview.py build`, the preview first, owner 11-13): `derived/preview/history/` in the
    `history` branch's layout: `index.json` (each card's folder; the Morgue's entries from Discord, owner Q1/Q2; the MDW
    Morgue cards' Discord pictures; the Created dates the chain proposes, earlier or new only, "Before 2020" from a
    physical card photo, Q6), `<card id>/timeline.json` (entries oldest first: discord, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
-   wide (the website's card view), `_morgue/<slug>/` the same. Stop at git holds here too: a card's entries end at its
+   wide (the website's card view), `_morgue/<slug>/` the same (the Morgue list with the review page's answers: a
+   candidate answered 'no' off it, an idea or the rest answered 'yes' on it; an entry's changelog marks, data only). Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
    committed, approximate when the card had versions before that one (no rename when the last look is that first

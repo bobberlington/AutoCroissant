@@ -256,3 +256,31 @@ def test_eye_told_short_forms_and_the_february_document(tmp_path):
     assert [(n, [(f["card"], f["field"], f["to"]) for f in g["facts"]]) for *_, n, _t, g in lines] == [
         ("doc0", [("Iron Golem", "atk", 4)])]
     assert F.line_order("901:doc3") == 3
+
+
+def test_a_line_given_its_card(tmp_path):
+    """Owner D9: a line naming no sure card takes the card given (owner.json lines over the review page's answers;
+    a Morgue entry's 'morgue:<id>', never the live card it resembles; 'none' leaves it out)."""
+    n = names()
+    got = F.picture_line("Golems", "Damage 2 -> 3", n, n, TYPES, "Iron Golem")
+    assert got["facts"] and {f["card"] for f in got["facts"]} == {"Iron Golem"} and not got["unsure"]
+    got = F.picture_line("Mega Bot 2.0", "Is now a 4 star creature", n, n, TYPES, "morgue:LC-1")
+    assert [(f["card"], f.get("field") or f["kind"]) for f in got["facts"]] == [("morgue:LC-1", "stars")]
+    assert {f["card"] for f in F.parse_line("Pike: ATK +1", n, TYPES, "changelog", told="Twin Pike")["facts"]} == {
+        "Twin Pike"}                                                   # a name two cards had: the one given
+    (tmp_path / "derived" / "review").mkdir(parents=True)
+    n.ids = {"iron-golem": "Iron Golem", "pike": "Pike"}
+    (tmp_path / "derived" / "review" / "rulings.json").write_text(json.dumps({"rulings": {
+        "R1": {"kind": "ambiguous card", "choice": "card", "value": "pike", "item": {"line": "9:img1"}},
+        "R2": {"kind": "ambiguous card", "choice": "none", "item": {"line": "9:img2"}},
+        "R3": {"kind": "ambiguous card", "choice": "card", "value": "pike", "item": {"line": "9:img3"}}}}))
+    (tmp_path / "derived" / "review" / "owner.json").write_text(json.dumps({"lines": {
+        "R3": {"card": "iron-golem", "line": "9:img3"}, "R4": {"morgue": "LC-1", "line": "9:doc0"}}}))
+    assert F.told_lines(str(tmp_path), n) == {"9:img1": "Pike", "9:img2": None, "9:img3": "Iron Golem",
+                                              "9:doc0": "morgue:LC-1"}
+    first = F.picture_line("Golems", "ATK +1", n, n, TYPES)
+    again = lambda card: F.picture_line("Golems", "ATK +1", n, n, TYPES, card)
+    given = F.as_given(first, "9:img1", {"9:img1": "Pike"}, again)
+    assert {f["card"] for f in given["facts"]} == {"Pike"} and given["given"]["card"] == "Pike"
+    assert F.as_given(first, "9:img2", {"9:img2": None}, again)["facts"] == []
+    assert F.as_given(first, "9:img5", {}, again) is first                 # not given: as read

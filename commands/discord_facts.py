@@ -30,9 +30,11 @@ sample  Prints n random lines that gave facts, with their facts, for an eye chec
 A card is named by today's names (stats.json keys, titles, display and website names, file names) or by an old name
 through the old repo's sure renames (derived/oldgit/map.json) or the Discord-era names the timelines settled (the
 Morgue's renamed entries, eye.json 'titled', the owner's owner.json old_names, some with a time limit), or a line's
-short form told by eye (derived/facts/eye_lines.json: line id -> card, form; the general matcher is not loosened); never
-through an alias, and no alias is written. The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too:
-OCR'd, each 'Name (Buff/Nerf/Rework)' entry a changelog line '<message>:img<n>' (no text kept).
+short form told by eye (derived/facts/eye_lines.json: line id -> card, form; the general matcher is not loosened), or
+the card a line naming no sure card was given (an 'ambiguous card' line: owner.json lines, over the review page's
+answers; a Morgue entry's 'morgue:<id>'; 'none' leaves it out); never through an alias, and no alias is written.
+The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too: OCR'd, each 'Name (Buff/Nerf/
+Rework)' entry a changelog line '<message>:img<n>' (no text kept).
 Facts stop at the card repo's population (2023-11-05 23:15 PST); push notices at the old repo's first commit.
 """
 from argparse import ArgumentParser
@@ -46,7 +48,7 @@ from json import dumps, loads
 from os.path import basename, exists, expanduser, join, splitext
 from random import Random
 from re import IGNORECASE, compile as re_compile, escape, finditer, fullmatch, match, sub
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 from unicodedata import normalize
 
 from commands.discord_match import (CATALOGUE, DEFAULT_ROOT, OLDGIT, check_root, git_dir_of, git_out, read_json,
@@ -179,6 +181,7 @@ MORGUE = ("derived", "morgue", "candidates.json")         # the Morgue's renamed
 MATCH_EYE = ("derived", "match", "eye.json")              # renamed first looks told by eye ('titled')
 OWNER_FILE = ("derived", "review", "owner.json")          # the owner's rulings outside the review page (old_names)
 EYE_LINES = ("derived", "facts", "eye_lines.json")        # lines naming a card by a short form, told by eye
+RULINGS_FILE = ("derived", "review", "rulings.json")      # the review page's answers (an ambiguous line's card)
 CHANGELOG_PICTURES = ("325fb3259b34", "5ba4057218a4", "39ea31046541")   # 2019 balance changes posted as pictures
 CHANGELOG_DOCUMENTS = ("6655b62e4972",)     # 2019-03-22 February balance changes (docx); by eye, not changelogs: the
                                             # 2021 'Low priority changes' (a to-do list of class lines), the .txt files
@@ -286,6 +289,15 @@ class Names:
                 other.longest = max(other.longest, len(tokens(norm(name))))
             self._at[active] = other
         return self._at[active]
+
+    def given(self, name: str, key: str) -> "Names":
+        """These names with name naming key alone (a line given its card: told_lines)."""
+        other = copy(self)
+        other.by, other.names_of, other._at = dict(self.by), dict(self.names_of), {}
+        other.by[squash(name)] = {(key, "given")}
+        other.names_of[key] = set(other.names_of.get(key, ())) | {name}
+        other.longest = max(other.longest, len(tokens(norm(name))))
+        return other
 
     def add(self, name: str, key: str, how: str):
         form = squash(name)
@@ -725,9 +737,11 @@ def words_of(text: str) -> list:
     return sub(r"[^a-z ]", " ", text.lower()).split()
 
 
-def parse_line(raw: str, names: Names, vocabulary: set, source: str, carry: Optional[list] = None) -> dict:
+def parse_line(raw: str, names: Names, vocabulary: set, source: str, carry: Optional[list] = None,
+               told: Optional[str] = None) -> dict:
     """One line: {facts: [{card, field|kind, from, to, by, op, sure}], unsure: [card keys], why, heading} (no text);
-    carry: the subject of a heading line before it in the message (a line naming only a card)."""
+    carry: the subject of a heading line before it in the message (a line naming only a card); told: the card the
+    line was given (told_lines): only the names that may be it count, as it."""
     text = norm(clean(raw)).strip()
     out = {"facts": [], "unsure": [], "why": None, "heading": None}
     if not text or len(text) > 600:
@@ -752,6 +766,8 @@ def parse_line(raw: str, names: Names, vocabulary: set, source: str, carry: Opti
             out["why"] = "rename of no known card"
         return out
     spans = names.find(text)
+    if told:
+        spans = [{**s, "keys": [told]} for s in spans if told in s["keys"]] or spans
     subject, cut, prefix, why = subject_of(text, spans)
     if not why and any(blocked(text, s, names) for s in subject):
         why = "names something of a card"
@@ -929,7 +945,8 @@ def human(message: dict) -> bool:
     return not ((message.get("author") or {}).get("bot") or message.get("webhook_id"))
 
 
-def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True) -> Iterable[tuple]:
+def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True,
+                    given: Optional[dict] = None) -> Iterable[tuple]:
     """(source, channel id, channel name, message, line number, line, parse) before the card repo, humans only."""
     channels = [(c, "changelog") for c in sorted(UPDATE_IDS)]
     titles = {}
@@ -952,6 +969,10 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True)
                 if eye and source == "changelog":               # a short form told by eye: the card's name read
                     line = sub(r"(?i)(?<![\w])" + escape(eye["form"]) + r"(?![\w])", lambda _: eye["card"], line, count=1)
                 got = parse_line(line, at, vocabulary, source, carry)
+                if source == "changelog":
+                    got = as_given(got, f"{m['id']}:{n}", given or {},
+                                   lambda card, line=line, at=at, carry=carry: parse_line(line, at, vocabulary, source,
+                                                                                         carry, told=card))
                 if eye and source == "changelog":
                     got["eye"] = True
                 carry = got["heading"] or (carry if got.get("carried") or got["why"] == "no card" else None)
@@ -977,20 +998,23 @@ def picture_entries(lines: list) -> list:
     return [tuple(e) for e in out]
 
 
-def picture_line(head: str, rest: str, names: Names, base: Names, vocabulary: set) -> dict:
+def picture_line(head: str, rest: str, names: Names, base: Names, vocabulary: set, told: Optional[str] = None) -> dict:
     """One entry of a changelog picture: parsed as 'Head: change' when the head is exactly one card's name (today's,
     an old one) and not a head the eye doubts (HEAD_REVIEW); else review (the cards it may name). The head's tag
-    states a change, so a change no stated field explains is the ability's."""
+    states a change, so a change no stated field explains is the ability's. told: the card the line was given
+    (told_lines: a card's key or a Morgue entry's 'morgue:<id>'), its head naming that card alone."""
     form = squash(head)
     keys = sorted({k for k, _ in names.by.get(form, set())})
     doubt = {squash(h): why for h, why in HEAD_REVIEW.items()}.get(form)
+    if told:
+        names, keys, doubt = names.given(head, told), [told], None
     if len(keys) != 1 or doubt:
         near = keys + sorted({k for n in (names, base) for f, e in n.by.items() if len(form) >= 4 and
                               (f.startswith(form) or form.startswith(f) and len(f) >= 4) for k, _ in e} - set(keys))
         return {"facts": [], "unsure": near[:4], "why": "picture head", "heading": None,
                 "head": f"a changelog picture's head '{head}': {doubt or 'no card has this name'}"}
     key, only = keys[0], {squash(h): why for h, why in HEAD_ABILITY.items()}.get(form)
-    got = parse_line(f"{head}: {BREAK.sub('; ', rest)}", names, vocabulary, "changelog")
+    got = parse_line(f"{head}: {BREAK.sub('; ', rest)}", names, vocabulary, "changelog", told=told)
     if only:                                      # by eye: the numbers are the ability's
         got["facts"] = [f for f in got["facts"] if f.get("kind") == "ability changed"]
     for f in got["facts"]:
@@ -1011,7 +1035,8 @@ def unexplained(rest: str, vocabulary: set) -> bool:
                and any(w not in FILLER for w in words_of(c)) for part in split_parts(body) for c in split_clauses(part))
 
 
-def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> Iterable[tuple]:
+def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter,
+                  given: Optional[dict] = None) -> Iterable[tuple]:
     """(source, channel id, channel name, message, 'img<n>', entry text, parse) of the changelog pictures
     (CHANGELOG_PICTURES), OCR'd with the text readers' Vision CLI (no text stored); none without it."""
     import subprocess
@@ -1043,14 +1068,18 @@ def picture_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> 
             counts["changelog pictures"] += 1
             at = names.at(iso(m["timestamp"]))
             for n, (head, _tag, rest) in enumerate(picture_entries(lines)):
+                got = as_given(picture_line(head, rest, at, names, vocabulary), f"{m['id']}:img{n}", given or {},
+                               lambda card, head=head, rest=rest, at=at: picture_line(head, rest, at, names,
+                                                                                      vocabulary, card))
                 yield ("changelog", a["container_id"], m.get("channel_name") or a["container_id"], m, f"img{n}",
-                       f"{head}: {rest}", picture_line(head, rest, at, names, vocabulary))
+                       f"{head}: {rest}", got)
     finally:
         p.stdin.close()
         p.wait()
 
 
-def document_lines(root: str, names: Names, vocabulary: set, counts: Counter) -> Iterable[tuple]:
+def document_lines(root: str, names: Names, vocabulary: set, counts: Counter,
+                   given: Optional[dict] = None) -> Iterable[tuple]:
     """(source, channel id, channel name, message, 'doc<n>', entry text, parse) of the changelog documents
     (CHANGELOG_DOCUMENTS: docx, its 'Name (Buff|Nerf|Rework) change' paragraphs; read in memory, no text stored)."""
     import zipfile
@@ -1070,9 +1099,41 @@ def document_lines(root: str, names: Names, vocabulary: set, counts: Counter) ->
         for text in (unescape(p).strip() for p in paras):
             got = HEAD.match(text)
             if got:
+                head, rest = got["head"].strip(), got["rest"].strip()
+                parsed = as_given(picture_line(head, rest, at, names, vocabulary), f"{m['id']}:doc{n}", given or {},
+                                  lambda card: picture_line(head, rest, at, names, vocabulary, card))
                 yield ("changelog", a["container_id"], m.get("channel_name") or a["container_id"], m, f"doc{n}",
-                       text, picture_line(got["head"].strip(), got["rest"].strip(), at, names, vocabulary))
+                       text, parsed)
                 n += 1
+
+
+def told_lines(root: str, names: Names) -> dict:
+    """{line id: card key, 'morgue:<Morgue entry id>', or None (left out)}: the lines naming no sure card that were
+    given one: the review page's 'ambiguous card' answers (a card, or none), the owner's owner.json lines over them."""
+    out = {}
+    for r in ((read_json(join(root, *RULINGS_FILE), {}) or {}).get("rulings") or {}).values():
+        line = (r.get("item") or {}).get("line")
+        if r.get("kind") != "ambiguous card" or not line:
+            continue
+        if r.get("choice") == "card" and names.ids.get(r.get("value")):
+            out[line] = names.ids[r["value"]]
+        elif r.get("choice") == "none":
+            out[line] = None
+    for r in ((read_json(join(root, *OWNER_FILE), {}) or {}).get("lines") or {}).values():
+        if r.get("line") and (r.get("morgue") or names.ids.get(r.get("card"))):
+            out[r["line"]] = f"morgue:{r['morgue']}" if r.get("morgue") else names.ids[r["card"]]
+    return out
+
+
+def as_given(got: dict, line_id: str, given: dict, again: Callable) -> dict:
+    """A line naming no sure card, given one (told_lines): parsed again as that card (none: left out); its review row
+    keeps the cards it may name (got['given'])."""
+    if line_id not in given or not (got["unsure"] or got.get("head")):
+        return got
+    card = given[line_id]
+    out = again(card) if card else {**got, "facts": []}
+    out["given"] = {"candidates": got["unsure"], "head": got.get("head"), "card": card}
+    return out
 
 
 def finditer_text(xml: str) -> Iterable[str]:
@@ -1092,8 +1153,10 @@ def build(root: str, names: Names, vocabulary: set, log=print) -> dict:
     kinds = {c: kind for c, (_, kind) in chat_channels(root).items()}
     messages_seen = set()
     seen = set()
-    lines = chain(changelog_lines(root, names, vocabulary), picture_lines(root, names, vocabulary, counts),
-                  document_lines(root, names, vocabulary, counts))
+    given = told_lines(root, names)
+    lines = chain(changelog_lines(root, names, vocabulary, given=given),
+                  picture_lines(root, names, vocabulary, counts, given), document_lines(root, names, vocabulary, counts,
+                                                                                       given))
     for source, channel, cname, m, n, line, got in lines:
         counts[f"{source} lines"] += 1
         if m["id"] not in messages_seen:
@@ -1112,6 +1175,8 @@ def build(root: str, names: Names, vocabulary: set, log=print) -> dict:
                     **{k: v for k, v in f.items() if k != "card" and v is not None}, "confidence": confidence}
             if got.get("eye"):
                 fact["named"] = "eye"                          # the card told by eye (EYE_LINES)
+            if got.get("given"):
+                fact["named"] = "given"                        # the card given on the review page or by the owner
             if source == "chat":
                 fact["channel_kind"] = kinds.get(channel)
             if f["card"] and f["card"].startswith(("archived:", "morgue:")):
@@ -1120,13 +1185,18 @@ def build(root: str, names: Names, vocabulary: set, log=print) -> dict:
                 continue
             seen.add(fact["id"])
             facts.append({**fact, "_doubt": doubt} if doubt and confidence == "unsure" else fact)
-        if (got["unsure"] or got.get("head")) and source == "changelog":
+        amb = got.get("given") or ({"candidates": got["unsure"], "head": got.get("head")}
+                                   if got["unsure"] or got.get("head") else None)
+        if amb and source == "changelog":
             review.append({"id": "R" + short_id(line_id, "cards"), "kind": "ambiguous card",
-                           "candidates": got["unsure"],
+                           "candidates": amb["candidates"],
                            "date": iso(m["timestamp"]), "channel": cname, "channel_id": channel, "message": m["id"],
-                           "line": line_id, "why": got.get("head") or
-                           "the line names several cards (or a name two cards had)"})
+                           "line": line_id, "why": amb.get("head") or
+                           "the line names several cards (or a name two cards had)",
+                           **({"given": got["given"]["card"]} if got.get("given") else {})})
             counts["changelog lines with ambiguous cards"] += 1
+            if got.get("given"):
+                counts["changelog lines given a card" if got["given"]["card"] else "changelog lines left out"] += 1
         if got["why"]:
             counts[f"{source} why {got['why']}"] += 1
     stat_units(facts, load_reads(root, names.ids), names.raid, counts)

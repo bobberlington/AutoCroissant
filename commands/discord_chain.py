@@ -87,6 +87,8 @@ HEADER_EYE = ("derived", "readers", "types", "header_eye.jsonl")   # eras A-C: t
 MORGUE = ("derived", "morgue", "candidates.json")          # the Morgue's eye: pictures it took from a live card
 PSD_BITS = 3.0                                              # a look this near a posted PSD's composite shows it
 RULINGS = ("derived", "review", "rulings.json")             # the owner's answers (scripts/apply_rulings.py)
+ISSUED = ("derived", "review", "ids.json")                  # every review id the page showed, with its card
+PICTURE_KINDS = ("named only", "look not told", "joke picture")   # review ids keyed by their picture
 OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
 PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
 FS_SOURCE = {"old git": "old repo", "first git": "first repo"}   # a card's first git record: where (else the card repo)
@@ -109,7 +111,7 @@ CLASS_Y, CLASS_MID, CLASS_WORDS = 0.96, 0.13, 5               # a class line: mi
 LOCAL_W, LOCAL_CELL = 240, 12                                 # drafts compared in grey at this width, by these cells
 LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a cell this far apart (grey levels) and
                                                               # this many times the pair's 90th percentile cell (floored)
-BACKED = ("eye", "psd", "git look", "owner")                  # star reads no icon reader made
+BACKED = ("eye", "psd", "git look", "owner", "triage")        # star reads no icon reader made
 APART_DAYS = 30                                               # two icon reads this far apart: read separately
 FACT_GRACE_DAYS = 3                                           # a picture this near before a changelog line: its port
 NEAR_DAYS = 180                                               # a fact checked against a picture this near (facts' NEAR)
@@ -159,6 +161,19 @@ class Paths:
 
 def review_id(kind: str, key: str) -> str:
     return "chain-" + sha1(f"{kind}|{key}".encode()).hexdigest()[:12]
+
+
+def picture_id(kind: str, picture: str, card: Optional[str], issued: dict) -> str:
+    """A picture-keyed item's id (PICTURE_KINDS): the picture's alone while the page showed it for that card (or
+    never showed it); asked about another card, a new id keyed by the card too: an answered id keeps its meaning."""
+    rid = review_id(kind, picture)
+    had = (issued.get(rid) or {}).get("card")
+    return rid if had in (None, card) else review_id(kind, f"{picture}|{card}")
+
+
+def ruled_by(r: dict) -> str:
+    """A field's method from an answer: 'owner', or 'triage' for the triage's owner-delegated answers."""
+    return "triage" if str(r.get("source") or "").startswith("triage") else "owner"
 
 
 def day(seconds: Optional[float]) -> Optional[str]:
@@ -359,6 +374,7 @@ class Inputs:
             if r.get("card") and r.get("fields"):
                 self.psds[r["card"]].append(r)
         self.rulings = (dm.read_json(p.at(RULINGS), {}) or {}).get("rulings") or {}
+        self.issued = (dm.read_json(p.at(ISSUED), {}) or {}).get("ids") or {}
         git_dir = dm.git_dir_of(cards_repo)
         if not git_dir:
             raise SystemExit(f"no card repo at {cards_repo}")
@@ -818,10 +834,9 @@ def owner_rows(inputs) -> Counter:
     if not rulings:
         return done
     cards = inputs.cards
+    issued = getattr(inputs, "issued", None) or {}
     for row in inputs.verdicts:
         rid = row["id"]
-        ids = {k: review_id(k, rid) for k in ("named only", "look not told", "joke picture")}
-        named, told, joke = (rulings.get(ids[k]) for k in ids)
         match = rulings.get("match:" + rid)
         mine = lambda r: r.get("choice") == "look" or confirms(r, row.get("card"))        # given on its card
         if match and match.get("choice") == "card" and match.get("value") in cards and \
@@ -832,6 +847,8 @@ def owner_rows(inputs) -> Counter:
             done["owner: a picture's card named"] += 1
         elif match and match.get("choice") == "none":
             used.add("match:" + rid)
+        ids = {k: picture_id(k, rid, row.get("card"), issued) for k in PICTURE_KINDS}
+        named, told, joke = (rulings.get(ids[k]) for k in ids)
         for k, r in (("named only", named), ("look not told", told), ("joke picture", joke)):
             if r and r.get("choice") in ("yes", "no", "draft", "live") and not mine(r):
                 done[f"owner: a {k} answer given on another card (not applied)"] += 1
@@ -959,7 +976,8 @@ class Chain:
         return not formatting_edit(cells, self.ocr_lines(a["sha256"]), self.ocr_lines(b["sha256"]))
 
     def add_review(self, kind: str, key: str, **item) -> str:
-        rid = review_id(kind, key)
+        issued = getattr(self.inputs, "issued", {})
+        rid = picture_id(kind, key, item.get("card"), issued) if kind in PICTURE_KINDS else review_id(kind, key)
         self.review.setdefault(rid, {"id": rid, "kind": kind, **{k: v for k, v in item.items() if v is not None}})
         return rid
 
@@ -1182,7 +1200,7 @@ class Chain:
                             home["fields"][k] = {**unsure("psd (posted PSD)", f"two PSDs posted with this look differ "
                                                           f"in {k}", old["value"]), "psd": old["psd"]}
                         continue
-                    if is_sure(old) and old.get("method") in ("eye", "owner"):
+                    if is_sure(old) and old.get("method") in ("eye", "owner", "triage"):
                         continue
                     if is_sure(v) or not is_sure(old):
                         home["fields"][k] = {**v, "psd": r["id"]}
@@ -1523,7 +1541,7 @@ class Chain:
                         self.tally[f"owner: {e['kind']} field {key} yes, its value no longer proposed "
                                    "(not applied)"] += 1
                 if value is not None:
-                    e["fields"][key] = sure(value, "owner", ruled=rid)
+                    e["fields"][key] = sure(value, ruled_by(r), ruled=rid)
                     self.used.add(rid)
                     self.tally[f"owner: {e['kind']} field {key} given"] += 1
 
@@ -1667,7 +1685,8 @@ class Chain:
             row = min(named, key=lambda r: dm.epoch(r["first"]["date"]))
             if day(dm.epoch(row["first"]["date"])) < key:
                 out["named_only_earlier"] = {"day": day(dm.epoch(row["first"]["date"])), "picture": row["id"],
-                                             "review": review_id("named only", row["id"])}
+                                             "review": picture_id("named only", row["id"], cid,
+                                                                  getattr(self.inputs, "issued", {}))}
         if out["status"] == "hand":                # never touched: no hint to answer
             return out
         pick, base = self.owner_pick(out)

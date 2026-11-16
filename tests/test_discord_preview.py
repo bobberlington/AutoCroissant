@@ -202,6 +202,35 @@ def test_a_first_psd_s_row_and_created():
            "file": {"date": "2023-10-09"}}
     got = dp.created_proposals({"cards": {"Laz": laz}})
     assert got["Laz"]["source"] == "old repo" and got["Laz"]["psd"] and got["Laz"]["was"] == "2023-10-09"
+    pick = lambda date, source: {"proposed": True, "status": "owner", "date": date, "sort": date,
+                                 "file": {"date": "2020-09-08"}, "owner": {"source": {"day": date, "source": source}}}
+    got = dp.created_proposals({"cards": {"A": pick("2020-08-02", "discord"), "B": pick("2020-07-22", "owner"),
+                                          "C": pick("2023-11-07", "discord"), "D": pick("2020-09-08", "website")}})
+    assert {k: (v["date"], v["source"], v["status"]) for k, v in got.items()} == {    # the page's picks: earlier only
+        "A": ("2020-08-02", "discord", "owner"), "B": ("2020-07-22", "owner", "owner")}
+
+
+def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
+    """The review page's Morgue answers reach the preview (a candidate answered 'no' is off the list, an idea or a
+    not-candidate answered 'yes' on it; the MDW cards as before), and a changelog line given to a Morgue entry (owner
+    D9: 'morgue:<id>') is that entry's mark, data only."""
+    morgue = {"candidates": [{"id": "LC-1"}, {"id": "LC-2"}],
+              "not_candidates": [{"id": "LC-3", "status": "renamed"}, {"id": "LC-4", "status": "morgue"}]}
+    rulings = {"morgue:LC-1": {"choice": "no"}, "morgue:LC-3": {"choice": "yes"}, "morgue:LC-5": {"choice": "yes"},
+               "morgue:LC-4": {"choice": "no"}}
+    got = dp.morgue_entries(morgue, [{"id": "LC-5"}, {"id": "LC-6"}], rulings)
+    assert [(e["id"], kind) for e, kind in got] == [("LC-2", "candidate"), ("LC-5", "candidate"),
+                                                     ("LC-3", "candidate"), ("LC-4", "mdw")]
+    facts = [{"id": "f1", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "kind": "ability changed",
+              "date": "2019-03-22T06:33:53+00:00", "channel": "general-discussion", "line": "9:doc4"},
+             {"id": "f2", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "field": "stars", "to": 4,
+              "date": "2019-03-22T06:33:53+00:00", "channel": "general-discussion"},
+             {"id": "f3", "card": "Computer Virus", "source": "changelog", "confidence": "sure", "field": "stars",
+              "to": 4, "date": "2019-03-22T06:33:53+00:00"}]
+    marks = dp.morgue_marks(facts, {"id": "LC-2"})
+    assert [(m["id"], m["kind"], m["change"]) for m in marks] == [("F-f1", "text", {"ability": "changed"}),
+                                                                 ("F-f2", "text", {"field": "stars", "to": 4})]
+    assert not keys(marks) & BAD_KEYS and "line" not in keys(marks)
 
 
 def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):

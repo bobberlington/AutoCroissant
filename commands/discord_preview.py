@@ -8,7 +8,7 @@ CLI):
     python -m commands.discord_preview check [--root <dir>] [--workers <n>] [--redo]
 
 build   From the chain (derived/chain/timelines, created.json) and the Morgue candidates (derived/morgue/
-        candidates.json):
+        candidates.json, with the review page's answers: derived/review/rulings.json):
           index.json             every card with a history (its folder, counts), the Morgue's new entries, the MDW
                                  Morgue cards' Discord pictures, and the Created dates the chain proposes (earlier or
                                  new only; "Before 2020" from a physical card photo for the three the owner named, Q6)
@@ -56,6 +56,9 @@ CHAIN = ("derived", "chain", "timelines")
 CREATED = ("derived", "chain", "created.json")
 MORGUE = ("derived", "morgue", "candidates.json")
 MORGUE_DIR = ("derived", "morgue")
+IDEAS = ("derived", "morgue", "ideas.json")
+RULINGS = ("derived", "review", "rulings.json")             # the review page's answers (the Morgue list's)
+FACTS = ("derived", "facts", "facts.jsonl")                  # a Morgue entry's changelog marks (card 'morgue:<id>')
 EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop": {"<card>|<entry id>|<field>": why},
 #                                             "leave_out": {"<card>|<entry id>": why}: no version of the card}
 VERDICTS = ("derived", "match", "verdicts.jsonl")
@@ -239,13 +242,17 @@ def leave_out(t: dict, ids, versions: list = ()) -> list:
 
 
 def created_proposals(created: dict) -> dict:
-    """{card key: {date, sort, source, status, was}}: the chain's earlier or new Created dates (never later; hand
+    """{card key: {date, sort, source, status, was}}: the chain's earlier or new Created dates, and the review page's
+    picks (status 'owner': its source, 'owner' for a typed date) when earlier than the website's (never later; hand
     entries are the chain's 'hand' status, never proposed)."""
     out = {}
     for key, c in sorted((created.get("cards") or {}).items()):
-        if not c.get("proposed") or c.get("status") not in ("earlier", "new"):
+        if not c.get("proposed") or c.get("status") not in ("earlier", "new", "owner"):
             continue
-        ours = c.get("ours") or {}
+        was = (c.get("file") or {}).get("date")
+        ours = (c.get("owner") or {}).get("source") or {} if c["status"] == "owner" else c.get("ours") or {}
+        if c["status"] == "owner" and (ours.get("source") == "website" or was and (c.get("sort") or c["date"]) >= was):
+            continue                               # the website's date kept, or a pick later than it
         source = ours.get("source")
         out[key] = {"date": c["date"], "sort": c.get("sort") or c["date"],
                     "source": "old repo" if source == "old repo (PSD)" else source,
@@ -257,9 +264,35 @@ def created_proposals(created: dict) -> dict:
     return out
 
 
-def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
-    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, oldest first; its first
-    (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the repo that had its file."""
+def morgue_entries(morgue: dict, ideas: list, rulings: dict) -> list:
+    """[(entry, 'candidate' | 'mdw')]: the Morgue list with the review page's answers (timeline_review.morgue_list):
+    the candidates not answered 'no', the ideas and the rest answered 'yes'; the MDW Morgue cards' Discord pictures."""
+    said = lambda e: (rulings.get(f"morgue:{e['id']}") or {}).get("choice")
+    out = [(e, "candidate") for e in morgue.get("candidates") or () if said(e) != "no"]
+    out += [(e, "candidate") for e in [*ideas, *(e for e in morgue.get("not_candidates") or ()
+                                                if e.get("status") != "morgue")] if said(e) == "yes"]
+    return out + [(e, "mdw") for e in morgue.get("not_candidates") or () if e.get("status") == "morgue"]
+
+
+def morgue_marks(facts: list, entry: dict) -> list:
+    """A Morgue entry's changelog marks (owner Q4: data only): the sure changelog facts given to it ('morgue:<id>',
+    e.g. the owner's D9: 2019 'Computer virus 2.0', never the live Computer Virus)."""
+    out = []
+    for f in facts:
+        if f.get("card") != f"morgue:{entry['id']}" or f.get("source") != "changelog" or f.get("confidence") != "sure":
+            continue
+        change = {"ability": "changed"} if f.get("kind") == "ability changed" else \
+            {k: f[k] for k in FACT_KEYS + ("stated",) if f.get(k) is not None}
+        out.append({"id": "F-" + f["id"], "kind": "text", "date": f.get("date"), "day": (f.get("date") or "")[:10],
+                    "badge": BADGE["text"], "channel": f.get("channel"),
+                    "change": {k: v for k, v in change.items() if k in FACT_KEYS + ("ability",)}})
+    return out
+
+
+def morgue_out(entry: dict, files: dict, kind: str, facts: list = ()) -> tuple:
+    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions and its changelog marks,
+    oldest first; its first (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the
+    repo that had its file."""
     entries, jobs = [], []
     for p in entry.get("pictures") or ():
         if p.get("source") == "old repo":
@@ -276,6 +309,7 @@ def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
         if kind_of == "discord":
             e["channel"] = p.get("channel")
         entries.append(e)
+    entries += morgue_marks(facts, entry)
     entries.sort(key=lambda e: e.get("date") or "9999")
     first = entry.get("first") or {}
     out = {"card": entry.get("slug") or entry["id"], "key": entry["name"], "name": entry["name"], "morgue": kind,
@@ -595,16 +629,17 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
     for line in open(join(root, *VERDICTS)):
         r = loads(line)
         files[r["id"]] = (join(root, r["file"]), tuple(r["box"]) if r.get("box") else None)
-    entries = [(e, "candidate") for e in morgue.get("candidates") or ()]
-    entries += [(e, "mdw") for e in morgue.get("not_candidates") or () if e.get("status") == "morgue"]
+    entries = morgue_entries(morgue, (dm.read_json(join(root, *IDEAS), {}) or {}).get("ideas") or [],
+                             (dm.read_json(join(root, *RULINGS), {}) or {}).get("rulings") or {})
+    facts = [f for f in dm.read_jsonl(join(root, *FACTS)) if str(f.get("card") or "").startswith("morgue:")]
     firsts, mdw_gone = mdw_firsts(root, expanduser(cards_repo) if cards_repo else None, commits), {}
     for entry, kind in entries:
         if kind == "mdw":
             gone = mdw_cut(entry, firsts.get(dm.alnum(entry.get("card") or entry["name"])))
             if gone:
                 mdw_gone[entry.get("card") or entry["name"]] = len(gone)
-        out, pics = morgue_out(entry, files, kind)
-        if not out["entries"]:
+        out, pics = morgue_out(entry, files, kind, facts)
+        if not any(e["kind"] in PICTURE_KINDS for e in out["entries"]):
             continue
         folder = f"{MORGUE_FOLDER}/{out['card']}"
         want[folder] = set()
@@ -615,7 +650,9 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
             else:
                 jobs.append((join(out_dir, folder, image), src_kind, source, box))
         dm.write_json(join(out_dir, folder, "timeline.json"), out)
-        row = {"dir": folder, "name": out["name"], "first": out["first"], "versions": len(out["entries"])}
+        row = {"dir": folder, "name": out["name"], "first": out["first"],
+               "versions": sum(e["kind"] in PICTURE_KINDS for e in out["entries"]),
+               **({"texts": n} if (n := sum(e["kind"] == "text" for e in out["entries"])) else {})}
         if kind == "candidate":
             index["morgue"].append({**row, "kind": entry.get("kind"), "id": entry["id"]})
         else:

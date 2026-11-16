@@ -43,6 +43,7 @@ FACTS, FACT_REVIEW = ("derived", "facts", "facts.jsonl"), ("derived", "facts", "
 FIRST_REPO = ("derived", "facts", "firstrepo.jsonl")
 MORGUE, IDEAS = ("derived", "morgue", "candidates.json"), ("derived", "morgue", "ideas.json")
 RULINGS = ("derived", "review", "rulings.json")
+ISSUED = dc.ISSUED                                    # every id the page showed, with its card (ids keep their meaning)
 OWNER = ("derived", "review", "owner.json")           # the owner's rulings outside the page (answers shown read only)
 EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
@@ -239,7 +240,8 @@ def old_maps(inputs: Inputs) -> list:
     for r in (r for r in inputs.old_review if r["kind"] == "unsure map"):
         cid = inputs.cid(r.get("card"))
         it = item(r["kind"], r["id"], "splits" if r.get("split") else "maps", None,
-                  f"Old file '{r.get('old_id')}' -> {r.get('card')} ({r.get('status')})", card=cid)
+                  f"Old file '{r.get('old_id')}' -> {r.get('card')} ({r.get('status')})", card=cid,
+                  old_id=r.get("old_id"))
         it["meta"] = [f"matched by: {', '.join(r.get('how') or [])}", *(r.get("why") or [])]
         rows = r.get("rows") or []
         it["meta"].append(f"{len(rows)} version{'s' if len(rows) != 1 else ''}: " + "; ".join(
@@ -471,15 +473,28 @@ def fact_items(inputs: Inputs) -> list:
             else:
                 it["choices"] = [choice("yes", "right: count it")]
             it["choices"].append(choice("no", "wrong: leave it out"))
-        elif r["kind"] == "ambiguous card":
+        elif r["kind"] == "ambiguous card":            # a card picker (owner D9): its facts are the card's
             fact = {"channel_id": r.get("channel_id") or next((f["channel_id"] for f in inputs.facts.values()
                                                                if f.get("message") == r.get("message")), None),
                     "message": r.get("message")}
             it = item(r["kind"], r["id"], "matches", "facts", f"{when(r.get('date'))} #{r.get('channel')}",
-                      date=r.get("date"), read_only=True)
-            it["meta"] = [f"names: {', '.join(r.get('candidates') or [])}", r.get("why") or "",
-                          "Not answerable here yet: the changelog reader can't take a card for a line."]
+                      date=r.get("date"), line=r.get("line"))
+            it["meta"] = [f"names: {', '.join(r.get('candidates') or []) or 'no card'}", r.get("why") or "",
+                          "Which card is the line about? Its changes (data only) go to that card."]
             it["link"] = jump(fact)
+            given = (inputs.owner.get("lines") or {}).get(r["id"])
+            answer = inputs.answers.get((given or {}).get("answer"))
+            if given and answer:                       # the owner named it: shown, not asked
+                entry = next((e for e in inputs.morgue.get("candidates") or () if e["id"] == given.get("morgue")), {})
+                to = f"the Morgue's {entry.get('name') or given['morgue']}" if given.get("morgue") else \
+                    inputs.label(given.get("card"))
+                it.update(read_only=True)
+                it["meta"].append(f"The owner's answer ({answer.get('when')}): {to}. {answer['ruling']}")
+            else:
+                for cid in dict.fromkeys(c for c in (inputs.cid(n) for n in r.get("candidates") or []) if c):
+                    it["choices"].append(choice("card", inputs.label(cid), cid, card_pic(inputs, cid)))
+                it["choices"].append(choice("none", "none of these: leave the line out"))
+                it["other"] = {"c": "card", "kind": "card", "label": "another card"}
         else:
             continue
         out.append(it)
@@ -650,6 +665,14 @@ def gather(inputs: Inputs) -> list:
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
     for it in items:
         it["pics"] = [p for p in it["pics"] if p]
+        answer = None if it.get("read_only") else owner_answer(inputs, it["id"])
+        if answer:                                   # an item the owner answered outside the page: shown, not asked
+            it.update(read_only=True, choices=[], other=None)
+            it["meta"].append(f"The owner's answer ({answer.get('when')}): {answer['title']} = {answer['answer']}. "
+                              f"{answer['ruling']}")
+        r = inputs.rulings.get(it["id"])
+        if r and r.get("source") and r["source"] != "owner":
+            it["meta"].append(f"answered by: {r['source']}")
     owner_notes(inputs, items)
     have = {i["id"] for i in items}
     for it in items:                                 # answered, but no radio here takes that answer any more (a
@@ -892,6 +915,24 @@ def page(items: list, inputs: Inputs, built: str) -> str:
     return "\n".join(out) + "\n"
 
 
+def register(root: str, items: list, built: str) -> dict:
+    """derived/review/ids.json: every id the page has shown (first and last build, its card, kind and title as last
+    shown; a map's old id): the chain keeps a picture's id while it asks about the same card (dc.picture_id), and
+    apply_rulings tells an answer whose item a rebuild settled or dropped from a mistyped id."""
+    path = join(root, *ISSUED)
+    ids = (dm.read_json(path, {}) or {}).get("ids") or {}
+    for it in items:
+        was = ids.get(it["id"]) or {"first": built, "card": it.get("card")}
+        if it.get("gone") or was.get("card") != it.get("card"):     # an old page's id asking about another card
+            continue                                                 # (built before ids.json): its meaning kept
+        ids[it["id"]] = {**was, "kind": it["kind"], "title": it["title"], "last": built,
+                         **({"old_id": it["old_id"]} if it.get("old_id") else {})}
+    dm.write_json(path, {"about": "Every review id the page has shown (timeline_review.register): first and last "
+                                  "build, its card (the first), kind, title (as last shown). No message text.",
+                         "updated": built, "ids": dict(sorted(ids.items()))}, indent=None)
+    return ids
+
+
 def build(root: str = dm.DEFAULT_ROOT, log: Callable = print) -> dict:
     root = dm.check_root(root)
     inputs = Inputs(root)
@@ -906,6 +947,7 @@ def build(root: str = dm.DEFAULT_ROOT, log: Callable = print) -> dict:
     dm.write_json(join(out, "items.json"), {"format": FORMAT, "built": built, "cards": cards, "items": items},
                   indent=None)
     dm.write_text(join(out, "index.html"), page(items, inputs, built))
+    register(root, items, built)
     tally = Counter((i["section"], i.get("sub") or "") for i in items)
     counts = {f"{s}/{p}" if p else s: n for (s, p), n in sorted(tally.items())}
     open_n = sum(1 for i in items if not i.get("read_only") and (i["id"] not in inputs.rulings or i.get("stale")))

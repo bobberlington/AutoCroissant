@@ -416,6 +416,33 @@ def test_the_owner_s_answers():
                 [i["picture"] for i in chain.review.values() if i["kind"] == "look not told"] == ["P-000000000002"]
 
 
+def test_a_picture_s_id_keeps_its_card_and_the_triage_s_method():
+    """BRIEF 11-15 20:50: a picture-keyed item (look not told, named only, joke picture) keeps its id while the page
+    asks about the card it was first shown with (derived/review/ids.json); asked about another card it gets a new id,
+    so an answer given for the first card never lands on the second. A field the triage gave is method 'triage'."""
+    rid = dc.review_id("look not told", "P-000000000006")
+    assert dc.picture_id("look not told", "P-000000000006", "pike", {}) == rid              # never shown: as before
+    assert dc.picture_id("look not told", "P-000000000006", "bolt", {rid: {"card": "bolt"}}) == rid
+    new = dc.picture_id("look not told", "P-000000000006", "pike", {rid: {"card": "bolt"}})
+    assert new not in (rid, dc.review_id("look not told", "P-000000000006|bolt"))
+    got = inputs([picture(6, T + 5 * DAY, "version_unsure", card="pike")])
+    got.issued = {rid: {"card": "bolt"}}
+    got.rulings = {rid: {"choice": "look", "value": "b" + "a" * 20}}                       # given for Bolt's look
+    dc.owner_rows(got)
+    chain = dc.Chain(got)
+    chain.discord_rows()
+    assert not got.used and set(chain.review) == {new} and chain.review[new]["card"] == "pike"
+    text = {"attachments/1.png": {"title": {"value": "Bolt", "sure": False, "conf": 0.5, "method": "ocr+name"}}}
+    field = dc.review_id("field", "bolt|D-P-000000000001|name")
+    for source, method in ((None, "owner"), ("triage (owner-delegated 2026-11-16, two judges agreed)", "triage")):
+        got = inputs([picture(1, T)], text)
+        got.rulings = {field: {"choice": "value", "value": "Bolt", **({"source": source} if source else {})}}
+        chain = dc.Chain(got)
+        found, split = chain.discord_rows()
+        t = chain.card("bolt", found["bolt"], split.get("bolt", []))
+        assert t["entries"][0]["fields"]["name"] == dc.sure("Bolt", method, ruled=field)
+
+
 def test_facts_by_a_step_and_by_the_pictures_around_them():
     chain = dc.Chain(inputs([]))
     at = lambda days: iso(T + days * DAY)
