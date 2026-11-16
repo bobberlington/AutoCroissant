@@ -520,7 +520,7 @@ def _bands(data: bytes, keep: Callable[[int, bytes], bool]) -> Optional[dict]:
                 out[n] = part
     except zlib.error:
         return None
-    return out if inflate.eof else None
+    return out if inflate.eof and not inflate.unused_data else None     # bytes after its end: not band()'s
 
 
 def _kept(raw: list, old: Optional[bytes], header: tuple) -> dict:

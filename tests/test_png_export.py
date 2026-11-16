@@ -626,8 +626,8 @@ def test_a_small_change_leaves_the_other_bands_as_they_were(tmp_path):
 @pytest.mark.oxipng
 def test_the_file_replaced_lends_its_unchanged_bands(monkeypatch):
     """band(data, old): old's deflate of each unchanged band is kept, so only the changed band and one check are
-    deflated, and the file is band(data)'s. An old of another level fails the check, one of another size or not banded
-    lends nothing: every band deflated, the same file still."""
+    deflated, and the file is band(data)'s. An old of another level fails the check, one of another size, with bytes
+    after its end or not banded lends nothing: every band deflated, the same file still."""
     y, x = np.mgrid[:600, :400]
     image = Image.fromarray((np.stack([x * 255 // 400, y * 255 // 600, (x + y) % 256], 2)
                              + np.random.default_rng(7).integers(0, 8, (600, 400, 3))).astype(np.uint8))
@@ -635,12 +635,17 @@ def test_the_file_replaced_lends_its_unchanged_bands(monkeypatch):
     with monkeypatch.context() as m:
         m.setattr(pe, "BAND_LEVEL", 1)
         other = pe.band(photoshop_png(image))
+    chunks = pe._all(old)
+    end = max(n for n, (kind, _, _) in enumerate(chunks) if kind == b"IDAT")
+    tail = pe.SIGNATURE + b"".join(pe._chunk(kind, payload + b"junk") if n == end else whole
+                                   for n, (kind, payload, whole) in enumerate(chunks))
+    assert pe.banded(old) and not pe.banded(tail)
     image.putpixel((10, 300), (0, 0, 0))
     data, deflate, deflated = photoshop_png(image), pe._deflate, []
     want = pe.band(data)
     monkeypatch.setattr(pe, "_deflate", lambda raw, last: deflated.append(raw) or deflate(raw, last))
     for given, count in ((old, 2), (other, 10), (pe.band(photoshop_png(image.crop((0, 0, 400, 599)))), 10),
-                         (photoshop_png(image), 10), (b"not a png", 10), (None, 10)):
+                         (tail, 10), (photoshop_png(image), 10), (b"not a png", 10), (None, 10)):
         deflated.clear()
         assert pe.band(data, given) == want and len(deflated) == count
     assert pe.recompress(data, None, old=old) == want == pe.encode(image, pe.open_png(data), old)
