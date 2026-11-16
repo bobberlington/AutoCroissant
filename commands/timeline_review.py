@@ -562,6 +562,11 @@ def morgue_list(root: str) -> Optional[dict]:
     return out
 
 
+def place(x: dict) -> str:
+    """'#channel', else '(source)'."""
+    return f"#{x['channel']}" if x.get("channel") else f"({x.get('source')})" if x.get("source") else ""
+
+
 def morgue_items(inputs: Inputs) -> list:
     out = []
     for sub, entries, now in morgue_groups(inputs.morgue, inputs.ideas):
@@ -570,11 +575,11 @@ def morgue_items(inputs: Inputs) -> list:
             it = item(MORGUE_KINDS[sub], f"morgue:{e['id']}", "morgue", sub, e.get("name") or e["id"],
                       entry=e["id"], date=first.get("date"), now=now)
             it["meta"] = [f"{e.get('status')}{(' (' + e['kind'] + ')') if e.get('kind') else ''}; first "
-                          f"{first.get('day') or when(first.get('date'))} #{first.get('channel') or first.get('source')}",
+                          f"{first.get('day') or when(first.get('date'))} {place(first)}",
                           "; ".join(e.get("why") or []),
                           f"nearest live card: {(e.get('nearest') or {}).get('name')} "
                           f"({(e.get('nearest') or {}).get('bits')} bits)" if e.get("nearest") else ""]
-            it["pics"] = [pic("../morgue/" + p["thumb"], f"{when(p.get('date'))} #{p.get('channel') or p.get('source')}")
+            it["pics"] = [pic("../morgue/" + p["thumb"], f"{when(p.get('date'))} {place(p)}")
                           for p in (e.get("pictures") or [])[:6] if p.get("thumb")]
             label = {"yes": "on the Morgue list", "no": "leave it off"}
             it["choices"] = [choice("yes", label["yes"] + (" (as now)" if now == "yes" else "")),
