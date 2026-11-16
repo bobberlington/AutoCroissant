@@ -62,6 +62,7 @@ PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                # its title l
 SANS = "Creatures/Undertale/5 Stars/Sans.psd"                      # likewise 'Text/snas.'
 LORIAN = "Auxiliary/Minions/Lorian.psd"                            # smart objects with smart filters
 KNIGHT = "Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd"        # 'Knight', 'Lost', 'A', 'Lot' stacked: two in the title region
+SPAWN = "Auxiliary/Minions/Spawn_of_the_Forbidden_One.psd"     # white underlined line 1, a purple line 2 led by a badge
 PIZZA = "Creatures/Other/3 Stars/Pizza.psd"                        # three lines in three colours, each after a badge
 COLOURED = "7fd2aa30"       # Pizza after the badges re-run: its first badge 18.66 pt, the others 32 (one badge size)
 STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted Blood", "Curse", "Cursed Inferno", "Frozen",
@@ -1959,6 +1960,34 @@ def test_a_line_typed_above_keeps_the_badge_it_starts_like(clone, parser, chart)
     assert all(pe._char_styles(layer)[1][at:at + 6])
     layer.rasterize(fonts=FontMap(dirs=[fonts_dir]))
     assert pe.gate_fx(psd, [edit], fonts_dir, None, old, parser.icons) == [] and edit.notes == []
+
+
+@pytest.mark.parametrize("how", ["join", "split"])
+def test_a_line_join_or_split_keeps_every_letters_look(clone, parser, chart, how):
+    """Spawn of the Forbidden One's first two lines joined, or its first line split at its middle space: every kept
+    letter keeps its fill, font and underline, as in Photoshop (11-15: the joined line 2 took line 1's white underlined
+    look, the split line 1 gained line 3's underline)."""
+    def looks(layer):
+        fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
+        style, out = layer.engine_dict["StyleRun"], []
+        for n, run in zip(style["RunLengthArray"], style["RunArray"]):
+            data = run["StyleSheet"]["StyleSheetData"]
+            fill = tuple(float(v) for v in data["FillColor"]["Values"]) if "FillColor" in data else None
+            out += [(fill, fonts[int(data["Font"])], bool(data.get("Underline", False)))] * int(n)
+        return out
+
+    psd = PSDImage.open(_card(clone, SPAWN)[0])
+    layer = pe.ability_layer(psd)
+    old, before = layer.text, looks(layer)
+    status = {i for s, e, _ in pe.status_spans(old, chart, pe.icon_spans(layer)) for i in range(s, e)}   # chart fills
+    line = old.index("\r")
+    at = line if how == "join" else old.index(" ", line // 2)
+    text = old[:at] + (" " if how == "join" else "\r") + old[at + 1:]
+    edit = pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart, parser=parser)
+    after = looks(layer)
+    assert layer.text == text and edit.notes == []
+    kept = [i for i in range(len(old)) if i != at and i not in status]
+    assert [before[i] for i in kept] == [after[i] for i in kept]
 
 
 def test_icon_text_follows_the_fonts_spellings(parser):

@@ -34,3 +34,13 @@ def test_added_deleted_and_moved_paragraphs_are_changes_of_their_own():
         "(1CD) Inflict 1T2 Hyper.\nStats start at 0.\n(WOF) Allies gain 1 Marked."
     moved = [(old[slice(*a)], new[slice(*b)]) for a, b, _ in ta.moves(old, new)]   # one line stays, two moved
     assert len(moved) == 2 and all(a == b for a, b in moved)
+
+
+def test_a_line_join_or_split_is_one_changed_break():
+    """Rule 5: a break made a space, or a space a break, is the one change, every letter kept (11-15: The Structure's
+    joined line 1 took line 2's font); a join that also types a word lines up by paragraphs as before."""
+    old = "+1 ATK\nAttacks inflict 5T1 Poison."
+    assert _changes(old, old.replace("\n", " ")) == [("\n", " ")]
+    assert _changes(old, old.replace(" inflict", "\rinflict")) == [(" ", "\r")]
+    assert ta.blocks(old, old.replace("\n", " "))[:-1] == [(0, 0, 6), (7, 7, 27)]
+    assert ta.break_ops(old, old.replace("\n", " and ")) is None
