@@ -212,7 +212,8 @@ def test_apostrophes_read_and_bake_straight():
 def test_typed_marks_plain_only_where_the_font_lacks_them(clone, parser, chart):
     """Owner D13 (2026-11-15): a typed \u2014 \u2013 \u2026 \u201c \u201d its font has no glyph for bakes plain (- ... "),
     never a box; one its font has stays. Morpho Knight's ability font has all but \u2013, its title's lacks \u2014;
-    PoD04 Zebra Bloon's Oetztype has none. The read-back gates compare marks as plain, the redundancy checks do not."""
+    PoD04 Zebra Bloon's Oetztype has none. The read-back gates (and idempotence's classify) compare marks as plain,
+    the redundancy checks do not."""
     fonts_dir = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_card(clone, MORPHO)[0])
     old = pe.normalize_ability(pe.ability_layer(psd).text)
@@ -229,6 +230,7 @@ def test_typed_marks_plain_only_where_the_font_lacks_them(clone, parser, chart):
     assert pe.plain_typed(layer, "ability", layer.text, layer.text + " Pop.", fonts_dir) == layer.text + " Pop."
     assert pe._part_same("a \u2014 \u201cb\u201d", 'a - "b"', None, True) and not pe._part_same("a \u2014 b", "a - b", None)
     assert pe.classify({"card": {"ability": "Hit - run."}}, {"ability": "Hit \u2014 run."}).jobs == {"ability": "Hit \u2014 run."}
+    assert pe.classify({"card": {"ability": "Hit - run."}}, {"ability": "Hit \u2014 run."}, marks=True).redundant == ["ability"]
 
 
 def test_keep_ends_puts_back_blank_first_and_last_paragraphs():
@@ -1545,6 +1547,16 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
     before = PSDImage.open(paths[0])                # no composer key: written Single-line, through every gate
     assert pe.unset_composer(before, pe.ability_layer(before)) and pe.unset_composer(after, layer) == []
+
+
+def test_a_typed_dash_its_font_lacks_bakes_plain(clone, parser, chart, tmp_path):
+    """D13 through every gate: Mini Doomer's font has no \u2013; typed, it bakes and reads back as '-', no box told
+    (the re-parse and idempotence gates take it as typed)."""
+    paths = _plain(clone, tmp_path)
+    old = pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"]
+    _, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Heal 1\u20132 HP."}, tmp_path, chart, paths=paths)
+    assert baked.reparse["card"]["ability"].endswith(" Heal 1-2 HP.")
+    assert not any("glyph" in note for edit in baked.edits for note in edit.notes)
 
 
 def test_a_plain_line_edit_draws_its_lines_only(clone, parser, chart, tmp_path, monkeypatch):
