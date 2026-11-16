@@ -683,10 +683,18 @@ def test_the_direct_hand_over(tmp_path, monkeypatch, capsys):
 # ========================
 # The warm lane
 # ========================
-def test_a_lanes_title_and_what_it_takes():
+def test_a_lanes_title_and_what_it_takes(monkeypatch):
     """The title's card is what precedes the " {" that checks (a card with " {" in it too); a cut or changed title names
-    the lane but doesn't check; fits() takes only a press named to this run, by its editor, on its commit, not done."""
+    the lane but doesn't check; fits() takes only a press named to this run, by its editor, on its commit, not done;
+    listen() ends idle or at its time, saying so."""
+    import commands.card_preview_lane as lane_mod
+    from time import time
     from commands.card_preview_lane import check_of, fits, press_of
+    api = SimpleNamespace(left=None, get=lambda path, conditional=False: (304, None, b""))
+    monkeypatch.setattr(lane_mod, "LANE_IDLE", 0.05)
+    monkeypatch.setattr(lane_mod, "POLL", 0.01)
+    assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "idle 0.05 s"
+    assert lane_mod.listen(api, 100, "ed", until=time() - 1, repository="o/r", head="h") == "the job's end is near"
     edit = '{"ability":"Deal 2 {fire} damage.","hp":7}'
     for card in ("Mini Doomer", "Odd {Card}"):
         title = f"Card preview {REQUEST} lane 100-{check_of(REQUEST, card, edit)} {card} {edit}"

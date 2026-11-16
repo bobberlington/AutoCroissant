@@ -211,11 +211,48 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
         rmtree(records, ignore_errors=True)
 
 
+def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
+    """The lane's loop: its editor's runs listed every POLL s (conditional GETs), each newer one taken (take) or the
+    lane's end (fits). Returns why it ended (press: take's keywords)."""
+    runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
+    last, failing, seen, listed = monotonic(), None, set(), []
+    while True:
+        if monotonic() - last > LANE_IDLE:
+            return f"idle {LANE_IDLE} s"
+        if time() > until:
+            return "the job's end is near"
+        try:
+            status, _, body = api.get(runs, conditional=True)
+        except (OSError, HTTPException, ValueError):
+            status = 0
+        if status in (200, 304):
+            failing = None
+        else:
+            failing = failing or monotonic()
+            if monotonic() - failing > FAILING:
+                return f"the runs list failed for {FAILING} s ({status})"
+        if status == 200:
+            listed = loads(body).get("workflow_runs", [])
+        newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen), key=lambda r: int(r["id"]))
+        if newer:
+            run = newer[0]
+            seen.add(run["id"])
+            pressed = press_of(run.get("display_title", ""))
+            why = fits(run, pressed, me, actor, press["head"]) or take(api, pressed, run, **press)
+            if why:
+                return why
+            last = monotonic()
+            if _rss() > MAX_RSS:
+                return f"peak memory {_rss() >> 20} MB"
+            continue                            # the list again at once: the others' states as of now
+        sleep(POLL_SLOW if api.left is not None and api.left < LOW else POLL)
+
+
 def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, head: str, request: str, named: str,
           until: float, code: int, limit: int) -> str:
     """
-    The lane after the first press (card_preview.main --lane): its editor's runs listed every POLL s (conditional GETs),
-    each newer one taken (take) or the lane's end (fits). Never raises; <lane>.end says why it ended.
+    The lane after the first press (card_preview.main --lane): listen() once the first press went well, was handed over
+    and is the bot's main's. Never raises; <lane>.end says why it ended.
 
     Args:
         lane: Its folder (each press's out dir in it; card_preview_branch.hand_lane watches it)
@@ -247,41 +284,10 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
         why = served_elsewhere(api, repository, named, request) or bot_moved(api, bot_repo, bot)
         if why:
             return why
-        runs = f"/repos/{repository}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
-        last, failing, seen, listed = monotonic(), None, set(), []
         _say(f"up for {clean(actor, 40)}'s next presses ({LANE_IDLE} s idle at most)")
-        while True:
-            if monotonic() - last > LANE_IDLE:
-                return f"idle {LANE_IDLE} s"
-            if time() > until:
-                return "the job's end is near"
-            try:
-                status, _, body = api.get(runs, conditional=True)
-            except (OSError, HTTPException, ValueError):
-                status = 0
-            if status in (200, 304):
-                failing = None
-            else:
-                failing = failing or monotonic()
-                if monotonic() - failing > FAILING:
-                    return f"the runs list failed for {FAILING} s ({status})"
-            if status == 200:
-                listed = loads(body).get("workflow_runs", [])
-            newer = sorted((r for r in listed if int(r.get("id") or 0) > int(me) and r["id"] not in seen), key=lambda r: int(r["id"]))
-            if newer:
-                run = newer[0]
-                seen.add(run["id"])
-                press = press_of(run.get("display_title", ""))
-                why = fits(run, press, int(me), actor, head) or take(
-                    api, press, run, bake=bake, lane=lane, clone=clone, repository=repository, head=head, kept=kept,
-                    bot_repo=bot_repo, bot=bot, limit=limit)
-                if why:
-                    return why
-                last = monotonic()
-                if _rss() > MAX_RSS:
-                    return f"peak memory {_rss() >> 20} MB"
-                continue                        # the list again at once: the others' states as of now
-            sleep(POLL_SLOW if api.left is not None and api.left < LOW else POLL)
+        why = listen(api, int(me), actor, bake=bake, lane=lane, clone=clone, repository=repository, head=head, kept=kept,
+                     bot_repo=bot_repo, bot=bot, until=until, limit=limit)
+        return why
     except Exception as error:                  # noqa: BLE001 - the lane only ends
         why = f"error: {type(error).__name__}: {clean(error, 300)}"
         return why
@@ -302,6 +308,7 @@ __all__ = [
     'bot_moved',
     'check_of',
     'fits',
+    'listen',
     'press_of',
     'serve',
     'served_elsewhere',
