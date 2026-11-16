@@ -293,12 +293,20 @@ def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):
     git("-C", str(seed), "rm", "-q", "B.psd")
     git("-C", str(seed), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "y")
     git("-C", str(seed), "push", "-q", str(origin), "main")
+    o = str(origin)                                                             # site.yml's versions job adds v/
+    put = lambda *args, data="": subprocess.run(["git", "-C", o, "-c", "user.name=t", "-c", "user.email=t@t", *args], input=data,
+                                                capture_output=True, text=True, check=True).stdout.strip()
+    copy = put("hash-object", "-w", "--stdin", data="x")
+    v = put("mktree", data=f"040000 tree {put('mktree', data=f'100644 blob {copy}\tc.avif')}\tid\n")
+    git("-C", o, "update-ref", f"refs/heads/{cp.BRANCH}", put("commit-tree", put("mktree", data=git("-C", o, "ls-tree", cp.BRANCH)
+                                                                                  + f"\n040000 tree {v}\tv\n"), "-p", cp.BRANCH, "-m", "v"))
     later = tmp_path / "later"                                                  # the next run: the branch's blobs not here
     monkeypatch.delenv("GIT_NO_LAZY_FETCH")
     git("clone", "-q", "--filter=blob:none", f"file://{origin}", str(later))
     monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
     done = cp.publish({}, str(later))
-    assert (done["added"], done["dropped"], done["kept"]) == (0, 1, 1) and files() == [f"{a}.json"]
+    assert (done["added"], done["dropped"], done["kept"]) == (0, 1, 1) and files() == [f"{a}.json", "v"]
+    assert git("-C", o, "rev-parse", f"{cp.BRANCH}:v") == v                     # kept as it was
     assert json.loads(git("-C", str(origin), "show", f"{cp.BRANCH}:{a}.json")) == plate
     assert cp.publish({a: plate}, str(later))["commit"] == ""                                   # nothing changed
     assert cp.on_branch(str(later)) == {a: git("-C", str(origin), "rev-parse", f"{cp.BRANCH}:{a}.json")}

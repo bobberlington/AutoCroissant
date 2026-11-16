@@ -716,10 +716,15 @@ def _verb(args: tuple) -> str:
 
 
 def _files(where: str, head: str) -> dict:
-    """{name: blob sha} at the branch head ({} with none)."""
+    """{name: its ls-tree entry, "<mode> <type> <sha>"} at the branch head ({} with none)."""
     if not head:
         return {}
-    return {line.split("\t", 1)[1]: line.split()[2] for line in _git(where, "ls-tree", "-z", head).split("\0") if "\t" in line}
+    return dict(line.split("\t", 1)[::-1] for line in _git(where, "ls-tree", "-z", head).split("\0") if "\t" in line)
+
+
+def _plate(name: str) -> bool:
+    """A plates file's name (<PSD blob>.json); anything else on the branch (site.yml's v/ copies) is kept as it is."""
+    return fullmatch(r"[0-9a-f]{40}\.json", name) is not None
 
 
 def psd_blobs(where: str, head: str) -> set:
@@ -749,8 +754,8 @@ def collected(paths: list) -> dict:
 
 def publish(found: dict, where: str, head: str = "HEAD") -> dict:
     """
-    One commit on the plates branch: found ({PSD blob: plates file}) added, those of PSDs not in head's tree dropped;
-    none when nothing changed. Built on the branch head, TRIES times from a moved one.
+    One commit on the plates branch: found ({PSD blob: plates file}) added, those of PSDs not in head's tree dropped,
+    other entries (site.yml's v/) kept; none when nothing changed. Built on the branch head, TRIES times from a moved one.
 
     Args:
         where: A checkout of the card repo (its git and credentials; blobless is enough: pushes without delta search)
@@ -760,7 +765,7 @@ def publish(found: dict, where: str, head: str = "HEAD") -> dict:
         {"commit" ("" for none), "added", "dropped", "kept"}; raises Unpublished when no push landed
     """
     keep = psd_blobs(where, head)
-    new = {f"{sha}.json": _git(where, "hash-object", "-w", "--stdin", stdin=dumps(plate).encode()).strip()
+    new = {f"{sha}.json": "100644 blob " + _git(where, "hash-object", "-w", "--stdin", stdin=dumps(plate).encode()).strip()
            for sha, plate in found.items() if sha in keep}
     why = ""
     for attempt in range(TRIES):
@@ -773,11 +778,12 @@ def publish(found: dict, where: str, head: str = "HEAD") -> dict:
                      f"+refs/heads/{BRANCH}:{LOCAL_REF}")
                 parent = _git(where, "rev-parse", "--verify", f"{LOCAL_REF}^{{commit}}").strip()
             old = _files(where, parent)
-            files = {**{name: sha for name, sha in old.items() if name[:-5] in keep}, **new}
-            added, dropped = sum(1 for n, s in new.items() if old.get(n) != s), len(set(old) - set(files))
+            files = {**{n: e for n, e in old.items() if not _plate(n) or n[:-5] in keep}, **new}
+            added, dropped = sum(1 for n, e in new.items() if old.get(n) != e), len(set(old) - set(files))
+            kept = sum(map(_plate, files))
             if files == old:                    # no branch yet and no plates: none made
-                return {"commit": "", "added": 0, "dropped": 0, "kept": len(files)}
-            tree = _git(where, "mktree", "--missing", stdin="".join(f"100644 blob {s}\t{n}\n" for n, s in sorted(files.items())).encode()).strip()
+                return {"commit": "", "added": 0, "dropped": 0, "kept": kept}
+            tree = _git(where, "mktree", "--missing", stdin="".join(f"{e}\t{n}\n" for n, e in sorted(files.items())).encode()).strip()
             commit = _git(where, "commit-tree", tree, *(["-p", parent] if parent else []), "-m",
                           f"Card plates: {added} added, {dropped} dropped").strip()
             _git(where, "-c", "pack.window=0", "push", "-q", "--no-thin", "origin",   # no delta search: it would want
@@ -786,7 +792,7 @@ def publish(found: dict, where: str, head: str = "HEAD") -> dict:
             why = str(error)
             print(f"card_plates: attempt {attempt + 1} of {TRIES}: {why}", file=stderr)
             continue
-        return {"commit": commit, "added": added, "dropped": dropped, "kept": len(files)}
+        return {"commit": commit, "added": added, "dropped": dropped, "kept": kept}
     raise Unpublished(f"not published after {TRIES} tries: {why}")
 
 
