@@ -1,7 +1,9 @@
 """
 The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node), one smoke test (owner
-2026-11-12): power creep. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
+2026-11-12): power creep; and a card's Balance block for an auxiliary creature (analytics.py, owner D21). Loads the site
+from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
+import importlib.util
 import json
 from subprocess import run as run_process
 
@@ -79,3 +81,21 @@ const cards = fixture(), A = analytics(cards), widths = r => [...new Set(Object.
 out({ wide: widths(render(cards, A)), narrow: widths(render(cards, A, "", { narrow: true })) });
 """)
     assert out == {"wide": [320, 560, 1000], "narrow": [320, 340, 360]}
+
+
+def test_auxiliary_creature_by_printed_stars(tmp_path):
+    """Owner D21: an auxiliary creature is compared with the creatures of its printed stars, counted only in all
+    creatures (nobody else's numbers move); its Balance line has no 'no star level' sentence."""
+    spec = importlib.util.spec_from_file_location("site_analytics", SITE / "build" / "analytics.py")
+    an = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(an)
+    card = lambda id, kind, total: {"id": id, "key": id, "type": kind, "stars": 4, "hp": total - 3, "def": 1, "atk": 1, "spd": 1}
+    plain, aux = [card(f"c{t}", "creature", t) for t in (10, 12, 14, 16, 18)], card("mett", "creatures", 20)
+    A, without = an.build(plain + [aux], {}, {}, now=1e9), an.build(plain, {}, {}, now=1e9)
+    mine = A["cards"].pop("mett")
+    assert (mine["cohort"], mine["below"], mine["above"], mine["flags"]) == ("creature|4", 5, 0, ["top"])
+    assert A["cards"] == without["cards"] and A["cohorts"]["creature|4"] == without["cohorts"]["creature|4"]
+    assert A["cohorts"]["creature|all"]["n"] == 6
+    A["cards"]["mett"] = mine
+    line = node(tmp_path, f"out(text(bal.balanceBlock({json.dumps(aux)}, {json.dumps(A)})));")
+    assert "in the top 10% of 4★ creatures: 5 of the 5 have a lower total" in line and "star level" not in line
