@@ -1,4 +1,5 @@
 """repo_history._walk on a tiny temp git repo: merge, revert, rename, incremental walks."""
+import functools
 import os
 import subprocess
 
@@ -73,7 +74,7 @@ def test_raw_url_pins_only_a_matching_blob(monkeypatch):
     assert rh.raw_url("someone/else", "Items/A b.png", "blob1").endswith("/main/Items/A%20b.png")
 
 
-def _ls_tree_walk(head, last, known):
+def _ls_tree_walk(head, last, known, tree):
     """The pre-diff-tree _walk (one ls-tree per commit): the reference the single pass must match."""
     rows = [line.split() for line in rh._git("rev-list", "--parents", "--topo-order", "--reverse",
                                              f"{last}..{head}" if last else head).splitlines()]
@@ -85,11 +86,11 @@ def _ls_tree_walk(head, last, known):
         for parent in row[1:]:
             if parent not in new and parent not in maps:
                 maps[parent] = {path: known[path] if path in known and known[path][0] == blob else (blob, parent)
-                                for path, blob in rh._tree(parent).items()}
+                                for path, blob in tree(parent).items()}
     for commit, *parents in rows:
         olds = [maps[p] for p in parents]
         maps[commit] = {path: next(((blob, old[path][1]) for old in olds if path in old and old[path][0] == blob),
-                                   (blob, commit)) for path, blob in rh._tree(commit).items()}
+                                   (blob, commit)) for path, blob in tree(commit).items()}
     return maps[head]
 
 
@@ -130,9 +131,10 @@ def test_single_pass_matches_ls_tree_walk(repo, tmp_path, monkeypatch):
                    check=True, capture_output=True, env=ENV)
     monkeypatch.setattr(rh, "HISTORY_CLONE", str(clone))
     monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
-    full = {c: _ls_tree_walk(c, "", {}) for c in commits}
+    tree = functools.cache(rh._tree)                                                   # a commit's tree never changes
+    full = {c: _ls_tree_walk(c, "", {}, tree) for c in commits}
     for i, head in enumerate(commits):
         assert rh._walk(head, "", {}) == full[head]
         for last in commits[:i]:
             if rh._is_ancestor(last, head):
-                assert rh._walk(head, last, full[last]) == _ls_tree_walk(head, last, full[last]) == full[head]
+                assert rh._walk(head, last, full[last]) == _ls_tree_walk(head, last, full[last], tree) == full[head]
