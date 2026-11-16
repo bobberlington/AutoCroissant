@@ -593,7 +593,7 @@ def hand(out: str, token: str, results: str, limit: float = HAND_WAIT, name: str
             print(f"card_preview_branch: {clean(error, 300)}: once more", file=stderr)
             done = _rpc(api, token, "FinalizeArtifact", body)
         end = monotonic()
-        print(f"Handed over {name} {len(data)} bytes (artifact {clean(done.get('artifact_id', '?'), 40)}): created "
+        print(f"Handed over {ids['name']} {len(data)} bytes (artifact {clean(done.get('artifact_id', '?'), 40)}): created "
               f"{created - started:.3f} s after start; result.json seen {seen_at} UTC, put {put - seen:.3f} s on, "
               f"finalized {end - put:.3f} s later ({_utc()} UTC).", file=stderr)
         return "ok"
