@@ -967,7 +967,8 @@ def test_lane3_star_layouts(clone, parser, tmp_path):
 def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
     """Magnet-shroom's star carries smart filters: its copy gets its own FEid item (the source's planes, its rectangle
     moved with the copy, named after the copy's placed ID, in file order) and is marked not valid at its new place, as
-    Photoshop writes one; gate_filters refuses an FEid change no edit declares."""
+    Photoshop writes one; gate_filters refuses an FEid change no edit declares. Back to one star, the copy and its
+    item go (D14)."""
     rel = "N.M.E/Magnet-shroom.psd"
     paths = _clone_card(clone, rel, tmp_path)
     parsed, baked = _bake(parser, paths, {"stars": 2}, tmp_path, rel)
@@ -982,6 +983,11 @@ def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
     assert not copy.smart_object.filters[b"validAtPosition"].value
     with pytest.raises(pe.Refused, match="no smart-filtered layer moved or copied"):
         pe.gate_filters(old, new, [pe.Edit("stars", 1, 2, [], [], None)])
+    (tmp_path / "back").mkdir()                 # D14: back to 1, the copy goes with its FEid item
+    _, back = _bake(parser, (baked.psd_path, baked.png_path), {"stars": 1}, tmp_path / "back", rel)
+    assert back.icons == {"stars": "the card maker's own layout"}
+    assert [pe._item_bytes(item) for item in pe._filter_block(PSDImage.open(back.psd_path))] == \
+        [pe._item_bytes(item) for item in pe._filter_block(old)]
 
 
 def _touching(plan) -> list:
