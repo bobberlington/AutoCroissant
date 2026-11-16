@@ -272,10 +272,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    gets a new id; any item `owner.json` `read_only` lists shows the owner's answer, not asked.
    `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores nothing; a typed card
    is its id or a name only one card has; listed and skipped, never an error: an answer whose item left the page at a
-   rebuild, one now read only, and, from an older page's export, one whose choice now offers another value), keeps
-   them in `derived/review/rulings.json` with the file's source (owner > triage > triage guess: a lower one never
-   replaces a higher; a field so given is method 'owner' or 'triage'), reruns the facts when a line was given a card,
-   the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
+   rebuild, one now read only, and, from an older page's export (its `page`, or `--page` for a file made without
+   one), one carrying a value the item no longer offers), keeps them in `derived/review/rulings.json` with the file's
+   source (owner > triage > triage guess: a lower one never replaces or clears a higher; a field so given is method
+   'owner' or 'triage', an item card's kinds stripped from given types as from read ones), reruns the facts when a
+   line was given a card, the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
    item left the page shows as taken in (in `ruled.json`) or as not applied (its item changed: answer it again). A git

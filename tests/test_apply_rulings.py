@@ -228,6 +228,7 @@ def test_the_photo_created_dates_show_read_only_and_no_paper_items(tmp_path):
     asked = tr.created_item(inputs, {**made, "read_only": False})             # no ruling: asked as before
     assert [c["c"] for c in asked["choices"]] == ["ours", "file"] and not asked["read_only"]
     assert load().parse("date", "before 2020", {}) == "Before 2020"
+    assert load().parse("types", '["Machine", "equip"]', {}) == ["equip", "machine"]   # a JSON-like list typed
 
 
 def test_a_rebuild_s_settled_answers_skip_and_the_owner_s_win(tmp_path):

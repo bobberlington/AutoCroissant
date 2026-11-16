@@ -441,6 +441,15 @@ def test_a_picture_s_id_keeps_its_card_and_the_triage_s_method():
         found, split = chain.discord_rows()
         t = chain.card("bolt", found["bolt"], split.get("bolt", []))
         assert t["entries"][0]["fields"]["name"] == dc.sure("Bolt", method, ruled=field)
+    got = inputs([picture(1, T)], text)                       # an item's kinds given in an answer: not collected
+    got.cards["bolt"]["type"] = "item"
+    kinds = {dc.review_id("field", f"bolt|D-P-000000000001|types"): {"choice": "value", "value": ["equip", "fire"]},
+             dc.review_id("field", f"bolt|D-P-000000000001|stars"): {"choice": "value", "value": 2}}
+    got.rulings = kinds
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    fields = chain.card("bolt", found["bolt"], split.get("bolt", []))["entries"][0]["fields"]
+    assert fields["types"]["value"] == ["fire"] and fields["stars"]["value"] == 2
 
 
 def test_facts_by_a_step_and_by_the_pictures_around_them():

@@ -2,7 +2,7 @@
 """
 The owner's answers on the card timelines' review page (commands/timeline_review.py), applied. By hand:
 
-    python scripts/apply_rulings.py <export.json> [--root <archive>] [--cards-repo <dir>] [--no-build]
+    python scripts/apply_rulings.py <export.json> [--root <archive>] [--cards-repo <dir>] [--no-build] [--page <built>]
     python scripts/apply_rulings.py --list [--root <archive>]
 
 <export.json> is the page's "Export answers" file. Every answer is checked against the page's items
@@ -11,9 +11,10 @@ card has; stats as hp/def/atk/spd, hp/def where the item's stats have only those
 types, a date YYYY-MM-DD or "Before 2020"; a git look is its first version's key; a 'yes' carries the value, day or
 card it confirms); one error stores nothing. Listed and skipped, never an error: an answer whose item a rebuild
 settled or dropped since (an id the page showed before, derived/review/ids.json: an owner's ruling, a stop that
-moved), one on an item now read only (the owner's answer), and, from an export of an older page, one whose choice
-the item now offers with another value (answer it again). An answer the same as the one stored is kept as is, even
-when its item no longer offers it (the page marks it not applied).
+moved), one on an item now read only (the owner's answer), and, from an export of an older page (its "page", or
+--page for a file made without one: the page's build time), one carrying a value the item no longer offers (another
+value now, or none: answer it again). An answer the same as the one stored is kept as is, even when its item no
+longer offers it (the page marks it not applied).
 The file's "source" (the triage's files: 'triage ...'; else the owner) is kept with each answer: an owner's answer is
 never replaced by the triage's, nor the triage's by its guesses (owner > triage > triage guess); otherwise a later
 answer of an id wins; "clear" withdraws one. Good answers go into derived/review/rulings.json, then the timelines are
@@ -27,7 +28,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from json import dumps, load
 from os.path import abspath, dirname, join
-from re import findall, fullmatch
+from re import findall, fullmatch, sub
 from typing import Optional
 
 sys.path.insert(0, dirname(dirname(abspath(__file__))))         # AutoCroissant, for commands.*
@@ -107,8 +108,8 @@ def parse(kind: str, text, cards: dict, shape: str = None):
         return int(text)
     if kind == "stats":
         return stats(text, shape)
-    if kind == "types":
-        return sorted({t.strip().lower() for t in text.split(",") if t.strip()})
+    if kind == "types":                                         # 'a, b' (a JSON-like '["a", "b"]' too)
+        return sorted({t.strip().lower() for t in sub(r"[\[\]\"']", "", text).split(",") if t.strip()})
     return text                                                 # a name or an ability
 
 
@@ -164,8 +165,9 @@ def check(answers: dict, items: dict, stored: dict, cards: dict, issued: dict = 
             except ValueError as e:
                 errors.append(f"{rid}: {e}")
                 continue
-        elif older and value is not None and any(x["c"] == c and "value" in x for x in it.get("choices") or []):
-            skipped.append((rid, f"{c!r} now offers another value than {value!r} (answer it again)"))
+        elif older and value is not None:        # the page offered it then: another value now, or none
+            again = any(x["c"] == c for x in it.get("choices") or [])
+            skipped.append((rid, f"{c!r} now offers {'another value' if again else 'nothing'} (answer it again)"))
             continue
         else:
             errors.append(f"{rid}: {c!r} with {value!r} is not an answer this item takes")
@@ -174,7 +176,7 @@ def check(answers: dict, items: dict, stored: dict, cards: dict, issued: dict = 
     return good, clear, errors, skipped
 
 
-def apply(export: dict, root: str, cards_repo: str = None, build: bool = True, log=print) -> int:
+def apply(export: dict, root: str, cards_repo: str = None, build: bool = True, log=print, made_on: str = None) -> int:
     root = dm.check_root(root)
     if export.get("format") != tr.FORMAT:
         log(f"not a review page export (format {export.get('format')!r}, want {tr.FORMAT!r})")
@@ -186,7 +188,8 @@ def apply(export: dict, root: str, cards_repo: str = None, build: bool = True, l
     stored = store.get("rulings") or {}
     issued = (dm.read_json(join(root, *tr.ISSUED), {}) or {}).get("ids") or {}
     source = str(export.get("source") or OWNER)
-    older = bool(export.get("page")) and export.get("page") != page.get("built")
+    made_on = export.get("page") or made_on                     # the page the answers were given on
+    older = bool(made_on) and made_on != page.get("built")
     good, clear, errors, skipped = check(export.get("rulings") or {}, items, stored, page.get("cards") or {}, issued,
                                          source, older)
     if errors:
@@ -236,6 +239,7 @@ def main(argv=None) -> int:
     parser.add_argument("--cards-repo", default=None)
     parser.add_argument("--no-build", action="store_true", help="store the answers only")
     parser.add_argument("--list", action="store_true", help="the answers stored so far")
+    parser.add_argument("--page", default=None, help="the page's build time a file without 'page' was made on")
     args = parser.parse_args(argv)
     if args.list:
         stored = (dm.read_json(join(dm.check_root(args.root), *tr.RULINGS), {}) or {}).get("rulings") or {}
@@ -246,7 +250,7 @@ def main(argv=None) -> int:
         parser.error("give the exported answers file (or --list)")
     with open(args.export, encoding="utf-8") as f:
         export = load(f)
-    return apply(export, args.root, args.cards_repo, not args.no_build)
+    return apply(export, args.root, args.cards_repo, not args.no_build, made_on=args.page)
 
 
 if __name__ == "__main__":

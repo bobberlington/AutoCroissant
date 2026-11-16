@@ -1577,6 +1577,7 @@ class Chain:
         self.star_guard(entries)
         self.star_fact_guard(entries)
         self.owner_fields(cid, entries)                  # a star the guards took to review, answered
+        self.no_kinds(cid, entries)                      # an answer's types lose an item's kinds too
         entries = self.check_facts(cid, entries)
         self.diff(entries, card.get("type"))
         self.field_reviews(cid, entries)
