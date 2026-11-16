@@ -86,6 +86,7 @@ def channels(monkeypatch):
     monkeypatch.setattr(main.client, "get_channel", lambda cid: found.get(cid))
     main._lanes.clear()
     main._lane_tasks.clear()
+    main._sending[0] = True                             # a stopped dispatch loop leaves it False
     return found
 
 
