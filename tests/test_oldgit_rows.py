@@ -447,7 +447,7 @@ def test_a_png_with_no_psd_text_takes_the_text_readers_and_its_header(rows):
     data.psd_firsts = {}
     read = lambda text, conf: {"era": "D2", "src": "old", "id": "o:x", "ability_fix": {"text": text, "minconf": conf,
                                                                                       "odd": 0}, "ability_raw": {"text": text}}
-    data.text_raw = {"g1": read("Deal 3 damage.", 1.0), "g2": read("Deal 4 damoge.", 0.5)}
+    data.text_raw = {"g1": read("Deal 3 damage", 1.0), "g2": read("Deal 4 damoge.", 0.5)}
     data.text_cal = {"D2/old": {"ability": {"how": {"variant": "fix"}, "bar": 1.0}}}
     data.header = {"g1": {"types": ["light"], "sure": True, "version": "bv", "ncc": 0.97},
                    "g2": {"types": ["dark"], "sure": False, "version": "bw", "ncc": 0.5}}

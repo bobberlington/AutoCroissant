@@ -1127,11 +1127,13 @@ def text_ability(data: Data, blob: str, known) -> dict:
     if not rd:
         return None
     tt = text_readers()
-    words = {tuple(tt.ability_words(k)) for k in known if k}
+    from difflib import SequenceMatcher
     for variant in ("icons", "fix", "raw"):
         text = (tt.ability_variant(rd, variant) or {}).get("text")
-        if text and tuple(tt.ability_words(text)) in words:
-            return {**field(text, "ocr+known", True, "a known text of the card"), "conf": 1.0}
+        same = [k for k in known if k and text and tt.ability_words(k) == tt.ability_words(text)]
+        if same:                                   # the card's own text, as written (the OCR's words, its form)
+            best = max(same, key=lambda k: (SequenceMatcher(None, k, text).ratio(), k))
+            return {**field(best, "ocr+known", True, "a known text of the card"), "conf": 1.0, "ocr": text}
     how, bar = data.text_bar(rd.get("era"), "ability")
     if how is None:
         return None
