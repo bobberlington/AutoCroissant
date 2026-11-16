@@ -280,6 +280,17 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
     assert "refused" not in card and card["siteOnly"] == ["name", "hp"]
 
 
+def test_a_shrunk_ability_reaches_the_mock_up(bs):
+    """r16: a bake's ability_fit (card_bake.FIT) on the tree's PSD is the card's abilityFit (the mock-up grows it back);
+    another PSD's, or one out of range, nothing."""
+    import commands.card_bake as cb
+    verdict = {"state": "baked", "psd": "abcd1234", "reason": "ability", cb.FIT: 0.8836}
+    for psd, fit, want in (("abcd1234ff", 0.8836, 0.8836), ("99999999aa", 0.8836, None), ("abcd1234ff", 0.1, None)):
+        card = {"key": "Mini_Doomer", "name": "Mini Doomer", "problems": []}
+        bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.FIT: fit}})}, psd_sha=psd, shown="Mini Doomer")
+        assert card.get("abilityFit") == want
+
+
 def test_parser_notes_answered_as_the_bot_does(bs):
     """build_site's FIXED_BY and FIXED_BY_ALL are card_edits': NO STATS FOUND stays until all four stats or creatures are
     edited, so a card with a stat still unread keeps its note (B3, 2026-10-26)."""
