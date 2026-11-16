@@ -2080,16 +2080,19 @@ def main(argv):
                                      "calibrate"))
     ap.add_argument("-j", "--workers", type=int, default=2)
     ap.add_argument("--only", choices=("discord", "old", "today"), action="append")
+    ap.add_argument("--ids", help="a file of input ids (o:<blob>, d:<sha>): ocr and read only these")
     a = ap.parse_args(argv)
     os.makedirs(join(OUT, "tmp"), exist_ok=True)
     which = tuple(a.only or ("discord", "old", "today"))
+    ids = set(open(a.ids).read().split()) if a.ids else None
     if a.step == "icons":
         build_icons()
     elif a.step == "ocr":
         ocr_bin()
-        run_pool(ocr_task, all_inputs(which), a.workers, join(OUT, "ocr.jsonl"), "ocr")
+        run_pool(ocr_task, [i for i in all_inputs(which) if ids is None or i["id"] in ids], a.workers,
+                 join(OUT, "ocr.jsonl"), "ocr")
     elif a.step == "read":
-        run_reads(which, a.workers)
+        run_reads(which, a.workers, ids=ids)
     elif a.step == "stars":
         run_reads(which, a.workers, join(OUT, "stars.jsonl"), task=star_task)
     elif a.step == "edges":
