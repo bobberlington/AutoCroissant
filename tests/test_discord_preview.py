@@ -233,6 +233,33 @@ def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
     assert not keys(marks) & BAD_KEYS and "line" not in keys(marks)
 
 
+def test_morgue_entries_show_their_old_and_first_repo_versions():
+    """An MDW Morgue card's old repo rows (archived, by its name), a lost old-repo card's rows (they take the place of
+    its old-repo picture) and the first repo's files linked to a candidate (picture rows) join its _morgue timeline:
+    date, author, subject, badge and only sure fields; no link, poster or commit."""
+    row = lambda rid, ts, blob, repo="old", **kw: {"id": rid, "ts": ts, "blob": blob, "repo": repo, "author": "Croissant",
+                                                    "subject": "cards", "commit": "c" * 40, "path": "X.png", **kw}
+    sure = {"name": {"value": "Clock", "method": "psd", "confidence": "sure"},
+            "stars": {"value": 9, "method": "folder", "confidence": "review"}}
+    old = {"card": {"clock": [row("b", 1.7e9, "b" * 40, fields=sure), row("a", 1.6e9, "a" * 40, minor=True)]},
+           "lost": {"Battery": [row("c", 1.69e9, "c" * 40, fields=sure)]},
+           "first": {"Book1": [row("d", 1.66e9, "d" * 40, repo="first", fields={})]}}
+    mdw = {"id": "LC-9", "name": "Clock", "card": "Clock", "pictures": []}
+    out, jobs = dp.morgue_out(mdw, {}, "mdw", rows=dp.entry_rows(mdw, "mdw", old))
+    assert [(e["id"], e["badge"], e["minor"]) for e in out["entries"]] == [("O-a", "old repo", True),
+                                                                           ("O-b", "old repo", False)]
+    assert out["entries"][1]["fields"] == {"name": {"value": "Clock", "method": "psd", "confidence": "sure"}}
+    assert jobs[1] == ("O-bbbbbbbbbbbb.webp", ("blob", "b" * 40, None))
+    lost = {"id": "OL-1", "name": "The Battery", "old_repo": {"old_id": "Battery"}, "first_files": ["Book1"],
+            "pictures": [{"id": "OL-1", "source": "old repo", "thumb": "thumbs/OL-1.webp", "date": "2023-09-12"},
+                         {"id": "P-1", "source": "discord", "thumb": "thumbs/P-1.webp", "date": "2020-01-01T00:00:00+00:00",
+                          "channel": "port"}]}
+    out, jobs = dp.morgue_out(lost, {}, "candidate", rows=dp.entry_rows(lost, "candidate", old))
+    assert [(e["id"], e.get("repo")) for e in out["entries"]] == [("P-1", None), ("O-d", "first"), ("O-c", None)]
+    assert out["entries"][1]["badge"] == "first repo" and not keys(out["entries"]) & BAD_KEYS
+    assert "commit" not in keys(out["entries"]) and "path" not in keys(out["entries"])
+
+
 def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
     """discord_preview check keeps each read in check.partial.jsonl as it goes: --redo reads only what is left, and
     the partial file goes once check.jsonl is written."""

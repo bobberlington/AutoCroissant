@@ -64,6 +64,9 @@ EYE = ("derived", "preview", "eye.json")     # the check's eye rulings: {"drop":
 VERDICTS = ("derived", "match", "verdicts.jsonl")
 TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' own OCR (printed_name)
 OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> today's (an MDW card's first old record)
+OLD_ROWS = ("derived", "oldrows")             # archived.jsonl (MDW Morgue cards' rows), review.jsonl (lost, morgue)
+OLD_VERSIONS = ("derived", "oldgit", "versions.jsonl")       # a first-repo file's versions (Morgue picture rows)
+AUTHORS = join(expanduser("~"), "Documents/Tools/wt/scratch/s1110/timelines/authors.json")   # old commits' authors
 MDW_FOLDER = "MDW/The Morgue/"
 BEFORE_GIT = ("discord", "text")                             # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
@@ -289,12 +292,71 @@ def morgue_marks(facts: list, entry: dict) -> list:
     return out
 
 
-def morgue_out(entry: dict, files: dict, kind: str, facts: list = ()) -> tuple:
-    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions and its changelog marks,
-    oldest first; its first (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the
-    repo that had its file."""
+def morgue_rows(root: str) -> dict:
+    """The old and first repos' versions of Morgue entries: {"card": {MDW card (alnum): rows}} (oldrows archived.jsonl,
+    review.jsonl 'morgue'), {"lost": {old id: rows}} (review.jsonl 'lost': the old repo's lost cards), {"first": {old
+    id: picture rows}} (a first-repo file's PNG versions, one per blob: date, mapped author, subject; no fields)."""
+    out = {"card": defaultdict(list), "lost": {}, "first": defaultdict(list)}
+    for r in dm.read_jsonl(join(root, *OLD_ROWS, "archived.jsonl")):
+        out["card"][dm.alnum(r.get("card"))].append(r)
+    for item in dm.read_jsonl(join(root, *OLD_ROWS, "review.jsonl")):
+        if item.get("kind") == "morgue":
+            out["card"][dm.alnum(item.get("card"))] += item.get("rows") or []
+        elif item.get("kind") == "lost":
+            out["lost"][item.get("old_id")] = item.get("rows") or []
+    authors = {k: v for k, v in (dm.read_json(AUTHORS, {}) or {}).items() if not k.startswith("_")}
+    seen = set()
+    for v in dm.read_jsonl(join(root, *OLD_VERSIONS)):
+        if v.get("repo") == "first" and v.get("ext") == "png" and (v["old_id"], v["blob"]) not in seen:
+            seen.add((v["old_id"], v["blob"]))
+            out["first"][v["old_id"]].append({
+                "id": v["id"], "ts": v["ts"], "date": v["date"], "repo": "first", "blob": v["blob"], "path": v["path"],
+                "author": v.get("author_mapped") or authors.get(v.get("author"), v.get("author")),
+                "subject": v.get("subject"), "fields": {}, "minor": False})
+    return out
+
+
+def entry_rows(entry: dict, kind: str, old: dict) -> list:
+    """A Morgue entry's old and first repo rows, oldest first: an MDW card's own (by its name), a lost old-repo
+    card's (old_repo), the first repo's files linked to it (first_files); one row a picture."""
+    if kind == "mdw":
+        rows = old["card"].get(dm.alnum(entry.get("card") or entry["name"])) or []
+    else:
+        rows = list(old["lost"].get((entry.get("old_repo") or {}).get("old_id")) or [])
+        for f in entry.get("first_files") or ():
+            rows += old["first"].get(f) or []
+    found = {}
+    for r in sorted(rows, key=lambda r: (r["ts"], r["id"])):
+        found.setdefault(r["id"], r)
+    return list(found.values())
+
+
+def row_entry(r: dict) -> tuple:
+    """(an old or first repo row as a Morgue timeline's entry, its webp name and job)."""
+    name = f"O-{r['blob'][:12]}.webp"
+    job = ("file", r["thumb"], None) if r.get("psd_only") else ("blob", r["blob"], None)
+    e = {"id": "O-" + r["id"], "kind": "old repo", "date": dm.iso(r["ts"]), "day": dc.day(r["ts"]),
+         "badge": BADGE["first repo" if r.get("repo") == "first" else "old repo"], "author": r.get("author"),
+         "subject": r.get("subject"), "image": name, "fields": published(r.get("fields")), "changes": {},
+         "minor": bool(r.get("minor"))}
+    if r.get("repo") == "first":
+        e["repo"] = "first"
+    return e, (name, job)
+
+
+def morgue_out(entry: dict, files: dict, kind: str, facts: list = (), rows: list = ()) -> tuple:
+    """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, its old and first repo
+    rows (entry_rows; they take the place of its old-repo picture) and its changelog marks, oldest first; its first
+    (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the repo that had its
+    file."""
     entries, jobs = [], []
+    for r in rows:
+        e, job = row_entry(r)
+        entries.append(e)
+        jobs.append(job)
     for p in entry.get("pictures") or ():
+        if p.get("source") == "old repo" and rows:
+            continue                               # its rows show the old repo's file
         if p.get("source") == "old repo":
             source = ("thumb", p["thumb"], None)
             kind_of = "old repo"
@@ -455,6 +517,15 @@ def mdw_firsts(root: str, cards_repo: Optional[str], commits: list) -> dict:
     for key, rows in lineage(commits, {dm.alnum(splitext(basename(p))[0]): p for p in pngs}).items():
         out[key] = min(rows[-1][0], out.get(key, rows[-1][0]))
     return out
+
+
+def mdw_names(cards_repo: Optional[str]) -> list:
+    """The MDW Morgue cards' names: each PSD in MDW/The Morgue with its PNG (build_site's morgue_cards)."""
+    listed = dm.git_out(dm.git_dir_of(cards_repo), "ls-tree", "--name-only", "-z", f"origin/{CARD_BRANCH}",
+                        MDW_FOLDER) if cards_repo else None
+    paths = set((listed or b"").decode("utf-8", "replace").split("\0"))
+    return [splitext(basename(p))[0].replace("_", " ") for p in sorted(paths)
+            if p.lower().endswith(".psd") and p[:-4] + ".png" in paths]
 
 
 def mdw_cut(entry: dict, first: Optional[float]) -> list:
@@ -633,12 +704,20 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
                              (dm.read_json(join(root, *RULINGS), {}) or {}).get("rulings") or {})
     facts = [f for f in dm.read_jsonl(join(root, *FACTS)) if str(f.get("card") or "").startswith("morgue:")]
     firsts, mdw_gone = mdw_firsts(root, expanduser(cards_repo) if cards_repo else None, commits), {}
+    old_rows = morgue_rows(root)
+    have = {dm.alnum(e.get("card") or e["name"]) for e, kind in entries if kind == "mdw"}
+    for name in mdw_names(expanduser(cards_repo) if cards_repo and commits else None):
+        if dm.alnum(name) not in have and old_rows["card"].get(dm.alnum(name)):   # an MDW card with no Discord picture
+            entries.append(({"id": f"MDW-{dm.slugify(name)}", "name": name, "card": name, "pictures": [],
+                             "first": {}}, "mdw"))
     for entry, kind in entries:
         if kind == "mdw":
             gone = mdw_cut(entry, firsts.get(dm.alnum(entry.get("card") or entry["name"])))
             if gone:
                 mdw_gone[entry.get("card") or entry["name"]] = len(gone)
-        out, pics = morgue_out(entry, files, kind, facts)
+        mine = entry_rows(entry, kind, old_rows)
+        out, pics = morgue_out(entry, files, kind, facts, mine)
+        counts["morgue old repo"] += len(mine)
         if not any(e["kind"] in PICTURE_KINDS for e in out["entries"]):
             continue
         folder = f"{MORGUE_FOLDER}/{out['card']}"
@@ -647,6 +726,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
             want[folder].add(image)
             if src_kind == "thumb":
                 jobs.append((join(out_dir, folder, image), "file", join(root, *MORGUE_DIR, source), None))
+            elif src_kind == "file" and not source.startswith("/"):   # an old row's PSD composite: oldgit's thumb
+                jobs.append((join(out_dir, folder, image), "file", join(root, "derived", source), None))
             else:
                 jobs.append((join(out_dir, folder, image), src_kind, source, box))
         dm.write_json(join(out_dir, folder, "timeline.json"), out)
