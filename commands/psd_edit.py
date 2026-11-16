@@ -105,6 +105,8 @@ TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colo
 GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo
 LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
+PLAIN_MARKS = {"\u2014": "-", "\u2013": "-", "\u2026": "...", "\u201c": '"', "\u201d": '"'}   # typed: plain where its
+#   font has no glyph for it (owner D13, 2026-11-15)
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
@@ -746,6 +748,7 @@ def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel
     layer, path, _, inner, title = found
     old_text, old_box = title.text, tuple(layer.bbox)
     text = keep_ends(old_text, straight(text).replace("\r\n", "\n").rstrip("\n").replace("\n", "\r"))
+    text = plain_typed(title, None, old_text, text, fonts_dir)
     fonts = font_map(fonts_dir)
     try:
         before = capture(title, fonts)
@@ -2125,6 +2128,25 @@ def changed_range(old: str, new: str) -> tuple:
     while suffix < min(len(old), len(new)) - prefix and old[len(old) - 1 - suffix] == new[len(new) - 1 - suffix]:
         suffix += 1
     return prefix, len(new) - suffix
+
+
+def _edit_range(old: str, new: str, widen: bool = False) -> tuple:
+    """
+    The span [start, end) of new that set_text_layer edits: changed_range within new, a deletion's the window that
+    keeps the kept characters' runs (deletion_start); widen (an ability with a status chart): to whole words, a
+    deletion only into a word it cut (Gasoline's kept "If" after a deleted line took its colour).
+    """
+    start, end = changed_range(old, new)
+    end = min(end, len(new))
+    start = min(start, end)                     # identical text: the engine's range sits past the end
+    if start == end:
+        start = end = deletion_start(old, new, start)
+    if widen:
+        cut = old[start:start + len(old) - len(new)] if start == end else ""
+        lo, hi = _word_bounds(new, start, end)
+        start = start if cut and not LETTER.match(cut[0]) else lo
+        end = end if cut and not LETTER.match(cut[-1]) else hi
+    return start, end
 
 
 def deletion_start(old: str, new: str, at: int) -> int:
@@ -4994,6 +5016,61 @@ def no_glyph(layer, text: str, changed: list, fonts) -> list:
             and text[glyph.cluster - offset] not in " \t\r\x03"]
 
 
+def plain_marks(text: str) -> str:
+    """text with every PLAIN_MARKS mark plain: how the read-back gates compare."""
+    for mark, plain in PLAIN_MARKS.items():
+        text = text.replace(mark, plain)
+    return text
+
+
+def _run_fonts(layer) -> list:
+    """The PostScript name of each str index's run, the final \\r's too."""
+    out = [""] * (len(layer.text) + 1)
+    for paragraph in layer.typesetting:
+        for run in paragraph.runs:
+            for i in range(max(run.start, 0), min(run.end, len(out))):
+                out[i] = run.style.font_name
+    return out
+
+
+def _lacks(fonts, font: str, mark: str) -> bool:
+    """Whether the face font resolves to (a stand-in too) has no glyph for mark in its cmap."""
+    from psd_tools.composite.text import MissingFontError
+    try:
+        face = fonts.resolve(font).face
+    except MissingFontError:
+        return False
+    return face is not None and face.hb.get_nominal_glyph(ord(mark)) is None
+
+
+def plain_typed(layer, which: Optional[str], old_text: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> str:
+    """
+    text with each typed PLAIN_MARKS mark its font has no glyph for made plain, else kept (owner D13, 2026-11-15: no
+    box). Its font: the engine's (set_text keep="runs": a replacement takes the first character it replaces, an
+    insertion the run before it), the icon font's taking what edit_styles (which "ability") or title_styles ("name")
+    sets there, as set_text_layer does. Text with no typed mark is returned as it is.
+    """
+    start, end = _edit_range(old_text, text, which == "ability" and bool(chart))
+    if not any(c in PLAIN_MARKS for c in text[start:end]):
+        return text
+    parts, likes = edit_parts(old_text, text, start, end), []
+    runs, fonts, out = _run_fonts(layer), font_map(fonts_dir), list(text)
+    for a0, a1, b0, b1, kept in parts:
+        font = runs[min(a0 if a1 > a0 or a0 == 0 else a0 - 1, len(runs) - 1)]
+        for i in range(b0, b1) if not kept else ():
+            if text[i] not in PLAIN_MARKS:
+                continue
+            face = font
+            if face.lower().startswith(ICON_FONT_PREFIX):     # set in the letters' style after (the last one wins)
+                likes = likes or (edit_styles(layer, parts, chart, text_moves(old_text, text)) if which == "ability"
+                                  else title_styles(layer, parts) if which == "name" else [])
+                face = next((like["Font"] for s, e, _, like in reversed(likes) if s <= i < e and like
+                             and like.get("Font")), face)
+            if _lacks(fonts, face, text[i]):
+                out[i] = PLAIN_MARKS[text[i]]
+    return "".join(out)
+
+
 def _ink_box(psd: PSDImage, layer, before: np.ndarray, pad: int = 0) -> Optional[tuple]:
     """
     The canvas box (x0, y0, x1, y1) holding all of the layer's pixels and before's ink past INK_ALPHA, padded by pad
@@ -5655,7 +5732,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     typed or kept, takes the icon font's Stylistic Alternates (set_alternates; owner 2026-10-25). Told too: another typed
     badge or token under the Ability's overlay (any opacity) or blending (Pin Light) (_tinted), a [type] token
     on a card with image icons in its gaps (image_icons), letters the icon font draws plainly (typed, or left by
-    deleting: "(GCD)"), a typed character its font has no glyph for (no_glyph: a box), a timing badge typed in a title
+    deleting: "(GCD)"), a typed character its font has no glyph for (no_glyph: a box; a dash, ellipsis or curly double
+    quote is set plain first: plain_typed, owner D13), a timing badge typed in a title
     (plain words, as the website shows it). Typed badges and tokens are unstretched (unstretch). An icon character
     typed ("★") is set in the icon font as a token. An FX layer in no chart status's style (Fire Staff's Smoldering
     stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that an FX layer's words have no pixels.
@@ -5678,11 +5756,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     text = projected if projected is not None else keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
-    start, end = changed_range(old_text, text)
-    end = min(end, len(text))
-    start = min(start, end)                     # identical text: the engine's range sits past the end
-    if start == end:                            # a deletion: the window that keeps the kept characters' runs
-        start = end = deletion_start(old_text, text, start)
+    text = plain_typed(layer, which, old_text, text, fonts_dir, chart)     # no box for a typed dash (owner D13)
+    start, end = _edit_range(old_text, text)
     words, styled, old_fx, plans, targets, kept, engine = [], [], [], [], [], [], None
     vocab, faces = getattr(parser, "icons", None), []
     icons_too = which == "ability" or vocab is not None     # a title's tokens only with the vocabulary (owner 2026-10-24)
@@ -5712,10 +5787,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             odd = [fx.name for fx in old_fx if not fx_kind(fx, layer, chart)]
             if odd:
                 raise Refused("unsupported-card", f"FX layers that are no pixel layers: {', '.join(odd)}; edit in Photoshop")
-            cut = old_text[start:start + len(old_text) - len(text)] if start == end else ""
-            lo, hi = _word_bounds(text, start, end)     # a deletion widens only into a word it cut (Gasoline's kept "If"
-            start = start if cut and not LETTER.match(cut[0]) else lo           # after a deleted line took its colour)
-            end = end if cut and not LETTER.match(cut[-1]) else hi
+            start, end = _edit_range(old_text, text, True)
             words = status_word_spans(text, chart, drawn)
             styled = [span for span in words if span[2].styled]
             plans = plan_fx(layer, old_fx, chart)
@@ -10517,9 +10589,10 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                 kinds = [AUX_ITEM_TYPES[t] for t in (canonical_type(parser, t) for t in value) if t in AUX_ITEM_TYPES]
                 expected["subtype"] = got.get("subtype") if got.get("subtype") in kinds else (kinds or [None])[0]
         elif name == "ability":                 # a typed token as the parser reads it in the icon font ([Fire] -> [fire]);
-            expected["ability"], got["ability"] = (normalize_ability(canonical_tokens(text, parser.icons, chars))
+            expected["ability"], got["ability"] = (normalize_ability(plain_marks(canonical_tokens(text, parser.icons, chars)
+                                                                                 or ""))
                                                    for text, chars in ((value, True), (got.get("ability"), False)))
-            #   a "★" the parser reads as typed is not in the icon font: no [star]
+            #   a "★" the parser reads as typed is not in the icon font: no [star]; marks as plain (plain_typed)
         elif name == "name":                    # the new title is read back below
             expected.pop("display_name", None)
             got.pop("display_name", None)
@@ -10556,7 +10629,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
     title = read_name(psd, _card_name(parsed), getattr(parser, "linked", None), rel) if "name" in jobs else None
-    if "name" in jobs and straight(title) != straight(collapse(jobs["name"])):
+    if "name" in jobs and plain_marks(straight(title)) != plain_marks(straight(collapse(jobs["name"]))):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
 
@@ -10603,7 +10676,7 @@ def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDIm
         if layer is None:
             raise Refused("reparse", f"{part['layer']!r} is gone: no edit deleted it")
         reads, want = part_text(parser, layer), job["text"] if job else part["text"]
-        if not _part_same(reads, want, vocab):
+        if not _part_same(reads, want, vocab, True):
             raise Refused("reparse", f"{part['layer']!r} reads {reads[:60]!r}, not {want[:60]!r}")
         if job and field_name == "name":
             notes += _gate_icons(new, layer, old, was.get(layer.layer_id), font_map(fonts_dir), vocab, "title")
@@ -10615,7 +10688,7 @@ def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDIm
         if len(new) != 1:
             raise Refused("reparse", f"{len(new)} added Ability layers read as the ability")
         reads, want = part_text(parser, index[int(new[0][0])]), jobs[ADD_ABILITY]["text"]
-        if not _part_same(reads, want, vocab):
+        if not _part_same(reads, want, vocab, True):
             raise Refused("reparse", f"the added Ability reads {reads[:60]!r}, not {want[:60]!r}")
         came.remove(new[0])
     came = [part["layer"] for _, part in came]
@@ -11437,12 +11510,14 @@ def record_parts(record: dict) -> dict:
     return {str(part["id"]): (field_name, kind, part) for kind, field_name in PART_KINDS for part in record.get(kind) or []}
 
 
-def _part_same(a: Optional[str], b: Optional[str], vocab) -> bool:
+def _part_same(a: Optional[str], b: Optional[str], vocab, marks: bool = False) -> bool:
     """Two part texts read alike: tokens canonical ([Fire] is [fire]), layer_text's whitespace rule (a part keeps its
-    quotes and a space before punctuation: normalize_ability's stripping made "Lifesteal ." -> "Lifesteal." redundant)."""
+    quotes and a space before punctuation: normalize_ability's stripping made "Lifesteal ." -> "Lifesteal." redundant);
+    marks: PLAIN_MARKS as plain (a read-back: the bake may have made them so)."""
     def key(text: Optional[str]) -> str:
         text = canonical_tokens(text, vocab) or ""
         text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x03", "\n").replace("\t", " ")
+        text = plain_marks(text) if marks else text
         return straight(text).replace("\ufeff", "").strip(" \n")
     return key(a) == key(b)
 
