@@ -458,3 +458,6 @@ def test_a_png_with_no_psd_text_takes_the_text_readers_and_its_header(rows):
     assert (b["ability"]["value"], b["ability"]["confidence"]) == ("Deal 4 damoge.", "review")
     assert (a["types"]["value"], a["types"]["method"], a["types"]["confidence"]) == (["light"], "git header", "sure")
     assert b["types"]["confidence"] == "review"
+    data.text_raw["g1"] = read("Deal +3 damage.", 1.0)                           # its words, printed otherwise
+    got = rows.card_rows(data, "Pix", ["Pix"], {"names": {"Pix"}, "type": "creature", "ability": "Deal 3 damage."})
+    assert (got[0]["fields"]["ability"]["value"], got[0]["fields"]["ability"]["confidence"]) == ("Deal +3 damage.", "review")
