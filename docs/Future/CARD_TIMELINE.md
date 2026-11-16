@@ -66,9 +66,14 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    readers' read of the PNG, `timeline_text read-ability`: sure when it prints one of the card's own texts, today's or
    its PSDs' (its words and their form: a '+3' for '3' or a misread bracket goes to review), method 'ocr+known' with
    that text as written, or at its era's stored bar, never fitted again, else proposed for review; a git look's
-   Discord picture takes an answer given on its row's item or on its own;
-   its types, with no PSD, a git version's when its header matches that version's, `header_types rows` on D1-D3 as
-   for Discord pictures, else proposed).
+   Discord picture takes an answer given on its row's item or on its own, and an answer typed off the picture keeps
+   its form over a known text of the same words (text_key); a field its row has none of is the picture's own sure read;
+   its types, with no PSD, by eye (`derived/readers/types/eye_rows.json`, by PNG blob: the eras A-C, items and fields
+   read off zoomed headers with each era's icon bank; an item's kind icons are no type), else a git version's when
+   its header matches that version's, `header_types rows` on D1-D3 as for Discord pictures, else proposed; a name
+   sure only as the file name its PSD's composite carries goes to review when another version of the same file
+   prints a longer title holding it (the title layers unread: Satou's 'Satou Matsuzaka'), and an empty ability is
+   never sure with no OCR of the picture).
    Its rows carry the badge "first repo" (owner Q5, 11-14: picture rows, no text-only rows; its push notices in
    github-updates are evidence only: Created hints); each card's timeline stops at its first first-repo record.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
@@ -112,7 +117,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
 2. **Match** (`commands/discord_match.py`, restored 2026-11-13): each picture to a card by perceptual hashes of the card and
    its art against every version (`refs`: today's cards from the data branch, every git version of their PNGs in
    TTSCardMaker's history and the old pre-wipe repo's versions from `derived/oldgit`, else TTSCardMaker's alone), OCR'd title
-   (macOS Vision), OCR'd text against the ability, file name, chat text and aliases; sheets cut into cells. Each card's chain
+   (macOS Vision), OCR'd text against the ability, file name, chat text and aliases; sheets cut into cells (ties in
+   name ratio or candidate score go by card id, never by a set's hash order: a rerun gives the same cards). Each card's chain
    stops at its first git record (the old repo's, else TTSCardMaker's). The morgue channels (meme, joke and scrapped cards)
    feed lost-card candidates (`lost.json`), never live cards, as do card-shaped posts naming no card. Outputs under the
    archive's `derived/matcher/`. Then `commands/discord_verdicts.py` gives each picture (a sheet's cells each) one
