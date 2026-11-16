@@ -2273,7 +2273,7 @@ def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
 
 
 def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
-             template: Optional[tuple] = None, chart: Optional[dict] = None, caps=...) -> Classification:
+             template: Optional[tuple] = None, chart: Optional[dict] = None, caps=..., marks: bool = False) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is website only; on a layer-comp bar, up to its top comp (comp_top). `creatures` bakes on a bar per creature (_classify_creatures). Stars and types are jobs when the card's
@@ -2287,13 +2287,15 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         parser: offline_parser(): its icon vocabulary reads a types edit (types compare in any order and spelling)
         template: template_icon() of the card's template: where a card with no type icon takes its first one
         caps: stat_caps(psd) when the caller has read it (bar_changes: once for all its values); ... reads it here
+        marks: PLAIN_MARKS compare as plain (gate_idempotence: the bake may have set them so)
 
     Returns:
         Classification
     """
     card = parsed["card"]
     out = Classification()
-    derived = _classify_parts(out, parsed, edits, psd, parser)
+    derived = _classify_parts(out, parsed, edits, psd, parser, marks)
+    fold = plain_marks if marks else (lambda text: text)
     if caps is ...:
         asked = psd is not None and any(edits.get(k) is not None for k in (*STAT_FIELDS, "creatures"))
         caps = stat_caps(psd) if asked else None
@@ -2344,13 +2346,13 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.jobs[name] = value
         elif name == "ability":                 # [Fire] for [fire] prints the same icon: redundant
             vocab = getattr(parser, "icons", None)
-            was, now = (normalize_ability(canonical_tokens(text, vocab)) for text in (card.get("ability"), value))
+            was, now = (normalize_ability(fold(canonical_tokens(text, vocab))) for text in (card.get("ability"), value))
             if was == now:
                 out.redundant.append(name)
             else:
                 out.jobs[name] = value
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
-            if straight(shown_name(parsed)) == straight(collapse(value)):
+            if fold(straight(shown_name(parsed))) == fold(straight(collapse(value))):
                 out.redundant.append(name)
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
@@ -2449,7 +2451,7 @@ def _classify_creatures(out: Classification, card: dict, wanted: list, stats: di
 
 
 def _classify_parts(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage],
-                    parser: Optional[PSDParser]) -> set:
+                    parser: Optional[PSDParser], marks: bool = False) -> set:
     """
     classify()'s `parts` (§4.3): plan_parts' jobs as the "parts" job, its impossible cases as refusals. The plain
     name or ability of a field the parts hold is derived (shown until the bake), never baked on its own.
@@ -2464,7 +2466,7 @@ def _classify_parts(out: Classification, parsed: dict, edits: dict, psd: Optiona
     if psd is None:
         out.refusals.append(Refusal("unsupported-card", "parts: no PSD to find the layers in"))
         return derived
-    plan = plan_parts(psd, parsed, parts, parser)
+    plan = plan_parts(psd, parsed, parts, parser, marks=marks)
     out.parts = plan
     out.refusals += plan.refusals
     if plan.jobs:
@@ -11054,7 +11056,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     Returns:
         {field: region measurement}
     """
-    again = classify(new_parsed, jobs, psd, parser, chart=chart)
+    again = classify(new_parsed, jobs, psd, parser, chart=chart, marks=True)
     left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
     if left:
         raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(PARTIAL_FIELDS) else None)
@@ -11522,7 +11524,8 @@ def _part_same(a: Optional[str], b: Optional[str], vocab, marks: bool = False) -
     return key(a) == key(b)
 
 
-def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None) -> PartsPlan:
+def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None,
+               marks: bool = False) -> PartsPlan:
     """
     Sort a card's `parts` edits against the PSD (§4.3): a gone layer, one no longer a part of its field, or one whose raw
     text changed since the edit (sha) is skipped and flagged ("redo it on the website"), unless it already reads the
@@ -11535,6 +11538,7 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
         parts: The entry's `parts`
         parser: offline_parser()
         record: card_parts() of psd (computed when None)
+        marks: PLAIN_MARKS read as plain (classify's)
 
     Returns:
         PartsPlan
@@ -11569,11 +11573,11 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
             continue
         now = hit[2]["text"]
         if raw_sha(layer) != edit["sha"]:       # Photoshop's work stands
-            if not edit.get("delete") and _part_same(now, edit["text"], vocab):
+            if not edit.get("delete") and _part_same(now, edit["text"], vocab, marks):
                 plan.outcome[key] = "redundant"
             else:
                 skip(key, edit, CHANGED, now)
-        elif not edit.get("delete") and _part_same(now, edit["text"], vocab):
+        elif not edit.get("delete") and _part_same(now, edit["text"], vocab, marks):
             plan.outcome[key] = "redundant"
         else:
             plan.jobs[key] = edit
