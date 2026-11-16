@@ -457,7 +457,7 @@ def star_value(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser
         edit = psd_edit.set_icons(new, psd_edit.plan_stars(new, parsed, value, parser, split=True), None,
                                   target)
         first = psd_edit.gate_dirty(psd, new, [edit], icon=True)
-        if not (edit.layers or edit.removed):
+        if not (edit.layers or edit.removed or edit.icons.removed):   # an undo may only delete (D14)
             return None
         base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
         render = psd_edit.render_region(new, edit.region, icc, measured["text"], psd_edit.edited_ids([edit]))
