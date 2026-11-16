@@ -216,3 +216,22 @@ def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
     rows = pc.check(str(tmp_path), workers=1, redo=True)
     assert len(calls) == 4 and calls[3] == calls[2] and [r["card"] for r in rows] == ["a", "b", "c"]
     assert (out / "check.jsonl").exists() and not (out / "check.partial.jsonl").exists()
+
+
+def test_a_type_list_the_eye_gave_goes_to_the_eye(tmp_path, monkeypatch):
+    """A types list from the eye reference that reads the same is listed for the eye (a left-out icon is never read);
+    a PSD's stays 'same'; a differing one stays 'differs'."""
+    from concurrent.futures import ThreadPoolExecutor
+    import commands.discord_preview_check as pc
+    (tmp_path / "derived" / "preview").mkdir(parents=True)
+    jobs = [{"card": c, "id": "D-1", "image": "P-1.webp", "kind": "discord", "fields": {"types": ["light"]},
+             "types_method": m} for c, m in (("gk", "eye header"), ("psd", "psd"), ("pix", "eye"))]
+    seen = {"gk": "same", "psd": "same", "pix": "differs"}
+    monkeypatch.setattr(pc, "jobs_of", lambda root: jobs)
+    monkeypatch.setattr(pc, "check_one", lambda j: {**{k: j[k] for k in ("card", "id", "image")},
+                                                     "fields": {"types": {"r": seen[j["card"]], "read": {}}}})
+    monkeypatch.setattr(pc, "ProcessPoolExecutor", ThreadPoolExecutor)
+    monkeypatch.setattr(pc.dm, "check_root", lambda root: root)
+    rows = pc.check(str(tmp_path), workers=1)
+    assert [r["fields"]["types"]["r"] for r in rows] == ["eye", "same", "differs"]
+    assert "  gk D-1 P-1.webp ['light']" in (tmp_path / "derived" / "preview" / "check.txt").read_text()

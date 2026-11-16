@@ -10,7 +10,9 @@ the era's readers). Per field:
   near      ability words between ABILITY_NEAR and ABILITY_RECALL
   unread    the reader read nothing there (a field the readers can't see on this picture)
   eye       types published as none: an absent icon can't be read again (a recoloured one, Nailsage Sly's wind, matches
-            no Types/ picture, while some picture scores TYPE_ON on every card's band): each listed for the eye
+            no Types/ picture, while some picture scores TYPE_ON on every card's band): each listed for the eye; so is
+            a list the eye gave (method 'eye...': the A-C types eye reference or its header copies) that reads the
+            same or nothing: an icon it left out is never read (19 of 421 left one out, s3-srcfix3)
   differs   anything else: listed for the eye (check.txt names each)
 -> derived/preview/check.jsonl (one row per version: its fields' results and reads) and check.txt (counts, the
 differing ones). Nothing is changed: a field the eye rules wrong is fixed upstream (the chain) and the preview rebuilt.
@@ -170,8 +172,18 @@ def jobs_of(root: str) -> list:
             jobs.append({"card": cid, "id": e["id"], "image": e["image"], "path": join(hist, row["dir"], e["image"]),
                          "era": era, "star_rule": rule, "kind": e["kind"],
                          "fields": {k: v["value"] for k, v in e["fields"].items()},
+                         "types_method": str((e["fields"].get("types") or {}).get("method") or ""),
                          "half": 1 if str((e["fields"].get("stats") or {}).get("half", "")).startswith("bottom") else 0})
     return jobs
+
+
+def by_eye(r: dict, job: dict) -> dict:
+    """A types list the eye gave that read the same or nothing goes to the eye (as none does): a left-out icon is never
+    read. Applied to every row, kept or read now."""
+    t = (r.get("fields") or {}).get("types")
+    if t and t["r"] in ("same", "unread") and job.get("types_method", "").startswith("eye") and job["fields"].get("types"):
+        r = {**r, "fields": {**r["fields"], "types": {**t, "r": "eye", "by_eye": True}}}
+    return r
 
 
 def check(root: str, workers: int = 3, redo: bool = False):
@@ -211,7 +223,7 @@ def check(root: str, workers: int = 3, redo: bool = False):
     rows = []
     for i, job in enumerate(jobs):
         r = kept.get(i) or done[(job["card"], job["id"], job["image"])]
-        r = {**r, "fields": {k: v for k, v in r.get("fields", {}).items() if k in job["fields"]}}
+        r = by_eye({**r, "fields": {k: v for k, v in r.get("fields", {}).items() if k in job["fields"]}}, job)
         rows.append({**r, "kind": job["kind"], "published": job["fields"],
                      **({"half": job["half"]} if job.get("half") else {})})
     with open(join(out, "check.jsonl"), "w") as fh:
@@ -234,8 +246,9 @@ def check(root: str, workers: int = 3, redo: bool = False):
                 pub = json.dumps(r["published"].get(f), ensure_ascii=False)[:120]
                 lines.append(f"  {r['card']} {r['id']} {r['image']} {f}: {pub} -> "
                              f"{json.dumps({k: v[k] for k in v if k != 'r'}, ensure_ascii=False)[:160]}")
-    lines += ["", "EYE (types published as none: each for the eye; card, version, image)"]
-    lines += [f"  {r['card']} {r['id']} {r['image']}" for r in rows if (r.get("fields", {}).get("types") or {}).get("r") == "eye"]
+    lines += ["", "EYE (types published as none or given by the eye: each for the eye; card, version, image[, types])"]
+    lines += [f"  {r['card']} {r['id']} {r['image']}" + (f" {r['published']['types']}" if r['published'].get('types') else "")
+              for r in rows if (r.get("fields", {}).get("types") or {}).get("r") == "eye"]
     dm.write_text(join(out, "check.txt"), "\n".join(lines) + "\n")
     print("\n".join(lines[:2 + len(fields)]), flush=True)
     return rows
