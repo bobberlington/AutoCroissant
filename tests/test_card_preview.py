@@ -593,6 +593,77 @@ def test_the_take_over(tmp_path, monkeypatch, capsys):
     assert not (tmp_path / "q").exists()
 
 
+def test_the_direct_hand_over(tmp_path, monkeypatch, capsys):
+    """--hand: CreateArtifact before result.json as upload-artifact v7's (proto names, the token's backend ids), then
+    HANDED's files zipped, put without the token and finalized with the size and sha256 --take takes; hand.done ok.
+    A finalize failing twice: fail; a preview that ended with no result: none. The token never printed."""
+    import base64
+    import io
+    from hashlib import sha256
+    claims = base64.urlsafe_b64encode(json.dumps({"scp": "Actions.GenericRead:1 Actions.Results:run-1:job-2"}).encode())
+    token = f"h.{claims.decode().rstrip('=')}.sig"
+    out = tmp_path / "preview"
+    out.mkdir()
+    sent, finalize = [], []
+
+    class Connection:
+        def __init__(self, host, timeout=None):
+            self.host = host
+
+        def connect(self):
+            pass
+
+        def request(self, method, path, body=None, headers=None):
+            sent.append((self.host, method, path, headers, body, (out / br.RESULT).exists()))
+
+        def getresponse(self):
+            host, method, path, *_ = sent[-1]
+            status, body = ((201, b"") if host == "blob.example" else
+                            (200, {"ok": True, "signed_upload_url": "https://blob.example/c/a.zip?sv=1&sig=s"}) if path.endswith("CreateArtifact") else
+                            finalize.pop(0) if finalize else (200, {"ok": True, "artifact_id": "9"}))
+            return SimpleNamespace(status=status, read=lambda: body if isinstance(body, bytes) else json.dumps(body).encode(),
+                                   getheader=lambda name, default=None: default)
+
+        def close(self):
+            pass
+
+    def preview_writes(seconds):                    # the bake ends while the hand-over waits
+        (out / br.SMALL).write_bytes(b"avif")
+        (out / br.RESULT).write_text('{"state": "baked"}')
+    monkeypatch.setattr(br, "HTTPSConnection", Connection)
+    monkeypatch.setattr(br, "sleep", preview_writes)
+    monkeypatch.setattr(br, "stdin", io.StringIO(f"{token}\nhttps://results.example/\n"))
+    assert br.main(["--hand", str(out)]) == 0 and (tmp_path / br.HAND_DONE).read_text() == "ok\n"
+    (create, put, done) = sent
+    assert [(s[0], s[1], s[5]) for s in sent] == [("results.example", "POST", False), ("blob.example", "PUT", True), ("results.example", "POST", True)]
+    body = json.loads(create[4])
+    assert {k: body[k] for k in ("workflow_run_backend_id", "workflow_job_run_backend_id", "name", "version", "mime_type")} == {
+        "workflow_run_backend_id": "run-1", "workflow_job_run_backend_id": "job-2", "name": br.ARTIFACT, "version": 7, "mime_type": "application/zip"}
+    assert create[3]["Authorization"] == f"Bearer {token}" and "Authorization" not in put[3] and put[3]["x-ms-blob-type"] == "BlockBlob"
+    assert put[2] == "/c/a.zip?sv=1&sig=s" and json.loads(done[4])["size"] == str(len(put[4]))
+    digest = json.loads(done[4])["hash"]
+    assert digest == "sha256:" + sha256(put[4]).hexdigest() and token not in capsys.readouterr().err
+
+    running = {"jobs": [{"name": "preview", "status": "in_progress", "steps": []}]}     # --take takes that zip
+    _fake_github(monkeypatch, [(1, '"e"')], running, put[4], digest[7:])
+    assert br.take_over(str(tmp_path / "taken"), "o/r", "5", "tok") == "taken"
+    assert sorted(f.name for f in (tmp_path / "taken").iterdir()) == [br.SMALL, br.RESULT]
+
+    monkeypatch.setattr(br, "HTTPSConnection", Connection)
+    for failing, ended, state in (([(500, {"msg": "busy"})] * 2, False, "fail"), ([], True, "none")):
+        sent.clear()
+        finalize[:] = failing
+        for f in out.iterdir():
+            f.unlink()
+        if ended:
+            (tmp_path / "preview.code").write_text("1\n")
+        monkeypatch.setattr(br, "sleep", (lambda s: None) if ended else preview_writes)
+        monkeypatch.setattr(br, "stdin", io.StringIO(f"{token}\nhttps://results.example/\n"))
+        assert br.main(["--hand", str(out)]) == 0 and (tmp_path / br.HAND_DONE).read_text() == f"{state}\n"
+        assert [s[1] for s in sent] == (["POST"] if ended else ["POST", "PUT", "POST", "POST"])
+    assert token not in capsys.readouterr().err
+
+
 # ========================
 # card-preview.yml
 # ========================
@@ -615,8 +686,8 @@ def _expand(value: str, inputs: dict, workspace: Path) -> str:
 def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: Path, name: str) -> dict:
     """
     The workflow's two jobs as the runner runs them (bash -e -o pipefail; each job its own workspace, RUNNER_TEMP, env and
-    outputs). The preview job: Validate, Reads, Start, Go (the fonts already in) and Preview, then the
-    hand-over when its `if` holds (a copy of its listed files that exist, as upload-artifact with if-no-files-found:
+    outputs). The preview job: Validate, Reads, Start, Go (the fonts already in) and Preview, then Handed (Hand never
+    ran) and the hand-over when its `if` holds (a copy of its listed files that exist, as upload-artifact with if-no-files-found:
     ignore). The publish
     job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish (its
     `python -S`: this Python without site-packages). Returns {step: exit code, None when skipped}.
@@ -653,8 +724,11 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     for step_name in ("Validate", "Reads", "Start", "Go", "Preview"):
         skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
+    if "Handed" in steps["preview"] and codes["Validate"] == 0:     # Hand (a JavaScript action) never ran: not ok
+        assert run_step("preview", steps["preview"]["Handed"], runner) == 0
     hand = steps["preview"]["Hand over"]
-    assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}"
+    assert hand["if"] in ("${{ !cancelled() && steps.validate.outcome == 'success' }}",
+                          "${{ !cancelled() && steps.validate.outcome == 'success' && steps.handed.outputs.done != 'ok' }}")
     found = [Path(f.strip().replace("${{ runner.temp }}", str(runner))) for f in hand["with"]["path"].strip().splitlines()] if codes["Validate"] == 0 else []
     for path in [f for f in found if f.is_file()]:
         artifact.mkdir(parents=True, exist_ok=True)
