@@ -91,7 +91,9 @@ def archive(root: Path) -> None:
            for c, name in (("a", "Old Brick"), ("b", "The Battery"))]
     for c in "ab":
         Image.new("RGB", (320, 480), (200, 10, 10)).save(root / f"derived/oldgit/thumbs/{c}.webp")
-    (root / "derived/oldgit/lost.json").write_text(json.dumps({"cards": old}))
+    book1 = {"old_id": "Book1", "name": "Book1", "paths": ["Auxillary/Items/2 Stars/Book1.png"], "thumb": "thumbs/b.webp",
+             "first": {"commit": "c0", "date": "2022-08-24T04:49:36-07:00"}}       # the first repo's file of Book One
+    (root / "derived/oldgit/lost.json").write_text(json.dumps({"cards": old, "first_repo": [book1]}))
     cards = {"fang": {"name": "Fang"}, "zero-two": {"name": "Zero Two"}, "electro-probe": {"name": "Electro Probe"}}
     (root / "derived/matcher/match/pairs.json").write_text(json.dumps({"cards": cards, "versions": [],
                                                                         "images": images}))
@@ -106,7 +108,8 @@ def archive(root: Path) -> None:
         dv.group_id(sha(12)): {"status": "candidate", "kind": "joke", "name": "Fang Prank", "not_twin": [p(sha(13))]},
         dv.group_id(sha(4)): {"add": [p(sha(21))]},       # MDW Developper's PNG, unsure for fang
         MURU: {"status": "candidate", "kind": "played", "name": "M'uru", "add": [p(sha(24))]},   # 24: its photo (no row)
-        p(sha(14)): {"status": "candidate", "kind": "played", "name": "Book One"},     # a lost card found by kin
+        p(sha(14)): {"status": "candidate", "kind": "played", "name": "Book One",     # a lost card found by kin,
+                     "first_files": ["Book1", "Book9"]},                                # its first-repo file by eye
         "not_kin": {p(sha(15)): "a meme"}}
     (root / "derived/morgue/eye.json").write_text(json.dumps(eye))
 
@@ -133,6 +136,8 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
     assert found[book]["made"] and found[book]["kind"] == "played" and found[book]["title_read"] == "Book One" and \
         found[book]["played"] == [{"channel": "port", "date": "2020-08-14"}] and found[book]["card_evidence"] == \
         "stat labels"
+    assert found[book]["first_files"] == ["Book1"] and found[book]["first_repo"]["paths"] == [   # Book9: no such file
+        "Auxillary/Items/2 Stars/Book1.png"]
     assert counts["kin"] == 6 and counts["kin_open"] == [dv.picture_id(sha(n)) for n in (16, 19, 22, 23, 25)]
     # 15 ruled not kin; 17 titled as a live card; 20 a played channel's with no card evidence; 22 MDW Star Nova's
     # art (another look); 23 the same picture as the Developper entry's; 25 titled like Star Nova
