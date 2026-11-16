@@ -50,6 +50,7 @@ TEXT_RAW = (join(DERIVED, "readers", "text", "raw.jsonl"),       # the text read
             join(DERIVED, "readers", "text", "raw_ability.jsonl"))   # and their ability-alone reads (read-ability)
 TEXT_CAL = join(DERIVED, "readers", "text", "calibration.json")  # their eras' bars (never fitted here)
 HEADER_ROWS = join(DERIVED, "readers", "types", "header_rows.jsonl")   # header_types rows: types by a git header
+TYPES_EYE = join(DERIVED, "readers", "types", "eye_rows.json")  # rows with no PSD: types by eye (by PNG blob)
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
@@ -505,6 +506,7 @@ class Data:
                          if str(r.get("id", "")).startswith("o:") and not r.get("error")}
         self.text_cal = json.load(open(TEXT_CAL)).get("eras") or {} if exists(TEXT_CAL) else {}
         self.header = {r["blob"]: r for r in oi.read_jsonl(HEADER_ROWS)} if exists(HEADER_ROWS) else {}
+        self.eye_types = json.load(open(TYPES_EYE)).get("items") or {} if exists(TYPES_EYE) else {}
         self.type_names = set(json.load(open(join(oi.OUT, "vocabulary.json")))["types"])
         self.vocab = set()                                     # card words: every ability's (old PSDs, today's)
         for r in list(self.psd.values()) + list(self.rereads.values()):
@@ -891,7 +893,12 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
         fields["ability"] = check_ability(read, ocr.get("lines") or [], kind, same_look, data.vocab, today.get("ability"))
         if fields["ability"]["method"] == "none" or read is None:     # no PSD text: the text readers' read
             fields["ability"] = text_ability(data, png["blob"], today.get("known") or ()) or fields["ability"]
-    got = data.header.get(png["blob"]) if read is None else None
+        if not ocr and fields["ability"].get("value") == "" and fields["ability"]["confidence"] == "sure":
+            fields["ability"] = field("", "psd", False, why="no OCR of the picture to tell it prints none")
+    eye = data.eye_types.get(png["blob"]) if read is None else None
+    got = data.header.get(png["blob"]) if read is None and eye is None else None
+    if eye is not None:                                        # no PSD: its header by eye
+        fields["types"] = field(list(eye["types"]), "eye", True, "header by eye")
     if got:                                                    # no PSD: its header against a git version's
         fields["types"] = field(sorted(got["types"]), "git header", got["sure"], f"{got['version']} ncc {got['ncc']}",
                                 "" if got["sure"] else "its header under the bar, or near a version with other types")
@@ -1301,6 +1308,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
         if two:
             row["two_creatures"], row["creatures"] = True, two
         rows.append(row)
+    title_stand_in(rows)
     confirm_stars(rows, today)                                 # before the fold: it moves stars' confidence
     run = 0
     for prev, row in zip([None] + rows, rows):
@@ -1316,6 +1324,25 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
             run += row["ability_change"] in ("changed", "unknown")
         row["text_run"] = run                                  # one text, formatting aside: its last form, dated by its first
     return rows
+
+
+def title_stand_in(rows: list) -> None:
+    """A name sure only as the file name its PSD's composite carries ('composite, file name': no OCR read agreed)
+    while another version of the same file prints a longer title holding it: the PSD's title layers were not read and
+    the file name stood in (Satou 2023-09-10 prints 'Satou Matsuzaka' on two lines) -> review, that title proposed."""
+    titles = defaultdict(set)
+    for r in rows:
+        f = r["fields"].get("name") or {}
+        if f.get("method") == "psd" and f.get("value"):
+            titles[r["path"]].add(f["value"])
+    for r in rows:
+        f = r["fields"].get("name") or {}
+        if f.get("check") != "composite, file name":
+            continue
+        longer = sorted(t for t in titles[r["path"]] if norm(f["value"]) in norm(t) and norm(t) != norm(f["value"]))
+        if longer:
+            r["fields"]["name"] = field(longer[0], "psd", False, why=f"the file name '{f['value']}' stood in for a "
+                                        f"title its PSD's layers don't hold; the file's other versions print it")
 
 
 def psd_rows(data: Data, key, old_id: str, today: dict, ids: list, base: list) -> list:

@@ -126,7 +126,7 @@ class FakeData:
         self.authors, self.png, self._ocr = {"Michael": "MichaelJSr"}, {}, ocr
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
         self.eye_bars, self.eye_bars2, self.era_reads, self.look_reads = {}, {}, {}, {}
-        self.text_raw, self.text_cal, self.header = {}, {}, {}
+        self.text_raw, self.text_cal, self.header, self.eye_types = {}, {}, {}, {}
 
     def text_bar(self, era, name):
         return rows_module().Data.text_bar(self, era, name)
@@ -461,3 +461,19 @@ def test_a_png_with_no_psd_text_takes_the_text_readers_and_its_header(rows):
     data.text_raw["g1"] = read("Deal +3 damage.", 1.0)                           # its words, printed otherwise
     got = rows.card_rows(data, "Pix", ["Pix"], {"names": {"Pix"}, "type": "creature", "ability": "Deal 3 damage."})
     assert (got[0]["fields"]["ability"]["value"], got[0]["fields"]["ability"]["confidence"]) == ("Deal +3 damage.", "review")
+    data.eye_types = {"g2": {"types": ["dark", "fire"]}}                           # its header by eye: over the reader
+    got = rows.card_rows(data, "Pix", ["Pix"], {"names": {"Pix"}, "type": "creature", "ability": "Deal 3 damage."})
+    t = got[1]["fields"]["types"]
+    assert (t["value"], t["method"], t["confidence"]) == (["dark", "fire"], "eye", "sure")
+
+
+def test_a_file_name_standing_in_for_an_unread_title_is_no_sure_name(rows):
+    """'composite, file name' makes a name sure only as the PSD's title: when the same file's other versions print a
+    longer title holding it (Satou: 'Satou Matsuzaka' on two lines), the title layers were not read -> review."""
+    sure = lambda v, check: {"value": v, "method": "psd", "confidence": "sure", "check": check}
+    got = [{"path": "C/Satou.png", "fields": {"name": rows.field("Satou Matsuzaka", "psd", False, why="x")}},
+           {"path": "C/Satou.png", "fields": {"name": sure("Satou", "composite, file name")}},
+           {"path": "C/Other.png", "fields": {"name": sure("Other", "composite, file name")}}]
+    rows.title_stand_in(got)
+    assert (got[1]["fields"]["name"]["value"], got[1]["fields"]["name"]["confidence"]) == ("Satou Matsuzaka", "review")
+    assert got[2]["fields"]["name"]["confidence"] == "sure"
