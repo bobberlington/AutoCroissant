@@ -856,7 +856,9 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
     ocr_title = " ".join(t for t, *_ in ocr.get("title") or [])
     read, how = read_of(data, psd, ocr_title, png["path"]) if psd else (None, "no psd")
     kind = (read or {}).get("type") or kind_of(png["path"])
-    if kind == "unused" and today.get("type"):
+    if kind == "unknown":                                      # a PSD out of every kind's folder (Items/Freeze_Spell.psd)
+        kind = kind_of(png["path"])
+    if kind in ("unused", "unknown") and today.get("type"):
         kind = today["type"]                                   # a status card kept in Unused then
     same_look = off is not None and off <= SAME_PICTURE
     fields = {}
