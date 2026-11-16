@@ -63,8 +63,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    its own sure era read contradicts is not used, as a one-cell bar change keeps the hash; a creature's HP 0 read off
    a picture is never sure; an old repo PNG with no PSD stats is sure by its two readers only when its era read is
    sure and the same on every stat: static-noise bars fool all three; its ability, with no PSD text, is the text
-   readers' read of the PNG, `timeline_text read-ability`: sure when its words are one of the card's own texts,
-   today's or its PSDs', method 'ocr+known', or at its era's stored bar, never fitted again, else proposed for review;
+   readers' read of the PNG, `timeline_text read-ability`: sure when it prints one of the card's own texts, today's or
+   its PSDs' (its words and their form: a '+3' for '3' or a misread bracket goes to review), method 'ocr+known' with
+   that text as written, or at its era's stored bar, never fitted again, else proposed for review; a git look's
+   Discord picture takes an answer given on its row's item or on its own;
    its types, with no PSD, a git version's when its header matches that version's, `header_types rows` on D1-D3 as
    for Discord pictures, else proposed).
    Its rows carry the badge "first repo" (owner Q5, 11-14: picture rows, no text-only rows; its push notices in
