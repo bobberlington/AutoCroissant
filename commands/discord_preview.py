@@ -259,7 +259,7 @@ def created_proposals(created: dict) -> dict:
 
 def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
     """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, oldest first; its first
-    (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day)."""
+    (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the repo that had its file."""
     entries, jobs = [], []
     for p in entry.get("pictures") or ():
         if p.get("source") == "old repo":
@@ -285,6 +285,9 @@ def morgue_out(entry: dict, files: dict, kind: str) -> tuple:
            "entries": entries}
     if entry.get("kind"):
         out["kind_of"] = entry["kind"]             # joke | played
+    git = "old repo" if entry.get("old_repo") else "first repo" if entry.get("first_repo") else None
+    if git:
+        out["git_file"] = git                      # a file in an older repo: lost before this repo, not before git
     return out, jobs
 
 

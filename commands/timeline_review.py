@@ -563,8 +563,20 @@ def morgue_list(root: str) -> Optional[dict]:
 
 
 def place(x: dict) -> str:
-    """'#channel', else '(source)'."""
-    return f"#{x['channel']}" if x.get("channel") else f"({x.get('source')})" if x.get("source") else ""
+    """'#channel', else '(source)' (the old repo is a source, never a channel)."""
+    if x.get("channel") and x["channel"] != "old repo":
+        return f"#{x['channel']}"
+    source = x.get("source") or x.get("channel")
+    return f"({source})" if source else ""
+
+
+def nearest_text(e: dict) -> str:
+    """'nearest live card: X (n bits | by eye)', or ''."""
+    n = e.get("nearest") or {}
+    if not n:
+        return ""
+    how = f"{n['bits']} bits" if n.get("bits") is not None else f"by {n['by']}" if n.get("by") else ""
+    return f"nearest live card: {n.get('name')}" + (f" ({how})" if how else "")
 
 
 def morgue_items(inputs: Inputs) -> list:
@@ -576,9 +588,7 @@ def morgue_items(inputs: Inputs) -> list:
                       entry=e["id"], date=first.get("date"), now=now)
             it["meta"] = [f"{e.get('status')}{(' (' + e['kind'] + ')') if e.get('kind') else ''}; first "
                           f"{first.get('day') or when(first.get('date'))} {place(first)}",
-                          "; ".join(e.get("why") or []),
-                          f"nearest live card: {(e.get('nearest') or {}).get('name')} "
-                          f"({(e.get('nearest') or {}).get('bits')} bits)" if e.get("nearest") else ""]
+                          "; ".join(e.get("why") or []), nearest_text(e)]
             it["pics"] = [pic("../morgue/" + p["thumb"], f"{when(p.get('date'))} {place(p)}")
                           for p in (e.get("pictures") or [])[:6] if p.get("thumb")]
             label = {"yes": "on the Morgue list", "no": "leave it off"}
@@ -603,7 +613,7 @@ def morgue_items(inputs: Inputs) -> list:
                   entry=h["entry"], date=h.get("date"), **({"day": h["day"]} if h.get("day") else {}),
                   **({"picture": shot["id"]} if shot.get("id") else {}), channel=h.get("channel"))
         it["meta"] = [f"a Morgue list picture '{h.get('name')}' may be its early look: {day} "
-                      f"#{h.get('channel')}" + (" (weak)" if h.get("weak") else "")]
+                      f"{place(h)}" + (" (weak)" if h.get("weak") else "")]
         it["pics"] = [p for p in (pic("../morgue/" + thumbs[h["entry"]], "the Morgue picture")
                                   if thumbs.get(h["entry"]) else None, card_pic(inputs, cid)) if p]
         it["choices"] = [choice("yes", f"yes: Created {day}"), choice("no", "no")]

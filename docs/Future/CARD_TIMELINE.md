@@ -65,9 +65,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    github-updates are evidence only: Created hints); each card's timeline stops at its first first-repo record.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
-   one in a Meme folder: a joke on it). A lost first-repo file whose picture is a live card's card-sure Discord picture
-   joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old name; or a
-   'second picture', an older look kept as a numbered file).
+   one in a Meme folder: a joke on it). A lost first-repo or old-repo file whose picture is a live card's card-sure
+   Discord picture joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old
+   name; Eldman -> Elmadan, its first file under a misspelt title, the same PSD document; or a 'second picture', an
+   older look kept as a numbered file), so it is never a Morgue candidate too.
    **The lost 2023 history** (`refs/lost2023/*` in the same store, fetched by id from GitHub's activity log): the old
    repo's own main heads pushed 2023-10-26..11-05 and lost by the force-pushes of 11-03 and 11-05 (104 commits in no
    other local repo). `oldgit_index` reads them as the old repo (rows 'old', badge "old repo", `lost: true`): 78
@@ -287,7 +288,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
    joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
-   first posts as Pacific days), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
+   first posts as Pacific days; a played one with a file in an older repo, `git_file`, "lost before this repo", not
+   "before git"), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
    photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page).
 

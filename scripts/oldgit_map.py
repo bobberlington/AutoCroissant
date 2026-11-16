@@ -31,7 +31,7 @@ PICTURE_GAP = 4.0           # bits: a picture match with nothing else behind it 
 OLD_WORD = re.compile(r"(^|_| )old(_| |$)", re.IGNORECASE)
 BACKUP = re.compile(r"(^|[_ -])(copy|bak|backup)([_ -]|$)", re.IGNORECASE)
 SECOND = re.compile(r"^(.*?\D)[ _]?([2-9])$")   # 'Grapes2', 'Bag_of_Good 2': a card's second picture file
-EYE = join(OUT, "eye.json")  # by eye: {ties: {old id: {key, status, why}}}: a lost first-repo-only file's live card
+EYE = join(OUT, "eye.json")  # by eye: {ties: {old id: {key, status, why}}}: a lost old or first-repo file's live card
 
 
 # ========================
@@ -486,8 +486,8 @@ def map_main():
                     evidence["meme_copy"] = True
                 else:
                     record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
-        tie = ties.get(oid) if not target and first_only and not meme else None
-        if tie and tie.get("key") in stats:                    # by eye: the picture is that live card's (Blooper)
+        tie = ties.get(oid) if not target and not meme else None
+        if tie and tie.get("key") in stats:                    # by eye: the picture is that live card's (Blooper, Eldman)
             record.update(key=tie["key"], status=tie.get("status") or "live", confidence="sure", how=["picture", "eye"],
                           eye=tie.get("why"))
             if record["status"] == "live":

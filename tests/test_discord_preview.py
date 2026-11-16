@@ -78,6 +78,7 @@ def test_build(tmp_path):
                              {"id": "LC-1c11be0504", "name": "M'uru", "slug": "m-uru", "kind": "played", "status": "candidate",
                               "first": {"date": None, "channel": None, "thread": None, "source": "physical card photo",
                                         "day": "Before 2020", "dated": {"date": "2020-07-18T00:00:00+00:00", "channel": "port"}},
+                              "first_repo": {"paths": ["Cards/Muru.png"], "date": "2022-09-01", "mdw": False},
                               "pictures": [{"id": "P-m", "date": "2020-07-18T00:00:00+00:00", "channel": "port", "source": "discord"}]}],
               "not_candidates": [{"id": "LC-2", "name": "Old One", "card": "Old One", "status": "morgue", "first": {},
                                   "pictures": [{"id": "P-m", "date": None, "channel": None, "source": "discord"}]}]}
@@ -115,6 +116,7 @@ def test_build(tmp_path):
                                            "source": "physical card photo"}
     muru = json.loads((out / "_morgue" / "m-uru" / "timeline.json").read_text())
     assert [(e["kind"], e["day"]) for e in muru["entries"]] == [("discord", "2020-07-18")]
+    assert muru["git_file"] == "first repo" and "git_file" not in json.loads((out / "_morgue" / "joke" / "timeline.json").read_text())
     mdw = json.loads((out / index["mdw"][0]["dir"] / "timeline.json").read_text())
     assert mdw["entries"][0]["date"] is None and "printed" not in mdw["entries"][0]
     # a rebuild keeps the webps, and drops one no entry names any more

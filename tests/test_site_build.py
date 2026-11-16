@@ -502,7 +502,7 @@ def _timelines(root):
             "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
-    muru = {"card": "m-uru", "key": "M'uru", "name": "M'uru", "kind_of": "played",
+    muru = {"card": "m-uru", "key": "M'uru", "name": "M'uru", "kind_of": "played", "git_file": "first repo",
             "first": {"date": None, "day": "Before 2020", "channel": None, "source": "physical card photo"},
             "entries": [{"id": "P-10", "kind": "discord", "date": "2020-07-18T00:00:00+00:00", "channel": "port",
                          "image": pic("_morgue/m-uru", "P-10.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
@@ -551,6 +551,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     muru = next(c for c in out["cards.json"]["morgue"] if c["name"] == "M'uru")     # owner Q6: Created, no first day
     assert (muru["created"], muru["createdFrom"], muru["createdBefore"], muru["lost"]) == ("2019-01-01", "photo", 2020,
                                                                                           "played") and "first" not in muru
+    assert muru["inGit"] and "inGit" not in joke[0]                                  # its first repo file: lost before this repo
     assert "M'uru" not in _by_name(out["cards.json"]["cards"])
     taken = bs.history_morgue({"morgue": [("_morgue/joke-card", json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()))]},
                               bs.slugify, {"joke-card"})[0]
@@ -558,7 +559,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     eld = {**json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()),
            "first": {"date": "2023-10-29T17:04:44+00:00", "day": "2023-10-29", "channel": None, "source": "old repo"}}
     eld = bs.history_morgue({"morgue": [("_morgue/joke-card", eld)]}, bs.slugify)[0][0]
-    assert eld["firstOld"] and "firstCh" not in eld and "firstOld" not in joke[0]     # first seen in the old repo (Eldman)
+    assert eld["firstOld"] and eld["inGit"] and "firstCh" not in eld and "firstOld" not in joke[0]   # first seen in the old repo
     assert "Joke Card" not in _by_name(out["cards.json"]["cards"]) and out["versions.json"]["early"][joke[0]["id"]]
     # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
     palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")

@@ -81,6 +81,10 @@ def test_the_page_offers_the_answers_and_the_morgue_list(tmp_path):
     said = tr.split_evidence(how)                  # a split's halves: what picked them, what reads the other way
     assert said[0] == "Top rows Lorn, bottom rows Pike. Picked by today's stats and the bar colours."
     assert len(said) == 2 and "first old version (2023-10-16)" in said[1] and tr.split_evidence(None) == []
+    assert [tr.place(x) for x in ({"channel": "port"}, {"channel": "old repo", "source": "old repo"}, {})] == [
+        "#port", "(old repo)", ""]                                                    # the old repo: a source
+    assert [tr.nearest_text({"nearest": n}) for n in ({"name": "Bolt", "bits": 6.0}, {"name": "Bolt", "by": "eye"})] == [
+        "nearest live card: Bolt (6.0 bits)", "nearest live card: Bolt (by eye)"]
     (tmp_path / "derived" / "morgue").mkdir(parents=True)
     (tmp_path / "derived" / "review").mkdir(parents=True)
     entry = lambda n: {"id": f"LC-{n}", "name": f"Card {n}"}
