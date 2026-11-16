@@ -684,38 +684,57 @@ def test_the_direct_hand_over(tmp_path, monkeypatch, capsys):
 # The warm lane
 # ========================
 def test_a_lanes_title_and_what_it_takes(monkeypatch):
-    """The title's card is what precedes the " {" that checks (a card with " {" in it too); a cut or changed title names
-    the lane but doesn't check; fits() takes only a press named to this run, by its editor, on its commit, not done;
-    listen() ends idle or at its time, saying so."""
+    """The title names the lane and the press's blob; read_press takes the blob once it is in (a 404 tried again), only
+    when it hashes to its sha and names its request; fits() takes only a press named to this run, by its editor, on its
+    commit, not done; listen() ends idle or at its time, saying so."""
+    import base64
+    import textwrap
     import commands.card_preview_lane as lane_mod
     from time import time
-    from commands.card_preview_lane import check_of, fits, press_of
+    from commands.card_preview_lane import fits, press_blob, press_of, read_press
     api = SimpleNamespace(left=None, get=lambda path, conditional=False: (304, None, b""))
     monkeypatch.setattr(lane_mod, "LANE_IDLE", 0.05)
     monkeypatch.setattr(lane_mod, "POLL", 0.01)
+    monkeypatch.setattr(lane_mod, "BLOB_WAIT", 0.2)
+    monkeypatch.setattr(lane_mod, "BLOB_POLL", 0.01)
     assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "idle 0.05 s"
     assert lane_mod.listen(api, 100, "ed", until=time() - 1, repository="o/r", head="h") == "the job's end is near"
-    edit = '{"ability":"Deal 2 {fire} damage.","hp":7}'
-    for card in ("Mini Doomer", "Odd {Card}"):
-        title = f"Card preview {REQUEST} lane 100-{check_of(REQUEST, card, edit)} {card} {edit}"
-        assert press_of(title) == (REQUEST, 100, card, edit)
-        assert press_of(title[:-3]) == (REQUEST, 100, None, None) and press_of(title.replace("2", "3")).card is None
-    assert press_of(f"Card preview {REQUEST}") is None
+    edit = '{"ability":"Deal 2 {fire} damage.\\nOnce per turn: draw.","hp":7}'
+    data, sha = press_blob(REQUEST, "Odd {Card}", edit)
+    press = press_of(f"Card preview {REQUEST} lane 100-{sha}")
+    assert press == (REQUEST, 100, sha) and press_of(f"Card preview {REQUEST}") is None
+    assert press_of(f"Card preview {REQUEST} lane 100-{sha[:16]} Odd {{Card}} {edit}") is None     # the old titles: none
+    blobs, asked = {}, []
+
+    def get(path, conditional=False):
+        asked.append(path)
+        blob = blobs.get(path.rsplit("/", 1)[1])
+        return (404, None, b"") if blob is None else (200, None, json.dumps(blob).encode())
+    store = SimpleNamespace(left=None, get=get)
+    blobs[sha] = {"sha": sha, "size": len(data), "encoding": "base64",
+                  "content": "\n".join(textwrap.wrap(base64.b64encode(data).decode(), 60))}    # GitHub's 60-column lines
+    assert read_press(store, "o/r", press) == ("Odd {Card}", edit, "")
+    assert read_press(store, "o/r", press._replace(request="other-request")) == (None, None, "the press's blob names another request")
+    blobs[sha] = {**blobs[sha], "content": base64.b64encode(data.replace(b"7", b"8")).decode()}
+    assert read_press(store, "o/r", press) == (None, None, "the press's blob doesn't hash to its sha")
+    asked.clear()
+    assert read_press(store, "o/r", press._replace(blob="0" * 40)) == (None, None, "the press's blob not read (404)")
+    assert len(asked) > 2                                                      # tried again for BLOB_WAIT
     run = {"status": "queued", "triggering_actor": {"login": "ed"}, "head_sha": "h"}
-    press = press_of(f"Card preview {REQUEST} lane 100-{check_of(REQUEST, 'A', '{}')} A {{}}")
     assert fits(run, press, 100, "ed", "h") == ""
     assert [fits({**run, **change}, p, 100, "ed", "h") for change, p in (
-        ({}, None), ({}, press._replace(lane=99)), ({}, press._replace(card=None)), ({"status": "completed"}, press),
+        ({}, None), ({}, press._replace(lane=99)), ({"status": "completed"}, press),
         ({"triggering_actor": {"login": "other"}}, press), ({"head_sha": "g"}, press))] == [
-        "a newer press named no lane", "a newer press named lane 99", "a newer press's title doesn't check",
-        "a newer press was done before the lane saw it", "a newer press by another editor", "the card repo moved"]
+        "a newer press named no lane", "a newer press named lane 99", "a newer press was done before the lane saw it",
+        "a newer press by another editor", "the card repo moved"]
 
 
 def test_the_warm_lane(cards, tmp_path, monkeypatch):
     """--code then --lane against a stand-in API: the first press's code is written before the lane; the lane takes its
-    editor's next press named to it (title, commit, bot's main and records checked; its out dir, then <request>.code),
+    editor's next press named to it (title, blob, commit, bot's main and records checked; its out dir, then <request>.code),
     bakes it as a cold preview does (the same result less took_s, at and run, the same images; run: the press's own),
     and ends at a newer press that names no lane, whose dir it never makes."""
+    import base64
     import commands.card_preview_lane as lane_mod
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from time import time
@@ -726,10 +745,11 @@ def test_the_warm_lane(cards, tmp_path, monkeypatch):
         (records / name).write_text("{}\n")
     second, third = "0f8e7d6c-5b4a-4321-9876-00000000aaaa", "0f8e7d6c-5b4a-4321-9876-00000000bbbb"
     edit = '{"hp": 7}'
+    data, sha = lane_mod.press_blob(second, "Mini Doomer", edit)
+    blob = json.dumps({"sha": sha, "size": len(data), "encoding": "base64", "content": base64.b64encode(data).decode()})
     runs = [{"id": 99, "display_title": "Card preview older-press-1"},
             {"id": 101, "status": "queued", "triggering_actor": {"login": "web-ed"}, "head_sha": cards.head,
-             "created_at": "2026-11-16T00:00:00Z",
-             "display_title": f"Card preview {second} lane 100-{lane_mod.check_of(second, 'Mini Doomer', edit)} Mini Doomer {edit}"},
+             "created_at": "2026-11-16T00:00:00Z", "display_title": f"Card preview {second} lane 100-{sha}"},
             {"id": 102, "status": "queued", "triggering_actor": {"login": "web-ed"}, "head_sha": cards.head,
              "display_title": f"Card preview {third}"}]
     asked = []
@@ -739,6 +759,7 @@ def test_the_warm_lane(cards, tmp_path, monkeypatch):
             path = self.path.split("?")[0]
             body = (json.dumps({"workflow_runs": runs[::-1]}) if path.endswith("/runs") else
                     json.dumps({"object": {"sha": bot}}) if path.endswith("/git/ref/heads/main") else
+                    blob if path.endswith(f"/git/blobs/{sha}") else
                     (records / path.rsplit("/", 1)[1]).read_text() if "/contents/db/" in path else None)
             tag = f'"{hash(body)}"'
             status = 404 if body is None else 304 if self.headers.get("If-None-Match") == tag else 200
@@ -783,7 +804,7 @@ def test_the_warm_lane(cards, tmp_path, monkeypatch):
     assert code == 0 and codes == ["0\n"] and (tmp_path / "lane.end").read_text() == "a newer press named no lane\n"
     assert sorted(p.name for p in (tmp_path / "lane").iterdir()) == [second, f"{second}.code"]
     assert (tmp_path / "lane" / f"{second}.code").read_text() == "0\n"
-    assert [a for a in asked if a[0] in ("runs", "main")] == [("main", 200), ("runs", 200), ("main", 304), ("runs", 304)]
+    assert [a for a in asked if a[0] in ("runs", "main", sha)] == [("main", 200), ("runs", 200), (sha, 200), ("main", 304), ("runs", 304)]
     warm = json.loads((tmp_path / "lane" / second / cp.RESULT).read_text())
     assert warm["run"] == f"https://github.com/{cb.CARD_REPO}/actions/runs/101" and warm["reason"] == "hp 5 -> 7"
     monkeypatch.delenv("GITHUB_RUN_ID")

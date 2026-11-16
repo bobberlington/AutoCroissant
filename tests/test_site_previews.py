@@ -78,36 +78,41 @@ out(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Buffer.from(v).toSt
 
 
 def test_the_warm_lane_is_named_and_checked(tmp_path):
-    """The press's lane (owner D22): laneCheck is the lane's check_of and the title card-preview.yml's run-name makes
-    parses back to the press; laneOf names the run that handed over the newest result while it has LANE_SAFE_MS left
-    (its idle end, its start's cap); pollDelay looks for a named lane's hand-over from LANE_FIRST_MS every LANE_POLL."""
+    """The press's lane (owner D22): laneBlob is the lane's press_blob (sha and bytes) and the title card-preview.yml's
+    run-name makes names the lane and blob, well under GitHub's 512 characters; laneOf names the run that handed over
+    the newest result while it has LANE_SAFE_MS left (its idle end, its start's cap); pollDelay looks for a named lane's
+    hand-over from LANE_FIRST_MS every LANE_POLL."""
+    import base64
     import re
     import yaml
-    from commands.card_preview_lane import check_of, press_of
-    request, card, edit = "zomoroko-mw5qp6i1-xk2v", "Odd {Card}", json.dumps({"ability": "Deal 2 {fire} — damage", "hp": 7}, ensure_ascii=False, separators=(",", ":"))
+    from commands.card_preview_lane import press_blob, press_of
+    request, card, edit = "zomoroko-mw5qp6i1-xk2v", "Odd {Card}", json.dumps({"ability": "Deal 2 {fire} — damage\n" * 40, "hp": 7}, ensure_ascii=False, separators=(",", ":"))
     out = node(tmp_path, f"""const now = 1e12, s = 1000;
 const own = {{ request: "r-00000001", at: now - 500 * s, hash: "h", state: "baked", run: {{ id: 101, started: now - 500 * s }}, from: 101, fromAt: now - 480 * s }};
 const next = fromAt => ({{ request: "r-00000002", at: now - 70 * s, hash: "h", state: "baked", lane: 101, from: 101, fromAt }});
 const lane = (age, extra = {{}}) => ({{ c: [{{ request: "r-00000003", at: now - age, hash: "h", state: "running", lane: 101, ...extra }}] }});
-out([await p.laneCheck({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edit)}),
+out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edit)}),
   p.laneOf({{ a: [own, next(now - 60 * s)] }}, now), p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 580 * s }} }}, next(now - 60 * s)] }}, now),
   p.laneOf({{ a: [own, next(now - 230 * s)] }}, now), p.laneOf({{}}, now),
   p.pollDelay(lane(1 * s), now), p.pollDelay(lane(5 * s), now), p.pollDelay(lane(5 * s, {{ fromAt: now }}), now), p.pollDelay(lane(16 * s), now)]);""")
-    check, named, capped, idle, none, *delays = out
-    assert check == check_of(request, card, edit)
+    blob, named, capped, idle, none, *delays = out
+    data, sha = press_blob(request, card, edit)
+    assert blob == {"sha": sha, "base64": base64.b64encode(data).decode()} and len(data) > 1024
     run_name = yaml.safe_load((SITE / ".github" / "workflows" / "card-preview.yml").read_text(encoding="utf-8"))["run-name"]
-    assert run_name == "Card preview ${{ inputs.request }}${{ inputs.lane && format(' lane {0} {1} {2}', inputs.lane, inputs.card, inputs.edit) || '' }}"
-    title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{check} {card} {edit}", run_name.replace("${{ inputs.request }}", request))
-    assert press_of(title) == (request, 101, card, edit)
+    assert run_name == "Card preview ${{ inputs.request }}${{ inputs.lane && format(' lane {0}', inputs.lane) || '' }}"
+    title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{sha}", run_name.replace("${{ inputs.request }}", request.ljust(64, "x")))
+    assert press_of(title) == (request.ljust(64, "x"), 101, sha) and len(title) < 150
     assert (named, capped, idle, none) == (101, None, None, None)
     assert delays == [2000, 500, 7000, 1000]
 
 
 def test_the_editor_takes_the_lanes_hand_over(tmp_path):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
-    press 2 names that run (its check the lane's) and shows the lane's card-preview-<request> 3 s after the press, one
-    toast each; a 422 with a lane dispatches again without it, and no lane is named after that."""
-    from commands.card_preview_lane import check_of
+    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob) and shows the lane's
+    card-preview-<request> 3 s after the press, one toast each; a 422 with a lane dispatches again without it, and no
+    lane is named after that."""
+    import base64
+    from commands.card_preview_lane import press_blob
     out = node(tmp_path, """let T = 1e12; const q = []; Date.now = () => T;
 globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
@@ -116,9 +121,12 @@ globalThis.window = { addEventListener() {} }; globalThis.document = { visibilit
 const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text), h = Buffer.alloc(30), c = Buffer.alloc(46), e = Buffer.alloc(22);
   h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
-const sent = [], toasts = [], listed = [];
-let refuse = false;
+const { createHash } = await import("node:crypto");
+const sent = [], toasts = [], listed = [], blobs = [];
+let refuse = false, failBlob = false;
 const github = async (path, o = {}) => {
+  if (path.endsWith("/git/blobs")) { blobs.push(o.body); if (failBlob) { const e = new Error("GitHub 403"); e.status = 403; throw e; }
+    const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") }; }
   if (o.method === "POST") { sent.push({ ...o.body.inputs }); if (refuse && o.body.inputs.lane) { const e = new Error("GitHub 422"); e.status = 422; throw e; } return null; }
   if (path.includes("/contents/")) { const e = new Error("404"); e.status = 404; throw e; }
   if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + sent[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(1e12).toISOString() }] };
@@ -134,12 +142,17 @@ await pv.start(card("c0"), { hp: 8 }); await run(T + 20000);
 const second = T;
 await pv.start(card("c1"), { hp: 7 }); await run(T + 20000);
 refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"), { hp: 5 });
-out({ sent, toasts, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)) });""")
+refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
+out({ sent, toasts, blobs, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
+  named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null) });""")
     sent = out["sent"]
-    assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{check_of(sent[1]['request'], 'Mini Doomer', sent[1]['edit'])}"
+    data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
+    assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
+    assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
     assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [3000]     # the lane's, 3 s on
     assert out["toasts"].count("Preview ready: Mini Doomer") == 2
     assert "lane" in sent[2] and "lane" not in sent[3] and "lane" not in sent[4]      # the 422's retry, then none named
+    assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again
 
 
 def test_tokens_wrap_and_fit(tmp_path):
