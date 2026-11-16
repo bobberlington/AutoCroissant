@@ -16,7 +16,7 @@ from contextvars import Context
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from json import load
+from json import dumps, load, loads
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
@@ -305,6 +305,9 @@ class IconPlan:
     textures: list = field(default_factory=list) # plan_stars(): textures clipped onto the stars' group that follow them
     scaled: list = field(default_factory=list)   # plan_stars(): (layer, s, centre, to): a star shrunk to fit its banner
     #                                              (option B, _scale), before the copies and moves
+    removed: list = field(default_factory=list)  # plan_stars(): the bake's own added layers deleted (an undo)
+    memo: Optional[dict] = None                  # plan_stars(): the PSD's star memo it was planned with (star_memo)
+    undo: bool = False                           # plan_stars(): the bake's own star moves undone (owner 11-15, D14)
 
 
 @dataclass
@@ -343,6 +346,7 @@ class Edit:
     masked: list = field(default_factory=list)   # record indices given a pixel mask: a star layer split (split_stars)
     filters: list = field(default_factory=list)  # (placed ID, its source's, dx, dy): a smart-filtered layer moved or
     #   copied, its FEid item with it (S1; gate_filters)
+    unfiltered: list = field(default_factory=list)  # placed IDs whose FEid item left with their layer (a star undo)
     stories: list = field(default_factory=list)  # a part bake: every TextIndex it may change
     parts: list = field(default_factory=list)    # and (layer id, that layer's Edit, a copy?) per layer it set
     several: bool = False   # a part bake's Edit (set_parts): its layers are in parts
@@ -7854,6 +7858,153 @@ def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optio
     return [(RELAID[2], [(x - i * pitch, y) for i in range(count)])]
 
 
+STAR_MEMO_NS = "https://github.com/MichaelJSr/AutoCroissant/xmp/1.0/"     # the bake's star memo in the PSD's XMP
+STAR_MEMO = re_compile(rb' *<rdf:Description rdf:about="" xmlns:autocroissant="[^"]*">\s*<autocroissant:starMoves>'
+                       rb'([^<]*)</autocroissant:starMoves>\s*</rdf:Description>\n?')
+STRAY_MEMO = re_compile(rb'\s*<autocroissant:starMoves>[^<]*</autocroissant:starMoves>|\s+autocroissant:starMoves="[^"]*"')
+INSTANCE_ID = re_compile(rb'xmpMM:InstanceID(?:="|>)([^"<]*)')
+
+
+def _xmp(psd: PSDImage) -> Optional[bytes]:
+    resources = psd._record.image_resources
+    if resources is None or Resource.XMP_METADATA not in resources:
+        return None
+    data = resources[Resource.XMP_METADATA].data
+    return bytes(data) if isinstance(data, (bytes, bytearray)) else None
+
+
+def _instance_id(psd: PSDImage) -> str:
+    found = INSTANCE_ID.search(_xmp(psd) or b"")
+    return found.group(1).decode("latin-1") if found else ""
+
+
+def star_memo(psd: PSDImage) -> Optional[dict]:
+    """
+    The bake's star memo in the PSD's XMP (owner 11-15, D14), or None: {"count": the card maker's stars, "now": the
+    stars the bake left, "iid": xmpMM:InstanceID then (a Photoshop save since makes another), "moved": {layer id: [dx,
+    dy]} of the maker's layers, "shown": {layer id: shown before}, "added": [layer ids it added], "at": {layer id: [x,
+    y, shown]} as it left them}.
+    """
+    found = STAR_MEMO.search(_xmp(psd) or b"")
+    if not found:
+        return None
+    try:
+        memo = loads(found.group(1).decode("utf-8").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+    except ValueError:
+        return None
+    return memo if isinstance(memo, dict) and memo.get("v") == 1 else None
+
+
+def set_star_memo(psd: PSDImage, memo: Optional[dict]) -> None:
+    """Write memo into the PSD's XMP (before </rdf:RDF>, Photoshop keeps it), or take the bake's out (None)."""
+    data = _xmp(psd)
+    if data is None:
+        return
+    data = STRAY_MEMO.sub(b"", STAR_MEMO.sub(b"", data))   # and an old one Photoshop merged into its own on a save
+    if memo is not None and b"</rdf:RDF>" in data:
+        text = dumps(memo, separators=(",", ":"), sort_keys=True).replace("&", "&amp;").replace("<", "&lt;")
+        at = data.rindex(b"</rdf:RDF>")
+        line = data.rfind(b"\n", 0, at) + 1
+        at = line if not data[line:at].strip() else at     # on a line of its own, before </rdf:RDF>
+        data = data[:at] + (f'      <rdf:Description rdf:about="" xmlns:autocroissant="{STAR_MEMO_NS}">\n'
+                            f'         <autocroissant:starMoves>{text}</autocroissant:starMoves>\n'
+                            f'      </rdf:Description>\n').encode("utf-8") + data[at:]
+    if data != _xmp(psd):
+        psd._record.image_resources[Resource.XMP_METADATA].data = data
+        psd.mark_updated()
+
+
+def _spot(layer) -> tuple:
+    """(x, y) of a layer, of a group its first leaf with pixels (a memo's check)."""
+    for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
+        if not leaf.is_group() and leaf.width and leaf.height:
+            return leaf.left, leaf.top
+    return 0, 0
+
+
+def _by_id(psd: PSDImage) -> dict:
+    return {layer.layer_id: layer for layer in psd.descendants()}
+
+
+def _memo_holds(psd: PSDImage, parsed: dict) -> Optional[dict]:
+    """The PSD's star memo when it still holds: no Photoshop save since, the stars it left, every layer it names where
+    and as shown as it left it."""
+    memo = star_memo(psd)
+    if memo is None or memo.get("iid") != _instance_id(psd) or parsed["card"].get("stars") != memo.get("now"):
+        return None
+    layers = _by_id(psd)
+    try:
+        at = {int(key): spot for key, spot in memo["at"].items()}
+        if {int(key) for key in [*memo["moved"], *memo["shown"], *memo["added"]]} - set(at):
+            return None
+        for key, (x, y, shown) in at.items():
+            layer = layers.get(key)
+            if layer is None or _spot(layer) != (x, y) or layer.visible != bool(shown):
+                return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return memo
+
+
+def _undo_stars(psd: PSDImage, memo: dict, parser: Optional[PSDParser]) -> IconPlan:
+    """The bake's own star moves undone (owner 11-15, D14): its added layers deleted, the maker's moved back and shown
+    or hidden as they were."""
+    layers = _by_id(psd)
+    plan = IconPlan("stars", memo["now"], memo["count"], "the card maker's own layout", memo=memo, undo=True)
+    added = {int(key) for key in memo["added"]}
+    plan.removed = [layers[key] for key in added if not any(up.layer_id in added for up in _ancestors(layers[key]))]
+    plan.moves = [(layers[int(key)], -dx, -dy) for key, (dx, dy) in memo["moved"].items() if dx or dy]
+    for key, was in memo["shown"].items():
+        layer = layers[int(key)]
+        if layer.visible != was:
+            (plan.show if was else plan.hide).append(layer)
+    gone = {id(one) for layer in plan.removed for one in [layer, *(layer.descendants() if layer.is_group() else ())]}
+    show = {**{id(layer): True for layer in plan.show}, **{id(layer): False for layer in plan.hide},
+            **{key: False for key in gone}}
+    moved = {id(leaf): (dx, dy) for layer, dx, dy in plan.moves
+             for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]}
+    types = parser.all_types if parser is not None else ()
+    pieces = [_moved_box(box, *moved.get(id(leaf), (0, 0)))
+              for leaf in PSDParser.star_leaves(psd, types, parser.star_names() if parser is not None else (), show)
+              for box in star_pieces(leaf)]
+    pieces = [box for box in pieces if in_header(box, psd.height)]
+    units = [_Unit([], union_box([pieces[i] for i in star])) for star in star_sets(pieces)]
+    plan.centres = [unit.centre for unit in _reading(units, _median_size(units)[1], True)] if units else []
+    return plan
+
+
+def memo_after(psd: PSDImage, plan: IconPlan) -> Optional[dict]:
+    """
+    The star memo once set_icons applied plan on psd (D14): the plan's moves, shows, hides and added layers on top of the
+    memo it was planned with (else the card maker's stars, plan.old); None after an undo, or when it shrank or split a
+    star or copied text (no undoing those).
+    """
+    if plan.undo or plan.scaled or any(done[0] in ("split", "masked", "scaled") for done in plan.done):
+        return None
+    memo = deepcopy(plan.memo) if plan.memo else {"v": 1, "count": plan.old, "moved": {}, "shown": {}, "added": []}
+    added = set(memo["added"])
+    for done in plan.done:
+        layer = done[2] if done[0] in ("copy", "masked copy") else done[1] if done[0] == "made" else None
+        if layer is not None:
+            if any(one.kind == "type" for one in [layer, *(layer.descendants() if layer.is_group() else ())]):
+                return None
+            added.add(layer.layer_id)
+    for layer, dx, dy in plan.moves:
+        if layer.layer_id not in added:
+            was = memo["moved"].get(str(layer.layer_id), [0, 0])
+            memo["moved"][str(layer.layer_id)] = [was[0] + dx, was[1] + dy]
+    for layer in plan.hide + plan.show:
+        if layer.layer_id not in added:
+            memo["shown"].setdefault(str(layer.layer_id), any(layer is one for one in plan.hide))
+    layers = _by_id(psd)
+    keys = {*memo["moved"], *memo["shown"], *(str(key) for key in added)}
+    if -1 in added or "-1" in keys or any(int(key) not in layers for key in keys):
+        return None
+    memo.update(added=sorted(added), now=plan.new, iid=_instance_id(psd),
+                at={key: [*_spot(layers[int(key)]), int(layers[int(key)].visible)] for key in sorted(keys)})
+    return memo
+
+
 class _Shrink(Exception):
     """A stars plan's added stars fit nowhere on their banner, full size: _shrunk tries them all smaller (option B)."""
     def __init__(self, shown: list, hidden: list, banner: tuple):
@@ -7888,6 +8039,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
       Lazarus's dead form) take the same count, laid out turned half round, or neither set is redrawn.
+    - back to the card maker's count while the PSD's star memo holds (_memo_holds: no Photoshop save or other change
+      to those layers since): the bake's own moves undone, its added layers deleted (owner 11-15, D14: _undo_stars).
 
     Args:
         psd: The open card (not changed, but split: a layer drawing several stars is split in it)
@@ -7899,10 +8052,15 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     Returns:
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
     """
+    memo = _memo_holds(psd, parsed)
+    if memo is not None and value == memo["count"]:     # back to the maker's count: the bake's own moves undone (D14)
+        return _undo_stars(psd, memo, parser)
     try:
-        return _plan_stars(psd, parsed, value, parser, split)
+        plan = _plan_stars(psd, parsed, value, parser, split)
     except _Shrink as wanted:                   # option B, else off the banner as before (told)
-        return _shrunk(psd, parsed, value, parser, wanted) or _plan_stars(psd, parsed, value, parser, split, 0.0)
+        plan = _shrunk(psd, parsed, value, parser, wanted) or _plan_stars(psd, parsed, value, parser, split, 0.0)
+    plan.memo = memo
+    return plan
 
 
 def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, split: bool = False,
@@ -8902,6 +9060,19 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
     """
     boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
     boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
+    gone = []                                   # the bake's own added layers (an undo, D14), their FEid items too:
+    for layer in plan.removed:                 # padded while their groups' effects still reach them
+        box = _extent(layer)
+        gone += [_pad(box, _reach(layer), psd)] if box[2] > box[0] and box[3] > box[1] else []
+        leaves = [one for one in [layer, *(layer.descendants() if layer.is_group() else ())]
+                  if not one.is_group() and one.kind == "smartobject" and _filtered(one)]
+        uids = [leaf.smart_object.placed_id for leaf in leaves]
+        items = _filter_block(psd)
+        if uids and items is not None:
+            items[:] = [item for item in items if (item.uuid or "").strip("\x00") not in uids]
+            psd.mark_updated()
+        plan.done.append(("removed", layer, _subtree_records(layer), uids))
+        remove_layer(psd, layer)
     for layer, s, centre, to in plan.scaled:   # shrunk first (option B): copied and moved from there
         for leaf, was, now in _scale(layer, s, centre, to):
             plan.done.append(("scaled", leaf, now))
@@ -8963,9 +9134,10 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
         boxes.append((tuple(layer.bbox), layer))
         if reference._psd is psd:      # a template's chain stays in the template
             _copy_chain(reference, layer, plan.done)
-    region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
+    region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]]
+                       + gone)
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [
-        done[2] if done[0] in ("copy", "masked copy") else done[1] for done in plan.done]
+        done[2] if done[0] in ("copy", "masked copy") else done[1] for done in plan.done if done[0] != "removed"]
     notes = list(plan.notes) + touching
     return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
@@ -8992,6 +9164,8 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
     edit.copied += [(after[id(done[2]._record)], before[id(done[1]._record)], done[3], done[4]) for done in plan.done
                     if done[0] == "masked copy"]          # a texture's copy masked to a star (_texture_copies)
     edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
+    edit.removed = sorted(before[id(record)] for done in plan.done if done[0] == "removed" for record in done[2])
+    edit.unfiltered = [uid for done in plan.done if done[0] == "removed" for uid in done[3]]
     edit.scaled = {before[id(done[1]._record)]: (done[2][1], done[2][0], done[2][3], done[2][2])
                    for done in plan.done if done[0] == "scaled"}     # a shrunk star's rect: its moves and copies from it
     shifted = {old for _, old, _, _ in edit.shifted}
@@ -10324,8 +10498,9 @@ def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
     Refused("bytes").
     """
     declared = {uid: (src, dx, dy) for edit in edits for uid, src, dx, dy in edit.filters}
+    gone = {uid for edit in edits for uid in edit.unfiltered}     # a star undo's deleted copies (D14)
     a, b = _filter_block(old), _filter_block(new)
-    if not declared:
+    if not declared and not gone:
         before, after = _document_blocks(old), _document_blocks(new)
         if any(before.get(key) != after.get(key) for key in FILTER_KEYS) and \
                 not _sources_only(a, b, {uid for edit in edits for uid in edit.sources}):
@@ -10333,7 +10508,7 @@ def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
         return
     if a is None or b is None or a.version != b.version:
         raise Refused("bytes", "the FEid block came, went or changed its version")
-    olds = {(item.uuid or "").strip("\x00"): item for item in a}
+    olds = {(item.uuid or "").strip("\x00"): item for item in a if (item.uuid or "").strip("\x00") not in gone}
     order = [layer for layer in new.descendants() if not layer.is_group() and layer.kind == "smartobject" and _filtered(layer)]
     linked = {layer.smart_object.placed_id: bool(getattr(layer.smart_object.filters.get(b"filterMaskLinked"), "value", False))
               for layer in order}
@@ -11393,6 +11568,9 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     saving = ON_MERGED(merged, new_png, png) if ON_MERGED is not None else None
     start = perf_counter()
     hold.close()                                # the saved card keeps its own eye flags
+    for edit in edits:                          # the bake's star moves, remembered or undone (D14)
+        if edit.field == "stars" and edit.icons is not None:
+            set_star_memo(new, memo_after(new, edit.icons))
     save_psd(new, new_psd)
     for path, data in (files or {}).items():    # a placed title's file beside them (set_placed_title)
         with open(join(out_dir, basename(path)), "wb") as fh:
