@@ -336,6 +336,8 @@ def row_entry(r: dict) -> tuple:
     name = f"O-{r['blob'][:12]}.webp"
     job = ("file", r["thumb"], None) if r.get("psd_only") else ("blob", r["blob"], None)
     fields = published(r.get("fields"))
+    if (fields.get("ability") or {}).get("value") == "":
+        fields.pop("ability")                      # no text read: a Morgue card's PNG has no OCR to tell 'none'
     if r.get("card_kind") in dc.ITEM_CARDS and "types" in fields:     # an item's kinds are never collected
         left = [t for t in fields["types"]["value"] if str(t).lower() not in dc.ITEM_KINDS]
         if left:

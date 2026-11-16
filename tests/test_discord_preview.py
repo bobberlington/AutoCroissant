@@ -240,6 +240,7 @@ def test_morgue_entries_show_their_old_and_first_repo_versions():
     row = lambda rid, ts, blob, repo="old", **kw: {"id": rid, "ts": ts, "blob": blob, "repo": repo, "author": "Croissant",
                                                     "subject": "cards", "commit": "c" * 40, "path": "X.png", **kw}
     sure = {"name": {"value": "Clock", "method": "psd", "confidence": "sure"},
+            "ability": {"value": "", "method": "psd", "confidence": "sure"},           # no text read: left out
             "stars": {"value": 9, "method": "folder", "confidence": "review"}}
     old = {"card": {"clock": [row("b", 1.7e9, "b" * 40, fields=sure), row("a", 1.6e9, "a" * 40, minor=True)]},
            "lost": {"Battery": [row("c", 1.69e9, "c" * 40, card_kind="item", fields={
