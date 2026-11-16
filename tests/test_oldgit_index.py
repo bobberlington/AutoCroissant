@@ -58,3 +58,18 @@ def test_lost_commits_come_after_their_parents_a_linked_root_after_its_link(oi):
     assert [sha for sha, _ in oi.parents_first(found, {"O"})] == ["T", "R1", "R2"]
     with pytest.raises(ValueError):
         oi.parents_first([("X", {"parents": ["Y"]}), ("Y", {"parents": ["X"]})], set())
+
+
+def test_the_owner_s_old_maps_rule_over_the_evidence(monkeypatch):
+    """Owner 11-15: an old card the owner mapped (owner.json maps) is that live card's, whatever its file name says
+    (Fire Bomb -> Flame Bomb, not Firebomb) or with nothing behind it (Eldman -> Elmadan); a ruling whose card is
+    no longer live is not applied."""
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import oldgit_map as om
+    stats = {"Flame Bomb": {}, "Firebomb": {}, "Elmadan": {}}
+    maps = {"Fire Bomb (Auxillary/Items/4 Stars)": {"key": "Flame Bomb", "answer": "a2000-fire-bomb"},
+            "Eldman": {"key": "Elmadan", "answer": "a1940-eldman"}, "Gone": {"key": "Old Card", "answer": "a9"}}
+    assert om.owner_map("Fire Bomb (Auxillary/Items/4 Stars)", maps, stats) == (("live", "Flame Bomb"),
+                                                                                "a2000-fire-bomb")
+    assert om.owner_map("Eldman", maps, stats) == (("live", "Elmadan"), "a1940-eldman")
+    assert om.owner_map("Gone", maps, stats) is None and om.owner_map("Fire Bomb", maps, stats) is None

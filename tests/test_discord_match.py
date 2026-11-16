@@ -557,6 +557,11 @@ def test_references_take_the_old_repo_first(tmp_path):
     assert cards["alpha-wolf"]["fs_from"] == "old git" and cards["alpha-wolf"]["fs"] == dm.OLD_CUTOFF - 400 * 86400
     assert cards["beta-bear"]["fs_from"] == "git" and cards["beta-bear"]["fs"] == FIRST
     assert all(v["source"][1] == dm.git_dir_of(str(repo)) for v in plan if not v["old"])
+    (root / "derived" / "oldgit" / "map.json").write_text(json.dumps(          # the owner's map (11-15): the stop follows
+        {"cards": {"Beta": {"key": "Beta Bear", "status": "live", "confidence": "sure", "how": ["owner"], "owner": "a1"}}}))
+    cards = dm.load_cards(str(repo))
+    dm.plan_versions(cards, str(repo), str(root), "all", str(old / ".git"), log=lambda *a: None)
+    assert (cards["beta-bear"]["fs_from"], cards["beta-bear"]["fs"]) == ("old git", dm.OLD_CUTOFF - 9)
     (root / "derived" / "oldgit" / "versions.jsonl").unlink()                       # none: this repo's alone
     assert not any(v["old"] for v in dm.plan_versions(dm.load_cards(str(repo)), str(repo), str(root), "all",
                                                       str(old / ".git"), log=lambda *a: None))

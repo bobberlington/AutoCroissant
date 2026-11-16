@@ -11,6 +11,7 @@ Evidence, strongest first:
   title    the old PSDs' printed titles (today's parser) = one of those names
   picture  pHash/dHash distance (discord_match.hash_distance, bits of 64) of the old PNGs and PSD composites vs today's
            PNG and the init tree's PNG (the first current-repo version) of each card, whole card and art
+The owner's rulings (derived/review/owner.json maps: {old id: {key, answer}}) come over all of these: sure, how 'owner'.
 """
 import json
 import os
@@ -32,6 +33,13 @@ OLD_WORD = re.compile(r"(^|_| )old(_| |$)", re.IGNORECASE)
 BACKUP = re.compile(r"(^|[_ -])(copy|bak|backup)([_ -]|$)", re.IGNORECASE)
 SECOND = re.compile(r"^(.*?\D)[ _]?([2-9])$")   # 'Grapes2', 'Bag_of_Good 2': a card's second picture file
 EYE = join(OUT, "eye.json")  # by eye: {ties: {old id: {key, status, why}}}: a lost old or first-repo file's live card
+OWNER = join(os.path.dirname(OUT), "review", "owner.json")  # the owner's rulings: maps {old id: {key, answer}}
+
+
+def owner_map(oid: str, maps: dict, stats: dict):
+    """The owner's ruling on an old card (owner.json maps): (('live', key), answer) when its card is live, else None."""
+    ruled = maps.get(oid) or {}
+    return (("live", ruled["key"]), ruled.get("answer")) if ruled.get("key") in stats else None
 
 
 # ========================
@@ -270,6 +278,7 @@ def map_main():
         return None, None
 
     ties = (json.load(open(EYE)) if os.path.exists(EYE) else {}).get("ties") or {}
+    owner_maps = (json.load(open(OWNER)) if os.path.exists(OWNER) else {}).get("maps") or {}
     commits = tc_history(head)
     tracked = follow_tc(list(today_tree), commits)
     init = {p: v[0] for p, v in ls_tree(OG, TC_INIT).items()}
@@ -445,6 +454,13 @@ def map_main():
             if old_copy and not path_target:
                 why.append("an old copy ('Old' in the file name)")
             confidence = "unsure" if why else "sure"
+        ruled = owner_map(oid, owner_maps, stats)
+        if ruled:                                              # the owner's ruling: over the evidence (Fire Bomb, Eldman)
+            target, confidence, why = ruled[0], "sure", []
+            how = [h for h, ok in (("path", path_target == target),
+                                   ("picture", bool(near) and (near[0]["status"], near[0]["key"]) == target),
+                                   ("name", bool(name_hits.get(target))), ("title", bool(title_hits.get(target)))) if ok]
+            how.append("owner")
         if first_only and confidence == "unsure" and any("/Meme/" in p for p in old["paths"]):
             target, confidence, why = None, None, []           # a meme folder's copy (a joke on a live card): evidence
             evidence["meme_copy"] = True                       # for the Morgue's joke cards, never a live card's map
@@ -467,6 +483,8 @@ def map_main():
                                "new_looks": sum(bool(v.get("new_look")) for v in mine)},
                   "authors": sorted({v["author_mapped"] or v["author"] for v in mine}),
                   "thumb": next((t for t in thumbs if t), None), "evidence": evidence}
+        if ruled:
+            record["owner"] = ruled[1]
         if old_copy:
             record["old_copy"] = True
         if any(BACKUP.search(s) for s in stems):
@@ -499,6 +517,9 @@ def map_main():
         if confidence == "unsure":
             review.append(oid)
 
+    lapsed = sorted(o for o in owner_maps if (cards.get(o) or {}).get("owner") is None)
+    if lapsed:                                                 # an old id gone or its card no longer live: say so
+        log(f"WARNING: owner maps not applied: {lapsed}")
     shared = {k: v for k, v in by_key.items() if len(v) > 1}
     for key, oids in shared.items():                           # several old cards on one card: say so
         for oid in oids:
@@ -508,13 +529,15 @@ def map_main():
                "archived_sure": status[("archived", "sure")], "archived_unsure": status[("archived", "unsure")],
                "morgue": status[("morgue", "sure")], "lost": status[("lost", None)], "review": len(review),
                "live_cards_reached": len({c["key"] for c in cards.values() if c["status"] == "live"}),
+               "owner": sum(1 for c in cards.values() if c.get("owner")),
                "keys_with_several_old_cards": len(shared),
                "by_how": dict(Counter("+".join(c["how"]) or "-" for c in cards.values()))}
     write_json(join(OUT, "map.json"), {
         "about": "Each old card (oldgit index.json old_cards: one file name's PSD+PNG over the old history, renames "
                  "followed) -> today's card key (stats.json; status live) or an archived card (old_stats.json; status "
                  "archived), a Morgue card (MDW/The Morgue; status morgue), or none (lost). confidence sure/unsure; "
-                 "unsure ones are listed in review with why_unsure. "
+                 "unsure ones are listed in review with why_unsure; owner: the owner's ruling (review/owner.json "
+                 "maps, its answer id) over the evidence. "
                  "Picture distances in bits of 64 (discord_match.hash_distance).",
         "today": {"main": head, "cards": len(stats)}, "summary": summary, "review": sorted(review),
         "by_key": {k: sorted(v) for k, v in sorted(by_key.items())}, "cards": cards})

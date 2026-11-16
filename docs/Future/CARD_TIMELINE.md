@@ -67,8 +67,15 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it). A lost first-repo or old-repo file whose picture is a live card's card-sure
    Discord picture joins it by eye (`derived/oldgit/eye.json` `ties`: Blooper -> Gooper Blooper, its file under an old
-   name; Eldman -> Elmadan, its first file under a misspelt title, the same PSD document; or a 'second picture', an
-   older look kept as a numbered file), so it is never a Morgue candidate too.
+   name; or a 'second picture', an older look kept as a numbered file), so it is never a Morgue candidate too. The
+   owner's map rulings (`derived/review/owner.json` `maps`, read only on the review page) come over all the evidence:
+   sure, how 'owner', the old name shown on the rows, never an alias (11-15: Eldman -> Elmadan, its first file under a
+   misspelt title, the same PSD document; Dark_Matter.png of Cards/Kirby/4 Stars -> Dark Nebula; Fire_Bomb.png of
+   Auxillary/Items/4 Stars -> Flame Bomb; Humphreys Belly, Gasoline, Magolor and Hemorrhaging -> their live cards).
+   A map change moves a card's first record (`fs`: `discord_match score`'s references), so its stop and Created
+   follow only after the rerun: map, `oldgit_rows rows`, `discord_match score`, `discord_verdicts local
+   --before-git`, then step 2's verdicts on (verdicts, Morgue, facts, chain, Morgue, chain, review page), the preview
+   build, its check and the site.
    **The lost 2023 history** (`refs/lost2023/*` in the same store, fetched by id from GitHub's activity log): the old
    repo's own main heads pushed 2023-10-26..11-05 and lost by the force-pushes of 11-03 and 11-05 (104 commits in no
    other local repo). `oldgit_index` reads them as the old repo (rows 'old', badge "old repo", `lost: true`): 78
