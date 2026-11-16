@@ -119,6 +119,7 @@ ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "at
               "negation", "deploy", "offense", "protective"}  # an item's kind (its subtype; the last two the old
                                                               # repo's): never a fact or a version's change here
 ITEM_CARDS = ("item", "aux item", "nme")                      # cards whose types are item kinds
+ROW_PICTURE_READS = ("ocr", "ocr+icons", "none", "git header")   # an old row's fields read off its PNG alone (no PSD)
 BEFORE_DAY, BEFORE_SORT = "Before 2020", "0000-00-00"         # owner Q6 (11-14 22:20): a Created with no day, first
 PHOTO_SOURCE = "physical card photo"                          # its source (the photos themselves are in no timeline)
 PHOTO_CREATED = {"pep-drink": "Pep Drink", "wham-bam-bone": "Wham Bam Bone"}   # the live cards dated so: only these
@@ -1093,6 +1094,9 @@ class Chain:
         git = None
         if row["verdict"] == "version_sure" and not row.get("as"):     # a split's look is the old card's
             exact, git = self.git_look_fields(cid, row)
+            for k, v in list(exact.items()):   # a field its row read off the picture alone (no PSD): this picture's
+                if not is_sure(v) and v.get("method") in ROW_PICTURE_READS:     # own item asks it, as before
+                    exact[k] = {kk: vv for kk, vv in v.items() if kk not in ("review", "proposed")}
             if exact:                          # the exact version's fields; one it left to review stays so
                 own = fields
                 fields = {k: {**v, "method": f"git look: {v['method']}"} if is_sure(v) else v for k, v in exact.items()}

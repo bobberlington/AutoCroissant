@@ -433,6 +433,20 @@ def test_an_owner_mapped_psd_gives_its_row_or_counts_apart():
     assert done["owner: an unsure old map yes"] == 1 and done["owner: an unsure old map yes, no rows (nothing added)"] == 1
 
 
+def test_a_git_look_s_picture_read_field_leaves_the_picture_its_own_item():
+    """A git look whose row read a field off its PNG alone (no PSD: the text readers' OCR, to review in oldrows) leaves
+    the Discord picture's field to the picture's own item (its answers stay); a PSD field to review keeps its row's."""
+    row = old_row("Bolt", T + 100 * DAY, "a" * 40, 5)
+    row["fields"]["ability"] = {"value": "Bite 3.", "method": "ocr", "confidence": "review", "why": "under its bar"}
+    row["fields"]["name"] = {"value": "Bolt", "method": "psd", "confidence": "review", "why": "x"}
+    got = inputs([picture(1, T, "version_sure", look=1)], old_rows=[row],
+                 old_review=[{"id": "oldrows-ab", "row": row["id"], "field": "ability"},
+                             {"id": "oldrows-nm", "row": row["id"], "field": "name"}])
+    fields = dc.Chain(got).picture("bolt", got.verdicts[0])["fields"]
+    assert "review" not in fields["ability"] and fields["ability"]["confidence"] == "review"
+    assert fields["name"]["review"] == "oldrows-nm"
+
+
 def test_a_picture_s_id_keeps_its_card_and_the_triage_s_method():
     """BRIEF 11-15 20:50: a picture-keyed item (look not told, named only, joke picture) keeps its id while the page
     asks about the card it was first shown with (derived/review/ids.json); asked about another card it gets a new id,

@@ -567,6 +567,22 @@ def test_references_take_the_old_repo_first(tmp_path):
                                                       str(old / ".git"), log=lambda *a: None))
 
 
+def test_an_old_card_takes_its_own_map_never_one_only_its_case_differs(tmp_path):
+    """The joke item 'pain' (lost) is not the debuff 'Pain' (Thinned's): a folded name never maps another old card."""
+    root = tmp_path / "archive"
+    (root / "derived" / "oldgit").mkdir(parents=True)
+    rows = [{"old_id": "Pain", "path": "Auxillary/Debuffs/Pain.png", "blob": "a" * 40, "commit": "c1",
+             "ts": dm.OLD_CUTOFF - 9},
+            {"old_id": "pain", "path": "Items/Meme/2 Stars/pain.png", "blob": "b" * 40, "commit": "c0",
+             "ts": dm.OLD_CUTOFF - 99}]
+    (root / "derived" / "oldgit" / "versions.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (root / "derived" / "oldgit" / "map.json").write_text(json.dumps({"cards": {
+        "Pain": {"key": "Thinned", "status": "live", "confidence": "sure"},
+        "pain": {"key": None, "status": "lost", "confidence": None}}}))
+    found = dm.old_versions(str(root), {"thinned": {"key": "Thinned"}}, log=lambda *a: None)
+    assert [(v["card"], v["blob"][0]) for v in found] == [("thinned", "a")]
+
+
 def test_the_first_repo_s_store_or_an_error(tmp_path, monkeypatch):
     store = tmp_path / "ext" / "firstrepo.git"
     (store / "objects" / "info").mkdir(parents=True)                # no alternates: self-contained after the Wrap

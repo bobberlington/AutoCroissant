@@ -884,7 +884,9 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
         return []
     raw = read_json(join(base, "map.json"), {}) or {}
     maps = old_maps(raw)
-    known = set((raw.get("cards") or {}) if isinstance(raw, dict) else ())   # old cards the map holds, lost ones too
+    held = (raw.get("cards") or {}) if isinstance(raw, dict) else {}       # old cards the map holds, lost ones too
+    known = set(held)
+    exact = {o: old_maps({"cards": {o: c}}).get(o, (None, False)) for o, c in held.items() if isinstance(c, dict)}
     by_key = {edit_key(c.get("key")): cid for cid, c in cards.items()}
     found, skipped = [], Counter()
     for row in rows:
@@ -900,8 +902,11 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
         key, sure = first_of(row, "today", "today_key", "key"), True
         if not key or edit_key(key) not in by_key:
             old = first_of(row, "old_id", "card", "old_key", "name") or file_name(path)
-            tries = (old,) if old in known else (path, row.get("lineage"), old, edit_key(old))   # a lost old card
-            key, sure = next((maps[k] for k in tries if k and k in maps), (None, False))  # never another's name
+            if old in known:                   # its own map only: never another's name, nor one only its case
+                key, sure = exact.get(old, (None, False))    # differs from ('pain', the joke, is not 'Pain')
+            else:
+                tries = (path, row.get("lineage"), old, edit_key(old))
+                key, sure = next((maps[k] for k in tries if k and k in maps), (None, False))
         cid = by_key.get(edit_key(key or ""))
         if cid is None or not sure:
             skipped["unsure map" if cid else "no card today"] += 1
