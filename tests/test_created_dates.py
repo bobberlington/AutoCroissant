@@ -161,18 +161,24 @@ def test_query_embed_says_created(monkeypatch):
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     """to_dict's created: the metadata view (/query as_of) lists it after timestamp, both exports
-    carry it (CSV: a created column)."""
+    carry it (CSV: a created column). The text exports keep non-ASCII and write creatures as hp/def/atk/spd."""
     import csv
     import commands.psd_analyzer as pa
     goombella, kirby = _dated("Goombella", "2023-10-13"), _dated("Kirby", None)
+    twins = _card("Twins", creatures=[cm.CardStats(7, 4, 5, 6), cm.CardStats(7, 10, 4, 4)])
+    twins.ability = "Uses: ∞"
     monkeypatch.setattr(pa, "get_card_aliases", lambda name=None: [] if name else {})
     lines = pa._format_metadata(goombella, "Goombella").split("\n")
     assert lines[lines.index("created: 2023-10-13") - 1].startswith("timestamp: ")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(pa, "queue_file", lambda inter, f: None)
-    monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby})
+    monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby, "Twins": twins})
     pa.export_stats_to_file(SimpleNamespace(), as_csv=True)
     rows = {r[""]: r for r in csv.DictReader(open("stats.csv", encoding="utf-8"))}
     assert rows["Goombella"]["created"] == "2023-10-13" and rows["Kirby"]["created"] == ""
     pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
-    assert "\n2023-10-13\n" in open("stats.txt", encoding="utf-8").read()
+    text = open("stats.txt", encoding="utf-8").read()
+    assert "\n2023-10-13\n" in text and "\nUses: ∞\n7/4/5/6 7/10/4/4\n" in text
+    monkeypatch.setattr(pa.stats_db, "rulebook", [{"num": 2, "title": "Setting Up", "text": "★★★ Deck\nfrom −9 up"}])
+    pa.export_rulebook_to_file(SimpleNamespace())
+    assert "2. Setting Up\n★★★ Deck\nfrom −9 up\n" in open("rules.txt", encoding="utf-8").read()

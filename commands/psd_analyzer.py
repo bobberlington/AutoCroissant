@@ -9,7 +9,6 @@ diagnostics scripts import it from commands.psd_parser, the other card classes f
 """
 from discord import Interaction, File
 from os.path import basename, splitext
-from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
@@ -162,7 +161,6 @@ def export_stats_to_file(interaction: Interaction,
         return
 
     filename = f"{EXPORTED_STATS_NAME}.txt"
-    ascii_pattern = re_compile(r'[^\x00-\x7f]')
 
     # Sort by type, then alphabetically within type
     sorted_cards = sorted(
@@ -170,7 +168,7 @@ def export_stats_to_file(interaction: Interaction,
         key=lambda x: (x[1].card_type, x[0].lower())
     )
 
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         current_type = None
         for name, card in sorted_cards:
             card_type = card.card_type
@@ -189,16 +187,12 @@ def export_stats_to_file(interaction: Interaction,
 
             if only_ability:
                 if card.ability:
-                    cleaned = ascii_pattern.sub('', card.ability)
-                    f.write(f"{cleaned}\n")
+                    f.write(f"{card.ability}\n")
             else:
-                card_dict = card.to_dict()
-                for _, metric in card_dict.items():
-                    if isinstance(metric, list):
-                        f.write(' '.join(metric) + '\n')
-                    else:
-                        cleaned = ascii_pattern.sub('', str(metric))
-                        f.write(f"{cleaned}\n")
+                for key, metric in card.to_dict().items():
+                    if key == "creatures":              # each hp/def/atk/spd
+                        metric = [f"{c.hp}/{c.defense}/{c.attack}/{c.speed}" for c in card.creatures]
+                    f.write((' '.join(map(str, metric)) if isinstance(metric, list) else str(metric)) + '\n')
             f.write('\n')
 
     with open(filename, 'rb') as f:
@@ -213,14 +207,13 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
         interaction: Discord interaction
     """
     filename = f"{EXPORTED_RULES_NAME}.txt"
-    ascii_pattern = re_compile(r'[^\x00-\x7f]')
 
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         for chapter in stats_db.rulebook:
-            f.write(f"{chapter_label(chapter)}\n{ascii_pattern.sub('', chapter['text'])}\n\n")
+            f.write(f"{chapter_label(chapter)}\n{chapter['text']}\n\n")
         bans = ban_list_text(card_repo.banlist)
         if bans:
-            f.write(f"{BAN_LIST}\n{ascii_pattern.sub('', bans)}\n\n")
+            f.write(f"{BAN_LIST}\n{bans}\n\n")
 
     with open(filename, 'rb') as f:
         queue_file(interaction, File(f, filename))
