@@ -171,7 +171,7 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
     if not commit:
         raise ValueError(f"{ref}: not in {clone}")
     tree = dict(source.tree(commit))
-    names = {CardAuthors.key(c) for c in cards.split(",") if c.strip()}
+    names = CardAuthors.keys(cards)
     chained: dict = {}                          # sha -> file, the earlier passes' writes
     plans = []
     for kind in kinds:

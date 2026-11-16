@@ -421,7 +421,7 @@ def test_to_check_and_file():
 
 
 def test_cards_list_keeps_a_name_with_a_comma():
-    """--cards (Card checks, Card sync): each part's key as ever, adjacent parts joined too."""
+    """--cards (Card checks, Card sync, Card guards, card_sweep): each part's key as ever, adjacent parts joined too."""
     keys = cc.CardAuthors.keys("Hero_Cap,The_Evil,_Fricked_Up_Cursed_Idol,Rope")
     assert {"hero cap", "the evil", "fricked up cursed idol", "rope", "the evil, fricked up cursed idol"} <= keys
     assert "" not in cc.CardAuthors.keys("A, ,_")                                         # blank parts: no key

@@ -2813,7 +2813,7 @@ def main(args: Optional[list] = None) -> int:
             cli.error(f"the plan was checked with --mode {planned}: land commits only an `on` plan (pass --dry-run, or --local DIR)")
     token_from_env()
     if options.command == "check":
-        cards = {CardAuthors.key(n) for n in options.cards.split(",") if n.strip()} or None
+        cards = CardAuthors.keys(options.cards) or None
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
                          options.mode, options.out, options.workers, options.convert)

@@ -574,6 +574,15 @@ def test_check_fails_when_it_cannot_check(cards, tmp_path, capsys):
     assert "Not checked: the clone has no commit eeeeeeee" in capsys.readouterr().out
 
 
+def test_check_cards_keep_a_name_with_a_comma(monkeypatch, tmp_path):
+    """--cards: a card name with a comma (The Evil, Fricked Up Cursed Idol) is still named."""
+    seen = []
+    monkeypatch.setattr(cg, "check", lambda *a, **k: seen.append(a[5]) or {"markdown": ""})
+    assert cg.main(["check", "--clone", ".", "--after", "e" * 40, "--out", str(tmp_path),
+                    "--cards", "Rope,The_Evil,_Fricked_Up_Cursed_Idol"]) == 0
+    assert {"rope", "the evil, fricked up cursed idol"} <= seen[0]
+
+
 def test_discord_fits_and_says_nothing_without_issues():
     entry = {"login": "Zomoroko", "card": "Skullord", "told": ["timing tag (1GCD) not set in the stoogedings badge font"], "commit": "7" * 40}
     data = {"after": "a" * 40, "cards": [dict(entry, card=f"Card {i}") for i in range(80)]}
