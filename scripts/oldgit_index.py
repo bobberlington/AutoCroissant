@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 The old card repo's version index for the card timelines (docs/Future/CARD_TIMELINE.md; owner 11-13). By hand.
-Read-only on the old pre-wipe .git: only its history before the current repo was populated counts (owner 11-13: up to
-TC 36d62e53, the last 'init', 2023-11-05 23:15 PST), minus those init commits themselves (the current repo's own).
+Read-only on the old pre-wipe .git's history, as copied into the first repo's store (refs/old/*: its main 268c2b1 and
+TC's init 36d62e53, every pre-cut commit with its objects; env TIMELINES_OLD_GIT reads a .git of it instead): only its
+history before the current repo was populated counts (owner 11-13: up to TC 36d62e53, the last 'init', 2023-11-05
+23:15 PST), minus those init commits themselves (the current repo's own).
 
     python oldgit_index.py index           versions.jsonl: each card PSD/PNG blob version per path (renames, moves and
                                            case changes followed; old_id: one old card); index.json (commits, old cards)
@@ -21,7 +23,7 @@ Runs with the fork's Python from AC's scripts/ (else AC = the timelines worktree
 
 The first repo (FIRST_GIT: discord_match.FIRST_GIT, env TIMELINES_FIRST_GIT; missing: an error): the same GitHub repo's history before the old .git, cut by the force-pushes of
 2023-04-02 and 2023-04-21 (2022-08-24..2023-04-21), fetched read only into a bare repo of its own (blobless, its card PNGs
-fetched; its objects/info/alternates reads the old .git's objects). Its main commits come first, as one history with the
+fetched; since 2026-11-17 it also holds the old .git's pre-cut objects: no alternates). Its main commits come first, as one history with the
 old repo's (rows: repo 'first'); 'Initial No PSD's' (2023-04-02) re-made the tree before it, so that commit is its
 parent here. The side branch the_restoration_project re-committed 2020 port looks in 2022 (no history of them): left out.
 Authors not in authors.json map by their commit e-mail when another name with that e-mail maps (Kittycoon,
@@ -49,7 +51,8 @@ from os.path import basename, dirname, exists, expanduser, join, splitext
 HOME = expanduser("~")
 HERE = dirname(os.path.abspath(__file__))
 AC = dirname(HERE) if exists(join(dirname(HERE), "commands", "psd_parser.py")) else join(HOME, "Documents/Tools/wt/timelines-1113")
-OLD_GIT = join(HOME, "Downloads/Old TTSCardMaker/.git")
+OLD_GIT = os.environ.get("TIMELINES_OLD_GIT", "")   # optional: read the old pre-wipe .git itself; unset: the store
+OLD_REFS = "refs/old/*"                             # the store's copy of it: main 268c2b1 + TC's init 36d62e53 (pre-cut)
 FIRST_REFS = ("refs/first/main-0402", "refs/first/main-0421")   # main before each force-push, oldest first
 FIRST_LINKS = {"2056706e9ac92dfc024c3fc267154d13c78f972c": "7d95f1eb94d5b4e848028ab01b7c2286312b89d0"}
 LOST_GLOB = "refs/lost2023/*"                       # the old repo's lost 2023 heads, in the first repo's store
@@ -79,7 +82,8 @@ sys.path.insert(0, AC)
 os.environ["GIT_NO_LAZY_FETCH"] = "1"                     # the first repo is blobless: a missing blob is never fetched
 from commands.discord_match import FIRST_GIT as FIRST_PATH, first_store  # noqa: E402  (the one store path)
 FIRST_GIT = expanduser(FIRST_PATH)                        # the first repo (read only; it holds the old .git's objects)
-OG = ["git", "--git-dir", OLD_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
+OG = ["git", "--git-dir", expanduser(OLD_GIT) or FIRST_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
+OLD_ALL = ("--all",) if OLD_GIT else ("--glob=" + OLD_REFS,)   # the old repo's refs (log --all on the old .git)
 FG = ["git", "--git-dir", FIRST_GIT, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "--no-pager"]
 STORE = FG                                                # both repos' objects (old_commits stops when it is missing)
 TG = ["git", "-C", TC, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "core.quotePath=false", "--no-pager"]
@@ -191,6 +195,8 @@ def old_commits() -> tuple:
     the first repo's main commits before them (repo 'first'; FIRST_LINKS joins its two histories); the old repo's lost
     2023 commits after them (repo 'old', lost; LOST_LINKS)."""
     first_store()                                              # no store, no index: never the old .git alone
+    if not OLD_GIT and not git(FG, "for-each-ref", "--count=1", OLD_REFS).strip():
+        raise SystemExit(f"no {OLD_REFS} in {FIRST_GIT}: the old repo's history is missing (or set TIMELINES_OLD_GIT)")
     own = set(git(OG, "rev-list", TC_INIT).decode().split())
     order, meta = [], {}
     if STORE is FG:
@@ -203,7 +209,7 @@ def old_commits() -> tuple:
             if sha in meta and parent in meta:
                 meta[sha]["parents"] = [parent]
                 meta[sha]["linked"] = True
-    for sha, m in log_commits(OG, "--all", "--before=" + CUT):
+    for sha, m in log_commits(OG, *OLD_ALL, "--before=" + CUT):
         if sha not in own and sha not in meta:
             order.append(sha)
             meta[sha] = {**m, "repo": "old"}

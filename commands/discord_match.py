@@ -69,7 +69,7 @@ CARD_FEATURES, POST_FEATURES, CELL_FEATURES = 5, 3, 1   # bump when card, post o
 PAIRS_VERSION = 4
 STATS_FILE = "db/stats.json"                      # the data branch's card data
 CARD_TOPS = ("Creatures", "Items", "Field", "N.M.E", "Auxiliary")   # tts_save.CARD_FOLDERS
-OLD_GIT = "~/Downloads/Old TTSCardMaker/.git"     # the pre-wipe repo: read only
+OLD_GIT = environ.get("TIMELINES_OLD_GIT") or None   # optional: the old pre-wipe .git itself; None: the store's copy
 FIRST_GIT = environ.get("TIMELINES_FIRST_GIT", "~/Documents/Tools/firstrepo.git")   # the first repo's store: both
                                                   # old repos' objects (read only; moved: point the env at it)
 
@@ -929,13 +929,13 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
 VERSION_KEYS = ("key", "feat", "card", "commit", "ts", "current", "path", "old", "source", "repo")
 
 
-def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", old_git: str = OLD_GIT,
+def plan_versions(cards: dict, cards_repo: str, root: str, mode: str = "all", old_git: Optional[str] = OLD_GIT,
                   download: bool = False, log: Callable = print) -> list:
     """The references: each card's versions (the old repo's and TTSCardMaker's, one per card and blob, dated by its
     first record): {key, feat (the features' cache key: the blob), card, path, blob, commit, ts, current, old, source};
     source None: in neither store and not downloaded. Sets each card's fs, its first record: its oldest old-repo
     version, else its oldest TTSCardMaker one. mode: all; oldest (and the current); none (the current only)."""
-    old_git = old_store() if old_git == OLD_GIT else old_git
+    old_git = old_git or old_store()
     tc = tc_versions(cards_repo, cards)
     old = old_versions(root, cards, log)
     for found, source in ((tc, "git"), (old, "old git")):     # the old repo's first, else TTSCardMaker's
@@ -995,7 +995,7 @@ def featurize(paths: "Paths", plan: list, ocr: bool, workers: int, log: Callable
 
 
 def references(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True,
-               workers: int = 0, old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
+               workers: int = 0, old_git: Optional[str] = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
     """(cards, featured versions): today's cards and their versions, featurized (the refs command)."""
     paths = Paths(check_root(root))
     cards = load_cards(cards_repo)
@@ -1824,7 +1824,7 @@ def twins(out: dict) -> dict:
 
 
 def refs(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True, workers: int = 0,
-         old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
+         old_git: Optional[str] = OLD_GIT, download: bool = False, log: Callable = print) -> tuple:
     """The refs command: today's cards and every version of them featurized (match/cache/cards.jsonl)."""
     paths = Paths(check_root(root))
     lock = hold(paths.lock)
@@ -1838,7 +1838,7 @@ def refs(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr:
 
 
 def score(root: str, cards_repo: str = LOCAL_DIR_LOC, versions: str = "all", ocr: bool = True, workers: int = 0,
-          limit: Optional[int] = None, old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
+          limit: Optional[int] = None, old_git: Optional[str] = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
     """Features for every card version and stored image, then each image's scored candidates (match/pairs.json)."""
     root = check_root(root)
     paths = Paths(root)
@@ -3364,7 +3364,7 @@ def version_outcome(index: CardIndex, looks: dict, cid: str, key: str, feat: dic
 
 
 def selftest(root: str, cards_repo: str = LOCAL_DIR_LOC, workers: int = 0, limit: Optional[int] = None,
-             old_git: str = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
+             old_git: Optional[str] = OLD_GIT, download: bool = False, log: Callable = print) -> dict:
     """The image methods on degraded copies of every current card PNG, and the version pick on degraded copies of
     every version of the cards with more than one look (the references featurized first, as refs does)."""
     root = check_root(root)

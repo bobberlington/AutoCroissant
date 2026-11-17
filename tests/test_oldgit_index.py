@@ -110,3 +110,18 @@ def test_mdw_drafts_are_card_files_of_their_own_lineages(oi):
     meta = {"A": {"parents": [], "repo": "old"}}
     _, lineages, events, _ = oi.walk(["A"], meta, {"A": {"MDW/Croissant's Special Folder/peak.psd": "b"}}, prefix="M")
     assert list(lineages) == ["M1"] and events[0]["kind"] == "add"
+
+
+def test_the_old_repo_is_read_from_the_store_unless_a_git_dir_is_given(monkeypatch):
+    """S10 (11-17): the old pre-wipe history is the store's refs/old/* (its main and TC's init, pre-cut); the old .git
+    itself only through TIMELINES_OLD_GIT (log --all there)."""
+    def load(env):
+        monkeypatch.setenv("TIMELINES_OLD_GIT", env)
+        spec = importlib.util.spec_from_file_location("oldgit_index_env", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    store = load("")
+    assert store.OG[2] == store.FIRST_GIT and store.OLD_ALL == ("--glob=refs/old/*",) and "Downloads" not in store.OG[2]
+    given = load("/nonexistent/old.git")
+    assert given.OG[2] == "/nonexistent/old.git" and given.OLD_ALL == ("--all",)
