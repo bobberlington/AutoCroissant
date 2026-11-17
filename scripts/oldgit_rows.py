@@ -522,6 +522,7 @@ class Data:
         self.today = {}
         self.thumbs = {}
         self.psd_firsts = {}                                   # card -> its first record when a PSD (psd_first)
+        self.folder_firsts = {}                                # card -> its first card-folder record after MDW drafts
 
     def load_today(self):
         stats, _, _, _ = oi.today_cards()
@@ -1233,6 +1234,15 @@ def before_folders(versions: list) -> list:
     return [v for v in versions if not v.get("mdw") or v["ts"] < first]
 
 
+def folder_first(versions: list):
+    """The card's first card-folder record (PNG or PSD) when an MDW draft comes before it, else None: Discord
+    drafts posted in between still enter the chain (their looks are in no git record)."""
+    first = min((v for v in versions if not v.get("mdw")), key=lambda v: (v["ts"], v["path"]), default=None)
+    if not any(v.get("mdw") and v["ts"] < (first["ts"] if first else float("inf")) for v in versions):
+        return None
+    return {k: first.get(k) for k in ("ts", "date", "commit", "path", "repo")} if first else {"ts": None}
+
+
 def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
     """(the card's first old repo record when it is a PSD added before any PNG of it: {ts, date, commit, blob, path,
     author, subject}, that PSD's version when its composite is a look of its own: a row) or (None, None). A PSD
@@ -1261,6 +1271,8 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
     PNG (and the PNG's own PSD is not), else a psd_only row when a look of its own."""
     from commands.png_changes import VISIBLE
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
+    if key:
+        data.folder_firsts[key] = folder_first(versions)
     versions = before_folders(versions)
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
@@ -1360,8 +1372,9 @@ def psd_rows(data: Data, key, old_id: str, today: dict, ids: list, base: list) -
     """An unsure map's old card of PSDs alone (its rows wait for the owner): the card's rows with its PSDs
     (card_rows psd_from) that differ from base, the card's own rows: a row it gave its PSD ('replaces' that row,
     psd_file) and its own looks (psd_only)."""
-    kept = data.psd_firsts.get(key)
+    kept, folders = data.psd_firsts.get(key), data.folder_firsts.get(key)
     found = card_rows(data, key, list(ids) + [old_id], today, psd_from={old_id})
+    data.folder_firsts[key] = folders
     if kept is None:
         data.psd_firsts.pop(key, None)
     else:
@@ -1506,9 +1519,11 @@ def rows_main():
     live = {r["card"] for r in live_rows}
     oi.write_json(join(OUT, "psd_first.json"), {
         "about": "Live cards whose first old repo record is a PSD added before any PNG of them (S6 dates them by it: "
-                 "'old repo (PSD)'); row: its composite is a look of its own, a psd_only row in rows.jsonl.",
+                 "'old repo (PSD)'); row: its composite is a look of its own, a psd_only row in rows.jsonl. folders: "
+                 "cards whose MDW/ drafts come before their first card-folder record (that record).",
         "cards": {k: {**v, "row": any(r.get("psd_only") and r["card"] == k for r in live_rows)}
-                  for k, v in sorted(data.psd_firsts.items()) if k in live}})
+                  for k, v in sorted(data.psd_firsts.items()) if k in live},
+        "folders": {k: v for k, v in sorted((k, v) for k, v in data.folder_firsts.items() if v and k in live)}})
     summary = summarize(data, live_rows, archived_rows, review)
     oi.write_json(join(OUT, "summary.json"), summary)
     print(json.dumps(summary, indent=1, ensure_ascii=False))

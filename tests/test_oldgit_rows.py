@@ -127,6 +127,7 @@ class FakeData:
         self.icons, self.type_names, self.by_commit, self.drawn, self.vocab = {}, set(), {}, drawn or {}, set()
         self.eye_bars, self.eye_bars2, self.era_reads, self.look_reads = {}, {}, {}, {}
         self.text_raw, self.text_cal, self.header, self.eye_types = {}, {}, {}, {}
+        self.folder_firsts = {}
 
     def text_bar(self, era, name):
         return rows_module().Data.text_bar(self, era, name)
@@ -490,6 +491,7 @@ def test_mdw_drafts_count_only_before_the_card_folders(rows):
     kept = rows.before_folders([v("psd", "m0", 100, draft, True), v("psd", "p0", 300, card), v("png", "g0", 300, card),
                                 v("psd", "m1", 300, draft, True), v("psd", "m2", 400, draft, True)])
     assert [x["blob"] for x in kept] == ["m0", "p0", "g0"]
+    assert rows.folder_first(kept)["ts"] == 300 and rows.folder_first(kept[1:]) is None   # Discord drafts up to it
     read = {"type": "creature", "name": "T", "printed_title": "T", "stars": 3, "types": [], "stats": stats(5, 4, 6, 5),
             "ability": "(OPT) Flip."}
     reads = {("m0", f"{draft}.psd"): {"read": read}, ("p0", f"{card}.psd"): {"read": read}}
@@ -504,3 +506,4 @@ def test_mdw_drafts_count_only_before_the_card_folders(rows):
     found = rows.card_rows(data, "T", ["T", "t"], {"names": {"T"}, "creatures": False})
     assert [(r["blob"], bool(r.get("psd_only")), bool(r.get("mdw"))) for r in found] == [("m0", True, True),
                                                                                          ("g0", False, False)]
+    assert data.folder_firsts["T"]["ts"] == 300

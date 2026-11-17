@@ -475,7 +475,12 @@ class Inputs:
             if row.get("psd_only") and cid and row["ts"] < (self.cards[cid].get("fs") or float("inf")):
                 self.cards[cid].update(fs=row["ts"], fs_psd=row,                      # its first record: a PSD
                                        fs_from="first git" if row.get("repo") == "first" else "old git")
-        self.psd_first = (dm.read_json(p.at(PSD_FIRST), {}) or {}).get("cards") or {}
+        psd_first = dm.read_json(p.at(PSD_FIRST), {}) or {}
+        self.psd_first = psd_first.get("cards") or {}
+        for key, f in (psd_first.get("folders") or {}).items():    # MDW drafts before the card folders (oldgit_rows)
+            cid = self.by_key.get(key)
+            if cid and f.get("ts"):
+                self.cards[cid]["fs_folder"] = f["ts"]
         self.owner = dm.read_json(p.at(OWNER), {}) or {}
         self.old_review = dm.read_jsonl(p.at(OLD_REVIEW))
         self.facts = dm.read_jsonl(p.at(FACTS))
@@ -1141,8 +1146,10 @@ class Chain:
                 continue
             when = dm.epoch(first["date"])
             if cards[cid].get("fs") and when >= cards[cid]["fs"]:
-                self.tally["discord: after the card's first git record"] += 1
-                continue
+                if not self.before_folders(cid, row, when):
+                    self.tally["discord: after the card's first git record"] += 1
+                    continue
+                self.tally["discord: a draft after an MDW draft, before the card folders"] += 1
             if row.get("joke_draft") or (row.get("joke") and row["verdict"] != "version_sure"):
                 self.add_review("joke picture", row["id"], card=cid, picture=row["id"], date=first["date"],
                                 channel=first["channel"], why=row.get("review") or "a joke picture's look")
@@ -1162,6 +1169,12 @@ class Chain:
             else:
                 found[cid].append(row)
         return found, split
+
+    def before_folders(self, cid: str, row: dict, when: float) -> bool:
+        """A draft (a look in no git record) posted after the card's first record, an MDW draft, but before its
+        first card-folder record (fs_folder): still the card's (Tainted Bethany 2023-09-09 12:55)."""
+        return row["verdict"] == "draft" and not (row.get("joke") or row.get("joke_draft")) and \
+            when < (self.inputs.cards[cid].get("fs_folder") or 0)
 
     def to_halves(self, group: dict, row: dict, split: dict) -> None:
         """A split card's picture into each half's chain, before that half's first git record."""
@@ -1892,7 +1905,8 @@ class Chain:
 
     def owner_pick(self, out: dict) -> tuple:
         """(the owner's answer on the card's Created item, (the date it gives, its source)): ours or the file's while
-        that is still the day the answer carries, or a date given; else the date as built."""
+        that is still the day the answer carries, or a date given; the owner's (not the triage's) pick whose day is
+        shown no more keeps its day until answered again ('held': never dropped); else the date as built."""
         r = (self.rulings.get(out["review"]) or {}) if out.get("review") else {}
         file, ours = out.get("file") or {}, out["ours"]
         given = {"ours": (ours.get("day"), {**ours, "from": "ours"}),
@@ -1900,6 +1914,10 @@ class Chain:
                                              "file_from": file.get("from")}),
                  "date": (r.get("value"), {"day": r.get("value"), "source": "owner", "from": "typed"})}
         if r.get("choice") in ("ours", "file") and not confirms(r, given[r["choice"]][0]):
+            if not r.get("source") or r["source"] == "owner":       # the owner's day holds until answered again
+                self.tally["owner: Created picked, its day no longer the one shown (kept as the owner's day)"] += 1
+                held = {"day": r.get("value"), "source": "owner", "from": "held", "pick": r["choice"]}
+                return {**r, "held": True}, (r.get("value"), held)
             self.tally["owner: Created picked, its day no longer the one shown (not applied)"] += 1
         elif r.get("choice") in given and given[r["choice"]][0]:
             return r, given[r["choice"]]
@@ -1912,15 +1930,21 @@ class Chain:
         """The owner's answers on Created: a status item's pick (base: ours, the file's, a date given) and the earlier
         hints said yes to (a changelog line, a first-repo push notice, a Morgue entry's picture); the earliest wins and
         its source is kept (owner.source, shaped like ours: the preview's source for status 'owner'). 'hand' is never
-        touched; a hint not earlier than base is never one (the review page leaves it out)."""
+        touched; a hint not earlier than base is never one (the review page leaves it out), nor one the triage said
+        yes to below the owner's held day (owner > triage: Holy Card's 2023-05-31, picked over that very picture)."""
         if not self.rulings:
             return
         ruled = [out["review"]] if r else []
         picks = [base]
+        held = bool(r.get("held"))               # the owner's day held (the item changed since): no triage hint below
+        lower = lambda h: held and h.get("source") not in (None, "owner")
         for k, source, what in (("changelog_earlier", "changelog", "changelog line"),
                                 ("first_repo_earlier", "first repo", "first repo push")):
             hint = out.get(k)
             answer = (self.rulings.get(hint["review"]) or {}) if hint else {}
+            if lower(answer) and answer.get("choice") == "yes":
+                self.tally[f"owner: a triage {what} hint's yes below the owner's held day (not applied)"] += 1
+                continue
             if answer.get("choice") == "yes" and not confirms(answer, hint["day"]):     # another line's day now
                 self.tally[f"owner: a {what} hint's yes, its day changed (not applied)"] += 1
                 continue
@@ -1937,6 +1961,9 @@ class Chain:
             when = item.get("day") or str(item.get("date") or "")[:10]
             if not when or created_sort(when) >= created_sort(base[0]) or h.get("choice") not in ("yes", "no"):
                 continue
+            if lower(h) and h.get("choice") == "yes":
+                self.tally["owner: a triage Morgue hint's yes below the owner's held day (not applied)"] += 1
+                continue
             ruled.append(hid)
             self.used.add(hid)
             if h.get("choice") == "yes":
@@ -1950,7 +1977,8 @@ class Chain:
             file = (out.get("file") or {}).get("date")
             out.update(status="owner", date=date, sort=created_sort(date), proposed=date != file,
                        owner={"was": out["status"], "pick": r.get("choice"), "base": base[0],
-                              "hints": len(picks) - 1, "source": source, "ruled": ruled})
+                              "hints": len(picks) - 1, "source": source, "ruled": ruled,
+                              **({"held": r["value"]} if r.get("held") else {})})
             self.tally["owner: Created picked"] += 1
 
 

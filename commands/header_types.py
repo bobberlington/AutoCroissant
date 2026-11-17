@@ -345,7 +345,8 @@ def read(root: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> list:
 
 
 def old_rows(root: str, old_git: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> list:
-    """rows: the old and first repo's PNG rows with no types read (no PSD: oldrows rows.jsonl) of era D1-D3 (the bar
+    """rows: the old and first repo's PNG rows with no types read (no PSD: oldrows rows.jsonl; a type a run of this
+    step gave counts as none, so a rerun after rows gives the same) of era D1-D3 (the bar
     readers' era of the PNG), each a Discord-like copy as calibrate makes, against its card's other versions with
     known types (read's rule and bar) -> derived/readers/types/header_rows.jsonl {blob, card, era, types, version,
     ncc, rival, boxes, sure}."""
@@ -368,7 +369,8 @@ def old_rows(root: str, old_git: str, cards_repo: str = dm.LOCAL_DIR_LOC) -> lis
     todo = {}
     for r in dm.read_jsonl(join(root, "derived", "oldrows", "rows.jsonl")):
         cid = cid_of.get(r.get("card"))
-        if "types" not in (r.get("fields") or {}) and eras.get(r["blob"]) in TEMPLATE_ERAS and by_card.get(cid):
+        given = ((r.get("fields") or {}).get("types") or {}).get("method")       # this step's own, an earlier run's
+        if given in (None, "git header") and eras.get(r["blob"]) in TEMPLATE_ERAS and by_card.get(cid):
             todo.setdefault(r["blob"], (r, cid))
     blobs, bands, out = Blobs(expanduser(old_git)), {}, []
     try:

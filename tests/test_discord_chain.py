@@ -119,6 +119,18 @@ def test_which_pictures_enter_and_reposts_merge():
     assert hinted["first_repo_earlier"]["row"] == "Q-q0"                 # a push notice: a Created hint (review) only
 
 
+def test_a_draft_after_an_mdw_draft_but_before_the_card_folders_enters():
+    """s3 gap 2 fix: a card whose first record is an MDW draft (oldrows psd_first.json folders) keeps its Discord drafts
+    posted before its first card-folder record (Tainted Bethany 2023-09-09 12:55); git looks and jokes stay out."""
+    verdicts = [picture(1, T + 110 * DAY), picture(2, T + 120 * DAY, "version_sure", look=1),
+                picture(3, T + 130 * DAY, joke=True), picture(4, T + 210 * DAY)]
+    got = inputs(verdicts)
+    assert not dc.Chain(got).discord_rows()[0].get("bolt")             # after the first git record (fs)
+    got.cards["bolt"]["fs_folder"] = T + 200 * DAY
+    found, _ = dc.Chain(got).discord_rows()
+    assert [r["id"] for r in found["bolt"]] == ["P-000000000001"]
+
+
 def test_the_physical_card_photos_date_exactly_three_cards():
     """Owner Q6 (11-14 22:15/22:20): the photos are in no timeline (no paper entry, no paper review item); Created
     'Before 2020' (sorting first, source 'physical card photo', read only) for Pep Drink and Wham Bam Bone, the
@@ -388,9 +400,18 @@ def test_the_owner_s_answers():
     assert name["confidence"] == "review" and chain.review[name["review"]]["proposed"] == "Bolt"
     assert chain.tally["owner: discord field name yes, its value no longer proposed (not applied)"] == 1
     assert "P-000000000003" in {i["picture"] for i in chain.review.values() if i["kind"] == "look not told"}
+    made = chain.created("bolt", t, again.verdicts)         # the owner's own day held until answered again
+    assert (made["status"], made["date"], made["owner"]["held"]) == ("owner", dc.day(T + 8 * DAY), dc.day(T + 8 * DAY))
+    assert chain.tally["owner: Created picked, its day no longer the one shown (kept as the owner's day)"] == 1
+    chain.rulings["hint:LC-x:bolt"] = {"kind": "morgue hint", "choice": "yes", "source": "triage (x)",
+                                       "item": {"card": "bolt", "day": dc.day(T - 3 * DAY), "entry": "LC-x"}}
+    assert chain.created("bolt", t, again.verdicts)["date"] == dc.day(T + 8 * DAY)    # no triage hint below it
+    assert chain.tally["owner: a triage Morgue hint's yes below the owner's held day (not applied)"] == 1
+    chain.rulings[rid("created earlier", "bolt")]["source"] = "triage (x)"           # the triage's: not applied
     made = chain.created("bolt", t, again.verdicts)
-    assert made["status"] == "earlier" and chain.used == {rid("named only", "P-000000000001")}
+    assert made["status"] == "owner" and made["date"] == dc.day(T - 3 * DAY) and "held" not in made["owner"]
     assert chain.tally["owner: Created picked, its day no longer the one shown (not applied)"] == 1
+    del chain.rulings["hint:LC-x:bolt"]
     named = inputs([picture(1, T, created_review="named only, before its first picture evidence (x)")])
     named.rulings = {rid("named only", "P-000000000001"): {"choice": "yes", "value": "pike"}}
     assert dc.owner_rows(named)["owner: a named only answer given on another card (not applied)"] == 1 and \
