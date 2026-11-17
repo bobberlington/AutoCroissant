@@ -246,14 +246,15 @@ def stat_line(value) -> Optional[tuple]:
 
 def ability_change(a: dict, b: dict) -> str:
     """same | formatting | changed | removed | unknown: two versions' abilities (formatting alone, owner 11-09; an
-    OCR'd text against a PSD's: icons aside, they print as pictures; removed: a blank box after a text, owner 11-17)."""
+    OCR'd text against a PSD's: icons aside, they print as pictures; removed: a blank box after a text, owner 11-17,
+    read by eye or a PSD's own layers)."""
     if not (is_sure(a) and is_sure(b)):
         return "unknown"
     x, y = a["value"] or "", b["value"] or ""
     if x == y:
         return "same"
-    if not y.strip():
-        return "removed"
+    if not y.strip():                                   # card data's or OCR's '' can be a read failure (Shadow Queen)
+        return "unknown" if b["method"] == "psd (card data)" or "ocr" in b["method"] else "removed"
     if text_key(x) == text_key(y):
         return "formatting"
     if "psd" not in (a["method"] + b["method"]) or "ocr" in (a["method"] + b["method"]) or "eye" in (a["method"] +

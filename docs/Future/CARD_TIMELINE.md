@@ -294,7 +294,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
    40 not judged; formatting-only text is no change; an ability box blank by eye after a text is 'removed', not
    unknown (owner 11-17, Panda's counter damage: `derived/readers/text/eye/s10_blank_ability.json`, ability '' by
-   picture or PNG blob; a read failure stays unknown; the website shows "Ability removed" and "No ability then");
+   picture or PNG blob, or an old PSD's own empty layer; a read failure stays unknown: a card data or OCR '' is never
+   'removed', Shadow Queen's first card data; the website shows "Ability removed" and "No ability then");
    types compare as the card data's tokens, the same mapping as
    answers, 'infection' as 'infected', the deprecated type the owner named (11-17; Hive Knight, God Tamer, Traitor
    Lord, Uumuu, Mini Bee's orange Hollow Knight blob); an item's kinds, its subtypes, are no types change). A Discord
