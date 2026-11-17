@@ -548,7 +548,7 @@ def test_the_eras_readers_come_with_the_tools(rows, monkeypatch):
     OLDROWS_READERS naming a folder with no readers.py stops with a clear error."""
     monkeypatch.setattr(rows, "READERS", "")
     got = rows.readers()
-    assert got.__name__ == "era_readers" and "scratch" not in got.__file__
+    assert got.__name__ == "era_readers" and Path(got.__file__).resolve() == SCRIPT.with_name("era_readers.py")
     assert all(callable(getattr(got, f)) for f in ("labels", "read_best", "split_read", "tell_flats", "ability_of"))
     monkeypatch.setattr(rows, "READERS", "/nonexistent/eras")
     with pytest.raises(SystemExit, match="no readers.py"):
