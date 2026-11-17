@@ -477,3 +477,30 @@ def test_a_file_name_standing_in_for_an_unread_title_is_no_sure_name(rows):
     rows.title_stand_in(got)
     assert (got[1]["fields"]["name"]["value"], got[1]["fields"]["name"]["confidence"]) == ("Satou Matsuzaka", "review")
     assert got[2]["fields"]["name"]["confidence"] == "sure"
+
+
+def test_mdw_drafts_count_only_before_the_card_folders(rows):
+    """s3 gap round 2: an MDW draft (oldgit_index MDW_DRAFTS) is a version only before the card's first card-folder
+    record; an MDW PSD with no PNG in its commit is a psd_only row of its own composite."""
+    v = lambda ext, blob, ts, path, mdw=False: {"id": f"{blob}:{path}.{ext}", "old_id": "t" if mdw else "T",
+                                                "commit": blob * 20, "ts": ts, "date": f"2023-09-0{ts // 100}T00:00:00Z",
+                                                "author": "Michael", "subject": "s", "path": f"{path}.{ext}", "ext": ext,
+                                                "blob": blob, "kind": "add", "new_look": True, **({"mdw": True} if mdw else {})}
+    draft, card = "MDW/Croissant's Special Folder/t", "Creatures/Isaac/3 Stars/T"
+    kept = rows.before_folders([v("psd", "m0", 100, draft, True), v("psd", "p0", 300, card), v("png", "g0", 300, card),
+                                v("psd", "m1", 300, draft, True), v("psd", "m2", 400, draft, True)])
+    assert [x["blob"] for x in kept] == ["m0", "p0", "g0"]
+    read = {"type": "creature", "name": "T", "printed_title": "T", "stars": 3, "types": [], "stats": stats(5, 4, 6, 5),
+            "ability": "(OPT) Flip."}
+    reads = {("m0", f"{draft}.psd"): {"read": read}, ("p0", f"{card}.psd"): {"read": read}}
+
+    class Apart(FakeData):
+        def thumb(self, blob):
+            import numpy as np
+            return np.full((64, 32, 3), 200 if blob == "m0" else 0, dtype=np.int16)
+    data = Apart({"T": kept[1:], "t": kept[:1]}, reads, {"g0": {"best": stats(5, 4, 6, 5), "halves": {"apart": 0}}},
+                 {}, {"g0": {"title": [["T", 1.0]], "lines": []}}, {"m0": 3, "p0": 3})
+    data.psd_firsts = {}
+    found = rows.card_rows(data, "T", ["T", "t"], {"names": {"T"}, "creatures": False})
+    assert [(r["blob"], bool(r.get("psd_only")), bool(r.get("mdw"))) for r in found] == [("m0", True, True),
+                                                                                         ("g0", False, False)]

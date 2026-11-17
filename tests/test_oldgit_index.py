@@ -94,3 +94,13 @@ def test_a_first_repo_meme_file_joins_its_name_only_in_its_own_folder(oi, tmp_pa
     assert {k: v["paths"] for k, v in cards.items()} == {
         "pain": ["Items/Meme/2 Stars/pain.png"], "Pain": ["Auxillary/Status Effects/Debuffs/1 Stars/Pain.png"],
         "Alex YIIK": ["Cards/Meme/5 Stars/Alex_YIIK.png", "Cards/Other/5 Stars/Alex_YIIK.png"]}
+
+
+def test_mdw_drafts_are_card_files_of_their_own_lineages(oi):
+    """s3 gap round 2: MDW/Croissant's Special Folder and MDW/Ech's stuff are read (drafts), other MDW folders not;
+    their lineages are M1.. (index_main walks them apart, so no move or copy crosses into a card folder)."""
+    assert oi.is_mdw("MDW/Croissant's Special Folder/t beth.psd") and oi.is_card("MDW/Ech's stuff/OlimarCard.psd")
+    assert not oi.is_card("MDW/Templates/Creature_Template.psd") and not oi.is_mdw("Creatures/Isaac/3 Stars/T.png")
+    meta = {"A": {"parents": [], "repo": "old"}}
+    _, lineages, events, _ = oi.walk(["A"], meta, {"A": {"MDW/Croissant's Special Folder/peak.psd": "b"}}, prefix="M")
+    assert list(lineages) == ["M1"] and events[0]["kind"] == "add"

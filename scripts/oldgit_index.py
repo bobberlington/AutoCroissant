@@ -66,6 +66,7 @@ AUTHORS = join(HOME, "Documents/Tools/wt/scratch/s1110/timelines/authors.json")
 TC_INIT = "36d62e5336de5134f1471bb18bcca3c74cae0ef3"    # the current repo's last 'init' (2023-11-05 23:15:22 -08:00)
 CUT = "2023-11-06T07:15:30Z"
 CARD_DIRS = ("Creatures", "Auxillary", "Auxiliary", "Items", "Field", "N.M.E", "Cards")   # Cards: the first repo's
+MDW_DRAFTS = ("MDW/Croissant's Special Folder", "MDW/Ech's stuff")   # drafts beside the card folders: lineages M1..
                                                                                            # creatures (to 2023-04-20)
 EXTS = ("psd", "png")
 MEME = "/meme/"                                             # the first repo's joke folders (Items/Meme, Cards/Meme)
@@ -117,9 +118,15 @@ def today_rel(path: str) -> str:
     return path
 
 
+def is_mdw(path: str) -> bool:
+    """A file of MDW_DRAFTS (pre-release drafts: rows only by an eye tie, before the card's first card-folder record)."""
+    return path.startswith(tuple(d + "/" for d in MDW_DRAFTS))
+
+
 def is_card(path: str) -> bool:
     parts = path.split("/")
-    return parts[0] in CARD_DIRS and ext_of(path) in EXTS and not any(p in NOT_CARDS for p in parts[1:-1])
+    return (parts[0] in CARD_DIRS or is_mdw(path)) and ext_of(path) in EXTS and \
+        not any(p in NOT_CARDS for p in parts[1:-1])
 
 
 def read_jsonl(path: str) -> list:
@@ -137,7 +144,8 @@ def write_json(path: str, data, indent=1):
 
 def ls_tree(base, commit: str, env=None) -> dict:
     """{path: (blob, size)} of the commit's card PSDs/PNGs."""
-    out = git(base, "ls-tree", "-r", "-l", "-z", commit, "--", *CARD_DIRS, env=env).decode("utf-8", "surrogateescape")
+    out = git(base, "ls-tree", "-r", "-l", "-z", commit, "--", *CARD_DIRS, *MDW_DRAFTS, env=env) \
+        .decode("utf-8", "surrogateescape")
     found = {}
     for entry in out.split("\0"):
         if not entry:
@@ -236,11 +244,18 @@ def index_main():
     trees = {c: ls_tree(STORE, c) for c in order}
     sizes = {sha: size for t in trees.values() for sha, size in t.values()}
     trees = {c: {p: v[0] for p, v in t.items()} for c, t in trees.items()}
-    state, lineages, events, deletes = walk(order, meta, trees)
-    finish(order, meta, authors, sizes, state, lineages, events, deletes)
+    state, lineages, events, deletes = walk(order, meta, {c: {p: b for p, b in t.items() if not is_mdw(p)}
+                                                          for c, t in trees.items()})
+    drafts = walk(order, meta, {c: {p: b for p, b in t.items() if is_mdw(p)} for c, t in trees.items()}, prefix="M")
+    for c, cur in drafts[0].items():                           # MDW drafts: lineages of their own, never a card
+        state[c].update(cur)                                   # folder's (no move, copy or name across)
+    lineages.update(drafts[1])
+    position = {c: i for i, c in enumerate(order)}
+    events = sorted(events + drafts[2], key=lambda e: position[e["commit"]])   # stable: card rows keep their order
+    finish(order, meta, authors, sizes, state, lineages, events, deletes + drafts[3])
 
 
-def walk(order: list, meta: dict, trees: dict, carry=UPLOADS) -> tuple:
+def walk(order: list, meta: dict, trees: dict, carry=UPLOADS, prefix: str = "") -> tuple:
     """(state {commit: {path: (blob, lineage)}}, lineages, events, deletes) of the history, parents first: edits,
     moves (a case change, a moved and changed file of one name), copies, adds and deletions. A commit in carry keeps
     the files it hasn't re-uploaded yet (a batch of a re-upload: no deletion, no new lineage)."""
@@ -248,9 +263,9 @@ def walk(order: list, meta: dict, trees: dict, carry=UPLOADS) -> tuple:
     counter = Counter()
 
     def new_lineage(path, repo):
-        prefix = "F" if repo == "first" else "L"               # the first repo's lineages: F1.. (L1.. as before)
-        counter[prefix] += 1
-        lid = f"{prefix}{counter[prefix]}"
+        lead = prefix or ("F" if repo == "first" else "L")     # the first repo's lineages: F1.. (L1.. as before)
+        counter[lead] += 1
+        lid = f"{lead}{counter[lead]}"
         lineages[lid] = {"ext": ext_of(path), "paths": [path]}
         return lid
 
@@ -357,21 +372,21 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
     for c in order:
         seen = defaultdict(set)
         for path, (blob, lid) in state[c].items():
-            seen[(stem_key(path), ext_of(path))].add(lid)
+            seen[(lid[0] == "M", stem_key(path), ext_of(path))].add(lid)   # MDW drafts apart
         for key, lids in seen.items():
             if len(lids) > 1:
-                clash.add(key[0])
+                clash.add(("M:" if key[0] else "") + key[1])
                 together[key] |= lids
     top = lambda path: today_rel(path).split("/", 1)[0].lower()
-    for repo in ("L", "F"):                                    # each repo's lineages by name, as the old repo's were
+    for repo in ("L", "F", "M"):                               # each repo's lineages by name, as the old repo's were
         by_name, memes = defaultdict(list), []                 # (the first repo's by their last name: a misnamed file
         for lid, lin in lineages.items():                      # renamed must not join two cards: Metal Shield)
             if lid[0] == repo:
                 if repo == "F" and MEME in lin["paths"][-1].lower():
                     memes.append(lid)
                     continue
-                for path in lin["paths"] if repo == "L" else lin["paths"][-1:]:
-                    by_name[stem_key(path)].append(lid)
+                for path in lin["paths"] if repo != "F" else lin["paths"][-1:]:
+                    by_name[("M:" if repo == "M" else "") + stem_key(path)].append(lid)
         alone = defaultdict(list)                              # a Meme file joins its name in its top folder alone
         for lid in memes:                                      # (Alex YIIK's Cards/Meme -> Cards/Other), never another
             path = lineages[lid]["paths"][-1]                  # kind's: the joke item pain.png is not the debuff Pain
@@ -418,7 +433,8 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
     first_at = {}                          # names: the old repo's cards in their old order first, the first repo's,
     for e in events:                       # then those first seen in the lost 2023 history (ids kept: HR-H, the meme Tyler)
         root = find(e["lineage"])
-        rank = (2 if e["commit"] in lost else int(e["lineage"][0] == "F"), position[e["commit"]])
+        rank = (3 if e["lineage"][0] == "M" else 2 if e["commit"] in lost else int(e["lineage"][0] == "F"),
+                position[e["commit"]])                         # MDW drafts named last: no old id changes
         first_at[root] = min(first_at.get(root, rank), rank)
     for root, lids in sorted(groups.items(), key=lambda kv: first_at[kv[0]]):
         mine = [e for e in events if e["lineage"] in lids]
@@ -450,7 +466,8 @@ def finish(order: list, meta: dict, authors: dict, sizes: dict, state: dict, lin
                "date": m["date"], "authored": m["authored"], "ts": m["ts"], "author": m["author"],
                "author_mapped": authors.get(m["author"]), "subject": m["subject"], "merge": len(m["parents"]) > 1,
                "path": e["path"], "ext": ext_of(e["path"]), "blob": e["blob"], "size": sizes.get(e["blob"]),
-               "kind": e["kind"], "era": m["date"][:7], "repo": m["repo"], **({"lost": True} if m.get("lost") else {})}
+               "kind": e["kind"], "era": m["date"][:7], "repo": m["repo"], **({"lost": True} if m.get("lost") else {}),
+               **({"mdw": True} if e["lineage"][0] == "M" else {})}
         for key in ("from_path", "copy_of"):
             if e.get(key):
                 row[key] = e[key]
@@ -492,7 +509,7 @@ def join_first(lineages: dict, find, events: list, meta: dict) -> dict:
         root = find(e["lineage"])
         if e["lineage"][0] == "F":
             last_path[root] = e["path"]
-        elif e["path"] not in first_paths[root]:
+        elif e["lineage"][0] != "M" and e["path"] not in first_paths[root]:   # MDW drafts: never joined
             first_paths[root].append(e["path"])
     by_stem = defaultdict(set)
     for root, paths in first_paths.items():
@@ -588,7 +605,7 @@ def card_fields(card, notes) -> dict:
     return found
 
 
-def w_psd(sha: str, paths: list) -> list:
+def w_psd(sha: str, paths: list, rels: dict = None) -> list:
     from psd_tools import PSDImage
     from commands.psd_parser import CardValidator, variants_of
     t0 = time.time()
@@ -619,7 +636,7 @@ def w_psd(sha: str, paths: list) -> list:
         rows = []
         parser = _W["parser"]
         for path in paths:
-            rel = today_rel(path)
+            rel = (rels or {}).get(path) or today_rel(path)      # an MDW draft: read in its tied card's folder
             row = {**base, "path": path, "rel": rel}
             t1 = time.time()
             def read(rel):
@@ -712,7 +729,7 @@ def w_ref(ref: dict) -> list:
 def w_task(task: tuple) -> tuple:
     kind = task[0]
     if kind == "psd":
-        return task, w_psd(task[1], task[2])
+        return task, w_psd(task[1], task[2], task[3] if len(task) > 3 else None)
     if kind == "png":
         return task, w_png(task[1])
     return task, w_ref(task[1])
@@ -762,6 +779,20 @@ def today_cards() -> tuple:
     return stats, pngs, head, tree
 
 
+def mdw_rels(index: dict) -> dict:
+    """{MDW draft path: the path it is read as}: an old card of MDW drafts an eye tie (eye.json ties) gives a live
+    card is read in that card's folder today (its kind and series; the stars it draws are checked apart)."""
+    ties = (json.load(open(join(OUT, "eye.json"))) if exists(join(OUT, "eye.json")) else {}).get("ties") or {}
+    stats = json.loads(git(TG, "show", "origin/data:db/stats.json", env=TENV))["cards"]
+    found = {}
+    for oid, old in index["old_cards"].items():
+        key = (ties.get(oid) or {}).get("key")
+        if key in stats and all(is_mdw(p) for p in old["paths"]):
+            for p in old["paths"]:
+                found[p] = f"{dirname(stats[key]['path'])}/{basename(p)}"
+    return found
+
+
 def reads_main(workers: int, limit: int = 0):
     index = json.load(open(join(OUT, "index.json")))
     versions = read_jsonl(join(OUT, "versions.jsonl"))
@@ -770,7 +801,10 @@ def reads_main(workers: int, limit: int = 0):
     log(f"vocabulary: {len(types)} types ({len(old_types)} only in the old repo: {old_types}), {len(stars)} stars")
     psd_paths = defaultdict(list)
     png_blobs = []
+    rels = mdw_rels(index)
     for v in versions:                                         # oldest first: one file's versions near each other
+        if v.get("mdw") and v["path"] not in rels:            # an MDW draft no eye tie gives a card: not read
+            continue
         if v["ext"] == "psd":
             if v["path"] not in psd_paths[v["blob"]]:
                 psd_paths[v["blob"]].append(v["path"])
@@ -789,7 +823,7 @@ def reads_main(workers: int, limit: int = 0):
     for sha, paths in psd_paths.items():
         todo = [p for p in paths if (sha, p) not in done_reads]
         if todo:
-            tasks.append(("psd", sha, todo))
+            tasks.append(("psd", sha, todo, {p: rels[p] for p in todo if p in rels}))
     tasks += [("png", sha) for sha in png_blobs if (sha, None) not in done_reads]
     stats, pngs, head, tree = today_cards()
     refs = [{"ref": f"today:{key}", "key": key, "path": path, "commit": head, "blob": tree[path][0],

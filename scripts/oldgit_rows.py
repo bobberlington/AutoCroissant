@@ -1227,6 +1227,12 @@ def ability_change(prev: dict, row: dict) -> str:
     return "same" if a["value"] == b["value"] else "formatting" if formatting_only(a["value"], b["value"]) else "changed"
 
 
+def before_folders(versions: list) -> list:
+    """versions without the MDW/ drafts (oldgit_index MDW_DRAFTS) at or after the card's first card-folder record."""
+    first = min((v["ts"] for v in versions if not v.get("mdw")), default=float("inf"))
+    return [v for v in versions if not v.get("mdw") or v["ts"] < first]
+
+
 def psd_first(data: Data, key, versions: list, pngs: list) -> tuple:
     """(the card's first old repo record when it is a PSD added before any PNG of it: {ts, date, commit, blob, path,
     author, subject}, that PSD's version when its composite is a look of its own: a row) or (None, None). A PSD
@@ -1255,6 +1261,7 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
     PNG (and the PNG's own PSD is not), else a psd_only row when a look of its own."""
     from commands.png_changes import VISIBLE
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
+    versions = before_folders(versions)
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
     today = {**today, "known": known_texts(data, versions, today)}
@@ -1263,8 +1270,10 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
     if first:
         data.psd_firsts[key] = {k: v for k, v in first.items() if v is not None}
     extra, seen = [], set()
-    for v in versions:                             # the owner's PSDs alone: one per blob, its first version
-        if v["ext"] == "psd" and v["old_id"] in psd_from and v["blob"] not in seen:
+    paired = {(p["commit"], p["old_id"]) for p in pngs}
+    for v in versions:                             # the owner's PSDs alone and MDW drafts (no PNG of their own in
+        if v["ext"] == "psd" and (v["old_id"] in psd_from or v.get("mdw") and (v["commit"], v["old_id"]) not in paired) \
+                and v["blob"] not in seen:         # that commit): one per blob, its first
             seen.add(v["blob"])
             extra.append(v)
     picked, used = {}, set()
@@ -1300,6 +1309,8 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
             row["psd_only"] = True                 # no PNG of it: the PSD's composite (its thumb) is the picture
         if png.get("lost"):
             row["lost"] = True                     # the old repo's lost 2023 history (oldgit_index LOST_GLOB)
+        if png.get("mdw"):
+            row["mdw"] = True                      # an MDW/ draft (oldgit_index MDW_DRAFTS), before the card folders
         name, stem = fields["name"]["value"], splitext(basename(png["path"]))[0].replace("_", " ")
         if name and names and norm(name) not in names:
             row["old_name"] = name                             # printed then: shown on the row, never an alias

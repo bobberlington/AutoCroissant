@@ -19,8 +19,8 @@ import re
 from collections import Counter, defaultdict
 from os.path import basename, dirname, join, splitext
 
-from oldgit_index import (FG, OG, OUT, STORE, TC_INIT, TENV, TG, alnum, ext_of, folder_stem, git, log, ls_tree,
-                          read_jsonl, stem_key, today_cards, write_json)
+from oldgit_index import (FG, OG, OUT, STORE, TC_INIT, TENV, TG, alnum, ext_of, folder_stem, git, is_mdw, log,
+                          ls_tree, read_jsonl, stem_key, today_cards, write_json)
 
 REPORT = os.path.expanduser("~/Documents/Tools/wt/scratch/s1110/timelines/oldgit.txt")
 CARD_EXTS = ("*.png", "*.PNG", "*.psd", "*.PSD")
@@ -38,8 +38,10 @@ OWNER = join(os.path.dirname(OUT), "review", "owner.json")  # the owner's ruling
 
 def tie_applies(tie, target, confidence, meme: bool, stats) -> bool:
     """An eye tie (eye.json ties) rules a lost file or one only unsure evidence maps (the debuff Pain: Thinned by its
-    picture alone), never a meme folder's copy; its card must be live today."""
-    return bool(tie) and not meme and (not target or confidence == "unsure") and tie.get("key") in stats
+    picture alone), never a meme folder's copy unless the tie says so (meme: true, The Panda Future's early look); its
+    card must be live today."""
+    return bool(tie) and (not meme or tie.get("meme") is True) and (not target or confidence == "unsure") and \
+        tie.get("key") in stats
 
 
 def owner_map(oid: str, maps: dict, stats: dict):
@@ -338,9 +340,29 @@ def map_main():
     commits_meta = index["commits"]
     position = {c: i for i, c in enumerate(index["order"])}
 
-    cards, by_key, review = {}, defaultdict(list), []
+    cards, by_key, review, drafts = {}, defaultdict(list), [], []
     for oid, old in index["old_cards"].items():
         mine = sorted(by_old[oid], key=lambda v: position[v["commit"]])
+        if all(is_mdw(p) for p in old["paths"]):              # MDW drafts: a live card's only by an eye tie, else
+            tie = ties.get(oid) or {}                          # evidence (never a lost card, never mapped otherwise)
+            live = tie.get("key") in stats and tie.get("status", "live") == "live"
+            cards[oid] = {"key": tie["key"] if live else None, "status": "live" if live else "mdw draft",
+                          "confidence": "sure" if live else None, "how": ["picture", "eye"] if live else [],
+                          "why_unsure": None, **({"eye": tie.get("why")} if live else {}), "mdw": True,
+                          "first": {"commit": old["first"], "date": commits_meta[old["first"]]["date"]},
+                          "last": {"commit": old["last"], "date": commits_meta[old["last"]]["date"]},
+                          "at_end": sorted(old["at_end"]), "paths": old["paths"],
+                          "versions": {"psd": sum(v["ext"] == "psd" for v in mine),
+                                       "png": sum(v["ext"] == "png" for v in mine),
+                                       "new_looks": sum(bool(v.get("new_look")) for v in mine)},
+                          "authors": sorted({v["author_mapped"] or v["author"] for v in mine}), "thumb": None,
+                          "evidence": {}}
+            if live:
+                by_key[tie["key"]].append(oid)
+            else:
+                drafts.append({"old_id": oid, "paths": old["paths"], "first": cards[oid]["first"],
+                               "last": cards[oid]["last"]})
+            continue
         first_only = all(v.get("repo") == "first" for v in mine)
         if not first_only:                                     # the old repo's evidence alone, as before the first repo
             mine = [v for v in mine if v.get("repo") != "first"]
@@ -566,8 +588,10 @@ def map_main():
                  "(owner 11-13). id: stable, from the oldest picture's blob (OL-<10 hex>). "
                  "nearest: the closest pictures, for the owner's check. first_repo: the first repo's card files "
                  "(and its MDW/ files) of no live card, by name: evidence that a Morgue candidate of that name was "
-                 "played (a file in the game's repo), never a candidate of its own.",
-        "cards": lost, "first_repo": first_lost + first_mdw(index, {c["old_id"] for c in first_lost}, names)})
+                 "played (a file in the game's repo), never a candidate of its own. mdw_drafts: the old repo's "
+                 "MDW/ draft files no eye tie gives a live card (evidence only).",
+        "cards": lost, "first_repo": first_lost + first_mdw(index, {c["old_id"] for c in first_lost}, names),
+        "mdw_drafts": drafts})
     log(f"map: {json.dumps(summary)}")
     return cards
 

@@ -913,6 +913,14 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
             continue
         found.append({"card": cid, "path": path, "blob": blob, "commit": first_of(row, "commit", "sha1", "rev"),
                       "ts": ts, "old": True, "repo": row.get("repo") or "old"})
+    first = {}                                 # MDW/ drafts only before the card's first card-folder record
+    for v in found:
+        if not v["path"].startswith("MDW/"):
+            first[v["card"]] = min(first.get(v["card"], v["ts"]), v["ts"])
+    late = [v for v in found if v["path"].startswith("MDW/") and v["ts"] >= first.get(v["card"], float("inf"))]
+    if late:
+        skipped["an MDW draft at or after the card folders"] += len(late)
+        found = [v for v in found if v not in late]
     log(f"old repo: {len(found)} versions of {len({v['card'] for v in found})} cards"
         + (" (left out: " + ", ".join(f"{k} {n}" for k, n in skipped.items()) + ")" if skipped else ""))
     return found
