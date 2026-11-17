@@ -10,7 +10,7 @@ import json
 import subprocess
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from psd_tools import PSDImage
 
 import commands.card_plates as cp
@@ -22,6 +22,9 @@ DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Abil
 PUZZLED = "Creatures/Other/3 Stars/Puzzled_Cat.psd"    # her own pictures under the old template's digit rows
 PIX = "Creatures/Kirby/3 Stars/Pix.psd"                 # three creatures: their own DEF rows, one HP bar for all
 BOLTS = "Items/Heal/1 Stars/Bolts_and_Screws.psd"      # two type icons over its art (Mr Krabs)
+EARTH = ("dd70ddfd9e430de6b51b301f822b52294382b57b",    # Earth_Totem.psd (TC 5743332b): its title under clipped stone
+         "d7bf86ab789310481b48a3db0c8b9b45db837b98")    # its PNG
+CLOT = "3f7040af67a5f605e0220b79051da3d0f9b43e57"       # Clot_Gold.psd (TC 96c3608e): its title's group under a Gradient Map
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
          "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
          "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
@@ -117,6 +120,32 @@ def test_a_tagged_cards_other_pictures_titles(clone):
         off[max(0, iy0 - y0 - 1):iy1 - y0 + 1, max(0, ix0 - x0 - 1):ix1 - x0 + 1] = False
         crop = sheet[c["at"][1]:c["at"][1] + c["at"][3], :c["at"][2]]
         assert np.abs(crop - small).max(-1)[off].mean() < 8 and np.abs(crop - small).max(-1)[~off].mean() > 20
+
+
+def test_a_textured_titles_letter_look(clone):
+    """Earth Totem's white title under its clipped stone (earthfx): a band across the card whose look inside the card's
+    own letters is the PNG's, where flat white is not; Clot Gold's title under a Gradient Map alone gets none."""
+    from conftest import card_blob
+    raw = card_blob(clone, EARTH[0])
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(io.BytesIO(card_blob(clone, EARTH[1])))
+    parts = card_parts(psd, "Auxiliary/Items/Earth_Totem.psd", "Earth Totem", _bare_parser())
+    title = next(x for x in psd.descendants() if x.layer_id == parts["title"][0]["id"])
+    found = cp.plates(psd, png, parts, raw=raw)
+    (look,) = found["letters"]
+    x0, y0, x1, y1 = look["box"]
+    assert look["id"] == title.layer_id and look["fill"] == "#ffffff" and (x0, x1) == (0, psd.width)
+    assert y0 < title.bbox[1] < title.bbox[3] < y1
+    sheet = np.asarray(Image.open(io.BytesIO(base64.b64decode(found["img"].split(",", 1)[1]))).convert("RGB"), np.int16)
+    x, y, w, h = look["at"]
+    inside = np.zeros((psd.height, psd.width), np.uint8)       # the letters' own pixels, 2 px in
+    inside[title.top:title.bottom, title.left:title.right] = (title.numpy("shape")[..., 0] > 0.5) * 255
+    inside = np.asarray(Image.fromarray(inside[y0:y1]).filter(ImageFilter.MinFilter(5)).resize((w, h), Image.BOX)) == 255
+    small = np.asarray(png.convert("RGB").crop(look["box"]).resize((w, h), Image.LANCZOS), np.int16)
+    assert inside.sum() > 1000 and np.abs(sheet[y:y + h, x:x + w] - small).max(-1)[inside].mean() < 25   # AVIF noise: 11
+    assert np.abs(255 - small).max(-1)[inside].mean() > 100
+    clot = PSDImage.open(io.BytesIO(card_blob(clone, CLOT)))
+    name = next(x for x in clot.descendants() if x.kind == "type" and x.name == "Name")
+    assert name.parent.clip_layers and not cp.textured(clot, name)
 
 
 def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
