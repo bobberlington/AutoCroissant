@@ -17,7 +17,9 @@ CHAPTER = """# Stats {.x}
 - Each bar is **2 HP**; see [“ATTACKING”](#/rules/attacking).
 
 ::: row 3 1
+::: panel "🕐FORCED" {.light}
 > [!eggman top] *“Evil Quote!”*
+:::
 
 ![[Mushroom]] -> ![[Life Shroom|Shroom]]
 :::
@@ -33,9 +35,10 @@ CHAPTER = """# Stats {.x}
 
 
 def test_plain_text_and_chapters():
-    """Markup goes, words and timing tags stay; files not named NN-slug.md are not chapters; the label numbers them."""
+    """Markup goes, words, timing tags and a panel's "Title" stay; files not named NN-slug.md are not chapters; the label
+    numbers them."""
     assert rulebook.plain_text(CHAPTER).split("\n") == [
-        "Stats", "", "HEALTH", "", "- Each bar is 2 HP; see “ATTACKING”.", "", "“Evil Quote!”", "", "Mushroom -> Life Shroom", "",
+        "Stats", "", "HEALTH", "", "- Each bar is 2 HP; see “ATTACKING”.", "", "🕐FORCED", "“Evil Quote!”", "", "Mushroom -> Life Shroom", "",
         "±0% | -25%", "1 | 0.5", "", "1) Uses the bunny [such as (BOGT)]."]
     found = rulebook.chapters({"site/rulebook/07-stats.md": CHAPTER, "site/rulebook/README.md": "# no", "site/x/01-a.md": "# no",
                                "site/rulebook/24-font.md": "# Font {.web}\n\nWords.\n"})

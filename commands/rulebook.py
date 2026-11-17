@@ -14,6 +14,7 @@ from global_config import RULEBOOK_SRC
 # ========================
 SCHEMA = 1
 CHAPTER_FILE = regex(r"^(\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")    # build_site.RULE_FILE
+TITLED = regex(r'^:{3,}\s*[a-z][\w-]*\s*["“](.*)["”]\s*(?:\{[^{}]*\})?$', IGNORECASE)   # ::: panel "Title": its title stays
 SKIP = regex(r"^(?::{3,}.*|=+\s*page\s*=+|-{3,}|\*{3,}|\{[^}]*\}|\|[\s|:-]*-[\s|:-]*\|)$", IGNORECASE)   # fences, breaks, rules, a table's
 INLINE = (                                          # markup -> words, in order (build_site.rulebook_text, rulebook.js plainText)
     (regex(r"^#{1,3}\s+"), ""), (regex(r"^>\s?"), ""), (regex(r"^\[![\w-]+(?:\s+[\w-]+)*\]\s*"), ""),
@@ -29,12 +30,15 @@ WEB_ONLY = regex(r"\{[^{}]*\.web\b[^{}]*\}\s*$")     # a chapter's "# Title {.we
 # Helper Functions
 # ========================
 def plain_text(source: str) -> str:
-    """A chapter's words without markup: pictures and fences dropped, card pictures and links as their names, list
-    markers as typed, a table's cells joined by |."""
+    """A chapter's words without markup: pictures and fences dropped (a fence's "Title" kept), card pictures and links as
+    their names, list markers as typed, a table's cells joined by |."""
     out = []
     for line in str(source or "").replace("\r\n", "\n").split("\n"):
         text = line.strip()
-        if SKIP.match(text):
+        titled = TITLED.match(text)
+        if titled and titled.group(1).strip():
+            text = titled.group(1)
+        elif SKIP.match(text):
             continue
         if not regex(r"\]\{[^{}]*\}$").search(text):  # [text]{.red} at the end is a colour, not attributes
             text = ATTRS.sub("", text)

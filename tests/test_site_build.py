@@ -375,6 +375,14 @@ def test_a_web_chapter_is_not_printed(bs, tmp_path):
     assert json.loads(done.stdout) == ["stats"]
 
 
+def test_game_txt_rulebook_says_what_the_bot_does(bs):
+    """game.txt's chapters (build_site.rulebook_text) read as the bot's (rulebook.plain_text): a panel's "Title" kept, a
+    row's widths dropped."""
+    from commands import rulebook
+    source = '::: row 3 1\n::: panel "🕐FORCED" {.light}\n(BOT) = Beginning of turn.\n:::\n:::\n'
+    assert bs.rulebook_text(source) == rulebook.plain_text(source) == "🕐FORCED\n(BOT) = Beginning of turn."
+
+
 def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
     """site.yml's PSD sizes (psd_sizes.py): kept by blob; the first run reads the whole tree, a later one only a new
     PSD's folder; build_site.psd_sizes reads its file as the trees API's reply."""
