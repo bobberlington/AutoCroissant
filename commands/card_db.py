@@ -26,6 +26,7 @@ DETAILS_JSON = "psd_details.json"                  # psd_details' own format, co
 RULEBOOK_JSON = "rulebook.json"                    # the rulebook's chapters as text (commands.rulebook)
 MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON, RULEBOOK_JSON)
+BOT_DATA_FILES = (STATS_JSON, OLD_STATS_JSON, RULEBOOK_JSON)  # the bot's copy: no psd_details (build, card tools)
 VERDICTS_JSON = "verdicts.json"                    # the bake's verdicts per card key (CARD_SYNC_VERDICTS.md), kept apart
 CHECKS_JSON = "card_checks.json"                   # the automatic flags by PSD blob (card_checks), kept apart: card-checks.yml's
 SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
@@ -284,7 +285,7 @@ def check_db(folder: str, parse: bool = True) -> list:
 
     Args:
         folder: The db/ folder
-        parse: Parse the files too (the gate); without, the hashes alone (the bot's copy: is it whole?)
+        parse: Parse the files too (the gate); without, BOT_DATA_FILES' hashes alone (the bot's copy: is it whole?)
 
     Returns:
         The problems, one line each ([] when db/ is whole)
@@ -296,7 +297,7 @@ def check_db(folder: str, parse: bool = True) -> list:
             files = loads(fh.read()).get("files") or {}
     except (OSError, ValueError) as e:
         return [f"{path}: {e}"]
-    for name in DATA_FILES:
+    for name in DATA_FILES if parse else BOT_DATA_FILES:
         target = join(folder, name)
         if not isfile(target):
             problems.append(f"{name}: missing")
@@ -378,17 +379,14 @@ def write_bytes(path: str, data: bytes) -> None:
 
 
 def _check_text(name: str, data: bytes):
-    """A downloaded data file loads as its kind, every record too; else ValueError (nothing is written then). Returns
-    what it parsed (the cards, the chapters), None for the details: its sha256 is the manifest's, and the build's
-    gate parsed it (4 MB the bot reads only for /fonts)."""
+    """A downloaded BOT_DATA_FILES file loads as its kind, every record too; else ValueError (nothing is written then).
+    Returns what it parsed (the cards, the chapters)."""
     text = data.decode("utf-8")
     if name == STATS_JSON:
         return parse_stats(text, name)
     if name == OLD_STATS_JSON:
         return parse_old_stats(text, name)
-    if name == RULEBOOK_JSON:
-        return parse_rulebook(text, name)
-    return None
+    return parse_rulebook(text, name)
 
 
 def read_json(path: str) -> dict:
@@ -404,7 +402,7 @@ def read_json(path: str) -> dict:
 def sync(folder: str, repository: str, branch: str) -> dict:
     """
     A folder brought to a data branch's db/ (the bot's card_data/, design section 11): one conditional request for the
-    branch's commit (a 304 is free), then, on a new commit, its manifest and only the data files whose sha256 differ
+    branch's commit (a 304 is free), then, on a new commit, its manifest and only the BOT_DATA_FILES whose sha256 differ
     from the folder's, raw at that commit (immutable, no lag). Each is checked against the manifest and parsed before
     any is written; then each is replaced atomically, the manifest and SYNC_JSON (commit, ETag) last, so an interrupted
     sync is finished by the next.
@@ -415,8 +413,8 @@ def sync(folder: str, repository: str, branch: str) -> dict:
         branch: The data branch
 
     Returns:
-        {"commit", "changed": [file names written], "manifest", "parsed": {file name: its data, for the written ones but
-        the details}}: changed is [] when the folder was already there
+        {"commit", "changed": [file names written], "manifest", "parsed": {file name: its data, for the written ones}}:
+        changed is [] when the folder was already there
 
     Raises:
         LookupError: the branch does not exist; requests' exceptions or ValueError: a failed or bad download (nothing
@@ -448,7 +446,7 @@ def sync(folder: str, repository: str, branch: str) -> dict:
     if not isinstance(files, dict):
         raise ValueError(f"{MANIFEST_JSON} at {commit[:8]}: no file hashes")
     wanted, parsed = {}, {}
-    for name in DATA_FILES:
+    for name in BOT_DATA_FILES:
         if not files.get(name):
             raise ValueError(f"{MANIFEST_JSON} at {commit[:8]} lists no {name}")
         path = join(folder, name)
@@ -457,13 +455,13 @@ def sync(folder: str, repository: str, branch: str) -> dict:
         data = raw(name)
         if sha256(data).hexdigest() != files[name]:
             raise ValueError(f"{name} at {commit[:8]}: sha256 differs from the manifest")
-        found = _check_text(name, data)
-        if found is not None:
-            parsed[name] = found
+        parsed[name] = _check_text(name, data)
         wanted[name] = data
     makedirs(folder, exist_ok=True)
     for name, data in wanted.items():
         write_bytes(join(folder, name), data)
+    if isfile(join(folder, DETAILS_JSON)):                     # an older bot's copy
+        remove(join(folder, DETAILS_JSON))
     write_bytes(join(folder, MANIFEST_JSON), manifest_data)
     write_text(join(folder, SYNC_JSON), dumps({"commit": commit, "etag": etag}) + "\n")
     return {"commit": commit, "changed": sorted(wanted), "manifest": manifest, "parsed": parsed}
@@ -473,6 +471,7 @@ def sync(folder: str, repository: str, branch: str) -> dict:
 # Module Exports
 # ========================
 __all__ = [
+    'BOT_DATA_FILES',
     'DATA_FILES',
     'MANIFEST_JSON',
     'OLD_STATS_JSON',

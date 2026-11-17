@@ -302,7 +302,7 @@ def load_local() -> bool:
     except (OSError, ValueError, TypeError) as e:
         print(f"{folder}: not loaded ({e}); the sync fetches it again")
         return False
-    problems = card_db.check_db(folder, parse=False)    # parsed just above; the details file by its hash
+    problems = card_db.check_db(folder, parse=False)    # parsed just above: the hashes
     if problems:
         print(f"{folder}: a sync was cut off ({'; '.join(problems)}); loaded until the next sync completes it")
     _swap(stats, old, rulebook, None if problems else card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))

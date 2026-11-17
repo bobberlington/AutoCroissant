@@ -172,10 +172,10 @@ ME = SimpleNamespace(user=SimpleNamespace(id=1))
 def test_first_sync_writes_the_branch_files_byte_for_byte(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     got = cdb.sync("card_data", REPO, "data")
-    assert got["commit"] == github.tip and got["changed"] == sorted(cdb.DATA_FILES)
-    for name, data in github.commits[github.tip].items():
-        assert (tmp_path / "card_data" / name).read_bytes() == data
-    assert cdb.check_db("card_data") == []
+    assert got["commit"] == github.tip and got["changed"] == sorted(cdb.BOT_DATA_FILES)
+    for name in (*cdb.BOT_DATA_FILES, cdb.MANIFEST_JSON):
+        assert (tmp_path / "card_data" / name).read_bytes() == github.commits[github.tip][name]
+    assert cdb.check_db("card_data", parse=False) == [] and ("raw", cdb.DETAILS_JSON) not in github.calls
     assert json.loads((tmp_path / "card_data" / cdb.SYNC_JSON).read_text())["commit"] == github.tip
     assert github.calls[0] == ("commit", None)
 
@@ -187,6 +187,18 @@ def test_unchanged_branch_costs_one_conditional_request(github, tmp_path):
     got = cdb.sync("card_data", REPO, "data")
     assert got["changed"] == [] and got["commit"] == github.tip
     assert github.calls == [("commit", f'"e-{github.tip}"')]          # a 304: no raw download
+
+
+def test_an_older_copys_details_go_at_the_next_data_move(github, tmp_path):
+    """psd_details.json is the build's and card tools': an older bot's copy holding it is whole, and loses it."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cdb.sync("card_data", REPO, "data")
+    details = tmp_path / "card_data" / cdb.DETAILS_JSON
+    details.write_bytes(github.commits[github.tip][cdb.DETAILS_JSON])
+    assert cdb.sync("card_data", REPO, "data")["changed"] == [] and details.exists()
+    github.publish({"A": _card("A", ability="Heal 1.")}, defaultdict(list), tmp_path, details='{"version": 1, "cards": {}}\n')
+    assert cdb.sync("card_data", REPO, "data")["changed"] == [cdb.STATS_JSON] and not details.exists()
+    assert ("raw", cdb.DETAILS_JSON) not in github.calls
 
 
 def test_a_bad_download_writes_nothing(github, tmp_path):
@@ -287,7 +299,8 @@ def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypa
     github.tip = first
     assert cs.load_local() and cm.stats_db.stats["A"].ability == "New." and cs._loaded["commit"] is None
     cs.sync(ME)
-    assert cm.stats_db.stats["A"].ability == "Old." and cs._loaded["commit"] == first and cdb.check_db("card_data") == []
+    assert cm.stats_db.stats["A"].ability == "Old." and cs._loaded["commit"] == first
+    assert cdb.check_db("card_data", parse=False) == []
 
 
 def test_startup_without_data_holds_no_cards(github):
