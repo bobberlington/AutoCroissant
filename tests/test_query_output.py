@@ -61,6 +61,19 @@ def test_nothing_found_is_one_reply_with_the_websites_guesses(repo, monkeypatch)
     assert "links" in kwargs[0]
 
 
+def test_a_long_paste_keeps_a_website_button():
+    """Discord refuses a whole message whose button url is over 512: a pasted ability's search is cut at a word end."""
+    from urllib.parse import unquote
+    text = " ".join(["Deal 2 damage to an enemy’s creature 🔥."] * 20)
+    for route, query in (("cards", text), ("rules", f'"{text}"')):
+        url = qc.search_link(route, query)
+        cut = unquote(url.split("?q=", 1)[1])
+        stem = cut.removesuffix('"')
+        assert 480 < len(url) <= qc.URL_MAX and query.startswith(stem) and query[len(stem)] == " "
+    assert cut.endswith('"') and cut.count('"') == 2                             # a cut "phrase" stays one
+    assert qc.search_link("cards", "fire ant") == f"{qc.SITE_URL}/#/cards?q=fire%20ant"
+
+
 def test_many_cards_come_as_grids(repo):
     """25 cards: two messages, each one grid image and its cards' list; the header and footer ride along."""
     repo.site_url = lambda key: None if key == "card_1.png" else f"https://site/c/{key}/"
