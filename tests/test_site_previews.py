@@ -199,6 +199,19 @@ out(["Hit an evil foe and the cookie dies.\\nHeal 2.", "Hit an Evil fee and the 
     assert out == [[None, [[0, 7, 8, 7, "e"], [1, 24, 25, 24, "c"]]], [None, [[0, 13, 14, 13, "e"], [2, 42, 43, 43, "3"]]], ["e", None], [None, None]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, r"/[()\n]/.test(inner)"), reason="no cost swaps in this mockup.js")
+def test_a_cost_badge_is_swapped_alone(tmp_path):
+    """A cost (one pill glyph on the card) for another, as a timing tag: spliced alone at the old pill's width times the
+    new one's over it, the rest of the line moved by the difference."""
+    out = node(tmp_path, """
+const text = "Gain 1 (2 points) now.", g = [...text].map((ch, i) => (ch === " " ? [i, 10 + i * 10] : [i, 10 + i * 10, 11 + i * 10, 19 + i * 10]));
+const c = { text, lines: [[0, 22, 100, 10, 230, 80, 105, 0]], glyphs: [...g.slice(0, 7), [7, 80, 81, 169], ...g.slice(17)], frame: [0, 300] };
+const measure = t => [...t].length * 10; measure.hx = 1;
+const R = m.recordLayout(c, text, 1), fit = now => { const f = m.spliceFit(R, m.geoPlan(R, now).splice, { measure, z: 20 }); return f && [f.tag?.at, Math.round(f.tag?.w), Math.round(f.ds)]; };
+out(["Gain 1 (3 points) now.", "Gain 1 (1 point) now."].map(fit));""")
+    assert out == [[7, 100, 0], [7, 90, -10]]
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
