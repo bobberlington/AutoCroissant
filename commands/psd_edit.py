@@ -7862,10 +7862,12 @@ def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optio
 
 MEMO_NS = "https://github.com/MichaelJSr/AutoCroissant/xmp/1.0/"     # the bake's icon memos in the PSD's XMP
 MEMO_KEYS = {"stars": b"starMoves", "types": b"typeMoves"}
-MEMOS = {field: (re_compile(rb' *<rdf:Description rdf:about="" xmlns:autocroissant="[^"]*">\s*<autocroissant:%s>'
+MEMOS = {field: (re_compile(rb'(?<! ) *<rdf:Description rdf:about="" xmlns:autocroissant="[^"]*">\s*<autocroissant:%s>'
                             rb'([^<]*)</autocroissant:%s>\s*</rdf:Description>\n?' % (key, key)),
-                 re_compile(rb'\s*<autocroissant:%s>[^<]*</autocroissant:%s>|\s+autocroissant:%s="[^"]*"' % (key, key, key)))
+                 re_compile(rb'(?<!\s)\s*<autocroissant:%s>[^<]*</autocroissant:%s>|(?<!\s)\s+autocroissant:%s="[^"]*"'
+                            % (key, key, key)))
          for field, key in MEMO_KEYS.items()}    # its packet, and one Photoshop merged into its own on a save
+# (?<!...): linear on Photoshop's 12 K blank XMP padding (as card_standards.ANCESTORS)
 INSTANCE_ID = re_compile(rb'xmpMM:InstanceID(?:="|>)([^"<]*)')
 
 
