@@ -1215,3 +1215,23 @@ def test_types_back_to_the_makers_undo_the_bakes_moves(parser, tmp_path):
     assert saved.image_resources.get_data(pe.Resource.XMP_METADATA) == XMP
     assert pe._document_blocks(saved) == pe._document_blocks(original)
     assert (pe.render_all(saved) == pe.render_all(original)).all()
+
+
+def test_a_memo_clears_fast_from_photoshops_padding():
+    """A stars or types memo written then taken out leaves Photoshop's XMP byte for byte, one it merged into its own
+    Description goes too, and its 12 K blank padding costs milliseconds (each blank a fresh start took ~2 s)."""
+    from time import process_time
+    from psd_tools.constants import Resource
+    from psd_tools.psd.image_resources import ImageResource
+    padded = XMP + (b" " * 100 + b"\n") * 120 + b'<?xpacket end="w"?>'
+    merged = padded.replace(b' xmpMM:InstanceID', b'\n            autocroissant:typeMoves="{}" xmpMM:InstanceID')
+    for xmp in (padded, merged):
+        psd = PSDImage.new("RGB", (8, 8))
+        psd._record.image_resources[Resource.XMP_METADATA] = ImageResource(key=Resource.XMP_METADATA, data=xmp)
+        start = process_time()
+        for field in ("stars", "types"):
+            pe.set_icon_memo(psd, field, {"v": 1, "count": 3, "now": 4})
+            assert pe.icon_memo(psd, field) == {"v": 1, "count": 3, "now": 4}
+            pe.set_icon_memo(psd, field, None)
+        assert process_time() - start < 0.1
+        assert psd.image_resources.get_data(Resource.XMP_METADATA) == padded
