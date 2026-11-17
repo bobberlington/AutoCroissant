@@ -28,8 +28,8 @@ build   Under derived/chain/:
                         (never collected). A title read that is another live card's name goes to review (other_name).
                         A Discord look folds as minor only when
                         every field is sure on both sides and unchanged and its picture is near the one before (the
-                        same git look, or under png_changes.VISIBLE of the card changed, aligned: look_share; owner
-                        11-09), as the old rows fold.
+                        same git look, or under png_changes.VISIBLE of the card changed: png_changes' own rule for two
+                        PNGs of one size, as the old rows fold, else aligned: look_share; owner 11-09).
         created.json    Created = the earliest confident appearance (a card-sure Discord picture, the first repo, the
                         old repo, the card repo; "Before 2020" from a physical card photo for PHOTO_CREATED only, the
                         owner's ruling of 11-14 22:20) with its source, against
@@ -377,15 +377,35 @@ def changed_share(a, b) -> Optional[float]:
     return float(cv2.dilate(cv2.erode(d[m:h - m, m:FOLD_W - m].astype(np.uint8), k), k).mean())
 
 
+def png_share(a: str, b: str) -> Optional[float]:
+    """png_changes' own share (the git versions' rule) of two PNG files of one size; None otherwise."""
+    from PIL import Image
+    from commands.png_changes import changed_share as exact
+    try:
+        with Image.open(a) as x, Image.open(b) as y:
+            if x.format != "PNG" or y.format != "PNG" or x.size != y.size:
+                return None
+        with open(a, "rb") as x, open(b, "rb") as y:
+            return exact(x.read(), y.read())
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
+
+
 def look_share(root: Optional[str], before: dict, after: dict) -> Optional[float]:
-    """How much of the card changed from one Discord look to the next: 0 for one git look, else the least
-    changed_share between their first FOLD_PICTURES pictures (reposts of one look); None when none compare."""
+    """How much of the card changed from one Discord look to the next: 0 for one git look; png_share of their shown
+    pictures when both are PNGs of one size (no sheet cell); else the least changed_share between their first
+    FOLD_PICTURES pictures (reposts of one look); None when none compare."""
     git = [((e.get("look") or {}).get("git") or {}) for e in (before, after)]
     if git[0] and (git[0].get("row") or (git[0].get("commit"), git[0].get("path"))) == \
             (git[1].get("row") or (git[1].get("commit"), git[1].get("path"))):
         return 0.0
     if not root:
         return None
+    shown = [(e.get("pictures") or [{}])[0] for e in (before, after)]
+    if all(p.get("file") and not p.get("box") for p in shown):
+        exact = png_share(join(root, shown[0]["file"]), join(root, shown[1]["file"]))
+        if exact is not None:
+            return exact
     cut = lambda e: [fold_picture(join(root, p["file"]), tuple(p["box"]) if p.get("box") else None)
                      for p in (e.get("pictures") or [])[:FOLD_PICTURES] if p.get("file")]
     shares = [changed_share(a, b) for a in cut(before) if a is not None for b in cut(after) if b is not None]

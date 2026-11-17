@@ -259,10 +259,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
    40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change). A Discord
    look folds under "minor changes" only when every field is sure and unchanged AND its picture is near the one
-   before (owner 11-09, as the old rows fold by png_changes' share): the same git look, or under 5% of the card
-   changed, both trimmed and aligned (ECC, affine) at 160 px wide, a pixel changed when a channel is off by more than
-   32 levels inside a 3 px square after a light blur (JPEG noise, resizing and a few pixels of crop aside; Discord
-   copies can't take png_changes' 2-level rule); pictures of another shape, or none read, never fold. A fact a later picture contradicts goes to review (a stated step,
+   before (owner 11-09): the same git look, or under 5% of the card changed. Two shown pictures that are PNGs of one
+   size take png_changes' own share, as the old rows fold; others (JPEGs, resized copies, sheet cells) are trimmed
+   and aligned (ECC, affine) at 160 px wide, a pixel changed when a channel is off by more than 32 levels inside a
+   3 px square after a light blur (JPEG noise, resizing and a few pixels of crop aside: such copies can't take the
+   2-level rule), the least over each look's first 3 reposts; pictures of another shape, or none read, never fold. A fact a later picture contradicts goes to review (a stated step,
    'ATK +1', on the value before it: the last sure picture's moved by the kept facts since; checked again when a fact
    that bounded its window goes), and a fact whose move the pictures around it show (the last sure value before, the
    next after, no other fact on that field between) is confirmed by that picture (counted once). The changelog facts

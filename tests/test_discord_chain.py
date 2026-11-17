@@ -700,7 +700,8 @@ def test_weak_pictures_set_no_created_and_a_first_psd_dates_the_card():
 def test_a_settled_look_folds_only_near_the_picture_before(tmp_path):
     """A Discord look folds (minor) only when every field is sure and unchanged AND its picture is near the one before
     (owner 11-09: under png_changes.VISIBLE of the card): a smaller JPEG copy cut a few px off or a small icon edit
-    folds; new art with the same fields is listed, as is another shape; one git look needs no picture."""
+    folds; new art with the same fields is listed, as is another shape; two PNGs of one size take png_changes' own
+    rule (a 4-level shift of every pixel shows); one git look needs no picture."""
     import numpy as np
     from PIL import Image
     (tmp_path / "attachments").mkdir()
@@ -715,6 +716,7 @@ def test_a_settled_look_folds_only_near_the_picture_before(tmp_path):
     save("3.png", art)
     save("4.png", icon)
     save("5.png", base[:400])                                                           # square: another shape
+    save("6.png", base + 4)                                                             # every pixel 4 levels up
     same = {"stars": dc.sure(3, "eye"), "stats": stats(5, 2, 3, 4)}
     entry = lambda n, file, look=None: {"id": f"D-{n}", "kind": "discord", "look": look or {"draft": True},
                                         "fields": dict(same), "pictures": [{"id": f"P-{n}", "file": f"attachments/{file}"}]}
@@ -726,6 +728,9 @@ def test_a_settled_look_folds_only_near_the_picture_before(tmp_path):
     assert entries[2]["share"] >= 0.05 > entries[1]["share"] and "share" not in entries[5]
     assert chain.tally["discord: settled, kept apart (a new picture)"] == 2
     assert chain.tally["discord: settled, kept apart (pictures not compared)"] == 1
+    minor, share = dc.fold(str(tmp_path), entry(1, "1.png"), entry(6, "6.png"))
+    picture = lambda n: dc.fold_picture(str(tmp_path / f"attachments/{n}.png"), None)
+    assert not minor and share > 0.9 and dc.changed_share(picture(1), picture(6)) < 0.05
     git = {"git": {"row": "c1:Creatures/Bolt.png"}}                                  # one git look: no picture read
     assert dc.fold(None, entry(7, "x.png", git), entry(8, "y.png", git)) == (True, 0.0)
     assert dc.fold(None, entry(7, "x.png"), entry(8, "y.png")) == (False, None)
