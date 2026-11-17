@@ -549,7 +549,7 @@ class CardRepository:
         more = concat([self.cards_dff[hit], self._hay[7][pics]])
         return concat([found, more[~more.index.isin(found.index)]])
 
-    def ability_search_engine(self, ability: str) -> DataFrame:
+    def ability_search_engine(self, ability: str, near: bool = True) -> DataFrame:
         """
         Search for cards by ability text or column values.
 
@@ -567,6 +567,8 @@ class CardRepository:
 
         Args:
             ability: Search query string
+            near: a text term no card has finds the closest abilities (attrs near); inside &, | and ! it finds nothing,
+                as on the website
 
         Returns:
             DataFrame of matching cards
@@ -576,25 +578,23 @@ class CardRepository:
         # Handle OR queries
         queries = self._terms(ability, "|")
         if len(queries) > 1:
-            results = [self.ability_search_engine(q) for q in queries]
+            results = [self.ability_search_engine(q, near=False) for q in queries]
             combined = concat(results)
             combined = combined[~combined.index.duplicated(keep='first')]
-            combined.attrs = {}                         # near: one text term only
             return self._named(combined, ability)
 
         # Handle AND queries
         queries = self._terms(queries[0], "&")
         if len(queries) > 1:
-            result = self.ability_search_engine(queries[0])
+            result = self.ability_search_engine(queries[0], near=False)
             for q in queries[1:]:
-                result = result[result.index.isin(self.ability_search_engine(q).index)]
-            result.attrs = {}
+                result = result[result.index.isin(self.ability_search_engine(q, near=False).index)]
             return self._named(result, ability)
         ability = queries[0]                            # 'fire |' is 'fire'
 
         # NOT: any term, conditions too (!type==creature)
         if ability.startswith("!"):
-            inner = self.ability_search_engine(ability[1:].strip())
+            inner = self.ability_search_engine(ability[1:].strip(), near=False)
             return self.cards_dff[~self.cards_dff.index.isin(inner.index)]
 
         # Conditions on fields
@@ -612,11 +612,11 @@ class CardRepository:
         pattern = self._text_pattern(ability)
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
-        if len(exact_matches):
+        if len(exact_matches) or not near:
             return exact_matches
         # nothing has the text: near-whole abilities (a pasted ability with a typo), closest first
-        near = self._fuzzy_labels(ability).sort_values(ascending=False, kind="stable")
-        results = self.cards_dff.loc[near.index]
+        close = self._fuzzy_labels(ability).sort_values(ascending=False, kind="stable")
+        results = self.cards_dff.loc[close.index]
         if len(results):
             results.attrs = {"near": True}
         return results

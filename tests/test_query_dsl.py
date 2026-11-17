@@ -53,6 +53,9 @@ QUERIES = [                                              # query, the cards foun
     ("buckler", {"Panda Shield"}), ("alias~mk", {"Meta Knight"}), ("aliases==buckler", {"Panda Shield"}),
     ("display_name~sans", {"sans."}),  # any column of the bot's
     ("+1 atk", {"Power Ring"}), ("+1 atk to every friendly minon.", {"Power Ring"}),   # near text only when none has it
+    ("!+1 atk to every friendly minon.", {c["name"] for c in CARDS}),     # inside !, | and &: exact text (search.js)
+    ("fire | +1 atk to every friendly minon.", {"Fire Bomb", "Burning"}),
+    ("+1 atk to every friendly minon. & type==item", set()),
     ("die & series==kirby", {"Meta Knight"}), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight"}),
     ("!die", {c["name"] for c in CARDS} - {"Meta Knight"}),
     ("series==kirby & !hp>5", {"Kirby", "King Dedede"}), ("subtype==equip", {"Panda Shield"}),
