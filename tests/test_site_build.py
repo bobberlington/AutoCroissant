@@ -492,7 +492,7 @@ def _timelines(root):
          "confirmed": True, "confirmed_by": "O-1"},
         {"id": "F-3", "kind": "text", "date": "2022-11-01T00:00:00+00:00", "channel": "update-06", "change": {"field": "type", "to": "dark", "op": "remove"}},
         {"id": "O-1", "kind": "old repo", "date": "2023-05-01T00:00:00+00:00", "author": "Maker", "subject": "Alpha art",
-         "image": pic("alpha", "O-1.webp"), "w": 40, "h": 80, "fields": {"stats": stats(3, 4)},
+         "file": "alpha draft", "image": pic("alpha", "O-1.webp"), "w": 40, "h": 80, "fields": {"stats": stats(3, 4)},
          "changes": {"stats": [{"hp": 3, "def": 2, "atk": 5, "spd": 1}, {"hp": 3, "def": 2, "atk": 4, "spd": 1}], "bal": "nerf"}},
         {"id": "D-P-3", "kind": "discord", "date": "2027-01-01T00:00:00+00:00", "channel": "new-cards", "image": pic("alpha", "P-3.webp"),
          "w": 40, "h": 80, "fields": {}, "changes": {}}],
@@ -541,6 +541,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # after the repo's rows, newest first; the stale paper row left out; no review field, no link
     assert [r["k"] for r in rows] == ["old repo", "discord"] and not any("label" in r or "cov" in r for r in rows)
     assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[1]["ch"] == "new-cards"
+    assert rows[0]["fl"] == "alpha draft" and "fl" not in rows[1]                  # a renamed or MDW file's name
     assert rows[1]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
     assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows)
     assert alpha["ive"] == 2 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])

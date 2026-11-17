@@ -309,3 +309,12 @@ def test_a_type_list_the_eye_gave_goes_to_the_eye(tmp_path, monkeypatch):
     rows = pc.check(str(tmp_path), workers=1)
     assert [r["fields"]["types"]["r"] for r in rows] == ["eye", "same", "differs"]
     assert "  gk D-1 P-1.webp ['light']" in (tmp_path / "derived" / "preview" / "check.txt").read_text()
+
+
+def test_a_renamed_or_mdw_file_s_name_is_shown_on_its_row():
+    """s3 gap round 2: an old repo row whose file is not the card's (a rename, an MDW draft: 't beth') carries its
+    file's name; others none."""
+    e = {"id": "O-1", "kind": "old repo", "date": "2023-09-09T12:29:20+00:00", "author": "Croissant", "subject": "b",
+         "old_file": "t beth", "fields": {}}
+    assert dp.entry_out(e, "O-1.webp")["file"] == "t beth"
+    assert "file" not in dp.entry_out({**e, "old_file": None}, "O-1.webp")

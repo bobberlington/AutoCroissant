@@ -133,6 +133,8 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
         out["channel"] = e.get("channel")
     if kind == "old repo":
         out.update(author=e.get("author"), subject=e.get("subject"))
+        if e.get("old_file"):
+            out["file"] = e["old_file"]                       # a renamed or MDW draft file: its own name shown
     if kind == "old repo" and e.get("repo") == "first":
         out.update(badge=BADGE["first repo"], repo="first")      # the first repo's file (2022-08..2023-04)
     if e.get("as"):
