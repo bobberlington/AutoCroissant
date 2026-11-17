@@ -34,6 +34,7 @@ from argparse import ArgumentParser
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
+from hashlib import sha1
 from io import BytesIO
 from json import loads
 from os import environ, listdir, makedirs, remove, replace, rmdir, walk
@@ -108,10 +109,13 @@ def changes_of(e: dict) -> dict:
 
 
 def picture_name(e: dict) -> str:
-    """A version's webp: its first picture's id (a Discord post), or the old repo's blob."""
+    """A version's webp: its first picture's id (a Discord post; a crop by eye: its box too, so a new box makes it
+    again), or the old repo's blob."""
     if e["kind"] == "old repo":
         return f"O-{e['blob'][:12]}.webp"
-    return sub(r"[^A-Za-z0-9_-]", "_", e["pictures"][0]["id"]) + ".webp"
+    p = e["pictures"][0]
+    crop = "-k" + sha1(str(p["box"]).encode()).hexdigest()[:6] if p.get("crop") and p.get("box") else ""
+    return sub(r"[^A-Za-z0-9_-]", "_", p["id"]) + crop + ".webp"
 
 
 def picture_job(e: dict, root: str) -> tuple:

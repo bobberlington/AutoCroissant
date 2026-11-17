@@ -118,7 +118,14 @@ def test_the_page_s_items_from_the_parts(tmp_path):
         {"key": key("b"), "card": "bolt", "ts": 1.7e9, "look": 0, "thumb": "t/b.webp"}]})
     put(("match", "verdicts.jsonl"), lines([{"id": "P-1", "verdict": "unsure", "maybe": ["tentacle"], "first": {
         "date": "2020-07-18T10:31:57+00:00", "channel": "ideas"}, "reason": "named only, its text reads "
-        "blooper-tentacle's better (0.79 vs 0.18)"}]))
+        "blooper-tentacle's better (0.79 vs 0.18)"},
+        {"id": "P-6", "verdict": "draft", "card": "bolt", "file": "attachments/6.png", "thumb": "t/6.webp"}]))
+    from PIL import Image
+    (tmp_path / "attachments").mkdir()
+    shot = Image.new("RGB", (200, 100), (40, 40, 40))
+    shot.paste(Image.new("RGB", (60, 90), (200, 30, 30)), (120, 5))
+    shot.putpixel((0, 0), (255, 255, 255))                                       # no uniform border: not trimmed
+    shot.save(tmp_path / "attachments" / "6.png")
     put(("oldrows", "review.jsonl"), lines([{"id": "oldrows-a", "kind": "unsure map", "card": "Gone", "status":
                                             "archived", "rows": []},
                                            {"id": "oldrows-b", "kind": "unsure map", "card": "Bolt", "status": "live",
@@ -134,8 +141,12 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                            "field": "stars", "proposed": 9},
                                           {"id": "chain-d1", "kind": "dates only", "card": "bolt", "picture": "P-5",
                                            "date": "2020-07-19T00:00:00+00:00", "channel": "ideas",
-                                           "why": "a sheet of two cards", "read_only": True}]))
-    put(("match", "eye.json"), {"dates_only": {"P-5": "a sheet of two cards"}})
+                                           "why": "a sheet of two cards", "read_only": True},
+                                          {"id": "chain-k1", "kind": "cropped", "card": "bolt", "picture": "P-6",
+                                           "date": "2020-07-20T00:00:00+00:00", "channel": "ideas",
+                                           "why": "a TTS table: the card cut out", "read_only": True}]))
+    put(("match", "eye.json"), {"dates_only": {"P-5": "a sheet of two cards"},
+                                "crops": {"P-6": {"box": [0.6, 0.05, 0.9, 0.95], "why": "a TTS table"}}})
     put(("preview", "eye.json"), {"leave_out": {"bolt|D-ai": "an AI restyle"}})
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
@@ -168,6 +179,15 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert (got["chain-old1"]["gone"], got["chain-old2"]["gone"]) == ("taken", "changed")
     assert got["chain-d1"]["read_only"] and got["chain-d1"]["sub"] == "dates" and not got["chain-d1"]["choices"]
     assert got["chain-x5"]["gone"] == "taken" and "dates only" in got["chain-x5"]["settled"]   # no card on its own
+    assert got["chain-k1"]["read_only"] and got["chain-k1"]["sub"] == "crops" and \
+        got["chain-k1"]["pics"][1]["src"] == "crops/P-6.webp"                    # a crop by eye: shown, read only
+    assert tr.crop_thumbs(str(tmp_path), inputs) == 1
+    with Image.open(derived / "review" / "crops" / "P-6.webp") as im:
+        assert im.size == (60, 90)                                                 # the card alone, as the preview
+    assert tr.picture_page(str(tmp_path), inputs, list(got.values()), "now") == 2
+    shown = (derived / "review" / tr.PICTURES_PAGE).read_text()
+    assert shown.count("data:image/webp;base64,") == 2 and "Cropped: " in shown and "Dates only: " in shown and \
+        "Answers on this picture (identification only): yes (owner)" in shown   # P-5 has no file here
     assert "taken in by the rerun" in tr.item_html(got["chain-old1"]) and \
         "Not applied" in tr.item_html(got["chain-old2"])
     assert "changed" not in tr.item_html(got["chain-old1"]).split(">")[0]        # taken: its stored copy's mark gone
@@ -279,6 +299,37 @@ def test_a_rebuild_s_settled_answers_skip_and_the_owner_s_win(tmp_path):
     assert json.loads((review / "ids.json").read_text())["ids"]["chain-gone"] == ids["chain-gone"]  # meaning kept
 
 
+def test_an_answer_on_a_dates_only_picture_is_kept_as_identification(tmp_path):
+    """Owner 11-16 23:10: an answer naming what a picture with no card on its own shows (its look, a draft, a field)
+    is stored as identification only even when its item left the page for that (match/eye.json dates_only); the
+    page shows it taken, as identification only. Other left items still skip."""
+    ar, dc = load(), tr.dc
+    review = tmp_path / "derived" / "review"
+    review.mkdir(parents=True)
+    (tmp_path / "derived" / "match").mkdir()
+    (tmp_path / "derived" / "match" / "eye.json").write_text(json.dumps({"dates_only": {"P-7": "a TTS table"}}))
+    (tmp_path / "derived" / "match" / "verdicts.jsonl").write_text(json.dumps(
+        {"id": "P-7", "thumb": "match/thumbs/p-7.webp"}) + "\n")
+    (review / "items.json").write_text(json.dumps({"format": tr.FORMAT, "cards": {"bolt": "Bolt"}, "items": items()}))
+    look, field = dc.review_id("look not told", "P-7"), dc.review_id("field", "bolt|D-P-7|stars")
+    tr.register(str(tmp_path), [tr.item("look not told", look, "matches", "looks", "Bolt: 2020", card="bolt"),
+                                tr.item("field", field, "matches", "fields", "Bolt: stars", card="bolt"),
+                                tr.item("look not told", "chain-gone", "matches", "looks", "Bolt: 2021",
+                                        card="bolt")], "2026-11-16T03:46:55+00:00")
+    logs = []
+    answers = {look: {"choice": "look", "value": "b" * 21}, field: {"choice": "value", "value": "4"},
+               "chain-gone": {"choice": "draft", "value": "bolt"}}
+    assert ar.apply({"format": tr.FORMAT, "rulings": answers}, str(tmp_path), build=False, log=logs.append) == 0
+    got = json.loads((review / "rulings.json").read_text())["rulings"]
+    assert set(got) == {look, field} and "1 answer(s) skipped" in " ".join(logs)
+    assert (got[look]["item"]["picture"], got[look]["item"]["identification"], got[field]["item"]["field"]) == \
+        ("P-7", True, "stars")
+    assert got[look]["item"]["pics"] == [{"src": "../matcher/match/thumbs/p-7.webp", "cap": "the picture"}]
+    inputs = tr.Inputs.__new__(tr.Inputs)
+    inputs.dates_only = {"P-7": "a TTS table"}
+    assert "identification only" in tr.off_timeline(inputs, got[look])
+
+
 def test_changelog_lines_take_a_card(tmp_path, monkeypatch):
     """Owner D9: an 'ambiguous card' line offers its candidates, none and a typed card; the owner's own answer
     (owner.json lines) shows read only. An item the owner answered outside the page (read_only) is never asked."""
@@ -316,11 +367,13 @@ def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
         timelines={"bolt": {"kind": "creature", "entries": [
             {"id": "D-P-1", "pictures": [{"id": "P-1"}, {"id": "P-2"}], "fields": {"ability": sure("Heal 2 HP.")}},
             {"id": "O-x", "kind": "old repo", "blob": "b1", "fields": {"stats": sure({"hp": 6, "def": 5})}}]}},
-        verdicts={"P-9": {"card": "bolt"}}, created={"Bolt": {"date": "2020-01-01"}}, cards={"bolt": {"key": "Bolt"}})
+        verdicts={"P-9": {"card": "bolt"}}, created={"Bolt": {"date": "2020-01-01"}}, cards={"bolt": {"key": "Bolt"}},
+        rulings={"chain-n": {"kind": "look not told", "choice": "no", "item": {"card": "bolt", "picture": "P-6"}}})
     field = lambda entry, value, c="value": {"kind": "field", "choice": c, "value": value, "item": {
         "kind": "field", "card": "bolt", "entry": entry, "field": "ability", "choices": [{"c": "yes", "value": "Heal 3 HP."}]}}
     assert tr.settled(ns, field("D-P-2", "heal 2 hp")) and tr.settled(ns, field("D-P-1", None, "no"))
     assert not tr.settled(ns, field("D-P-2", "Heal 3 HP.")) and not tr.settled(ns, field("D-P-7", "Heal 2 HP."))
+    assert "not this card" in tr.settled(ns, field("D-P-6", None, "no"))     # its picture answered 'not this card'
     ns.verdicts["P-8"] = {"card": "bolt", "version": {"commits": ["c1"]}}           # a git look's picture, gone to its row
     ns.timelines["bolt"]["entries"].append({"id": "O-c1", "kind": "old repo", "commit": "c1",
                                             "fields": {"ability": sure("Heal 4 HP.")}})

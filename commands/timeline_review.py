@@ -9,6 +9,9 @@ preview's eye.json: its leave_out pictures, no version of the card, are not aske
 pictures that are no card on its own, shown read only, their answers taken in as that) and writes derived/review/:
     index.html   the page (open it in a browser: its pictures are the archive's own thumbnails, by relative path)
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
+    pictures.html  every dates-only picture and every crop by eye (match/eye.json crops: the card cut out of a
+                 bigger picture, shown as the crop), with the answers on each (identification only on a dates-only
+                 one), pictures embedded: the owner checks them before publishing (11-17); crops/ their thumbs
 Sections: the owner's answers (Q1-Q6 and the later ones, read only), the unsure old maps, unsure matches and
 versions (a picture's card, its look, named-only pictures to confirm in bulk, joke pictures, older templates, unsure
 fields, changelog lines), PSD vs picture (the old repo's rows), Created dates (earlier hints only when
@@ -22,10 +25,12 @@ No message text or posters: pictures, dates, channels, read fields, and a Discor
 stays local).
 """
 from argparse import ArgumentParser
+from base64 import b64encode
 from collections import Counter, defaultdict
 from html import escape
+from io import BytesIO
 from json import dumps
-from os import listdir
+from os import listdir, makedirs, remove
 from os.path import exists, join
 from re import search
 from typing import Callable, Optional
@@ -48,6 +53,9 @@ ISSUED = dc.ISSUED                                    # every id the page showed
 OWNER = ("derived", "review", "owner.json")           # the owner's rulings outside the page (answers shown read only)
 EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
 MATCH_EYE = dc.MATCH_EYE                              # dates_only: pictures that are no card on its own (owner 11-16)
+CROPS = "crops"                                       # derived/review/crops/<picture>.webp: each crop shown (by eye)
+PICTURES_PAGE = "pictures.html"                       # every dates-only picture and crop, for the owner (11-17 00:30)
+THUMB_W = 320                                         # a crop's thumb on the page (px wide)
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
 RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
 GUILD = "545138546021892096"                          # Impossibility Simulator (a changelog line's Discord link)
@@ -69,7 +77,8 @@ SUBS = {                                              # section -> its parts in 
                 ("jokes", "Joke pictures", None), ("older", "An older template posted later", None),
                 ("fields", "Fields read on Discord versions", None),
                 ("facts", "Changelog lines", None),
-                ("dates", "No card on its own: dates only, never shown (read only)", None)),
+                ("dates", "No card on its own: dates only, never shown (read only)", None),
+                ("crops", "The card cut out of a bigger picture: the crop is shown (read only)", None)),
     "created": (("earlier", "Earlier than the website's date (proposed: the preview uses ours)", None),
                 ("new", "No date on the website yet", None),
                 ("later", "Later than the website's date (the website's date kept)", None),
@@ -116,7 +125,8 @@ class Inputs:
         self.answers = {a["id"]: a for a in self.owner.get("answers") or []}
         self.used = set((dm.read_json(at(USED), {}) or {}).get("used") or [])
         self.left_out = {tuple(k.split("|")) for k in (dm.read_json(at(EYE), {}) or {}).get("leave_out") or {}}
-        self.dates_only = (dm.read_json(at(MATCH_EYE), {}) or {}).get("dates_only") or {}
+        eye = dm.read_json(at(MATCH_EYE), {}) or {}
+        self.dates_only, self.crops = eye.get("dates_only") or {}, eye.get("crops") or {}
         names = Counter(str(c.get("name") or cid).casefold() for cid, c in self.cards.items())
         self.shared = {n for n, k in names.items() if k > 1}          # a name two cards share: shown with the id
 
@@ -362,6 +372,11 @@ def chain_items(inputs: Inputs) -> list:
                           "this picture counts for dates only (Created, a version existed by then), never on the "
                           "timeline."]
             it["pics"] = [row_pic(row, "the picture")]
+        elif kind == "cropped":
+            it = item(kind, r["id"], "matches", "crops", head + date, read_only=True, **common)
+            it["meta"] = [f"by eye: {r.get('why')}", "Only a card on its own is shown (your rule, 11-16 23:15): the "
+                          "whole card is cut out of this bigger picture, and the crop is what its timeline shows."]
+            it["pics"] = [row_pic(row, "the picture"), pic(f"{CROPS}/{r.get('picture')}.webp", "the crop shown")]
         elif kind == "split":
             it = item(kind, r["id"], "splits", None, f"{r.get('name')} -> " + " + ".join(
                 inputs.name(h) for h in r.get("halves") or []), read_only=True)
@@ -699,7 +714,17 @@ def off_timeline(inputs: Inputs, r: dict) -> Optional[str]:
     if answer_picture(r) not in (getattr(inputs, "dates_only", None) or {}) or \
             kind in ("look not told", "named only", "card not told") and r.get("choice") in ("no", "none"):
         return None
-    return "the picture is no card on its own: it counts for dates only, never shown (your rule, 11-16)"
+    return "kept as identification only: the picture is no card on its own, so it counts for dates only and is " \
+        "never shown (your rule, 11-16)"
+
+
+def not_this_card(inputs: Inputs) -> set:
+    """{(picture, card)} a look or named-only answer turned down ('no': not this card), made once."""
+    if getattr(inputs, "_not_card", None) is None:
+        inputs._not_card = {(answer_picture(x), (x.get("item") or {}).get("card"))
+                            for x in (getattr(inputs, "rulings", None) or {}).values()
+                            if x.get("kind") in ("look not told", "named only") and x.get("choice") == "no"}
+    return inputs._not_card
 
 
 def settled(inputs: Inputs, r: dict) -> Optional[str]:
@@ -708,12 +733,15 @@ def settled(inputs: Inputs, r: dict) -> Optional[str]:
     left for it, the same old blob's) now publishes
     sure the same way (from another answer: the git look's own; a 'no' while the value it turned down stays out); a
     picture's card it has now, on or off the timeline as answered; a fact kept or dropped as answered; the Created
-    date in use; a Morgue entry answered 'no' that left the list; any answer on a picture that is no card on its own."""
+    date in use; a Morgue entry answered 'no' that left the list; any answer on a picture that is no card on its own;
+    a field of a picture answered 'not this card' (its version gone with it)."""
     off = off_timeline(inputs, r)
     if off:
         return off
     it, c = r.get("item") or {}, r.get("choice")
     kind, cid = r.get("kind") or it.get("kind"), it.get("card")
+    if kind == "field" and (answer_picture(r), cid) in not_this_card(inputs):
+        return "the picture is not this card's (answered 'not this card'): its fields need nothing"
     t = inputs.timelines.get(cid) or {}
     entries = t.get("entries") or []
     pic = answer_picture(r)
@@ -765,6 +793,9 @@ def gather(inputs: Inputs) -> list:
         r = inputs.rulings.get(it["id"])
         if r and r.get("source") and r["source"] != "owner":
             it["meta"].append(f"answered by: {r['source']}")
+        if it.get("picture") in inputs.dates_only and it["kind"] != "dates only":
+            it["meta"].append("This picture is no card on its own (dates only, never shown): an answer here only "
+                              "identifies it.")
     owner_notes(inputs, items)
     have = {i["id"] for i in items}
     for it in items:                                 # answered, but no radio here takes that answer any more (a
@@ -1043,6 +1074,101 @@ def register(root: str, items: list, built: str) -> dict:
     return ids
 
 
+# ========================
+# Pictures off a timeline and crops (the owner's check before publishing, 11-17 00:30)
+# ========================
+def crop_thumbs(root: str, inputs: Inputs) -> int:
+    """derived/review/crops/<picture>.webp: each crop by eye as the preview cuts it, at most THUMB_W wide; none left
+    that no crop names."""
+    from commands.discord_preview import open_picture
+    folder = join(root, *OUT, CROPS)
+    makedirs(folder, exist_ok=True)
+    want = set()
+    for pid, crop in sorted(inputs.crops.items()):
+        row = inputs.verdicts.get(pid)
+        if not row:
+            continue
+        want.add(f"{pid}.webp")
+        small(open_picture("file", join(root, row["file"]), tuple(crop["box"]))).save(
+            join(folder, f"{pid}.webp"), "WEBP", quality=80, method=5)
+    for name in listdir(folder):
+        if name not in want:
+            remove(join(folder, name))
+    return len(want)
+
+
+def small(img, width: int = 0):
+    """An image RGB at most width (THUMB_W) wide."""
+    from PIL import Image
+    width = width or THUMB_W
+    img = img.convert("RGB")
+    return img.resize((width, max(1, round(width * img.height / img.width))), Image.LANCZOS) if img.width > width \
+        else img
+
+
+def data_uri(img) -> str:
+    out = BytesIO()
+    img.save(out, "WEBP", quality=75, method=5)
+    return "data:image/webp;base64," + b64encode(out.getvalue()).decode()
+
+
+def answer_label(inputs: Inputs, r: dict) -> str:
+    """An answer as the page shows it: a look by its number and git date, a card by its name, a field's value."""
+    it, c, value = r.get("item") or {}, r.get("choice"), r.get("value")
+    if c == "look":
+        found = next(((n, v) for n, v in (inputs.looks.get(it.get("card")) or {}).items() if v["key"] == value), None)
+        return f"look {found[0]}: in git {when(dm.iso(found[1]['ts']))}" if found else f"look {value}"
+    if c == "draft":
+        return "a look not in git (a draft)"
+    if c == "card":
+        return f"the card {inputs.name(value)}"
+    if it.get("field"):
+        return f"{it['field']}: {c}" + (f" {show(value)}" if value is not None else "")
+    return str(c) + (f" {show(value)}" if value is not None else "")
+
+
+def picture_page(root: str, inputs: Inputs, items: list, built: str) -> int:
+    """derived/review/pictures.html: every picture the eye moved off a timeline (dates only) and every crop shown,
+    each with the answers given on it (identification only on a dates-only picture); pictures embedded (the page
+    opens from file://)."""
+    from commands.discord_preview import open_picture
+    shown = [i for i in items if i["kind"] in ("dates only", "cropped") and i.get("picture")]
+    shown.sort(key=lambda i: (i["kind"] != "cropped", str(i.get("date") or ""), i["id"]))
+    answers = defaultdict(list)
+    for rid, r in sorted(inputs.rulings.items()):
+        pid = answer_picture(r) or (rid[6:] if rid.startswith("match:") else None)
+        if pid:
+            answers[pid].append(r)
+    out = ["<!doctype html><meta charset='utf-8'><title>Card timelines: pictures off a timeline and crops</title>",
+           f"<style>{STYLE}.pics img{{width:auto;max-width:360px;max-height:480px}}figure{{width:auto}}</style>",
+           "<header><h1>Card timelines: pictures off a timeline and crops</h1>",
+           f"<div>Built {escape(built)}. Only a card on its own is shown (your rule, 11-16 23:10/23:15). "
+           f"{sum(i['kind'] == 'cropped' for i in shown)} pictures are shown cut out to the card (the crop is what "
+           f"the timeline shows); {sum(i['kind'] == 'dates only' for i in shown)} are no card on its own: they count "
+           "for dates only and are never shown, and any answer on them only identifies the picture. Check them "
+           "before publishing. Nothing here is published.</div></header>"]
+    for it in shown:
+        row = inputs.verdicts.get(it["picture"]) or {}
+        pics = []
+        if row.get("file"):
+            pics.append((open_picture("file", join(root, row["file"]), None), "the picture"))
+            if it["kind"] == "cropped":
+                pics.append((open_picture("file", join(root, row["file"]), tuple(inputs.crops[it["picture"]]["box"])),
+                             "the crop shown"))
+        said = [f"{escape(answer_label(inputs, r))} ({escape(r.get('source') or 'owner')})"
+                for r in answers.get(it["picture"], [])]
+        out.append(f"<div class='item ro' id='{escape(it['id'], quote=True)}'><span class=id>"
+                   f"{escape(it['id'])} {escape(it['picture'])}</span><div class=t>"
+                   f"{'Cropped' if it['kind'] == 'cropped' else 'Dates only'}: {escape(it['title'])}</div>"
+                   "<div class=meta>" + "".join(f"<div>{escape(m)}</div>" for m in it.get("meta") or [] if m) +
+                   (f"<div>Answers on this picture{' (identification only)' if it['kind'] == 'dates only' else ''}: "
+                    + "; ".join(said) + "</div>" if said else "") + "</div><div class=pics>" +
+                   "".join(f"<figure><img src='{data_uri(small(img, THUMB_W * 2))}'><figcaption>{escape(cap)}"
+                           "</figcaption></figure>" for img, cap in pics) + "</div></div>")
+    dm.write_text(join(root, *OUT, PICTURES_PAGE), "\n".join(out) + "\n")
+    return len(shown)
+
+
 def build(root: str = dm.DEFAULT_ROOT, log: Callable = print) -> dict:
     root = dm.check_root(root)
     inputs = Inputs(root)
@@ -1058,6 +1184,9 @@ def build(root: str = dm.DEFAULT_ROOT, log: Callable = print) -> dict:
                   indent=None)
     dm.write_text(join(out, "index.html"), page(items, inputs, built))
     register(root, items, built)
+    crops = crop_thumbs(root, inputs)
+    shown = picture_page(root, inputs, items, built)
+    log(f"pictures page: {shown} pictures ({crops} crops) -> {join(out, PICTURES_PAGE)}")
     tally = Counter((i["section"], i.get("sub") or "") for i in items)
     counts = {f"{s}/{p}" if p else s: n for (s, p), n in sorted(tally.items())}
     open_n = sum(1 for i in items if not i.get("read_only") and (i["id"] not in inputs.rulings or i.get("stale")))

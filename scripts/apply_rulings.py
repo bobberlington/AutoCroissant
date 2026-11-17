@@ -14,7 +14,9 @@ settled or dropped since (an id the page showed before, derived/review/ids.json:
 moved), one on an item now read only (the owner's answer), and, from an export of an older page (its "page", or
 --page for a file made without one: the page's build time), one carrying a value the item no longer offers (another
 value now, or none: answer it again). An answer the same as the one stored is kept as is, even when its item no
-longer offers it (the page marks it not applied).
+longer offers it (the page marks it not applied). An answer on a picture now dates only (derived/match/eye.json: no
+card on its own, owner 11-16), whose item left the page for that, is kept as identification only (the picture stays
+off every timeline; it still dates its card).
 The file's "source" (the triage's files: 'triage ...'; else the owner) is kept with each answer: an owner's answer is
 never replaced by the triage's, nor the triage's by its guesses (owner > triage > triage guess); otherwise a later
 answer of an id wins (the same answer from a higher source takes its source); "clear" withdraws one. Good answers go into derived/review/rulings.json, then the timelines are
@@ -32,6 +34,7 @@ from re import findall, fullmatch, sub
 from typing import Optional
 
 sys.path.insert(0, dirname(dirname(abspath(__file__))))         # AutoCroissant, for commands.*
+from commands import discord_chain as dc                        # noqa: E402
 from commands import discord_match as dm                        # noqa: E402
 from commands import timeline_review as tr                      # noqa: E402
 
@@ -122,10 +125,37 @@ def rank(source: Optional[str]) -> int:
     return 2 if source.startswith("triage guess") else 1 if source.startswith("triage") else 0
 
 
+SUBS = {"card not told": "card", "look not told": "looks", "named only": "named", "joke picture": "jokes",
+        "field": "fields"}                                      # a left item's part of the page (timeline_review)
+
+
+def off_items(issued: dict, dates_only: dict, thumbs: dict = None) -> dict:
+    """{review id: its item} for the ids the page showed about a picture now dates only (match/eye.json: no card on
+    its own; owner 11-16): its card ('match:'), a picture item (keyed by the picture, or by it and the card) or a
+    field of its version. An answer on one is kept as identification only (owner 11-16 23:10), never an error."""
+    out = {}
+    for rid, was in (issued or {}).items():
+        kind, cid = was.get("kind"), was.get("card")
+        for pid in dates_only:
+            ids = {f"match:{pid}": None} if kind == "card not told" else \
+                {dc.review_id(kind, pid): None, dc.review_id(kind, f"{pid}|{cid}"): None} if kind in dc.PICTURE_KINDS \
+                else {dc.review_id("field", f"{cid}|D-{pid}|{k}"): k for k in dc.FIELDS} if kind == "field" else {}
+            if rid in ids:
+                thumb = (thumbs or {}).get(pid)
+                out[rid] = {"id": rid, "kind": kind, "section": "matches", "sub": SUBS.get(kind), "title":
+                            was.get("title") or rid, "card": cid, "picture": pid, "entry": f"D-{pid}",
+                            **({"field": ids[rid]} if ids[rid] else {}), "meta": [],
+                            "pics": [{"src": "../matcher/" + thumb, "cap": "the picture"}] if thumb else [],
+                            "choices": [], "other": None, "read_only": False, "identification": True}
+                break
+    return out
+
+
 def check(answers: dict, items: dict, stored: dict, cards: dict, issued: dict = None, source: str = OWNER,
-          older: bool = False) -> tuple:
+          older: bool = False, off: dict = None) -> tuple:
     """({id: ruling}, [id, ...] to clear, [error, ...], [(id, why), ...] skipped) for an export's answers; older: the
-    export was made on an older page (a value no radio offers now is stale, not a mistake)."""
+    export was made on an older page (a value no radio offers now is stale, not a mistake); off: off_items (a
+    dates-only picture's items that left the page: an answer kept as identification only)."""
     good, clear, errors, skipped = {}, [], [], []
     for rid, answer in sorted(answers.items()):
         it = items.get(rid) or (stored.get(rid) or {}).get("item")
@@ -145,6 +175,11 @@ def check(answers: dict, items: dict, stored: dict, cards: dict, issued: dict = 
             continue
         if rid in stored and rank(stored[rid].get("source")) < rank(source):
             skipped.append((rid, f"kept: {stored[rid].get('source') or OWNER}'s answer"))
+            continue
+        if not it and rid in (off or {}) and c:   # a dates-only picture's: what it shows, identification only
+            good[rid] = {"kind": off[rid]["kind"], "choice": c, **({"value": answer["value"]} if "value" in answer
+                                                                  else {}),
+                         "item": off[rid], **({"source": source} if source != OWNER else {})}
             continue
         if not it:
             was = (issued or {}).get(rid)
@@ -193,8 +228,12 @@ def apply(export: dict, root: str, cards_repo: str = None, build: bool = True, l
     source = str(export.get("source") or OWNER)
     made_on = export.get("page") or made_on                     # the page the answers were given on
     older = bool(made_on) and made_on != page.get("built")
+    only = (dm.read_json(join(root, *dc.MATCH_EYE), {}) or {}).get("dates_only") or {}
+    thumbs = {r["id"]: r.get("thumb") for r in dm.read_jsonl(join(root, *tr.VERDICTS)) if r["id"] in only} \
+        if only else {}
+    off = off_items({rid: was for rid, was in issued.items() if rid not in items}, only, thumbs)
     good, clear, errors, skipped = check(export.get("rulings") or {}, items, stored, page.get("cards") or {}, issued,
-                                         source, older)
+                                         source, older, off)
     if errors:
         log(f"{len(errors)} answer(s) refused, nothing stored (fix them and export again):")
         for e in errors:

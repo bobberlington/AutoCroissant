@@ -45,7 +45,8 @@ build   Under derived/chain/:
         Only a card on its own is shown (owner 11-16 23:10/23:15): a picture the eye found is not one (a cut-off piece,
         a screenshot of several cards or of a window: derived/match/eye.json dates_only) enters no timeline and asks
         nothing, but still counts for dates (Created) as any card-sure picture does; a read-only 'dates only' item
-        shows it.
+        shows it. The whole card cut out of a bigger picture (eye.json crops: {picture: {box, why}}, the box a share
+        of the trimmed picture, as a sheet's cell) is shown as that crop; a read-only 'cropped' item shows it.
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
         scripts/apply_rulings.py) are honoured: pictures named, told (a git look by its first version's key) or
@@ -98,7 +99,7 @@ ISSUED = ("derived", "review", "ids.json")                  # every review id th
 PICTURE_KINDS = ("named only", "look not told", "joke picture")   # review ids keyed by their picture
 OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
 PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
-MATCH_EYE = ("derived", "match", "eye.json")                # dates_only: {picture: why} no card on its own (by eye)
+MATCH_EYE = ("derived", "match", "eye.json")                # dates_only {picture: why}, crops {picture: {box, why}}
 FS_SOURCE = {"old git": "old repo", "first git": "first repo"}   # a card's first git record: where (else the card repo)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
@@ -469,9 +470,12 @@ class Inputs:
         self.lost = (dm.read_json(p.at(LOST), {}) or {}).get("groups") or []
         self.text = {r["file"]: r for r in dm.read_jsonl(p.at(TEXT_READS)) if r.get("src") == "discord"}
         self.text_truth = defaultdict(dict)      # an id's fields from every eye file
+        self.old_eye = defaultdict(dict)         # an old/first repo PNG's fields by eye (o:<blob>; not the PSD's)
         for r in dm.read_jsonl(p.at(TEXT_TRUTH)):
             if r.get("src") == "discord":
                 self.text_truth[r["id"]].update(r["fields"])
+            elif str(r.get("id")).startswith("o:") and str(r.get("how")).startswith("eye:"):
+                self.old_eye[r["id"][2:]].update(r["fields"])
         self.bars = {r["file"]: r for r in dm.read_jsonl(p.at(BAR_READS)) if r.get("src") == "discord"}
         self.old_rows = defaultdict(list)
         for row in dm.read_jsonl(p.at(OLD_ROWS)):
@@ -500,10 +504,13 @@ class Inputs:
                 row["morgue_taken"] = taken[row["id"]]
                 if row["verdict"] in SURE_CLASSES:
                     row["verdict"] = "unsure"
-        only = (dm.read_json(p.at(MATCH_EYE), {}) or {}).get("dates_only") or {}
+        eye = dm.read_json(p.at(MATCH_EYE), {}) or {}
+        only, crops = eye.get("dates_only") or {}, eye.get("crops") or {}
         for row in self.verdicts:                # no card on its own (by eye): dates only, never shown
             if row["id"] in only:
                 row["dates_only"] = only[row["id"]]
+            elif row["id"] in crops and row.get("cell") is None:    # the whole card cut out: the crop is shown
+                row["box"], row["crop"] = list(crops[row["id"]]["box"]), crops[row["id"]]["why"]
         self.psds = defaultdict(list)
         for r in dm.read_jsonl(p.at(PSDS)):
             if r.get("card") and r.get("fields"):
@@ -1162,6 +1169,10 @@ class Chain:
             if row.get("dates_only") and not row.get("created_review"):
                 self.dates_only(cid, row)
                 continue
+            if row.get("crop"):                    # shown as its crop: the owner sees each (read only)
+                self.add_review("cropped", row["id"], card=cid, picture=row["id"], date=first["date"],
+                                channel=first["channel"], why=row["crop"], box=row["box"], read_only=True)
+                self.tally["discord: the card cut out of a bigger picture (by eye): the crop is shown"] += 1
             if row.get("joke_draft") or (row.get("joke") and row["verdict"] != "version_sure"):
                 self.add_review("joke picture", row["id"], card=cid, picture=row["id"], date=first["date"],
                                 channel=first["channel"], why=row.get("review") or "a joke picture's look")
@@ -1241,8 +1252,19 @@ class Chain:
                      key=lambda r: r["ts"])
         if old:
             git["row"] = old[0]["id"]
-            return old_fields(old[0], self.review_of), git
+            return self.row_fields(cid, old[0]), git
         return {}, git
+
+    def row_fields(self, cid: str, row: dict) -> dict:
+        """An old/first repo row's fields (old_fields), its PNG's by-eye fields over them (the readers' eye files,
+        o:<blob>: a picture printing what its PSD or folder doesn't say)."""
+        fields = old_fields(row, self.review_of)
+        for key, src in (("name", "title"), ("stars", "stars"), ("types", "types"), ("ability", "ability")):
+            eye = getattr(self.inputs, "old_eye", {}).get(row.get("blob") or "", {}).get(src)
+            if eye not in (None, ""):
+                fields[key] = sure(sorted(type_tokens(eye, self.inputs.cards[cid].get("type"))) if key == "types"
+                                   else eye, "eye")
+        return fields
 
     def picture(self, cid: str, row: dict) -> dict:
         card = self.inputs.cards[cid]
@@ -1334,7 +1356,8 @@ class Chain:
             entry["pictures"] = [{"id": p["row"]["id"], "date": (p["row"].get("first") or {}).get("date"),
                                   "channel": (p["row"].get("first") or {}).get("channel"), "file": p["row"]["file"],
                                   "thumb": p["row"].get("thumb"), "cell": p["row"].get("cell"),
-                                  "box": p["row"].get("box"), "verdict": p["row"]["verdict"]}
+                                  "box": p["row"].get("box"), "verdict": p["row"]["verdict"],
+                                  **({"crop": True} if p["row"].get("crop") else {})}
                                  for p in group["pictures"]]
             if any(p["row"].get("name_only") for p in group["pictures"]):
                 entry["name_only"] = True
@@ -1446,7 +1469,7 @@ class Chain:
                      "author": row.get("author"), "subject": row.get("subject"),
                      "commit": row.get("commit"), "path": row.get("path"), "blob": row.get("blob"),
                      "thumb": row.get("thumb"), "minor": bool(row.get("minor")), "share": row.get("share"),
-                     "old_ability_change": row.get("ability_change"), "fields": old_fields(row, self.review_of)}
+                     "old_ability_change": row.get("ability_change"), "fields": self.row_fields(cid, row)}
             if row.get("split_from"):
                 entry["as"] = row["split_from"]
             for k in ("old_name", "old_file", "in_tc_init", "two_creatures", "psd_only"):

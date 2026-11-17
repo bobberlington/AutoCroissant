@@ -198,7 +198,12 @@ def test_a_first_psd_s_row_and_created():
     e = {"kind": "old repo", "blob": "b" * 40, "thumb": "oldgit/thumbs/" + "b" * 40 + ".webp", "psd_only": True}
     assert dp.picture_job(e, "/r") == ("file", "/r/derived/oldgit/thumbs/" + "b" * 40 + ".webp", None)
     assert dp.picture_job({**e, "psd_only": False}, "/r") == ("blob", "b" * 40, None)
-    laz = {"proposed": True, "status": "earlier", "date": "2023-09-10", "ours": {"source": "old repo (PSD)"},
+    crop = {"kind": "discord", "pictures": [{"id": "P-1", "file": "a/1.png", "box": [0.1, 0, 1, 1], "crop": True}]}
+    named = dp.picture_name(crop)                                   # a crop by eye: its box in the name
+    assert named.startswith("P-1-k") and named != dp.picture_name({**crop, "pictures": [{**crop["pictures"][0],
+                                                                                           "box": [0.2, 0, 1, 1]}]})
+    assert dp.picture_job(crop, "/r") == ("file", "/r/a/1.png", (0.1, 0, 1, 1))
+    laz ={"proposed": True, "status": "earlier", "date": "2023-09-10", "ours": {"source": "old repo (PSD)"},
            "file": {"date": "2023-10-09"}}
     got = dp.created_proposals({"cards": {"Laz": laz}})
     assert got["Laz"]["source"] == "old repo" and got["Laz"]["psd"] and got["Laz"]["was"] == "2023-10-09"

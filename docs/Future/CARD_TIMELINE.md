@@ -269,7 +269,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    (never one the Morgue's eye took for a joke or lost card: `taken`); a stat-less card's picture reading no bar
    label has no stats field (not printed);
    each field keeps its method and confidence and only sure values stay (a git look's own fields first, the readers'
-   eye truth, then their sure reads; a title read snapped to another live card's name, not one of this card's own
+   eye truth, then their sure reads; an old or first repo PNG's fields by eye, the readers' eye files' `o:<blob>`,
+   over its row's PSD, folder or reads: Unbreakable Strength's 2023-04-04 PNG prints 4 flowers in '3 Stars'; a title read snapped to another live card's name, not one of this card's own
    names, aliases or old repo titles, goes to review: P.A.N.D.A. Mk A read 'Panda'), the rest name a review item
    (types with nothing read: unread). An item card's kinds (its subtypes) are never kept: read alone, sure or not,
    they are not collected (no item; a sure read compares as no types; so is another card's version read sure as
@@ -311,7 +312,17 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    `dates_only`, picture id -> why) enters no timeline and asks nothing, but still counts for dates (Created); a
    read-only 'dates only' review item shows it (the owner sees every picture moved off a timeline before publishing,
    11-17). Kalecgos' 2019-05-10 phone screenshot and Twin Emperors' two 2022-06-17 stat-and-ability crops were the
-   first.
+   first; gap round 3 (11-17) added 12: the 2019 phone photos of printed cards (Yin Yarn, Nightmare, a printed sheet
+   of Magic Hammer), TTS tables (Waxwell, False Knight, The Radiance), a TTS deck sheet (Rope), Photoshop and editor
+   windows (Twin Emperors, Dogma, Markoth), a header-and-art piece (Crystal Bits) and bare art (Contracted). The
+   whole card cut out of a bigger picture (`eye.json` `crops`, picture id -> {box, why}: a share of the trimmed
+   picture, as a sheet's cell) is shown as that crop (its webp named by the box, so a new box makes it again) with a
+   read-only 'cropped' item: Fawful's 2021-08-31 Discord screenshot (the channel header and the post's text cut
+   off). A picture the owner answered only to identify it (an in-game or several-card picture, 11-16 23:10) stays
+   dates only even when its whole card is in it: a crop would publish that answer as a version (Waxwell's and Rope's
+   name git looks their cut-out cards don't show). `timeline_review build` also writes `derived/review/pictures.html`:
+   every dates-only picture and crop with the answers on it, pictures embedded, for the owner's check before
+   publishing (11-17 00:30), and `crops/` the crops' thumbs.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
    local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only; Morgue
    items the owner answered show read only, listed by id, the joke edits of live cards each by eye; an open item a
@@ -327,7 +338,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    `scripts/apply_rulings.py <export>` checks every answer against `items.json` (one error stores nothing; a typed card
    is its id or a name only one card has; listed and skipped, never an error: an answer whose item left the page at a
    rebuild, one now read only, and, from an older page's export (its `page`, or `--page` for a file made without
-   one), one carrying a value the item no longer offers), keeps them in `derived/review/rulings.json` with the file's
+   one), one carrying a value the item no longer offers; an answer on a picture now dates only whose item left for
+   that is kept as identification only: its card, look or field item by its id, the picture off every timeline),
+   keeps them in `derived/review/rulings.json` with the file's
    source (owner > triage > triage guess: a lower one never replaces or clears a higher, the same answer from a higher
    one takes its source; a field so given is method
    'owner' or 'triage', an item card's kinds stripped from given types as from read ones, and types kept in the card

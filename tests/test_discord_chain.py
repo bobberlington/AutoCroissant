@@ -155,6 +155,28 @@ def test_a_picture_that_is_no_card_on_its_own_dates_only():
     assert not split and chain.tally["discord: no card on its own (by eye): dates only, not shown"] == 2
 
 
+def test_a_crop_by_eye_is_shown_and_a_repo_png_s_eye_fields_win():
+    """Owner 11-16 23:15 (2): the whole card cut out of a bigger picture (match/eye.json crops, set on the row as a
+    cell's box) enters its timeline as that crop, with a read-only 'cropped' item; an old/first repo PNG's fields by
+    eye (readers' eye files, o:<blob>) win over its folder's or PSD's, on its row and on a git look posted before."""
+    shot = "a TTS table: the whole card cut out"
+    row = old_row("Bolt", T + 100 * DAY, "a" * 40, 5)
+    row["fields"]["stars"] = {"value": 3, "method": "folder", "confidence": "sure"}
+    got = inputs([picture(1, T, box=[0.2, 0.1, 0.5, 0.9], crop=shot), picture(2, T + DAY, "version_sure", look=1)],
+                 old_rows=[row])
+    got.old_eye = {"a" * 40: {"stars": 4}}
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    t = chain.card("bolt", found["bolt"], [])
+    first = t["entries"][0]["pictures"][0]
+    assert (first["id"], first["box"], first["crop"]) == ("P-000000000001", [0.2, 0.1, 0.5, 0.9], True)
+    assert [(i["kind"], i.get("read_only"), i["why"]) for i in chain.review.values() if i["kind"] != "field"] == \
+        [("cropped", True, shot)]
+    stars = {e["id"]: (e["fields"]["stars"]["value"], e["fields"]["stars"]["method"]) for e in t["entries"]
+             if dc.is_sure(e["fields"].get("stars"))}
+    assert stars == {"D-P-000000000002": (4, "git look: eye"), "O-" + row["id"]: (4, "eye")}
+
+
 def test_the_physical_card_photos_date_exactly_three_cards():
     """Owner Q6 (11-14 22:15/22:20): the photos are in no timeline (no paper entry, no paper review item); Created
     'Before 2020' (sorting first, source 'physical card photo', read only) for Pep Drink and Wham Bam Bone, the
