@@ -1414,7 +1414,7 @@ def query_ability(interaction: Interaction,
                                                            if total_results > 1 else "1 card has a similar ability:")
     rows = _site_order(results, ability)[:results_to_show]
     shown = [name for name, _ in rows]
-    done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
+    done = f"Displayed {results_to_show} of {total_results} result{'s' * (total_results != 1)} for '{ability}'."
     if len(shown) > 1:
         post_grids(interaction, shown, found, done, links, labels=[title for _, title in rows])
         return
@@ -1501,7 +1501,7 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
     if results.attrs.get("near"):
         queue_message(interaction, f"No card has '{ability}'; {n} card{'s have' if n > 1 else ' has'} a similar ability.")
     else:
-        queue_message(interaction, f"Found {n} cards matching '{ability}'.")
+        queue_message(interaction, f"Found {n} card{'s' * (n != 1)} matching '{ability}'.")
 
 
 def _search(interaction: Interaction, ability: str) -> Optional[DataFrame]:

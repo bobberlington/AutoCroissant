@@ -46,6 +46,8 @@ def test_one_card_is_posted_as_query_does(repo, monkeypatch):
     assert out == ["Found 1 result for 'Fire'!"] and kwargs[0]["embed"].image.url == "https://img/card_0.png"
     assert kwargs[0]["embed"].title == "CARD 0" and kwargs[0]["embed"].description == "kirby\nBanned in constructed"
     assert [label for label, _ in kwargs[0]["links"]] == ["Card page", "All results on the website"]
+    qc.query_ability_num_occur(utils.make_simple_fake_interaction(1), "Fire")
+    assert utils.dispatch_queue[-1][1]["content"] == "Found 1 card matching 'Fire'."
 
 
 def test_nothing_found_is_one_reply_with_the_websites_guesses(repo, monkeypatch):
