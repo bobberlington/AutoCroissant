@@ -770,8 +770,9 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
     from time import time
     data, sha = lane_mod.press_blob(REQUEST, "Mini Doomer", '{"hp": 7}')
     bell = lambda request, blob, run=100: {"ref": f"refs/preview-lane/{run}/{request}-{blob}"}
-    refs = [bell(REQUEST, sha), bell("rung-twice-1", "b" * 40), bell("rung-twice-1", "c" * 40), bell("other-lane-1", sha, 1001)]
-    runs, took, main = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}
+    refs = [bell(REQUEST, sha), bell("rung-twice-1", "b" * 40), bell("rung-twice-1", "c" * 40), bell("other-lane-1", sha, 1001),
+            {"ref": "refs/preview-lane/100/next/abcdef12"}]
+    runs, took, main, asked = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}, []
 
     def get(path, conditional=False):
         body = (refs if f"/matching-refs/{lane_mod.BELL}/100/" in path
@@ -783,6 +784,7 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
 
     def take(api, press, run, **press_kw):
         took.append((press, run))
+        asked.append(press_kw["hints"].asked)
         runs[:] = [{"id": 102, "display_title": "Card preview another-press-1"},
                    {"id": 101, "display_title": f"Card preview {REQUEST} lane 100-{sha}"}]
         return ""
@@ -790,9 +792,9 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
     monkeypatch.setattr(lane_mod, "take", take)
     monkeypatch.setattr(lane_mod, "POLL", 0.01)
     assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "a newer press named no lane"
-    assert took == [((REQUEST, 100, sha), None)]
+    assert took == [((REQUEST, 100, sha), None)] and asked == [{"abcdef12"}]     # a next card: read beside
     baked = []
-    monkeypatch.setattr(lane_mod, "reads", lambda card, fields, clone, repository, head, records, blobs: None)
+    monkeypatch.setattr(lane_mod, "reads", lambda card, fields, clone, repository, head, records, blobs, pending=None: None)
     keys = dict(bake=lambda card, edit, out, repository, **k: baked.append((card, edit, k["run"], k["head"])) or {"state": "baked"},
                 lane=str(tmp_path), clone="", repository="o/r", head="1" * 40, kept={}, bot_repo="bot/repo", bot="bot", limit=99)
     monkeypatch.setattr(lane_mod, "RECORDS", ())
@@ -846,6 +848,58 @@ def test_the_lane_follows_main(tmp_path, monkeypatch):
         200, None, json.dumps({"workflow_runs": runs} if "/runs?" in path else []).encode()))
     assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head=a, clone=str(lane)) == "a newer press named no lane"
     assert follows == [(a, b)] and took == [b]
+
+
+def test_the_lanes_next_cards(tmp_path, monkeypatch):
+    """A card rung as next (refs/preview-lane/<run>/next/<PSD blob>; no press) is read in the background, once and
+    not while a press is taken: its PSD, PNG and the status chart into the clone; a press whose read is still going
+    joins it (each blob read once)."""
+    import commands.card_preview_lane as lane_mod
+    from time import monotonic, sleep
+    psd, png = "Creatures/Mario/1 Stars/Goomba.psd", "Creatures/Mario/1 Stars/Goomba.png"
+    files = {psd: b"psd", png: b"png", early.STATUS_CHART: b"chart", "Creatures/Mario/1 Stars/Koopa.psd": b"other"}
+    clone = tmp_path / "clone"
+    _git(tmp_path, "init", "-q", "clone")
+    for path, data in files.items():
+        (clone / path).parent.mkdir(parents=True, exist_ok=True)
+        (clone / path).write_bytes(data)
+    _git(clone, "add", "-A")
+    _git(clone, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
+    head, shas = _git(clone, "rev-parse", "HEAD").strip(), {p: _sha(d) for p, d in files.items()}
+    for sha in shas.values():                   # a blobless clone's
+        (clone / ".git" / "objects" / sha[:2] / sha[2:]).unlink()
+    served, gate, data = [], threading.Event(), {_sha(d): d for d in files.values()}
+
+    def get(url):
+        if "/contents/db/" in url:
+            return b"{}"
+        served.append(url.rsplit("/", 1)[1])
+        gate.wait(5) if served[-1] == shas[psd] else None
+        return data[served[-1]]
+    monkeypatch.setattr(early, "_get", get)
+    monkeypatch.setattr(lane_mod, "_say", lambda text: None)
+    body = json.dumps([{"ref": f"refs/preview-lane/100/next/{shas[psd][:8]}"}, {"ref": "refs/preview-lane/101/next/abcdef12"},
+                       {"ref": f"refs/preview-lane/100/{REQUEST}-{'a' * 40}"}]).encode()
+    assert lane_mod.hints_of(body, 100) == [shas[psd][:8]] and lane_mod.rung(body, 100) == [(REQUEST, 100, "a" * 40)]
+    hints = lane_mod.Warm(str(clone), "o/r", head)
+    hints.idle.clear()                          # a press being taken
+    hints.ask(lane_mod.hints_of(body, 100) * 2)
+    sleep(0.3)
+    assert served == []
+    hints.idle.set()
+    end = monotonic() + 10
+    while shas[psd] not in served and monotonic() < end:
+        sleep(0.01)
+    done = []
+    press = threading.Thread(target=lambda: done.append(early.reads(psd, {"ability": "x"}, str(clone), "o/r", head, str(tmp_path / "r"),
+                                                                    pending=hints.pending)))
+    press.start()
+    sleep(0.3)
+    gate.set()
+    press.join(10)
+    assert sorted(served) == sorted(shas[p] for p in (psd, png, early.STATUS_CHART))
+    assert early.missing(str(clone), list(shas.values())) == {shas["Creatures/Mario/1 Stars/Koopa.psd"]}
+    assert done[0][psd][1] == "ok"
 
 
 def test_the_warm_lane(cards, tmp_path, monkeypatch):

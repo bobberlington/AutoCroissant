@@ -162,6 +162,35 @@ out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map
     assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again
 
 
+@pytest.mark.skipif(not has(PREVIEW_JS, "laneNext"), reason="no next cards in this preview.js")
+def test_the_lane_reads_the_next_card(tmp_path):
+    """A PSD-kind change on another card while a lane is up rings it as the lane's next card (its PSD blob at the
+    lane's commit: card_preview_lane.NEXT), once per card and lane, none for a card the lane baked; its press deletes
+    the ref."""
+    from commands.card_preview_lane import NEXT
+    out = node(tmp_path, """let T = 1e12; Date.now = () => T; globalThis.setTimeout = () => 0; globalThis.clearTimeout = () => {};
+const was = { card: "c0", request: "ed-00000001", at: T - 60000, hash: "h", state: "baked", base: { blob: "aaaaaaaa" }, from: 101, fromAt: T - 50000, fromHead: "c".repeat(40) };
+const mem = new Map([[p.KEY, JSON.stringify({ c0: [was] })]]);
+globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
+globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible" };
+const { createHash } = await import("node:crypto"), refs = [];
+const github = async (path, o = {}) => {
+  if (path.includes("/git/refs")) refs.push([o.method, path.split("/git/refs")[1] || o.body.ref, o.body?.sha ?? null]);
+  if (!path.endsWith("/git/blobs")) return null;
+  const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") };
+};
+const app = { S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github }, toast() {}, badges() {} };
+const pv = p.createPreviews(app), card = (id, blob) => ({ id, key: id, name: id, blob });
+pv.editing(card("c1", "bbbbbbbb")); pv.editing(card("c1", "bbbbbbbb")); pv.editing(card("c0", "aaaaaaaa")); pv.editing(card("c2", "../x"));
+await pv.start(card("c1", "bbbbbbbb"), { hp: 7 });
+for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
+    refs = out["refs"]
+    assert NEXT.fullmatch(refs[0][1]).groups() == ("101", "bbbbbbbb") and refs[0][::2] == ["POST", "c" * 40]
+    assert out["lane"] == 101 and [r[0] for r in refs] == ["POST", "POST", "DELETE"]   # the press's doorbell between
+    assert refs[2] == ["DELETE", refs[0][1][4:], None]
+
+
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
     empty line; a long text shrinks until it fits, a name keeps its line count."""

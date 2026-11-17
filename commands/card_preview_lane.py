@@ -23,6 +23,12 @@ and the bot's main and the data's records are still the ones this process read. 
 repo is taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the
 lane's commit. A rung press's run, listed later, is served; any other newer run of its editor ends the lane (that run,
 not served, starts the next one). A run whose press its named lane served starts none.
+
+The website also rings a card its editor starts editing (its PSD blob's first 8-40 hex digits, a ref at the lane's
+commit too), so the lane reads that PSD, its PNG and the status chart into its clone before the press comes (warm: one
+background thread, one card at a time, never while a press is being taken; a press joins a read still going):
+
+    refs/preview-lane/<run id>/next/<PSD blob>
 """
 from base64 import b64decode
 from binascii import Error as Base64Error
@@ -39,12 +45,13 @@ from shutil import rmtree
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import platform, stderr, stdout
 from tempfile import mkdtemp
+from threading import Event, Lock, Thread
 from time import monotonic, sleep, time
 from typing import Callable, NamedTuple, Optional
 from urllib.parse import quote
 
 from commands.card_preview_branch import HAND_DONE, LANE_ARTIFACT, LANE_END, _Api, clean
-from commands.card_preview_reads import BLOBS_ENV, RECORDS, reads
+from commands.card_preview_reads import BLOBS_ENV, RECORDS, missing, paths_of, read_blob, reads, tree_of
 
 # ========================
 # Configuration
@@ -65,6 +72,8 @@ TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]
 BELL = "preview-lane"                           # the doorbell's refs: refs/preview-lane/<run id>/<request>-<blob>
 RUNG = re_compile(r"refs/preview-lane/(\d{1,20})/([A-Za-z0-9-]{8,64})-([0-9a-f]{40})")
 NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
+NEXT = re_compile(r"refs/preview-lane/(\d{1,20})/next/([0-9a-f]{8,40})")     # a card its editor started editing
+MAX_NEXT = 20                                   # such cards a lane reads at most
 KEPT = ("MDW/Fonts", ".github/workflows/card-preview.yml", ".github/actions")    # the same at a commit the lane follows
 SHA = re_compile(r"[0-9a-f]{40}")
 FETCH_TIMEOUT = 20                              # s for a newer commit's trees
@@ -101,6 +110,14 @@ def rung(body: bytes, me: int) -> list:
         return []
     twice = {r for r in (m.group(2) for m in found) if sum(m.group(2) == r for m in found) > 1}
     return sorted(Press(m.group(2), me, m.group(3)) for m in found if m.group(2) not in twice)
+
+
+def hints_of(body: bytes, me: int) -> list:
+    """The PSD blobs rung as next at lane me's doorbell (a matching-refs listing)."""
+    try:
+        return [m.group(2) for m in (NEXT.fullmatch(r.get("ref", "")) for r in loads(body)) if m and int(m.group(1)) == me]
+    except (ValueError, TypeError, AttributeError):
+        return []
 
 
 def read_press(api: _Api, repository: str, press: Press) -> tuple:
@@ -210,6 +227,56 @@ def follow(clone: str, head: str, new: str) -> str:
     return "" if kept[0] == kept[1] else "the card repo moved (its fonts or the preview's workflow)"
 
 
+def warm(blob: str, tree: dict, clone: str, repository: str, pending: dict) -> str:
+    """A hinted card's PSD, its PNG and the status chart into the clone (card_preview_reads.read_blob: verified), those
+    it lacks; pending[sha] (an Event) set once each is read or failed. Returns a line for the lane's log."""
+    started = monotonic()
+    psds = [path for path, sha in tree.items() if sha.startswith(blob) and path.lower().endswith(".psd")]
+    if len(psds) != 1:
+        return f"next {blob[:8]}: {len(psds)} PSDs"
+    paths = paths_of(tree, psds[0], {"ability": ""})   # the chart too (an ability edit's)
+    shas = sorted(missing(clone, [tree[p] for p in paths])) if paths else []
+    events = {sha: Event() for sha in shas}
+    pending.update(events)
+
+    def one(sha: str) -> int:
+        try:
+            return len(read_blob(repository, sha, clone))
+        except Exception:                       # noqa: BLE001 - the press reads it
+            return -1
+        finally:
+            events[sha].set()
+    with ThreadPoolExecutor(max(len(shas), 1)) as pool:
+        sizes = list(pool.map(one, shas))
+    return (f"next {blob[:8]} ({clean(psds[0], 80)}): {sum(s > 0 for s in sizes)} of {len(shas)} read, "
+            f"{sum(max(s, 0) for s in sizes) / 1e6:.1f} MB in {monotonic() - started:.2f} s")
+
+
+class Warm:
+    """The lane's hinted cards (hints_of), each read by warm() on a daemon thread, one at a time (lock), while no press
+    is being taken (idle); pending: {sha: Event} for a press's reads to join."""
+
+    def __init__(self, clone: str, repository: str, head: str):
+        self.clone, self.repository, self.head = clone, repository, head
+        self.pending, self.asked, self.idle, self.lock, self.tree = {}, set(), Event(), Lock(), None
+        self.idle.set()
+
+    def ask(self, blobs: list) -> None:
+        for blob in blobs:
+            if blob not in self.asked and len(self.asked) < MAX_NEXT:
+                self.asked.add(blob)
+                Thread(target=self._one, args=(blob,), name=f"lane-next-{blob[:8]}", daemon=True).start()
+
+    def _one(self, blob: str) -> None:
+        with self.lock:
+            self.idle.wait()
+            try:
+                self.tree = self.tree or tree_of(self.clone, self.head)
+                _say(warm(blob, self.tree, self.clone, self.repository, self.pending))
+            except Exception as error:          # noqa: BLE001 - a press reads as ever
+                _say(f"next {blob[:8]}: {type(error).__name__}: {clean(error, 200)}")
+
+
 def _rss() -> int:
     return getrusage(RUSAGE_SELF).ru_maxrss * (1 if platform == "darwin" else 1024)
 
@@ -232,17 +299,20 @@ def main_of(api: _Api, repository: str) -> tuple:
 
 
 def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: str, clone: str, repository: str, head: str,
-         kept: dict, bot_repo: str, bot: str, limit: int, moved: Optional[Callable] = None) -> str:
+         kept: dict, bot_repo: str, bot: str, limit: int, hints: Optional[Warm] = None,
+         moved: Optional[Callable] = None) -> str:
     """
     One press (run: its run, None when rung): its out dir made (the hand-over's artifact created then), its blob
-    (read_press), its reads (card_preview_reads, as the Reads step) beside the bot's check (a rung one's: the card
-    repo's main too: on a newer main, moved(main) and its reads there), then bake() into it; <out>.code after. Returns
-    "" when baked, else why the lane ends.
+    (read_press), its reads (card_preview_reads, as the Reads step; joining hints' reads) beside the bot's check (a
+    rung one's: the card repo's main too: on a newer main, moved(main) and its reads there), then bake() into it;
+    <out>.code after. Returns "" when baked, else why the lane ends.
     """
     out, seen = join(lane, press.request), monotonic()
     makedirs(out, exist_ok=True)
     records = mkdtemp(prefix="card-preview-lane-")
     why, code = "", "skipped"
+    if hints is not None:
+        hints.idle.clear()                      # no new hint read while the press is taken
     try:
         card, text, why = read_press(api, repository, press)
         if why:
@@ -254,7 +324,8 @@ def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: 
             edit = {}
         fields = {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
         with ThreadPoolExecutor(1) as pool:
-            done = pool.submit(reads, card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""))
+            done = pool.submit(reads, card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""),
+                               pending=hints and hints.pending)
             why = bot_moved(api, bot_repo, bot)
             main, why = (head, why) if run or why else main_of(api, repository)
             done.result()
@@ -262,7 +333,7 @@ def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: 
             why = moved(main) if moved else "the card repo's main moved"
             if not why:
                 head = main
-                reads(card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""))
+                reads(card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""), pending=hints and hints.pending)
         for name in RECORDS if not why else ():
             fresh = _read(join(records, name))
             why = why or ("the data's records not read" if fresh is None else "the data's records changed" if fresh != kept[name] else "")
@@ -285,21 +356,25 @@ def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: 
             fh.write(code + "\n")
         replace(out + ".code.tmp", out + ".code")
         rmtree(records, ignore_errors=True)
+        if hints is not None:
+            hints.idle.set()
 
 
 def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
-    """The lane's loop: its doorbell and its editor's runs listed every POLL s (conditional GETs), each press rung taken
-    (take), then each newer run taken (at its commit: follow), served (rung before) or the lane's end (fits). Returns why
-    it ended (press: take's keywords)."""
+    """The lane's loop: its doorbell and its editor's runs listed every POLL s (conditional GETs), each card rung as next
+    read in the background (Warm), each press rung taken (take), then each newer run taken (at its commit: follow), served
+    (rung before) or the lane's end (fits). Returns why it ended (press: take's keywords)."""
     runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
     bells = f"/repos/{press['repository']}/git/matching-refs/{BELL}/{me}/"
     last, failing, seen, listed, rang, taken = monotonic(), None, set(), [], [], set()
+    hints = Warm(press.get("clone", ""), press["repository"], press["head"])
 
     def moved(new: str) -> str:                 # a press at new: the lane's commit from now on
         started, why = monotonic(), follow(press.get("clone", ""), press["head"], new)
         if not why and new != press["head"]:
             _say(f"follows the card repo {press['head'][:8]} -> {new[:8]} ({monotonic() - started:.2f} s)")
-            press["head"] = new
+            press["head"] = hints.head = new
+            hints.tree = None
         return why
     while True:
         if monotonic() - last > LANE_IDLE:
@@ -309,6 +384,7 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
         try:
             status, _, body = api.get(bells, conditional=True)
             rang = rung(body, me) if status == 200 else rang
+            hints.ask(hints_of(body, me) if status == 200 else [])
         except (OSError, HTTPException, ValueError):
             pass                                # the runs list still brings it
         pressed, run = next((p for p in rang if p.request not in taken), None), None
@@ -339,7 +415,7 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
             if why:
                 return why
         taken.add(pressed.request)
-        why = take(api, pressed, run, moved=moved, **press)
+        why = take(api, pressed, run, hints=hints, moved=moved, **press)
         if why:
             return why
         last = monotonic()
@@ -404,9 +480,11 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
 # ========================
 __all__ = [
     'Press',
+    'Warm',
     'bot_moved',
     'fits',
     'follow',
+    'hints_of',
     'listen',
     'main_of',
     'press_blob',
@@ -416,4 +494,5 @@ __all__ = [
     'serve',
     'served_elsewhere',
     'take',
+    'warm',
 ]

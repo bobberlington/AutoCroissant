@@ -41,6 +41,7 @@ STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"     # ps
 RECORDS = ("render_record.json", "spot_record.json", "verdicts.json")  # psd_edit's two records, the bake's verdicts
 PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures", "colors")   # card_preview's
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
+JOIN = 120                                      # s a lane's press waits for its hint's read of a blob (begun first)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}
 BLOBS_ENV = "CARD_BLOBS_DIR"                    # card_bake's: the blobs read, a file each by sha
 API = environ["GITHUB_API_URL"].rstrip("/") + "/repos/" if environ.get("GITHUB_API_URL") else API_BASE   # the runner's
@@ -187,9 +188,16 @@ def read_cards(repository: str, sha: str, clone: str, head: str = "", blobs: str
     return cards if isinstance(cards, dict) else {}
 
 
-def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str, blobs: str = "") -> dict:
-    """The records and the card's blobs side by side (blobs: read_blob's). Returns {what: [seconds, "ok" or why not]};
-    never raises."""
+def joined(repository: str, sha: str, clone: str, read, path: str = "", head: str = "", blobs: str = "") -> bytes:
+    """A blob a lane's hint is reading (read: its Event): waited for (JOIN s at most), else read_blob."""
+    read.wait(JOIN)
+    return b"" if not missing(clone, [sha]) else read_blob(repository, sha, clone, path, head, blobs)
+
+
+def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str, blobs: str = "",
+          pending: Optional[dict] = None) -> dict:
+    """The records and the card's blobs side by side (blobs: read_blob's; pending: {sha: Event} of the lane's hint
+    reads, joined). Returns {what: [seconds, "ok" or why not]}; never raises."""
     started, done = perf_counter(), {}
 
     def one(what: str, read, *args):
@@ -219,6 +227,8 @@ def reads(card: str, fields: dict, clone: str, repository: str, head: str, recor
         for path in paths:
             if blobs and exists(join(blobs, tree[path])):
                 done[path] = [0, "read already"]    # a lane's earlier press
+            elif tree[path] in lacking and (pending or {}).get(tree[path]):
+                pool.submit(one, path, joined, repository, tree[path], clone, pending[tree[path]], path, head, blobs)
             elif tree[path] in lacking:
                 pool.submit(one, path, read_blob, repository, tree[path], clone, path, head, blobs)
             else:
