@@ -203,7 +203,7 @@ def test_a_first_psd_s_row_and_created():
     assert named.startswith("P-1-k") and named != dp.picture_name({**crop, "pictures": [{**crop["pictures"][0],
                                                                                            "box": [0.2, 0, 1, 1]}]})
     assert dp.picture_job(crop, "/r") == ("file", "/r/a/1.png", (0.1, 0, 1, 1))
-    laz ={"proposed": True, "status": "earlier", "date": "2023-09-10", "ours": {"source": "old repo (PSD)"},
+    laz = {"proposed": True, "status": "earlier", "date": "2023-09-10", "ours": {"source": "old repo (PSD)"},
            "file": {"date": "2023-10-09"}}
     got = dp.created_proposals({"cards": {"Laz": laz}})
     assert got["Laz"]["source"] == "old repo" and got["Laz"]["psd"] and got["Laz"]["was"] == "2023-10-09"

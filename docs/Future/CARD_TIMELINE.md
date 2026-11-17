@@ -314,8 +314,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    11-17). Kalecgos' 2019-05-10 phone screenshot and Twin Emperors' two 2022-06-17 stat-and-ability crops were the
    first; gap round 3 (11-17) added 12: the 2019 phone photos of printed cards (Yin Yarn, Nightmare, a printed sheet
    of Magic Hammer), TTS tables (Waxwell, False Knight, The Radiance), a TTS deck sheet (Rope), Photoshop and editor
-   windows (Twin Emperors, Dogma, Markoth), a header-and-art piece (Crystal Bits) and bare art (Contracted). The
-   whole card cut out of a bigger picture (`eye.json` `crops`, picture id -> {box, why}: a share of the trimmed
+   windows (Twin Emperors, Dogma, Markoth), a header-and-art piece (Crystal Bits) and bare art (Contracted), then
+   Wigfrid's bare 2019-05-06 portrait.
+   The whole card cut out of a bigger picture (`eye.json` `crops`, picture id -> {box, why}: a share of the trimmed
    picture, as a sheet's cell) is shown as that crop (its webp named by the box, so a new box makes it again) with a
    read-only 'cropped' item: Fawful's 2021-08-31 Discord screenshot (the channel header and the post's text cut
    off). A picture the owner answered only to identify it (an in-game or several-card picture, 11-16 23:10) stays
