@@ -111,7 +111,7 @@ def test_variant_pictures_are_duplicates():
     assert {n: c.duplicate_of for n, c in cards.items()} == {
         "Kit": None, "Kit2": "Other", "Kit3": "Kit", "Kit4": "Kit", "Other": None, "Queen": "Other"}
     assert [(cards[n].ability, cards[n].version) for n in ("Kit2", "Kit3")] == [("Kit2.", {"from": 2.0}), ("Kit3.", {"from": 3.0})]
-    assert card_sync.changes(before, cards) == {"changed": 0, "new": 0, "archived": 0}
+    assert not any(card_sync.changes(before, cards).values())
     tr.edits, tr.edits_unread = None, True
     assert tr._variant_duplicates() == 0 and cards["Kit2"].duplicate_of == "Other"     # unread: kept
     tr.edits_unread = False
@@ -137,7 +137,7 @@ def test_a_card_with_its_own_psd_marked_a_duplicate():
     assert {n: c.duplicate_of for n, c in cards.items()} == {"Main": None, "Alt": "Main", "Third": None, "Queen": "Main"}
     assert (cards["Alt"].ability, cards["Alt"].version) == ("Alt.", {"from": 2.0})
     assert [picture_only(c) for c in (cards["Alt"], cards["Queen"], vars(cards["Queen"]))] == [False, True, True]
-    assert card_sync.changes(before, cards) == {"changed": 0, "new": 0, "archived": 0}
+    assert not any(card_sync.changes(before, cards).values())
     tr.edits, tr.edits_unread = None, True
     assert tr._variant_duplicates() == 0 and cards["Alt"].duplicate_of == "Main"
     tr.edits, tr.edits_unread = CardEdits.parse('{"cards": {}}'), False

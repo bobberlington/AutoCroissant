@@ -26,6 +26,7 @@ except ImportError:                                  # tests and scripts without
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_DATA_DIR, CARD_REPO, CREATED_PATH, DATA_BRANCH, EDITS_PATH,
                            ICON_MANIFEST_PATH, RULEBOOK_SRC, RULES_PATH, TYPES_DIR)
 from commands import card_db
+from commands.card_models import CardInfo
 from commands.github_api import HEADERS, api_url, get_with_retry, session
 from commands.psd_analyzer import card_name, stats_db                # the facade's (architecture invariant: one stats_db)
 from commands.utils import queue_command, queue_edit, say
@@ -52,6 +53,8 @@ REFRESH_SECONDS = 120                                # on use: the data branch l
 ERRORS_SHOWN = 10                                    # error lines in the /fonts reply
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
     "export_cards", "export_rulebook", "fonts", "list_orphans", "query", "query_ability", "query_rulebook"})
+COUNTS = ("new", "changed", "new art", "moved", "renamed", "archived")   # changes()' keys: Card sync's words and order
+STAMPS = frozenset({"timestamp", "parser_version"})  # a re-read's stamps: no change of their own
 
 # ========================
 # Global State
@@ -114,16 +117,46 @@ def built_line(manifest: dict) -> str:
             f"{repo}@{(manifest.get('card_commit') or '?')[:8]}" + (f" (run: <{run}>)" if run else ""))
 
 
-def changes(before: dict, after: dict) -> dict:
-    """{"changed", "new", "archived"} cards between two databases, duplicates left out (they follow their original)."""
+def _kind(old: CardInfo, new: CardInfo) -> Optional[str]:
+    """A card in both databases: "new art" (only its PSD blob), "moved" (only its path), "changed", or None."""
+    a, b = card_db.record(old), card_db.record(new)
+    if a == b:
+        return None
+    differ = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)} - STAMPS
+    if not differ:
+        return None
+    if "blob_sha" in differ and differ <= {"blob_sha", "path"}:
+        return "new art"
+    return "moved" if differ == {"path"} else "changed"
+
+
+def changes(before: dict, after: dict, old_stats: Optional[dict] = None) -> dict:
+    """
+    COUNTS' cards between two databases, duplicates left out (they follow their original). A gone card whose archive
+    tag in after's old_stats is renamed_to a card of after is renamed (not archived, its new name not new).
+    """
     # a picture marked or unmarked as a duplicate is neither new nor gone
     dups = {n for cards in (before, after) for n, c in cards.items() if getattr(c, "duplicate_of", None)}
 
     def originals(cards: dict) -> dict:
         return {name: c for name, c in cards.items() if name not in dups}
     a, b = originals(before), originals(after)
-    return {"changed": sum(1 for name in a.keys() & b.keys() if card_db.record(a[name]) != card_db.record(b[name])),
-            "new": len(b.keys() - a.keys()), "archived": len(a.keys() - b.keys())}
+    out = dict.fromkeys(COUNTS, 0)
+    for name in a.keys() & b.keys():
+        kind = _kind(a[name], b[name])
+        if kind:
+            out[kind] += 1
+    renamed = set()
+    for name in a.keys() - b.keys():
+        versions = (old_stats or {}).get(name)
+        to = (getattr(versions[len(versions) - 1], "archived", None) or {}).get("renamed_to") if versions else None
+        if to in b:
+            renamed.add(to)
+            out["renamed"] += 1
+        else:
+            out["archived"] += 1
+    out["new"] = len(b.keys() - a.keys() - renamed)
+    return out
 
 
 def report(manifest: dict, counts: Optional[dict], reloaded: bool) -> str:
@@ -133,7 +166,7 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool) -> str:
         return f"Card data is already current: {built}."
     if counts is None:                               # no synced data held before (startup)
         return f"Card data loaded: {built}."
-    what = ", ".join(f"{counts[k]} {k}" for k in ("changed", "new", "archived") if counts[k]) or "no card changed"
+    what = ", ".join(f"{counts[k]} {k}" for k in COUNTS if counts.get(k)) or "no card changed"
     return f"Card data {built}: {what}; reloaded."
 
 
@@ -335,8 +368,8 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
             return []
     if pending:
         before, before_commit = pending["before"], pending["commit"]
-    text = report(manifest, changes(before, stats_db.stats) if (reloaded or pending) and before_commit is not None
-                  else None, reloaded or bool(pending))
+    text = report(manifest, changes(before, stats_db.stats, stats_db.old_stats)
+                  if (reloaded or pending) and before_commit is not None else None, reloaded or bool(pending))
     if quiet:
         print(text)
     else:
@@ -406,7 +439,7 @@ def check() -> bool:
         from commands.query_card import card_repo
         card_repo._populate_site_ids()
         return False
-    print(report(manifest, changes(before, stats_db.stats) if before_commit is not None else None, True))
+    print(report(manifest, changes(before, stats_db.stats, stats_db.old_stats) if before_commit is not None else None, True))
     _follow_ups(None)
     return True
 

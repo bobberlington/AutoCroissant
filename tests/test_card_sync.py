@@ -225,18 +225,20 @@ def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monke
 # card_sync.sync: /update_stats without options
 # ========================
 def test_sync_reloads_and_reports_what_changed(github, tmp_path):
-    github.publish({"A": _card("A"), "B": _card("B")}, defaultdict(list), tmp_path)
+    github.publish({"A": _card("A"), "B": _card("B"), "D": _card("D"), "E": _card("E")}, defaultdict(list), tmp_path)
     cs.sync(ME)
-    assert set(cm.stats_db.stats) == {"A", "B"} and cs._loaded["commit"] == github.tip
+    assert set(cm.stats_db.stats) == {"A", "B", "D", "E"} and cs._loaded["commit"] == github.tip
     assert _said()[0].startswith("Card data loaded: built ") and "TTSCardMaker@c0ffee01 (run: <https://run/1>)" in _said()[0]
     assert _queued() == ["refresh", "_refresh_cards"]
     utils.dispatch_queue.clear()
-    github.publish({"A": _card("A", ability="Heal 1."), "C": _card("C")},
-                   defaultdict(list, {"B": [_card("B", archived={"at": 1, "path": "x", "blob": None, "commit": None})]}),
-                   tmp_path, problems=[{"card": "C", "path": "Creatures/C.psd", "notes": ["HP NOT FOUND"]}])
+    gone = {"at": 1, "path": "x", "blob": None, "commit": None}             # D: a new picture, E renamed F
+    cards = {"A": _card("A", ability="Heal 1."), "C": _card("C"), "D": _card("D", blob_sha="b-D2"), "F": _card("F")}
+    old = {"B": [_card("B", archived=gone)], "E": [_card("E", archived={**gone, "renamed_to": "F"})]}
+    github.publish(cards, defaultdict(list, old), tmp_path,
+                   problems=[{"card": "C", "path": "Creatures/C.psd", "notes": ["HP NOT FOUND"]}])
     problems = cs.sync(ME)
-    assert ": 1 changed, 1 new, 1 archived; reloaded." in _said()[0]
-    assert set(cm.stats_db.stats) == {"A", "C"} and cm.stats_db.archived().keys() == {"B"}
+    assert ": 1 new, 1 changed, 1 new art, 1 renamed, 1 archived; reloaded." in _said()[0]
+    assert set(cm.stats_db.stats) == {"A", "C", "D", "F"} and cm.stats_db.archived().keys() == {"B", "E"}
     assert problems == ["Creatures/C.psd\n```\nHP NOT FOUND\n```"] and "HP NOT FOUND" in _said()[1]
     utils.dispatch_queue.clear()
     cs.sync(ME)
@@ -331,7 +333,7 @@ def test_check_reloads_quietly_then_refreshes(github, tmp_path, monkeypatch, cap
     assert not cs.check() and _queued() == [] and looked == [1]       # unchanged: one 304, the site's ids
     assert github.calls[calls:] == [("commit", f'"e-{github.tip}"')]
     github.publish({"A": _card("A", ability="Heal 1."), "B": _card("B")}, defaultdict(list), tmp_path)
-    assert cs.check() and "1 changed, 1 new; reloaded." in capsys.readouterr().out and _said() == []
+    assert cs.check() and "1 new, 1 changed; reloaded." in capsys.readouterr().out and _said() == []
 
 
 def test_a_failed_check_keeps_the_data_and_says_nothing(github, tmp_path, monkeypatch, capsys):
