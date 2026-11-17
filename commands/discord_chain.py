@@ -1861,7 +1861,8 @@ class Chain:
         data = self.inputs.first_data.get(card["key"])
         if stop and stop["source"] == "git" and data:      # the card repo's first version, for the last diff
             fields = data_fields(data)
-            last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")), None)
+            last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")
+                         and not e.get("meme_copy")), None)
             changes = first_changes(last, fields, card.get("type"), self.inputs.versions.get(cid, []), stop,
                                     data.get("timestamp"))
             if changes.pop("same_title", None):

@@ -146,6 +146,8 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
     if kind in PICTURE_KINDS:
         out.update(image=image, fields=published(e.get("fields"), drop), changes=changes_of(e),
                    minor=bool(e.get("minor")))
+        if e.get("meme_copy"):
+            out["meme_copy"] = True         # the owner's Meme folder copy: a row, no point of its own
         if kind == "discord":
             out["posts"] = len(e.get("pictures") or ())
             if (e.get("look") or {}).get("git"):
@@ -196,9 +198,11 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
                                          reads or {}, t.get("name"))
         entries.append(out)
     pictures = [e for e in entries if e["kind"] in PICTURE_KINDS]
-    for i, e in enumerate(pictures):
+    real = [e for e in pictures if not e.get("meme_copy")]        # a Meme copy is never diffed with
+    after = {id(a): [b] for a, b in zip(real, real[1:])}
+    for e in pictures:
         for field in (eye or {}).get(e["id"], ()):
-            for other in pictures[i:i + 2]:
+            for other in [e] + after.get(id(e), []):
                 ch = other["changes"]
                 for key in CHANGE_OF.get(field, ()):
                     ch.pop(key, None)
@@ -212,7 +216,7 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
         out["git_first"] = {"date": first["date"], "changes": changes_of(first)}   # its first recorded version's change
         if first.get("approx"):
             out["git_first"]["approx"] = True     # the card had versions before that one: its change is in one of them
-        for field in (eye or {}).get(pictures[-1]["id"] if pictures else None, ()):
+        for field in (eye or {}).get(real[-1]["id"] if real else None, ()):
             for key in CHANGE_OF.get(field, ()):
                 out["git_first"]["changes"].pop(key, None)
     if created:
@@ -238,6 +242,8 @@ def leave_out(t: dict, ids, versions: list = (), root: Optional[str] = None) -> 
             if e.get("confirmed_by") in ids:
                 e.pop("confirmed_by")
             continue
+        if e.get("meme_copy"):
+            continue                        # never diffed, never diffed with
         if redo:
             e["changes"] = dc.compare(before["fields"], e["fields"], t.get("kind")) if before else \
                 ({"ability_change": "first"} if e["fields"].get("ability") else {})
@@ -507,7 +513,8 @@ def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict], versions:
                      "path": first[2]}
         out = {"stop": t["stop"]["day"], "was": stop.get("day"), "dropped": dropped}
         if t.get("git_first") and dropped:
-            last = next((e for e in reversed(t["entries"]) if e["kind"] in ("discord", "old repo")), None)
+            last = next((e for e in reversed(t["entries"]) if e["kind"] in ("discord", "old repo")
+                         and not e.get("meme_copy")), None)
             t["git_first"]["changes"] = git_first_changes(t, last, versions)
     gf = t.get("git_first")
     if gf and (t.get("stop") or {}).get("source") == "git" and data:

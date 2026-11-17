@@ -586,6 +586,9 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     assert bs.history_rows("alpha", {"entries": [first]})[0]["r"] == "first"
     assert bs.history_stats({"entries": [first]}, "creature")["rows"][0]["early"] == "first repo"
     assert bs.history_change({"ability_change": "removed"}) == {"words": True, "gone": True}   # a blank box (11-17)
+    meme = {**first, "id": "O-1", "changes": {}, "meme_copy": True,
+            "fields": {"stars": {"value": 3, "method": "psd", "confidence": "sure"}}}
+    assert len(bs.history_stats({"entries": [first, meme]}, "creature")["points"]) == 1   # a Meme copy: no point
     assert bs.HISTORY_FROM["first repo"] == "first repo" and bs.HISTORY_FROM["changelog"] == "changelog"
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")

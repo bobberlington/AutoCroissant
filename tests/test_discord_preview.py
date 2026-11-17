@@ -323,3 +323,21 @@ def test_a_renamed_or_mdw_file_s_name_is_shown_on_its_row():
          "old_file": "t beth", "fields": {}}
     assert dp.entry_out(e, "O-1.webp")["file"] == "t beth"
     assert "file" not in dp.entry_out({**e, "old_file": None}, "O-1.webp")
+
+
+def test_a_meme_copy_is_marked_and_never_diffed_with():
+    """Owner 11-17: an owner-mapped Meme folder copy is published marked (the site makes no chart point of it); a
+    redo after a left-out version, an eye drop's next change and git_first skip it."""
+    line = lambda atk: {"value": {"hp": 3, "def": 2, "atk": atk, "spd": 1}, "method": "picture", "confidence": "sure"}
+    e = {"id": "O-m", "kind": "old repo", "date": "2022-08-24T00:00:00+00:00", "fields": {"stats": line(9)},
+         "changes": {}, "meme_copy": True}
+    assert dp.entry_out(e, "O-m.webp")["meme_copy"] is True
+    assert "meme_copy" not in dp.entry_out({**e, "meme_copy": False}, "O-m.webp")
+    t = {"entries": [{"id": "O-1", "kind": "old repo", "fields": {"stats": line(5)}, "changes": {}},
+                     {"id": "O-x", "kind": "old repo", "fields": {"stats": line(1)}, "changes": {}}, e,
+                     {"id": "O-2", "kind": "old repo", "fields": {"stats": line(4)}, "changes": {}}]}
+    dp.leave_out(t, {"O-x"})
+    assert t["entries"][1]["changes"] == {} and t["entries"][2]["changes"]["nerfs"] == ["ATK 5 -> 4"]
+    t["entries"] = [{**x, "blob": x["id"] * 4} for x in t["entries"]]
+    got = dp.timeline_out({"card": "c", "key": "c", "name": "C", **t}, None, {"O-1": {"stats"}})[0]["entries"]
+    assert [x["changes"] for x in got] == [{}, {}, {}]                  # O-2's stat change against O-1 gone too
