@@ -537,3 +537,15 @@ def test_mdw_drafts_count_only_before_the_card_folders(rows):
     assert [(r["blob"], bool(r.get("psd_only")), bool(r.get("mdw"))) for r in found] == [("m0", True, True),
                                                                                          ("g0", False, False)]
     assert data.folder_firsts["T"]["ts"] == 300
+
+
+def test_the_eras_readers_come_with_the_tools(rows, monkeypatch):
+    """S10 (11-17): the bar and text readers the rows use are scripts/era_readers.py, not the stage-1 scratch copy;
+    OLDROWS_READERS naming a folder with no readers.py stops with a clear error."""
+    monkeypatch.setattr(rows, "READERS", "")
+    got = rows.readers()
+    assert got.__name__ == "era_readers" and "scratch" not in got.__file__
+    assert all(callable(getattr(got, f)) for f in ("labels", "read_best", "split_read", "tell_flats", "ability_of"))
+    monkeypatch.setattr(rows, "READERS", "/nonexistent/eras")
+    with pytest.raises(SystemExit, match="no readers.py"):
+        rows.readers()

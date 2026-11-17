@@ -22,8 +22,8 @@ goes to review. A renamed card's rows show the old name (old_name, old_file); ne
     python oldgit_rows.py sample [N] [--seed S]
                                             N random rows (seed 1113): contact sheets for an eye check (sample/)
 
-Reads derived/oldgit and derived/matcher; writes derived/oldrows (never a repo). Bar readers: the eras part's
-readers.py (OLDROWS_READERS: its folder; default the stage-1 scratch copy). Stats keys: hp, def, atk, spd.
+Reads derived/oldgit and derived/matcher; writes derived/oldrows (never a repo). Bar readers: the eras part's readers,
+scripts/era_readers.py (OLDROWS_READERS: another readers.py's folder instead). Stats keys: hp, def, atk, spd.
 """
 import hashlib
 import importlib
@@ -51,7 +51,7 @@ TEXT_RAW = (join(DERIVED, "readers", "text", "raw.jsonl"),       # the text read
 TEXT_CAL = join(DERIVED, "readers", "text", "calibration.json")  # their eras' bars (never fitted here)
 HEADER_ROWS = join(DERIVED, "readers", "types", "header_rows.jsonl")   # header_types rows: types by a git header
 TYPES_EYE = join(DERIVED, "readers", "types", "eye_rows.json")  # types by eye (by PNG blob): no PSD, or another look
-READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
+READERS = os.environ.get("OLDROWS_READERS", "")   # optional: another readers.py's folder; unset: era_readers.py beside
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
 FIRST_BADGE = "first repo"  # the first repo's versions (oldgit_index: 2022-08-24..2023-04-21, refound on GitHub)
@@ -101,6 +101,10 @@ def stable_id(*parts) -> str:
 
 def readers():
     import commands.card_checks  # noqa: F401  (the readers import it: this worktree's, not theirs)
+    if not READERS:
+        return importlib.import_module("era_readers")
+    if not exists(join(READERS, "readers.py")):
+        raise SystemExit(f"OLDROWS_READERS={READERS}: no readers.py there (unset it to use scripts/era_readers.py)")
     if READERS not in sys.path:
         sys.path.insert(0, READERS)
     return importlib.import_module("readers")
