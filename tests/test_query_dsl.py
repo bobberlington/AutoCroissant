@@ -15,13 +15,13 @@ from conftest import SITE_SRC
 CARDS = [
     dict(name="Kirby", type="creature", series="kirby", hp=5, defense=3, atk=4, spd=6, stars=3, types=["wind"],
          ability="Deal 2 DMG to the enemy."),
-    dict(name="Meta Knight", type="creature", series="kirby", hp=7, defense=5, atk=7, spd=8, stars=4, aliases=["mk"],
-         ability="Deals double damage.\nDie at the end of the turn."),
+    dict(name="Meta Knight", type="creature", series="kirby", hp=7, defense=5, atk=7, spd=8, stars=4,
+         aliases=["mk", "Galaxia Knight"], ability="Deals double damage.\nDie at the end of the turn."),
     dict(name="sans.", file="Sans", type="creature", series="undertale", hp=1, defense=1, atk=1, spd=9, stars=5,
          ability="Dodge every attack. +1 SPD."),
     dict(name="King Dedede", type="creature", series="kirby", subseries="Kirby's Return to Dream Land", hp=4, defense=4,
          atk=4, spd=2, stars=4, ability="Hammer time."),
-    dict(name="Mettaton EX", type="creatures", hp=6, defense=6, atk=6, spd=6, ability="Gain +2 DEF."),
+    dict(name="Mettaton EX", file="Mettaton", type="creatures", hp=6, defense=6, atk=6, spd=6, ability="Gain +2 DEF."),
     dict(name="Fire Bomb", type="item", subtype="attack", stars=2, ability="Deal 3 damage to a [fire] creature."),
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
     dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="(2U)(OYT) Pop: heal 2 health."),
@@ -51,6 +51,7 @@ QUERIES = [                                              # query, the cards foun
     ("sans.", {"sans."}), ("name~knight", {"Meta Knight"}), ("types~wind", {"Kirby"}),
     ("types==wind", {"Kirby"}),
     ("buckler", {"Panda Shield"}), ("alias~mk", {"Meta Knight"}), ("aliases==buckler", {"Panda Shield"}),
+    ("alias==mettaton", {"Mettaton EX"}), ("has:alias", {"Meta Knight", "Panda Shield", "Mettaton EX"}),   # the file name too
     ("display_name~sans", {"sans."}),  # any column of the bot's
     ("+1 atk", {"Power Ring"}), ("+1 atk to every friendly minon.", {"Power Ring"}),   # near text only when none has it
     ("!+1 atk to every friendly minon.", {c["name"] for c in CARDS}),     # inside !, | and &: exact text (search.js)
@@ -112,14 +113,15 @@ def test_website_synonyms_are_the_bots():
 
 def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
     """A plain term also finds a series' or subseries' cards and a name typed without its punctuation, series== and
-    series~ a subseries too, a known field's lone = is ==, and a name typed with & finds its cards (& inside quotes is
-    text), on the bot and the website."""
+    series~ a subseries too, a known field's lone = is ==, a name typed with & finds its cards (& inside quotes is
+    text) and alias== any one alias, on the bot and the website."""
     rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
             ("moms knife", {"Mom's Knife"}), ("msk", set()),           # 3 letters or fewer: a whole name only
             ("kirby's return to dream land", {"King Dedede"}), ("series==kirby's return to dream land", {"King Dedede"}),
             ("series~dream", {"King Dedede"}), ("series=undertale", {"sans."}), ("hp = 6", {"Mettaton EX"}),
             ("mario & luigi: superstar saga", {"Power Ring"}), ("mario & luigi", {"Power Ring"}),
-            ('subseries~"mario & luigi"', {"Power Ring"})]
+            ('subseries~"mario & luigi"', {"Power Ring"}), ("alias==mk", {"Meta Knight"}),   # any one alias
+            ("alias==galaxia knight", {"Meta Knight"})]
     for query, cards in rows:
         assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
     shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp")} for c in CARDS]

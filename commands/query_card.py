@@ -43,7 +43,7 @@ URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
 VALUE_HINTS = {"type": "creature", "subtype": "attack", "series": "kirby", "subseries": "door", "types": "fire",
-               "name": "knight", "alias": "mk", "ability": "heal", "path": "items", "created": "2025"}   # 'series~' alone
+               "name": "knight", "alias": "clot", "ability": "heal", "path": "items", "created": "2025"}   # 'series~' alone
 NO_TERM = "Give text or a condition to search for: fire | ice, hp>5 & type==creature."   # '|' or '&' alone
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
             "health": "hp", "hp": "health", "star points": "sp", "sp": "star points", "primary field": "pf",
@@ -430,11 +430,15 @@ class CardRepository:
                 hint = VALUE_HINTS.get(column)
                 raise QueryError(f"{column}{operator} takes a value" + (f": {column}{operator}{hint}." if hint else "."))
             value = value.strip('"')
-            for part in (col, self._field("subseries") if column == "series" else None):   # series: a subseries too
-                if part is not None:
-                    text = part.where(part.notna(), "").astype(str).str.lower()
-                    hit = part.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
-                    kept = hit if kept is None else kept | hit
+            if column == "alias":                        # any one alias (search.js)
+                same = (lambda a: a == value) if operator == "==" else (lambda a: value in a)
+                kept = col.map(lambda names: any(same(a.lower()) for a in names)).astype(bool)
+            else:
+                for part in (col, self._field("subseries") if column == "series" else None):   # series: a subseries too
+                    if part is not None:
+                        text = part.where(part.notna(), "").astype(str).str.lower()
+                        hit = part.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
+                        kept = hit if kept is None else kept | hit
         else:
             raise QueryError(f"{column} takes == or ~" + (" or a date: created>=2025, created<2021-06." if column == "created" else "."))
         return self.cards_dff[kept] if kept is not None else self.cards_dff.iloc[0:0]
@@ -448,10 +452,17 @@ class CardRepository:
         if column == "name":
             names = Series(df.index, index=df.index)
             return df["display_name"].where(df["display_name"].notna(), names) if "display_name" in df else names
-        if column == "alias":                            # website names and aliases (Card Edits.json)
-            names = self._edit_names[1]
-            return Series([" ".join(names.get(CardAuthors.key(str(label)), [])) for label in df.index], index=df.index,
-                          dtype=object)
+        if column == "alias":                            # the website's aliases, a list each (build_site): Card Edits', then
+            names, out = self._edit_names[1], []         # the file name; none the shown name (WEB_NORM)
+            for label, shown in self._field("name").items():
+                seen, got = {WEB_NORM.sub("", str(shown).lower())}, []
+                for alias in (*names.get(CardAuthors.key(str(label)), ()), str(label)):
+                    key = WEB_NORM.sub("", alias.lower())
+                    if alias.strip() and key not in seen:
+                        seen.add(key)
+                        got.append(alias)
+                out.append(got)
+            return Series(out, index=df.index, dtype=object)
         if column == "types" and column in df:           # space-joined, as the website
             return df["types"].map(lambda v: " ".join(v) if isinstance(v, (list, tuple)) and v else None)
         return df[column] if column in df else None
@@ -596,6 +607,9 @@ class CardRepository:
         if ability.startswith("!"):
             inner = self.ability_search_engine(ability[1:].strip(), near=False)
             return self.cards_dff[~self.cards_dff.index.isin(inner.index)]
+
+        if ability.lower() == "has:alias":               # search.js FLAGS
+            return self.cards_dff[self._field("alias").astype(bool)]
 
         # Conditions on fields
         stat_result = self._parse_stat_query(ability)

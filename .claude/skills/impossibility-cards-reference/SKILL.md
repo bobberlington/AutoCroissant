@@ -770,7 +770,8 @@ is later (`CardDates.created`, the website's rule); it is in `/export_cards` and
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
 count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (space-joined as the
 website: `types==fire`, `types~undead`, `types==wind offensive_minion`), name (printed title, else the name), alias
-(alias/aliases: Card Edits.json names and aliases, joined), ability, path, created. Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
+(alias/aliases: the website's aliases, i.e. Card Edits.json aliases then the file name, none the shown name; `==`/`~`
+test each one, 2026-11-17), ability, path, created. `has:alias`: cards with an alias (search.js FLAGS). Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
 Synonyms (`SYNONYMS`, the rulebook's Abbreviations; search.js has the same table): damage/DMG, defense/DEF, speed/SPD,
 health/HP, star points/SP, primary field/PF, counter damage/CDMG find each other in text terms (longest key first, so
 `counter damage` is not read as `counter` + `damage`; quoted terms stay literal). Since 2026-11-14 a plain text term
