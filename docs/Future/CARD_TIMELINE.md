@@ -257,7 +257,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    they are not collected (no item; a sure read compares as no types; so is another card's version read sure as
    kinds alone, an item then: Rock Bottom's 2023 equip); its other types stay, or go to review, without them. Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
-   40 not judged; formatting-only text is no change; an item's kinds, its subtypes, are no types change). A Discord
+   40 not judged; formatting-only text is no change; types compare as the card data's tokens, the same mapping as
+   answers; an item's kinds, its subtypes, are no types change). A Discord
    look folds under "minor changes" only when every field is sure and unchanged AND its picture is near the one
    before (owner 11-09): the same git look, or under 5% of the card changed. Two shown pictures that are PNGs of one
    size take png_changes' own share, as the old rows fold; others (JPEGs, resized copies, sheet cells) are trimmed
@@ -305,7 +306,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    rebuild, one now read only, and, from an older page's export (its `page`, or `--page` for a file made without
    one), one carrying a value the item no longer offers), keeps them in `derived/review/rulings.json` with the file's
    source (owner > triage > triage guess: a lower one never replaces or clears a higher; a field so given is method
-   'owner' or 'triage', an item card's kinds stripped from given types as from read ones), reruns the facts when a
+   'owner' or 'triage', an item card's kinds stripped from given types as from read ones, and types kept in the card
+   data's tokens: 'defensive minion' is defensive_minion, a minion's 2023 shield 'protective' and sword 'equip' are its
+   role, defensive_minion and offensive_minion, as the old rows map raw icons; 11-16), reruns the facts when a
    line was given a card, the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
