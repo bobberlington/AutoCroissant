@@ -410,7 +410,12 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    (`confirmed_by`); a title read snapped to an old PSD's casing takes today's name when the picture's own OCR spells it
    so. The eye's rulings (`derived/preview/eye.json`) drop a wrong field and leave out a
    picture that is no version of the card (OMORI's 16 AI restyles; the next version is diffed again, the review page
-   doesn't ask about it). The `history` branch itself (one commit per run, a script run by hand, no Action) waits for the owner's OK.
+   doesn't ask about it). The `history` branch (owner D10): `scripts/history_branch.py`, by hand, makes one commit of that
+   folder (an orphan root first, then on the branch's head, fetched alone and shallow into its own bare repo
+   `~/Documents/Tools/history.git`; trailer `Card-sweep: history`), refuses a folder failing a check (layout, JSON keys,
+   links/mentions/snowflakes, the left-out channels' pictures, webps at most 720 px with no metadata, sizes) and prints
+   what it would push; `--push` sends `refs/heads/history` only, never forced. TTSCardMaker's site.yml clones that
+   branch alone, depth 1, as `HISTORY_DIR` (no branch or a failed clone: the site builds without it).
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
    lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo",
    the first repo's "first repo"; Discord: date and channel), each compared with the current card
