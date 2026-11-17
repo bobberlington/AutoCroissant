@@ -536,7 +536,7 @@ to commits and re-pinned when a file changes (after the cooldown commits, four r
 | N.M.E Items | 26 | 1 | "N.M.E. Items Copy" |
 | All Status Effects | 64 (12 buffs + 52 debuffs) | 1 | 3 decks (2 on "All Status Effects", 1 "Status Effects Copy"); back `MDW/cardback_statuseffect.png` |
 | Minions | 99 = Auxiliary/Minions 91 + Auxiliary/Creatures 7 + Stubborn Queen | 1 | 3 decks (2 + "Minions Copy") |
-| Auxiliary Items | 60 = Auxiliary/Items 48 + 12 main-pool items summoned by abilities (Bomb, Poison Circle, Holy Card, Piko Piko Hammer, the 5 Ingredients, Pepperoni Pizza, Gasoline, N.M.E Rope) | 1 | 3 decks (2 + "Auxiliary Items Copy") |
+| Auxiliary Items | 67 = Auxiliary/Items 48 + 19 main-pool items summoned by abilities (Bomb, Poison Circle, Holy Card, Piko Piko Hammer, the 5 Ingredients, Pepperoni Pizza, Gasoline, N.M.E Rope; since 2026-11-17 also Copper Sword, Mighty Pebble, Grapes, Bolts and Screws, Tomorrow I'll, Newspaper, Pandora's Box) | 1 | 3 decks (2 + "Auxiliary Items Copy") |
 | Bag "Specific Item Decks" | Deck of Rejects 7 (The Morgue, hand-picked, names kept), 1/2/3/4 Star Equips 9/17/23/16, 2/4 Star Attack Items 5/2, 2 Star Healing Items 22 (complete since 2026-10-22, back `MDW/cardback_item.png`); removed 2026-11-06 (TC befdf769) | 1 | none |
 
 Backs: creatures and minions `MDW/cardback.png`; items, field cards, N.M.E. and auxiliary items `MDW/cardback_item.png`.
