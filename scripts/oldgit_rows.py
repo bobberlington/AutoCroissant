@@ -1235,11 +1235,16 @@ def before_folders(versions: list) -> list:
     return [v for v in versions if not v.get("mdw") or v["ts"] < first]
 
 
+def side_file(v: dict) -> bool:
+    """An MDW draft, or a Meme folder's copy the owner gave the card (Tyler's 2019 Mao card, owner 11-17)."""
+    return bool(v.get("mdw")) or oi.MEME in v["path"].lower()
+
+
 def folder_first(versions: list):
-    """The card's first card-folder record (PNG or PSD) when an MDW draft comes before it, else None: Discord
-    drafts posted in between still enter the chain (their looks are in no git record)."""
-    first = min((v for v in versions if not v.get("mdw")), key=lambda v: (v["ts"], v["path"]), default=None)
-    if not any(v.get("mdw") and v["ts"] < (first["ts"] if first else float("inf")) for v in versions):
+    """The card's first card-folder record (PNG or PSD) when an MDW draft or a Meme folder's copy comes before it,
+    else None: Discord drafts posted in between still enter the chain (their looks are in no git record)."""
+    first = min((v for v in versions if not side_file(v)), key=lambda v: (v["ts"], v["path"]), default=None)
+    if not any(side_file(v) and v["ts"] < (first["ts"] if first else float("inf")) for v in versions):
         return None
     return {k: first.get(k) for k in ("ts", "date", "commit", "path", "repo")} if first else {"ts": None}
 

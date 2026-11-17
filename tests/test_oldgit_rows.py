@@ -519,6 +519,8 @@ def test_mdw_drafts_count_only_before_the_card_folders(rows):
                                 v("psd", "m1", 300, draft, True), v("psd", "m2", 400, draft, True)])
     assert [x["blob"] for x in kept] == ["m0", "p0", "g0"]
     assert rows.folder_first(kept)["ts"] == 300 and rows.folder_first(kept[1:]) is None   # Discord drafts up to it
+    meme = [v("png", "j0", 100, "Cards/Meme/4 Stars/T"), v("png", "g1", 300, card)]   # owner 11-17: Tyler's Mao card
+    assert [x["blob"] for x in rows.before_folders(meme)] == ["j0", "g1"] and rows.folder_first(meme)["ts"] == 300
     read = {"type": "creature", "name": "T", "printed_title": "T", "stars": 3, "types": [], "stats": stats(5, 4, 6, 5),
             "ability": "(OPT) Flip."}
     reads = {("m0", f"{draft}.psd"): {"read": read}, ("p0", f"{card}.psd"): {"read": read}}
