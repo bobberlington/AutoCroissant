@@ -13,10 +13,11 @@ A press names the lane in its run's title (card-preview.yml's run-name, from the
 
 blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each; no
 ref, so no push): GitHub cuts run titles at 512 characters, so the press itself never rides in one. The lane takes a run
-only when its title names this run, its editor is this run's, it runs on this run's commit, its blob hashes to its sha
-and names its request, and the bot's main and the data's records are still the ones this process read; any other newer
-run of its editor ends the lane (that run, not served, starts the next one). A run whose press its named lane served
-starts none.
+only when its title names this run, its editor is this run's, its blob hashes to its sha and names its request, and the
+bot's main and the data's records are still the ones this process read. A press on a newer commit of the card repo is
+taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the lane's commit.
+Any other newer run of its editor ends the lane (that run, not served, starts the next one). A run whose press its named
+lane served starts none.
 """
 from base64 import b64decode
 from binascii import Error as Base64Error
@@ -30,7 +31,7 @@ from os.path import abspath, dirname, join
 from re import compile as re_compile
 from resource import RUSAGE_SELF, getrusage
 from shutil import rmtree
-from subprocess import run as run_process
+from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import platform, stderr, stdout
 from tempfile import mkdtemp
 from time import monotonic, sleep, time
@@ -57,6 +58,9 @@ WORKFLOW = "card-preview.yml"
 RECORDS_ENV = "CARD_RECORDS_DIR"                # psd_edit.RECORDS_DIR: the data's records the first press read
 TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]{40})")
 NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
+KEPT = ("MDW/Fonts", ".github/workflows/card-preview.yml", ".github/actions")    # the same at a commit the lane follows
+SHA = re_compile(r"[0-9a-f]{40}")
+FETCH_TIMEOUT = 20                              # s for a newer commit's trees
 
 
 class Press(NamedTuple):
@@ -157,8 +161,8 @@ def bot_moved(api: _Api, bot_repo: str, bot: str) -> str:
     return f"the bot's main not read ({status})"
 
 
-def fits(run: dict, press: Optional[Press], me: int, actor: str, head: str) -> str:
-    """Why the lane doesn't take a newer run of its editor ("" when it does)."""
+def fits(run: dict, press: Optional[Press], me: int, actor: str) -> str:
+    """Why the lane doesn't take a newer run of its editor ("" when it does; its commit: follow)."""
     if press is None:
         return "a newer press named no lane"
     if press.lane != me:
@@ -167,9 +171,25 @@ def fits(run: dict, press: Optional[Press], me: int, actor: str, head: str) -> s
         return "a newer press was done before the lane saw it"
     if (run.get("triggering_actor") or run.get("actor") or {}).get("login") != actor:
         return "a newer press by another editor"
-    if run.get("head_sha") != head:
-        return "the card repo moved"
     return ""
+
+
+def follow(clone: str, head: str, new: str) -> str:
+    """Why the lane can't take a press at the card repo's commit new ("" when it can): new's trees fetched into the
+    clone (shallow, blobless; the repo is public: no token) and KEPT there as at head (the cold run's fonts and steps)."""
+    if new == head:
+        return ""
+    if not SHA.fullmatch(new or ""):
+        return "the card repo moved"
+    env = {**environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        run_process(["git", "-C", clone, "fetch", "-q", "--depth", "1", "--filter=blob:none", "--no-tags", "origin", new],
+                    capture_output=True, env=env, timeout=FETCH_TIMEOUT, check=True)
+        kept = [run_process(["git", "-C", clone, "ls-tree", sha, "--", *KEPT], capture_output=True, env=env, timeout=30,
+                            check=True).stdout for sha in (head, new)]
+    except (CalledProcessError, TimeoutExpired, OSError):
+        return "the card repo moved (not fetched)"
+    return "" if kept[0] == kept[1] else "the card repo moved (its fonts or the preview's workflow)"
 
 
 def _rss() -> int:
@@ -235,10 +255,17 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
 
 
 def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
-    """The lane's loop: its editor's runs listed every POLL s (conditional GETs), each newer one taken (take) or the
-    lane's end (fits). Returns why it ended (press: take's keywords)."""
+    """The lane's loop: its editor's runs listed every POLL s (conditional GETs), each newer one taken (take; at its
+    commit: follow) or the lane's end (fits). Returns why it ended (press: take's keywords)."""
     runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
     last, failing, seen, listed = monotonic(), None, set(), []
+
+    def moved(new: str) -> str:                 # a press at new: the lane's commit from now on
+        started, why = monotonic(), follow(press.get("clone", ""), press["head"], new)
+        if not why and new != press["head"]:
+            _say(f"follows the card repo {press['head'][:8]} -> {new[:8]} ({monotonic() - started:.2f} s)")
+            press["head"] = new
+        return why
     while True:
         if monotonic() - last > LANE_IDLE:
             return f"idle {LANE_IDLE} s"
@@ -261,7 +288,7 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
             run = newer[0]
             seen.add(run["id"])
             pressed = press_of(run.get("display_title", ""))
-            why = fits(run, pressed, me, actor, press["head"]) or take(api, pressed, run, **press)
+            why = fits(run, pressed, me, actor) or moved(run.get("head_sha") or "") or take(api, pressed, run, **press)
             if why:
                 return why
             last = monotonic()
@@ -281,7 +308,7 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
         lane: Its folder (each press's out dir in it; card_preview_branch.hand_lane watches it)
         bake: card_preview.preview
         out: The first press's out dir (hand.done beside it)
-        head: This run's commit of the card repo
+        head: This run's commit of the card repo (the lane's first: it follows newer ones, listen)
         request, named: The first press's request and inputs.lane
         until: Its end at the latest (epoch s: the job's cap less a margin)
         code: The first press's exit code (a lane only after 0)
@@ -330,6 +357,7 @@ __all__ = [
     'Press',
     'bot_moved',
     'fits',
+    'follow',
     'listen',
     'press_blob',
     'press_of',
