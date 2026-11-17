@@ -589,6 +589,12 @@ def test_an_old_card_takes_its_own_map_never_one_only_its_case_differs(tmp_path)
         "pain": {"key": None, "status": "lost", "confidence": None}}}))
     found = dm.old_versions(str(root), {"thinned": {"key": "Thinned"}}, log=lambda *a: None)
     assert [(v["card"], v["blob"][0]) for v in found] == [("thinned", "a")]
+    (root / "derived" / "oldgit" / "map.json").write_text(json.dumps({"cards": {       # owner 11-17: the joke copy is
+        "Pain": {"key": "Thinned", "status": "live", "confidence": "sure", "how": ["path"], "paths": ["Auxillary/Debuffs/Pain.png"]},
+        "pain": {"key": "Thinned", "status": "live", "confidence": "sure", "how": ["name", "owner"],
+                 "paths": ["Items/Meme/2 Stars/pain.png"]}}}))                         # its card's row, no look to tell by
+    found = dm.old_versions(str(root), {"thinned": {"key": "Thinned"}}, log=lambda *a: None)
+    assert [(v["card"], v["blob"][0]) for v in found] == [("thinned", "a")]
 
 
 def test_the_first_repo_s_store_or_an_error(tmp_path, monkeypatch):

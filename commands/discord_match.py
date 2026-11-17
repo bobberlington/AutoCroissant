@@ -887,6 +887,8 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
     held = (raw.get("cards") or {}) if isinstance(raw, dict) else {}       # old cards the map holds, lost ones too
     known = set(held)
     exact = {o: old_maps({"cards": {o: c}}).get(o, (None, False)) for o, c in held.items() if isinstance(c, dict)}
+    side = {o for o, c in held.items() if isinstance(c, dict) and "owner" in (c.get("how") or ()) and c.get("paths")
+            and all("/meme/" in p.lower() for p in c["paths"])}   # a Meme folder's copy the owner gave a card: rows only
     by_key = {edit_key(c.get("key")): cid for cid, c in cards.items()}
     found, skipped = [], Counter()
     for row in rows:
@@ -898,6 +900,9 @@ def old_versions(root: str, cards: dict, log: Callable = print) -> list:
             continue
         if ts is None or ts > OLD_CUTOFF:
             skipped["after the cutoff"] += 1
+            continue
+        if row.get("old_id") in side:          # no look to tell pictures by (Tyler's Mao card, owner 11-17)
+            skipped["a Meme folder's copy the owner gave a card"] += 1
             continue
         key, sure = first_of(row, "today", "today_key", "key"), True
         if not key or edit_key(key) not in by_key:
