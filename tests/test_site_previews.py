@@ -92,17 +92,18 @@ const own = {{ request: "r-00000001", at: now - 500 * s, hash: "h", state: "bake
 const next = fromAt => ({{ request: "r-00000002", at: now - 70 * s, hash: "h", state: "baked", lane: 101, from: 101, fromAt }});
 const lane = (age, extra = {{}}) => ({{ c: [{{ request: "r-00000003", at: now - age, hash: "h", state: "running", lane: 101, ...extra }}] }});
 out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edit)}),
-  p.laneOf({{ a: [own, next(now - 60 * s)] }}, now), p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 580 * s }} }}, next(now - 60 * s)] }}, now),
+  p.laneOf({{ a: [own, next(now - 60 * s)] }}, now), p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 1070 * s }} }}, next(now - 60 * s)] }}, now),
+  p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 1000 * s }} }}, next(now - 60 * s)] }}, now),
   p.laneOf({{ a: [own, next(now - 230 * s)] }}, now), p.laneOf({{}}, now),
   p.pollDelay(lane(1 * s), now), p.pollDelay(lane(5 * s), now), p.pollDelay(lane(5 * s, {{ fromAt: now }}), now), p.pollDelay(lane(16 * s), now)]);""")
-    blob, named, capped, idle, none, *delays = out
+    blob, named, capped, long, idle, none, *delays = out
     data, sha = press_blob(request, card, edit)
     assert blob == {"sha": sha, "base64": base64.b64encode(data).decode()} and len(data) > 1024
     run_name = yaml.safe_load((SITE / ".github" / "workflows" / "card-preview.yml").read_text(encoding="utf-8"))["run-name"]
     assert run_name == "Card preview ${{ inputs.request }}${{ inputs.lane && format(' lane {0}', inputs.lane) || '' }}"
     title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{sha}", run_name.replace("${{ inputs.request }}", request.ljust(64, "x")))
     assert press_of(title) == (request.ljust(64, "x"), 101, sha) and len(title) < 150
-    assert (named, capped, idle, none) == (101, None, None, None)
+    assert (named, capped, long, idle, none) == (101, None, 101, None, None)     # 18 minutes from its start
     assert delays == [2000, 500, 7000, 1000]
 
 

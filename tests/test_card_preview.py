@@ -751,12 +751,54 @@ def test_a_lanes_title_and_what_it_takes(monkeypatch):
     assert read_press(store, "o/r", press._replace(blob="0" * 40)) == (None, None, "the press's blob not read (404)")
     assert len(asked) > 2                                                      # tried again for BLOB_WAIT
     run = {"status": "queued", "triggering_actor": {"login": "ed"}, "head_sha": "h"}
-    assert fits(run, press, 100, "ed", "h") == ""
-    assert [fits({**run, **change}, p, 100, "ed", "h") for change, p in (
+    assert fits(run, press, 100, "ed") == "" == fits({**run, "head_sha": "g"}, press, 100, "ed")    # its commit: follow
+    assert [fits({**run, **change}, p, 100, "ed") for change, p in (
         ({}, None), ({}, press._replace(lane=99)), ({"status": "completed"}, press),
-        ({"triggering_actor": {"login": "other"}}, press), ({"head_sha": "g"}, press))] == [
+        ({"triggering_actor": {"login": "other"}}, press))] == [
         "a newer press named no lane", "a newer press named lane 99", "a newer press was done before the lane saw it",
-        "a newer press by another editor", "the card repo moved"]
+        "a newer press by another editor"]
+
+
+def test_the_lane_follows_main(tmp_path, monkeypatch):
+    """follow() fetches a newer commit's trees into the lane's shallow blobless clone and takes it when KEPT is the same
+    there, not when its fonts moved or it can't be fetched; listen() takes a run on a newer commit there, the lane's
+    commit from then on."""
+    import commands.card_preview_lane as lane_mod
+    from time import time
+    origin, lane, heads = tmp_path / "origin", tmp_path / "lane", []
+    _git(tmp_path, "init", "-q", "origin")
+    for path, data in (("MDW/Fonts/A.ttf", "font"), ("Cards/X.psd", "x2"), ("MDW/Fonts/A.ttf", "font2")):
+        (origin / path).parent.mkdir(parents=True, exist_ok=True)
+        (origin / path).write_text(data)
+        _git(origin, "add", "-A")
+        _git(origin, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", path)
+        heads.append(_git(origin, "rev-parse", "HEAD").strip())
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    _git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    _git(tmp_path, "init", "-q", "lane")
+    _git(lane, "remote", "add", "origin", f"file://{origin}")
+    _git(lane, "fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", heads[0])     # as card-preview.yml's Clone
+    a, b, c = heads
+    assert lane_mod.follow(str(lane), a, a) == "" == lane_mod.follow(str(lane), a, b)
+    assert _git(lane, "rev-parse", f"{b}:Cards", env={"GIT_NO_LAZY_FETCH": "1"}).strip()     # its trees: no blob
+    assert lane_mod.follow(str(lane), b, c) == "the card repo moved (its fonts or the preview's workflow)"
+    assert lane_mod.follow(str(lane), a, "0" * 40) == "the card repo moved (not fetched)"
+    assert lane_mod.follow(str(lane), a, "main") == "the card repo moved"
+    runs, took, follows = [{"id": 101, "status": "queued", "triggering_actor": {"login": "ed"}, "head_sha": b,
+                            "display_title": f"Card preview {REQUEST} lane 100-{'e' * 40}"}], [], []
+
+    def take(api, press, run, **kw):
+        took.append(kw["head"])
+        runs.append({"id": 102, "display_title": "Card preview another-press-1"})
+        return ""
+    monkeypatch.setattr(lane_mod, "take", take)
+    monkeypatch.setattr(lane_mod, "follow", lambda clone, head, new: follows.append((head, new)) or "")
+    monkeypatch.setattr(lane_mod, "_say", lambda text: None)
+    monkeypatch.setattr(lane_mod, "POLL", 0.01)
+    api = SimpleNamespace(left=None, get=lambda path, conditional=False: (
+        200, None, json.dumps({"workflow_runs": runs} if "/runs?" in path else []).encode()))
+    assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head=a, clone=str(lane)) == "a newer press named no lane"
+    assert follows == [(a, b)] and took == [b]
 
 
 def test_the_warm_lane(cards, tmp_path, monkeypatch):
