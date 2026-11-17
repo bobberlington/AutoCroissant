@@ -760,6 +760,52 @@ def test_a_lanes_title_and_what_it_takes(monkeypatch):
         "a newer press by another editor"]
 
 
+def test_the_lanes_doorbell(tmp_path, monkeypatch):
+    """A press rung at the lane's doorbell (refs/preview-lane/<run>/<request>-<blob>) is taken before its run is listed
+    (a request rung twice is none), its run counts as served once listed, and a newer run it doesn't take ends the lane
+    as ever; a rung press's take checks the card repo's main in place of the run's commit and bakes with no run (on a
+    newer main: there, once moved() follows it)."""
+    import base64
+    import commands.card_preview_lane as lane_mod
+    from time import time
+    data, sha = lane_mod.press_blob(REQUEST, "Mini Doomer", '{"hp": 7}')
+    bell = lambda request, blob, run=100: {"ref": f"refs/preview-lane/{run}/{request}-{blob}"}
+    refs = [bell(REQUEST, sha), bell("rung-twice-1", "b" * 40), bell("rung-twice-1", "c" * 40), bell("other-lane-1", sha, 1001)]
+    runs, took, main = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}
+
+    def get(path, conditional=False):
+        body = (refs if f"/matching-refs/{lane_mod.BELL}/100/" in path
+                else {"workflow_runs": runs} if path.endswith(f"/runs?event=workflow_dispatch&actor=ed&per_page={lane_mod.LISTED}")
+                else {"sha": sha, "size": len(data), "encoding": "base64", "content": base64.b64encode(data).decode()}
+                if path.endswith(sha) else {"object": {"sha": main[path.split("/repos/")[1].split("/git/")[0]]}})
+        return 200, None, json.dumps(body).encode()
+    api = SimpleNamespace(left=None, get=get)
+
+    def take(api, press, run, **press_kw):
+        took.append((press, run))
+        runs[:] = [{"id": 102, "display_title": "Card preview another-press-1"},
+                   {"id": 101, "display_title": f"Card preview {REQUEST} lane 100-{sha}"}]
+        return ""
+    real_take = lane_mod.take
+    monkeypatch.setattr(lane_mod, "take", take)
+    monkeypatch.setattr(lane_mod, "POLL", 0.01)
+    assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "a newer press named no lane"
+    assert took == [((REQUEST, 100, sha), None)]
+    baked = []
+    monkeypatch.setattr(lane_mod, "reads", lambda card, fields, clone, repository, head, records, blobs: None)
+    keys = dict(bake=lambda card, edit, out, repository, **k: baked.append((card, edit, k["run"], k["head"])) or {"state": "baked"},
+                lane=str(tmp_path), clone="", repository="o/r", head="1" * 40, kept={}, bot_repo="bot/repo", bot="bot", limit=99)
+    monkeypatch.setattr(lane_mod, "RECORDS", ())
+    assert real_take(api, took[0][0], None, **keys) == "" and baked == [("Mini Doomer", b'{"hp": 7}', "", "1" * 40)]
+    main["o/r"] = "2" * 40
+    assert real_take(api, took[0][0], None, **keys) == "the card repo's main moved" and len(baked) == 1
+    moves = []                                  # a newer main followed: baked there
+    assert real_take(api, took[0][0], None, **keys, moved=lambda new: moves.append(new) or "") == "" and moves == ["2" * 40]
+    assert baked[-1][-1] == "2" * 40
+    assert real_take(api, took[0][0], None, **keys, moved=lambda new: "the card repo moved (not fetched)") == "the card repo moved (not fetched)"
+    assert len(baked) == 2
+
+
 def test_the_lane_follows_main(tmp_path, monkeypatch):
     """follow() fetches a newer commit's trees into the lane's shallow blobless clone and takes it when KEPT is the same
     there, not when its fonts moved or it can't be fetched; listen() takes a run on a newer commit there, the lane's

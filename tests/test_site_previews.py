@@ -104,16 +104,17 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
     title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{sha}", run_name.replace("${{ inputs.request }}", request.ljust(64, "x")))
     assert press_of(title) == (request.ljust(64, "x"), 101, sha) and len(title) < 150
     assert (named, capped, long, idle, none) == (101, None, 101, None, None)     # 18 minutes from its start
-    assert delays == [2000, 500, 7000, 1000]
+    assert delays == [1000, 500, 7000, 1000]
 
 
 def test_the_editor_takes_the_lanes_hand_over(tmp_path):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
-    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob) and shows the lane's
-    card-preview-<request> 3 s after the press, one toast each; a 422 with a lane dispatches again without it, and no
-    lane is named after that."""
+    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), rings the lane's doorbell
+    (its ref at the commit of press 1's result: the lane's RUNG) and shows the lane's card-preview-<request> 2 s after
+    the press, then deletes the ref; one toast each; a 422 with a lane dispatches again without it (its ref deleted), and
+    no lane is named after that."""
     import base64
-    from commands.card_preview_lane import press_blob
+    from commands.card_preview_lane import RUNG, press_blob
     out = node(tmp_path, """let T = 1e12; const q = []; Date.now = () => T;
 globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
@@ -123,16 +124,17 @@ const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text
   h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
 const { createHash } = await import("node:crypto");
-const sent = [], toasts = [], listed = [], blobs = [];
+const sent = [], toasts = [], listed = [], blobs = [], refs = [];
 let refuse = false, failBlob = false;
 const github = async (path, o = {}) => {
   if (path.endsWith("/git/blobs")) { blobs.push(o.body); if (failBlob) { const e = new Error("GitHub 403"); e.status = 403; throw e; }
     const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") }; }
+  if (path.includes("/git/refs")) { refs.push([T - 1e12, o.method, path.split("/git/refs")[1] || o.body.ref, o.body?.sha]); return null; }
   if (o.method === "POST") { sent.push({ ...o.body.inputs }); if (refuse && o.body.inputs.lane) { const e = new Error("GitHub 422"); e.status = 422; throw e; } return null; }
   if (path.includes("/contents/")) { const e = new Error("404"); e.status = 404; throw e; }
   if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + sent[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(1e12).toISOString() }] };
   const z = path.split("/zip/")[1];
-  if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {} }));
+  if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {}, base: { commit: "c".repeat(40) } }));
   const name = path.split("name=")[1], own = name === "card-preview" ? sent[0].request : name.slice(13);
   listed.push([T - 1e12, name]);
   return { artifacts: path.includes("/runs/101/") && (name === "card-preview" || own === sent[1].request) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
@@ -144,13 +146,17 @@ const second = T;
 await pv.start(card("c1"), { hp: 7 }); await run(T + 20000);
 refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"), { hp: 5 });
 refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
-out({ sent, toasts, blobs, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
+out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
   named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null) });""")
     sent = out["sent"]
     data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
     assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
     assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
-    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [3000]     # the lane's, 3 s on
+    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [2000]     # the lane's, 2 s on
+    rung = RUNG.fullmatch(out["refs"][0][2])
+    assert rung and rung.groups() == ("101", sent[1]["request"], sha) and out["refs"][0][1:] == ["POST", rung.group(0), "c" * 40]
+    assert out["refs"][1] == [out["second"] + 2000, "DELETE", rung.group(0)[4:], None]     # once its hand-over is in
+    assert [r[1] for r in out["refs"][2:]] == ["POST", "DELETE", "POST", "DELETE"]          # the 422's press; the blob's
     assert out["toasts"].count("Preview ready: Mini Doomer") == 2
     assert "lane" in sent[2] and "lane" not in sent[3] and "lane" not in sent[4]      # the 422's retry, then none named
     assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again
