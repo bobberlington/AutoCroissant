@@ -5314,8 +5314,9 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
     every run's FontSize, Leading and BaselineShift scaled alike (badges keep their size and middle against the
     letters). No size fits: left at its size, ink_beyond tells it; one running off the card is set at the largest size
     on it no lower than the old text, unless moving it up (lift: off the bottom) keeps it on the card printing over no
-    more (r32: lifted, Dryya's text covered its ATK and SPD rows). A layer with tabs (its stops don't shrink: Michael's
-    Blessing's arrow column would break): left at its size, moved up off the bottom.
+    more (r32: lifted, Dryya's text covered its ATK and SPD rows); with no such size, the largest that stays on it once
+    moved up (a status effect's added line, lifted at its size, printed past both sides). A layer with tabs (its stops
+    don't shrink: Michael's Blessing's arrow column would break): left at its size, moved up off the bottom.
 
     Args:
         psd: The card, the text set and rasterized
@@ -5343,7 +5344,7 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
         ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
         return (not len(ink) or int(ink.max()) + 1 <= floor) \
             and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
-    largest = None                              # (scale, px it prints over): the largest size placed
+    largest = lifted = None                     # (scale, px it prints over): the largest size placed
     for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
         if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
             break
@@ -5353,9 +5354,18 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
             if check() is None:
                 return scale, report, 0
             largest = largest or (scale, _over_px(check()))
+        elif off and largest is None and lifted is None:    # none placed: the largest on the card once moved up
+            moved = lift(psd, layer, before)
+            lifted = None if _ink_off_canvas(layer, psd.width, psd.height) else scale
+            nudge(layer, 0, moved)
     scaled(1.0)
     report = draw()
     up = lift(psd, layer, before) if off else 0
+    if largest is None and lifted and _ink_off_canvas(layer, psd.width, psd.height):    # moved up, still off the
+        nudge(layer, 0, up)                     # card (a status effect's added line past both sides): lifted's size
+        scaled(lifted)
+        report = layer.rasterize(fonts=fonts)
+        return lifted, report, lift(psd, layer, before)
     if not off or largest is None or up and not _ink_off_canvas(layer, psd.width, psd.height) \
             and _over_px(check()) <= largest[1]:
         return 1.0, report, up

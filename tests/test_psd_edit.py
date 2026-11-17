@@ -2369,7 +2369,8 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path, monkey
     """11-08: an added line no size fits (fit_below) ran off the card's bottom, unseen (46 cards). The Ability moves up
     until its last line ends where the old one did, TySh and raster together, through every gate (Krabby Patty's, no
     size tried). r32: lifted at full size, Dryya's longer Ability covered its ATK and SPD rows: the largest size on the
-    card no lower than the old text is set instead when it prints over less."""
+    card no lower than the old text is set instead when it prints over less. r44: no such size and, lifted, still off
+    the card (a status effect's added line past both sides): the largest size on it once lifted."""
     rel = "Creatures/Hollow Knight/4 Stars/Dryya.psd"
     psd = PSDImage.open(_card(clone, rel)[0])
     old = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"])
@@ -2382,6 +2383,13 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path, monkey
     assert edit.lifted == 0 and _runs(edit.layers[0])[0][2] < size and len(stats) == 2
     assert np.nonzero(ink.any(axis=1))[0].max() <= np.nonzero(was.any(axis=1))[0].max() + pe.BEYOND[0]
     assert not any(ink[y0:y1, x0:x1].any() for x0, y0, x1, y1 in stats)
+    rel = "Auxiliary/Status Effects/Debuffs/2 Stars/Blazing.psd"        # r44: lifted, its added line still past both
+    psd = PSDImage.open(_card(clone, rel)[0])                            # sides: smaller, then lifted
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"])
+    edit = pe.set_text_layer(psd, "ability", old + "\nAttacks inflict 1T Burning and 1T Blazing.",
+                             str(clone / pe.FONTS_DIR), chart, parser=parser)
+    assert edit.lifted > 0 and pe.FIT_MIN <= edit.fit < 1
+    assert not pe._ink_off_canvas(edit.layers[0], psd.width, psd.height)
     monkeypatch.setattr(pe, "FIT_MIN", 1.0)
     rel = "Auxiliary/Items/Krabby_Patty.psd"
     old = PSDImage.open(_card(clone, rel)[0])
