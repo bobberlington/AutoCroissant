@@ -362,6 +362,24 @@ def test_drawn_bars_no_row_reads(monkeypatch, clone):
     assert cc.flags(record, {**lost, "problems": []})["hand"] is None
 
 
+def test_validator_stat_notes_are_hand_notes():
+    """Chris & Jordi's 11-11 data (HP 26, no DEF, ATK or SPD; Card sync only printed it) is a hand note; the website's
+    answers, a raid boss, NO_STATS (its own note) and sound data say nothing; several creatures by creature."""
+    cj = {"card_type": "creature", "stars": 5, "stats": {"hp": 26, "defense": -1, "attack": -1, "speed": -1}}
+    assert cc.flags({}, cj)["hand"] == ("No DEF, ATK or SPD is read off its bars and its HP 26 is above 20: fix its bars "
+                                        "in Photoshop, or set them on the website.")
+    assert cc.flags({}, {**cj, "stats": {"hp": 7, "defense": 6, "attack": 8, "speed": 6}})["hand"] is None
+    assert cc.stat_notes({**cj, "problems_ok": True}) == cc.stat_notes(cj, {"hp": 7, "def": 6, "atk": 8, "spd": 6}) == []
+    assert cc.stat_notes({**cj, "stats": dict.fromkeys(cc.DATA_STATS.values(), -1), "problems": [cc.NO_STATS]}) == []
+    high = {**cj, "stats": {"hp": 26, "defense": 6, "attack": 8, "speed": 6}}
+    assert cc.stat_notes(high) == ["Its HP 26 is above 20: fix its bars in Photoshop, or mark them 'above 20 is intended' "
+                                   "on the website."]
+    assert cc.stat_notes({**high, "allow_high_stats": True}) == cc.stat_notes({**high, "stars": cc.RAID_STARS}) == []
+    two = {**high, "creatures": [high["stats"] | {"hp": 7}, {"hp": 3, "defense": -1, "attack": 1, "speed": 1}]}
+    assert cc.stat_notes(two) == ["No DEF is read off creature 2's bars: fix its bars in Photoshop, or set them on the "
+                                  "website."]
+
+
 def test_art_over_darks(monkeypatch):
     """Only Lines may lie over the new bars' Darks group: else a stat edit bakes for real (Sans, The Thin Man)."""
     layer = lambda name, shown=True: SimpleNamespace(name=name, is_visible=lambda: shown)
