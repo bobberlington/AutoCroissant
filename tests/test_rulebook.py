@@ -140,15 +140,15 @@ def _seen(**cards):
 def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     """The pre-key follows what the print view reads (code, chapters, the named cards' pictures, every card's name), not
     the data stamp or other cards' pictures; kept beside the key, it skips Chrome (--full looks in any case, and a key
-    change warns)."""
-    pre = lambda seen: rulebook_pages.pre_key(seen, ["t"], [], "/no/chrome")
+    change warns). Another lane's look (--kept) counts for the same pages only."""
+    pre = lambda seen: rulebook_pages.pre_key(seen, ["t"], [])
     base = pre(_seen())
     same = _seen(kirby={"img": "k2", "hp": 4}, panda={"img": "p2"})            # a picture only linked, another card
     same["index"] = same["index"].replace("d1", "d2")
     assert pre(same) == base
     for seen in (_seen(mushroom={"img": "m2"}), _seen(kirby={"name": "Kirbo"}), dict(_seen(), index='<link href="assets/app.js?v=a2">')):
         assert pre(seen) != base
-    assert rulebook_pages.pre_key(_seen(), ["u"], [], "/no/chrome") != base
+    assert rulebook_pages.pre_key(_seen(), ["u"], []) != base
     (tmp_path / "site" / "rulebook").mkdir(parents=True)
     (tmp_path / "site" / "rulebook" / "01-a.md").write_text("# A\n![[Mushroom]] and [[Panda|the panda]]\n", encoding="utf-8")
     folder = tmp_path / "TTS" / "Rulebook"
@@ -167,12 +167,22 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     monkeypatch.setattr(rulebook_pages, "draw", draw)
     monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
     run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), **kw)
-    mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [], "/no/chrome")
+    mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [])
     assert "pre-key held" not in run() and rulebook_pages.read_pages(str(tmp_path))["pre"] == mine            # stored with the key
     assert "Chrome not started" in run() and drawn["n"] == 1
     assert "pre-key held" in run(full=True) and drawn["n"] == 2
     drawn["key"] = "k2"                                                                                           # an input pre misses
     assert "::warning::" in run(full=True) and rulebook_pages.read_pages(str(tmp_path))["key"] == "k2"
+    listing = folder / "pages.json"
+    look = json.loads(listing.read_text(encoding="utf-8"))
+    kept = tmp_path / "kept.json"                                       # a lane's look that committed nothing
+    kept.write_text(json.dumps(look), encoding="utf-8")
+    listing.write_text(json.dumps({**look, "key": "k0", "pre": "p0"}), encoding="utf-8")
+    assert "Chrome not started; a kept look" in run(kept=str(kept)) and drawn["n"] == 3
+    assert rulebook_pages.read_pages(str(tmp_path))["pre"] == mine                                                # written: M carries it
+    kept.write_text(json.dumps({**look, "pages": [], "key": "k9"}), encoding="utf-8")                             # other pages: not counted
+    listing.write_text(json.dumps({**look, "key": "k0", "pre": "p0"}), encoding="utf-8")
+    assert "kept look" not in run(kept=str(kept)) and drawn["n"] == 4
 
 
 def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):

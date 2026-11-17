@@ -17,10 +17,12 @@ else the first of CHROMES on PATH) over its DevTools pipe, the page past the CDN
 Each page is screenshot and hashed: the PDF is printed again only when a hash
 changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
-Chrome too when the website, the fonts and Chrome are as at the last kept key (--full: Chrome looks in any case).
+Chrome too when the website and the fonts are as at the last kept key (--full: Chrome looks in any case).
 Other files in the folder are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 --out DIR: the PDF and pages.json go to DIR instead (the checkout's copied in first), and DIR/inputs lists HEAD's sha and
 INPUTS (Card sync's look in the background: kept unless main's head moved one since).
+--kept FILE: another lane's pages.json (one that committed nothing): its key and pre are the known ones when its pages
+and PDF are the checkout's.
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
@@ -314,13 +316,13 @@ def key(drawn: str, checkout: str, trees: Optional[list] = None) -> str:
     return sha256("\n".join([drawn, *(_trees(checkout) if trees is None else trees)]).encode("utf-8")).hexdigest()
 
 
-def pre_key(seen: dict, trees: list, fonts: list, exe: str) -> str:
+def pre_key(seen: dict, trees: list, fonts: list) -> str:
     """
     What the print view reads (site_inputs()'s seen), Chrome not started: index.html's code (its stamped asset URLs and
     inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants, tagMeanings and thumbs, every
     card's name and key in order (app.js cardByName, text.js's renderer) and the id, name and picture of the cards the
-    chapters name (any look-alike too); the UNSTAMPED and FONTS_DIR trees (_trees()), the book fonts (book_fonts()) and
-    Chrome's version.
+    chapters name (any look-alike too); the UNSTAMPED and FONTS_DIR trees (_trees()) and the book fonts (book_fonts()).
+    Not Chrome's version (as key(): the runners' two images differ in it).
     """
     data, index = seen["cards"], seen["index"]
     cards = [c for c in site_cards(data) if isinstance(c, dict)]
@@ -331,13 +333,9 @@ def pre_key(seen: dict, trees: list, fonts: list, exe: str) -> str:
             named[loose(m.group(2))] = named.get(loose(m.group(2))) or bool(m.group(1))
     refs = [[c.get("id"), c.get("name"), c.get("img") if any(named.get(loose(k)) for k in (c.get("name"), c.get("key"))) else ""]
             for c in cards if any(loose(k) in named for k in (c.get("name"), c.get("key")))]
-    try:
-        chrome = run_process([exe, "--version"], stdout=PIPE, stderr=DEVNULL, timeout=30).stdout.decode(errors="replace").strip()
-    except (OSError, TimeoutExpired):
-        chrome = ""
-    parts = ["pre 1", KEY_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
+    parts = ["pre 2", KEY_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
              {k: data.get(k) for k in ("icons", "iconVariants", "tagMeanings", "thumbs")},
-             [[c.get("name"), c.get("key")] for c in cards], refs, trees, sha256(dumps(fonts).encode()).hexdigest(), chrome]
+             [[c.get("name"), c.get("key")] for c in cards], refs, trees, sha256(dumps(fonts).encode()).hexdigest()]
     return sha256(dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -347,10 +345,10 @@ def page_sha(png: bytes) -> str:
         return sha256(im.convert("RGB").tobytes() + str(im.size).encode()).hexdigest()
 
 
-def read_pages(checkout: str, folder: str = "") -> dict:
+def read_pages(checkout: str, folder: str = "", path: str = "") -> dict:
     """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}], "key": the print's key}.
-    folder: its folder (default: the checkout's)."""
-    path = join(folder or join(checkout, RULEBOOK_PAGES), PAGES_JSON)
+    folder: its folder (default: the checkout's); path: the file itself."""
+    path = path or join(folder or join(checkout, RULEBOOK_PAGES), PAGES_JSON)
     try:
         with open(path, encoding="utf-8") as fh:
             data = loads(fh.read())
@@ -507,13 +505,14 @@ def _out_start(checkout: str, out: str) -> None:
     replace(join(out, LOOK_FILE + ".part"), join(out, LOOK_FILE))
 
 
-def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False, out: str = "") -> str:
+def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False, out: str = "", kept: str = "") -> str:
     """
     The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
     and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
     again); else nothing changes and the report says LAGS. Chrome is not started when pages.json's pre is the website's
     pre_key() and the PDF is there (full: Chrome looks in any case). out: the PDF and pages.json go there
-    (_out_start(): the checkout's copied in first, LOOK_FILE written), the checkout left alone.
+    (_out_start(): the checkout's copied in first, LOOK_FILE written), the checkout left alone. kept: another lane's
+    pages.json: its key and pre stand for pages.json's when its pages and PDF are the same (written with the pages).
 
     Returns:
         The report (one line; then a ::warning:: line when the pre-key held but the key changed)
@@ -532,6 +531,11 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     folder = out or join(checkout, RULEBOOK_PAGES)
     old, fonts, trees = read_pages(checkout, folder), book_fonts(checkout), _trees(checkout)
     has_pdf = isfile(join(folder, PDF_FILE))
+    stored = (old.get("key"), old.get("pre"))
+    other = read_pages("", path=kept) if kept else {}
+    if has_pdf and other.get("key") and [other.get(k) for k in ("pages", "pdf")] == [old.get(k) for k in ("pages", "pdf")]:
+        old = {**old, "key": other["key"], "pre": other.get("pre", "")}       # a lane's look that committed nothing
+    note = "; a kept look" if (old.get("key"), old.get("pre")) != stored else ""
     known = old.get("key", "") if has_pdf else ""
     until = monotonic() + wait
     while True:
@@ -539,10 +543,12 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
         if not seen:
             return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
                     f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
-        pre = pre_key(seen, trees, fonts, exe)
+        pre = pre_key(seen, trees, fonts)
         held = has_pdf and pre == old.get("pre")
         if held and not full:
-            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
+            if note:
+                _put_listing(join(folder, PAGES_JSON), old)
+            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started{note})."
         theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
         try:
             met = page != seen["page"]                                   # a deploy mid-look: the new build is live
@@ -551,9 +557,9 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
                 warn = ("\n::warning::Rulebook PDF: the pre-key held but the pages' key changed: pre_key misses an input."
                         if held and drawn != known else "")
                 if shots is None:
-                    if pre != old.get("pre"):
+                    if (drawn, pre) != stored:
                         _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
-                    return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''})."
+                    return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''}{note})."
                 done = write_pages(folder, shots, printer.pdf, drawn, pre)
         finally:
             printer.close()
@@ -578,9 +584,10 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--wait", type=float, default=SITE_WAIT, help="seconds to wait for the website to show HEAD's rulebook")
     parser.add_argument("--full", action="store_true", help="Chrome looks even when the pre-key held (the schedule's run)")
     parser.add_argument("--out", default="", help="the PDF and pages.json go here (the checkout's copied in first), with inputs")
+    parser.add_argument("--kept", default="", help="another lane's pages.json: its key and pre count when its pages and PDF are the checkout's")
     options = parser.parse_args(args)
     try:
-        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full, out=options.out)
+        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full, out=options.out, kept=options.kept)
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError, HTTPException) as e:
         print(f"Rulebook PDF not printed: {e}")
         return 1
