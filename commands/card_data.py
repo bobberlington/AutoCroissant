@@ -233,6 +233,7 @@ class CardBuild:
         self._populate_types_from_response()
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response())
         self.parser.linked = self._file_bytes           # a placed title's file (Gust of Wind's blurred names)
+        self.parser.blob = lambda sha: self._blob(sha).content  # a star undo's PSD before its shrink (psd_details)
 
         self.edits = self._edits_from_response()
         self.dup_pngs = self._dup_pngs()                # before the parse's workers fork

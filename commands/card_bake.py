@@ -650,6 +650,7 @@ def vocabulary(snapshot: Snapshot):
             held[sha] = snapshot.fetch(sha)
         return held[sha]
     parser.linked = linked
+    parser.blob = snapshot.fetch                # a star undo's PSD before its shrink (psd_edit._blob_psd)
     return parser
 
 
