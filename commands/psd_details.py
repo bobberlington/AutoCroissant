@@ -32,8 +32,9 @@ from psd_tools.constants import Resource
 import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
-    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _merge_twins,
-    _moved_box, _outside_units, _reading, _star_layouts, _star_units, _texts, offline_parser, plan_stars, type_row,
+    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _memo_holds,
+    _merge_twins, _moved_box, _outside_units, _reading, _star_layouts, _star_units, _texts, _undo, canonical_type,
+    icon_memo, layer_parents, offline_parser, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -634,10 +635,42 @@ def _type_header(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dic
             "refused": f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop" if tokens else None}
 
 
+def _types_back(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dict]:
+    """
+    Back to the card maker's type icons while the PSD's types memo holds (plan_types' undo, D14): {"types": the
+    maker's, "erase": [box] of the shown icons it hides, deletes or moves, "draw": [{name, core}] of the icons shown once
+    it has shown or moved them}. None without one.
+    """
+    if icon_memo(psd, "types") is None:          # most cards: no bake left one
+        return None
+    parser = _icon_parser(vocab)
+    images, _ = type_row(psd, parser, name)
+    memo = _memo_holds(psd, "types", [one for one, _ in images], parser)
+    if memo is None:
+        return None
+    plan = _undo(psd, memo, "types", "")
+    moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
+    shown = {id(layer) for layer in plan.show}
+    hidden = {id(layer) for layer in plan.hide} | {id(one) for layer in plan.removed
+                                                    for one in [layer, *(layer.descendants() if layer.is_group() else ())]}
+    icon = lambda layer: not layer.is_group() and layer.name.lower() in parser.all_types
+    after = lambda layer: (id(layer) in shown or layer.visible and id(layer) not in hidden) and \
+        all(parent.visible for parent in layer_parents(layer))
+    touched = list({id(layer): layer for layer in [*plan.show, *plan.hide, *plan.removed,
+                                                   *(layer for layer, _, _ in plan.moves)]}.values())
+    erase = [layer for layer in touched if icon(layer) and layer.is_visible() and (id(layer) in hidden or id(layer) in moved)]
+    draw = [layer for layer in touched if icon(layer) and after(layer) and (id(layer) in shown or id(layer) in moved)]
+    return {"types": list(memo["count"]), "erase": [_ints(tuple(layer.bbox)) for layer in erase],
+            "draw": [{"name": canonical_type(parser, layer.name),
+                      "core": _ints(_moved_box(_icon_core(layer, rel), *moved.get(id(layer), (0, 0))))} for layer in draw]}
+
+
 def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None) -> dict:
-    """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
+    """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's; a
+    types memo's way back (types_back)."""
+    back = _guard(_types_back, psd, name, vocab, rel)
     return {"stars": _guard(_star_header, psd, rel, vocab, parser),
-            "types": _guard(_type_header, psd, name, vocab, rel)}
+            "types": _guard(_type_header, psd, name, vocab, rel), **({"types_back": back} if back is not None else {})}
 
 
 def _tree(group, depth: int = 0) -> list:
