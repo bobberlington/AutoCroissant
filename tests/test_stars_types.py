@@ -1129,12 +1129,12 @@ def test_stars_back_to_the_makers_count_undo_the_bakes_moves(parser, tmp_path):
     changed in Photoshop since (another InstanceID) or with a memo'd star moved plans afresh."""
     paths = _xmp_card(_fixture(tmp_path, stars=((1080, 20), (970, 20), (860, 20))))
     was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
-    assert pe.star_memo(original) is None
+    assert pe.icon_memo(original, "stars") is None
     for k, value in enumerate((4, 5, 3)):
         (tmp_path / f"s{k}").mkdir()
         _, baked = _bake(parser, paths, {"stars": value}, tmp_path / f"s{k}")
         paths = (baked.psd_path, baked.png_path)
-        memo = pe.star_memo(PSDImage.open(baked.psd_path))
+        memo = pe.icon_memo(PSDImage.open(baked.psd_path), "stars")
         assert (memo["count"], memo["now"]) == (3, value) if value != 3 else memo is None
     assert baked.icons == {"stars": "the card maker's own layout"} and _layers_of(paths[0]) == was
     saved = PSDImage.open(paths[0])
@@ -1145,7 +1145,7 @@ def test_stars_back_to_the_makers_count_undo_the_bakes_moves(parser, tmp_path):
     parsed = pe.parse_card(parser, four.psd_path, REL)
     assert pe.plan_stars(PSDImage.open(four.psd_path), parsed, 3, parser).undo
     changed = PSDImage.open(four.psd_path)
-    pe.set_star_memo(changed, {**pe.star_memo(changed), "iid": "xmp.iid:b"})     # Photoshop saved it since
+    pe.set_icon_memo(changed, "stars", {**pe.icon_memo(changed, "stars"), "iid": "xmp.iid:b"})     # Photoshop saved it since
     assert not pe.plan_stars(changed, parsed, 3, parser).undo
     moved = PSDImage.open(four.psd_path)
     next(layer for layer in moved.descendants() if layer.name == "Star copy").left += 5
@@ -1182,3 +1182,36 @@ def test_a_real_row_comes_back(clone, parser, tmp_path):
     _, back = _bake(parser, (four.psd_path, four.png_path), {"stars": 3}, tmp_path / "back", rel)
     assert back.icons == {"stars": "the card maker's own layout"} and _layers_of(back.psd_path) == was
     assert (pe.render_all(PSDImage.open(back.psd_path)) == pe.render_all(original)).all()
+
+
+def test_types_back_to_the_makers_undo_the_bakes_moves(parser, tmp_path):
+    """Types as D14's stars: [fire, water] -> [water] (Fire hidden, Water slid up) -> [water, ice] (ice made) ->
+    [water, fire] brings the maker's row back exactly (layers, pixels, XMP, no Types/ link left); the mock-up's record
+    takes the same way back; a Photoshop save since plans afresh."""
+    import commands.psd_details as pd
+    types_dir = _types_dir(tmp_path)
+    paths = _xmp_card(_fixture(tmp_path, types=(("Fire", (30, 30)), ("Water", (30, 200)))))
+    psd = PSDImage.open(paths[0])
+    for layer in psd.descendants():           # ids, as Photoshop gives every layer
+        pe._issue_id(psd, layer)
+    psd.save(paths[0])
+    was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
+    for k, value in enumerate((["water"], ["water", "ice"], ["water", "fire"])):
+        (tmp_path / f"t{k}").mkdir()
+        _, baked = _bake(parser, paths, {"types": value}, tmp_path / f"t{k}", types_dir=types_dir)
+        paths = (baked.psd_path, baked.png_path)
+        if k == 0:
+            psd = PSDImage.open(paths[0])
+            assert pe.icon_memo(psd, "types")["count"] == ["fire", "water"]
+            back = pd._types_back(psd, "Fixture", ["fire", "water", "ice"], REL)
+            assert back["types"] == ["fire", "water"] and len(back["erase"]) == 1
+            assert sorted(one["name"] for one in back["draw"]) == ["fire", "water"]
+            changed = PSDImage.open(paths[0])
+            pe.set_icon_memo(changed, "types", {**pe.icon_memo(changed, "types"), "iid": "xmp.iid:b"})
+            assert _plan(parser, paths[0], REL, "types", ["fire", "water"]).undo
+            assert not pe.plan_types(changed, pe.parse_card(parser, paths[0], REL), ["fire", "water"], parser).undo
+    assert baked.icons == {"types": "the card maker's own icons"} and _layers_of(paths[0]) == was
+    saved = PSDImage.open(paths[0])
+    assert saved.image_resources.get_data(pe.Resource.XMP_METADATA) == XMP
+    assert pe._document_blocks(saved) == pe._document_blocks(original)
+    assert (pe.render_all(saved) == pe.render_all(original)).all()
