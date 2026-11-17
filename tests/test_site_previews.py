@@ -227,3 +227,23 @@ out(["hp", "def", "atk", "spd"].filter(k => !bars.some(r => r.k === k)));""")
     image = Image.fromarray(img)
     assert js == ["atk", "spd"] and cp.mock_misses(image, psd, card, kinds, 1.0) == js
     assert set(js) <= set(cp.mock_misses(image, psd, card, kinds))
+
+
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
+def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
+    """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's
+    _icon_image links it, the opaque part filling the spot, not the whole file fitted into it."""
+    import numpy as np
+    from PIL import Image
+    from commands.psd_edit import _icon_image
+    a = np.zeros((96, 80), np.uint8)
+    a[10:86, 20:62] = 60                                    # the glow
+    a[24:70, 28:54] = 255
+    rgba = np.dstack([np.full_like(a, 200)] * 3 + [a])
+    Image.fromarray(rgba, "RGBA").save(tmp_path / "light.png")
+    (tmp_path / "light.raw").write_bytes(rgba.tobytes())
+    box = (100, 200, 140, 236)
+    quad = _icon_image(str(tmp_path / "light.png"), box, whole=True)[3]
+    x, y, w, h = node(tmp_path, f"""const d = new Uint8ClampedArray((await import("node:fs")).readFileSync({json.dumps(str(tmp_path / "light.raw"))}));
+out(m.fitPart(80, 96, m.opaquePart(d, 80, 96), {json.dumps(box)}).slice(0, 4));""")
+    assert max(abs(p - q) for p, q in zip((x, y, x + w, y + h), (quad[0], quad[1], quad[4], quad[5]))) <= 1
