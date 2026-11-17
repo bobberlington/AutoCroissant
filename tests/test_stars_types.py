@@ -1293,3 +1293,30 @@ def test_other_creatures_icon_stays_off_the_header(clone, parser):
         _plan(parser, path, rel, "types", ["light"])
     header = pd._type_header(PSDImage.open(path), "Tainted_Lazarus", parser.all_types, rel, parsed["info"])
     assert [row["name"] for row in header["row"]] == ["light"] and [name for name, _ in header["fixed"]] == ["undead"]
+
+
+def test_a_shrink_comes_back(clone, parser, tmp_path, monkeypatch):
+    """D14 after option B: Remote Detonator 2 -> 4 shrinks every star; back to 2 draws the maker's two again from the
+    PSD the shrink started from (parser.blob, the plates' path too); without that PSD the return plans afresh."""
+    import commands.card_plates as card_plates
+    rel = "N.M.E/Remote_Detonator.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    raw = Path(paths[0]).read_bytes()
+    was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
+    (tmp_path / "four").mkdir()
+    _, four = _bake(parser, paths, {"stars": 4}, tmp_path / "four", rel)
+    psd, data = PSDImage.open(four.psd_path), Path(four.psd_path).read_bytes()
+    memo, parsed = pe.icon_memo(psd, "stars"), pe.parse_card(parser, four.psd_path, rel, psd)
+    sha = pe.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+    assert memo["v"] == 2 and memo["scaled"] and memo["from"]["blob"] == sha
+    monkeypatch.setattr(parser, "blob", lambda sha: None, raising=False)
+    assert not pe.plan_stars(psd, parsed, 2, parser).undo
+    monkeypatch.setattr(parser, "blob", {sha: raw}.get)
+    png = Image.open(four.png_path)
+    merged = card_plates.star_value(psd, data, png, parsed, parser, rel, 2, pe.export_icc(psd, png))
+    first = np.asarray(Image.open(paths[1]).convert("RGB"), np.int16)
+    assert merged is not None and np.abs(np.asarray(merged.convert("RGB"), np.int16) - first).max() <= 2
+    (tmp_path / "back").mkdir()
+    _, back = _bake(parser, (four.psd_path, four.png_path), {"stars": 2}, tmp_path / "back", rel)
+    assert _layers_of(back.psd_path) == was and pe.icon_memo(PSDImage.open(back.psd_path), "stars") is None
+    assert (pe.render_all(PSDImage.open(back.psd_path)) == pe.render_all(original)).all()
