@@ -536,7 +536,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     _png(repo["root"] / "MDW/The Morgue/White_Palace.png", 70)
     palace_commit, _ = _commit(repo["root"], "Palace picture", 1_780_000_000 + 3 * DAY)
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
+    alpha = _by_name(out["cards.json"])["Alpha"]
     rows = out["versions.json"]["early"][alpha["id"]]
     # after the repo's rows, newest first; the stale paper row left out; no review field, no link
     assert [r["k"] for r in rows] == ["old repo", "discord"] and not any("label" in r or "cov" in r for r in rows)
@@ -556,7 +556,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     assert (muru["created"], muru["createdFrom"], muru["createdBefore"], muru["lost"]) == ("2019-01-01", "photo", 2020,
                                                                                           "played") and "first" not in muru
     assert muru["inGit"] and "inGit" not in joke[0]                                  # its first repo file: lost before this repo
-    assert "M'uru" not in _by_name(out["cards.json"]["cards"])
+    assert "M'uru" not in _by_name(out["cards.json"])
     taken = bs.history_morgue({"morgue": [("_morgue/joke-card", json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()))]},
                               bs.slugify, {"joke-card"})[0]
     assert taken[0]["id"] == "joke-card-morgue"                                      # a renamed card's old page stays its
@@ -564,7 +564,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
            "first": {"date": "2023-10-29T17:04:44+00:00", "day": "2023-10-29", "channel": None, "source": "old repo"}}
     eld = bs.history_morgue({"morgue": [("_morgue/joke-card", eld)]}, bs.slugify)[0][0]
     assert eld["firstOld"] and eld["inGit"] and "firstCh" not in eld and "firstOld" not in joke[0]   # first seen in the old repo
-    assert "Joke Card" not in _by_name(out["cards.json"]["cards"]) and out["versions.json"]["early"][joke[0]["id"]]
+    assert "Joke Card" not in _by_name(out["cards.json"]) and out["versions.json"]["early"][joke[0]["id"]]
     # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
     palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")
     assert [out["versions.json"]["commits"][r[0]][0] for r in out["versions.json"]["cards"][palace["id"]]] == [palace_commit]
@@ -593,6 +593,6 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")
-    assert "early" not in plain["versions.json"] and "ive" not in _by_name(plain["cards.json"]["cards"])["Alpha"]
+    assert "early" not in plain["versions.json"] and "ive" not in _by_name(plain["cards.json"])["Alpha"]
     assert all(not c.get("lost") and "iv" not in c for c in plain["cards.json"]["morgue"])
     assert not set(plain["versions.json"]["cards"]) & {c["id"] for c in plain["cards.json"]["morgue"]}
