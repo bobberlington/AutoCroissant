@@ -507,7 +507,7 @@ async def _announce(post: Post, results_id: int) -> None:
 
 async def _shut(post: Post) -> None:
     thread = post.thread
-    if thread.locked and thread.archived:
+    if thread.locked and thread.archived and "closed tags" in post.done:   # else Closed reopens it: archived again
         return
     if not _can_manage(post.forum):
         raise Waits("the bot needs Manage Threads in the forum")
@@ -756,7 +756,7 @@ def status_text(client=None) -> str:
              f"Role asked to vote on day 6: <@&{setting('role')}>",
              f"Results channel: <#{setting('results')}>",
              f"Open posts: {len(open_posts)}"]
-    steps = [datetime.fromisoformat(e["created"]) + (CLOSE_AFTER if _finished(e, "ping") else PING_AFTER)
+    steps = [datetime.fromisoformat(e["created"]) + (CLOSE_AFTER if "ping" in e["done"] else PING_AFTER)
              for e in open_posts]
     if steps:
         lines.append(f"Next step: <t:{int(min(steps).timestamp())}:R>")

@@ -95,6 +95,8 @@ class Thread:
             raise _error(NotFound, 404, 10003, "Unknown Channel")
         if "edit" in self.refuse:
             raise _error(Forbidden, 403, 50013, "Missing Permissions")
+        if "access" in self.refuse:                     # what Discord answered the jetson on 11-16
+            raise _error(Forbidden, 403, 50001, "Missing Access")
         if self.archived and kw.get("archived") is not False:
             raise _error(HTTPException, 400, 50083, "Thread is archived")
         if "applied_tags" in kw:
@@ -546,7 +548,7 @@ def test_refused_tags_and_lock_wait_then_close_once_allowed(clock, capsys):
     forum = Forum()
     client = Client(forum)
     post = Thread(forum, T0)
-    post.refuse = {"edit"}
+    post.refuse = {"access"}
     passes(client, T0, T0 + timedelta(minutes=5), DAY6, DAY7, DAY7 + timedelta(minutes=5), now=clock)
     out = capsys.readouterr().out
     assert post.tags == [] and len(post.starter.reactions) == 3 and len(post.messages) == 2 and not post.locked
@@ -569,14 +571,23 @@ def test_without_manage_threads_no_edit_is_tried(clock, capsys):
     forum.guild.me, forum.permissions_for = SimpleNamespace(id=BOT), lambda member: perms
     client = Client(forum)
     post = Thread(forum, T0, tags=("Open",))
-    passes(client, T0, DAY6, DAY7, DAY7 + timedelta(minutes=5), now=clock)
+    passes(client, T0, DAY6, now=clock)
+    close = int((T0 + fv.CLOSE_AFTER).timestamp())
+    clock[0] = DAY6 + timedelta(hours=12)              # the closing tag waits: the next step is still the close
+    assert f"Next step: <t:{close}:R>" in fv.status_text(client)
+    passes(client, DAY7, DAY7 + timedelta(minutes=5), now=clock)
     out = capsys.readouterr().out
     assert post.edits == [] and post.tags == ["Open"] and len(post.messages) == 2
     assert out.count(f"post {post.id}: lock waits (Waits: the bot needs Manage Threads in the forum)") == 1
     assert "open tag" in saved()["posts"][str(post.id)]["done"]
-    perms.manage_threads = True
+    post.locked = True                                  # a person locks and archives it while it waits
+    post._archive(True)
     passes(client, DAY7 + timedelta(minutes=10), now=clock)
-    assert post.tags == ["Closed"] and post.locked and saved()["posts"][str(post.id)]["end"] == "closed"
+    assert post.edits == [] and saved()["posts"][str(post.id)]["waiting"] == ["closed tags", "lock"]
+    perms.manage_threads = True
+    passes(client, DAY7 + timedelta(minutes=15), now=clock)
+    assert post.tags == ["Closed"] and post.locked and post.archived
+    assert saved()["posts"][str(post.id)]["end"] == "closed"
 
 
 def test_failed_winner_message_logged_once_and_the_close_goes_on(clock, capsys):
