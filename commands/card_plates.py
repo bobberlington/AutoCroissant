@@ -51,6 +51,7 @@ SEAM_SHARE = 0.002                          # of a crop's off-ink pixels: more, 
 GAP = 8                                     # px between crops in the sheet (AVIF blocks stay apart)
 QUALITY = 60
 KINDS = ("title", "ability")
+OVER_SHARE = 0.01                           # of a copy's shown px another layer may cover (Wickerbottom's crest)
 LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: the layout isn't the card's, none kept
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 TEXTURES = ("pixel", "smartobject", "shape", "solidcolorfill", "gradientfill", "patternfill")   # adjustments alone: none
@@ -200,14 +201,14 @@ def _without(psd: PSDImage, groups: list, png: np.ndarray, icc: bool, step: int,
     return box, images, seam, inks
 
 
-def layout(layer, fonts_dir: str) -> Optional[dict]:
+def layout(layer, fonts_dir: str, stored: bool = True) -> Optional[dict]:
     """
     The fork's layout of a type layer in canvas px, when it draws the stored pixels (card_standards._ink_off within
     LAYOUT_OFF) and is not turned (TILT): {"text": the engine's text (\\r paragraphs, \\x03 breaks), "lines": [[start,
     end, baseline, left, right, top, bottom, justification]], "glyphs": [[char index, pen x, ink left, ink right]],
     "frame": [left, right] or None (point text)}, else None. start/end index text (end: the break excluded); baseline:
     its letters' (BaselineShift in); left/right: the pen's ends; top/bottom: the ink's, underlines too; a blank glyph
-    has no ink ends.
+    has no ink ends. stored False: also when it doesn't draw them (a warped layer: the bake re-lays it unwarped).
     """
     from statistics import median
     from psd_tools.composite.text.geometry import text_geometry
@@ -220,7 +221,7 @@ def layout(layer, fonts_dir: str) -> Optional[dict]:
     if xx <= 0 or yy <= 0 or max(abs(xy), abs(yx)) > TILT * xx:
         return None
     geo = text_geometry(layer, faces)
-    if _ink_off(layer, faces, geo) > LAYOUT_OFF:
+    if stored and _ink_off(layer, faces, geo) > LAYOUT_OFF:
         return None
     lay = lay_out(model, faces)
     if (geo["missing_fonts"] or not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
@@ -254,6 +255,93 @@ def layout(layer, fonts_dir: str) -> Optional[dict]:
             "frame": [r(xx * box[0] + tx), r(xx * (box[0] + box[2]) + tx)] if box else None}
 
 
+def _layout(layer, fonts_dir: Optional[str], relaid: bool = False) -> dict:
+    """layout()'s keys, or {}; relaid: else {"relaid": [[left, top, right, bottom]]}, its lines as the bake sets them."""
+    try:
+        got = layout(layer, fonts_dir) if fonts_dir else None
+        if got or not relaid or not fonts_dir:
+            return got or {}
+        got = layout(layer, fonts_dir, stored=False)
+        return {"relaid": [[left, top, right, bottom] for _, _, _, left, right, top, bottom, _ in got["lines"]]} if got else {}
+    except Exception as error:                  # noqa: BLE001 - no layout: the mock-up finds the lines
+        print(f"{layer.name}: no layout: {type(error).__name__}: {error}", file=stderr)
+        return {}
+
+
+def _over(psd: PSDImage, layer, box: tuple, shown: np.ndarray, cropped: set) -> Optional[list]:
+    """The ids of the cropped layers drawn over layer where it shows (shown: a mask of box, canvas px), or None:
+    another layer covers more than OVER_SHARE of it."""
+    above, out = False, []
+    for other in psd.descendants():
+        if other is layer:
+            above = True
+            continue
+        b = other.bbox if above and other.kind != "group" and other.is_visible() else (0, 0, 0, 0)
+        x0, y0, x1, y1 = max(b[0], box[0]), max(b[1], box[1]), min(b[2], box[2]), min(b[3], box[3])
+        if x1 <= x0 or y1 <= y0 or not shown[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]].any():
+            continue
+        if other.layer_id in cropped:
+            out.append(other.layer_id)
+            continue
+        try:
+            alpha = np.asarray(other.topil().convert("RGBA"))[y0 - b[1]:y1 - b[1], x0 - b[0]:x1 - b[0], 3] > 0
+        except Exception:                       # noqa: BLE001 - no pixels to tell: it covers it
+            return None
+        if (alpha & shown[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]).sum() > OVER_SHARE * shown.sum():
+            return None
+    return out
+
+
+def _fill(layer, px: np.ndarray) -> Optional[list]:
+    """The median colour of a layer's shown pixels (px: [n, 3]) off its Stroke's (psd_details'), or None (too few)."""
+    from commands.psd_details import _stroke
+    stroke = _stroke(layer)
+    if stroke:
+        px = px[np.abs(px - np.array(stroke[:3])).max(-1) > 60]
+    return [int(v) for v in np.median(px, 0)] if len(px) >= 20 else None
+
+
+def _stacked(psd: PSDImage, layer, copies: list, png: np.ndarray, icc: bool, step: int) -> list:
+    """
+    Copies of layer stacked on it (its words moved a little: Tainted Eden's red and cyan titles), hidden in its crop:
+    [{"id", "at": [dx, dy] canvas px from it, "above": drawn over it, "ch": the RGB channels it paints (its blending
+    restrictions; all: none), "fill": its colour where it shows (its own overlay's; none: the layer's)}]. A copy of
+    other words or size, or an overlay whose colour can't be read: none.
+    """
+    if not copies:
+        return []
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
+    from psd_tools.constants import Tag
+    order = {x.layer_id: n for n, x in enumerate(psd.descendants())}
+    out = []
+    for copy in copies:
+        try:
+            a, b = layer.transform, copy.transform
+            same = copy.text.strip() == layer.text.strip() and tuple(a[:4]) == tuple(b[:4])
+        except Exception:                       # noqa: BLE001 - text psd-tools can't read
+            same = False
+        if not same:
+            continue
+        one = {"id": copy.layer_id, "at": [round(b[4] - a[4], 1), round(b[5] - a[5], 1)],
+               "above": order[copy.layer_id] > order[layer.layer_id]}
+        blocks = copy._record.tagged_blocks
+        shut = (blocks.get_data(Tag.CHANNEL_BLENDING_RESTRICTIONS_SETTING) if blocks else None) or []
+        if any(c in shut for c in range(3)):
+            one["ch"] = [c for c in range(3) if c not in shut]
+        if copy.effects.enabled and any(isinstance(e, (ColorOverlay, GradientOverlay, PatternOverlay)) and e.enabled
+                                        for e in copy.effects):
+            got = _without(psd, [[copy]], png, icc, step)
+            if got is None:
+                continue
+            box, (plate,), _, _ = got
+            shown = png[box[1]:box[3], box[0]:box[2]]
+            one["fill"] = _fill(copy, shown[np.abs(shown - _rgb(plate)).max(-1) > SEAM])
+            if not one["fill"]:
+                continue
+        out.append(one)
+    return out
+
+
 def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None,
            pictures: Optional[dict] = None, raw: Optional[bytes] = None) -> Optional[dict]:
     """
@@ -261,8 +349,11 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
     layer with FX layers on it has a second crop without them too, its "fx" their status words (the mock-up's when
     one leaves the text: the bake moves FX layers with their words). With fonts_dir, a layer's first crop also has
-    its layout() keys ("text", "lines", "glyphs", "frame"). With raw, a textured layer's letter_look() is in img too:
-    "letters": [{"id", "fill", "box", "at"}] (the mock-up fills typed letters of that colour with it).
+    its layout() keys ("text", "lines", "glyphs", "frame"). Its copies stacked on it (parts' follow) are hidden in its
+    crops, the first one's "stacked" (_stacked) telling how the bake draws them; a copy or watermark elsewhere has a crop
+    of its own ("fill": its colour where it shows, "over": the cropped layers drawn over it, "relaid": _layout's), one
+    that never shows none. With raw, a textured layer's letter_look() is in img too: "letters": [{"id", "fill", "box",
+    "at"}] (the mock-up fills typed letters of that colour with it).
 
     Args:
         psd: The card
@@ -278,7 +369,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
-    found, looks = [], []
+    found, looks, cropped = [], [], set()
     tagged = len(variants_of(psd)) > 1
     views = [(1 if tagged else None, png, dict.fromkeys(layer_ids(parts)))]
     for n, picture in sorted((pictures or {}).items()) if tagged else ():
@@ -295,12 +386,10 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                 copies = [by_id[f["id"]] for f in follow if lid in (f.get("of") or []) and f.get("id") in by_id]
                 got = crop(psd, layer, truth, icc, step, copies)
                 if got:
-                    try:
-                        lay = layout(layer, fonts_dir) if fonts_dir else None
-                    except Exception as error:      # noqa: BLE001 - no layout: the mock-up finds the lines
-                        print(f"{layer.name}: no layout: {type(error).__name__}: {error}", file=stderr)
-                        lay = None
-                    found.append(({"id": lid, **(lay or {})}, *got))
+                    stacked = _stacked(psd, layer, [c for c in copies if _meets(layer, c)], truth, icc, step)
+                    found.append(({"id": lid, **_layout(layer, fonts_dir), **({"stacked": stacked} if stacked else {})},
+                                  *got))
+                    cropped.add(lid)
                 fx = [x for x in psd_edit.fx_layers(psd, layer) if _meets(layer, x)]
                 got = crop(psd, layer, truth, icc, step, [*copies, *fx]) if fx else None
                 if got:
@@ -313,6 +402,20 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                     look = None
                 if look:
                     looks.append(({"id": lid, "fill": look[2]}, look[0], look[1], None, None))
+            for f in follow:                    # a copy or watermark elsewhere: its own crop
+                one, of = by_id.get(f.get("id")), [by_id[i] for i in f.get("of") or [] if i in by_id and i in ids]
+                if one is None or not of or one.layer_id in cropped or any(_meets(x, one) for x in of):
+                    continue
+                got = crop(psd, one, truth, icc, step)
+                if got:
+                    box, plate = got[0], got[1]
+                    shown = np.abs(truth[box[1]:box[3], box[0]:box[2]] - _rgb(plate)).max(-1) > SEAM
+                over = _over(psd, one, box, shown, cropped) if got else None
+                fill = _fill(one, truth[box[1]:box[3], box[0]:box[2]][shown]) if over is not None else None
+                if fill:
+                    found.append(({"id": one.layer_id, **_layout(one, fonts_dir, True), "fill": fill, **({"over": over} if over else {})},
+                                  *got))
+                    cropped.add(one.layer_id)
     if not found and not looks:
         return None
     small = [(key, box, ink, image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),
