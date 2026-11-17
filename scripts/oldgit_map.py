@@ -44,10 +44,17 @@ def tie_applies(tie, target, confidence, meme: bool, stats) -> bool:
         tie.get("key") in stats
 
 
-def owner_map(oid: str, maps: dict, stats: dict):
-    """The owner's ruling on an old card (owner.json maps): (('live', key), answer) when its card is live, else None."""
+def owner_map(oid: str, maps: dict, stats: dict, archived: dict = None):
+    """The owner's ruling on an old card (owner.json maps): ((status, key), answer) for a live card or an archived one
+    (Giegue), ((None, None), answer) for key null (a different card: no rule maps it), else None."""
     ruled = maps.get(oid) or {}
-    return (("live", ruled["key"]), ruled.get("answer")) if ruled.get("key") in stats else None
+    if oid in maps and ruled.get("key") is None:
+        return (None, None), ruled.get("answer")
+    if ruled.get("key") in stats:
+        return ("live", ruled["key"]), ruled.get("answer")
+    if ruled.get("key") in (archived or {}):
+        return resolve_archived(ruled["key"], stats, archived), ruled.get("answer")
+    return None
 
 
 # ========================
@@ -482,8 +489,13 @@ def map_main():
             if old_copy and not path_target:
                 why.append("an old copy ('Old' in the file name)")
             confidence = "unsure" if why else "sure"
-        ruled = owner_map(oid, owner_maps, stats)
-        if ruled:                                              # the owner's ruling: over the evidence (Fire Bomb, Eldman)
+        ruled = owner_map(oid, owner_maps, stats, archived)
+        off = bool(ruled) and ruled[0][0] is None              # the owner: a different card (Zero Two's meme file)
+        if off:
+            target, confidence, why, how = None, None, [], ["owner"]
+            if any("/Meme/" in p for p in old["paths"]):
+                evidence["meme_copy"] = True                   # still the Morgue's joke card's evidence
+        elif ruled:                                            # the owner's ruling: over the evidence (Fire Bomb, Eldman)
             target, confidence, why = ruled[0], "sure", []
             how = [h for h, ok in (("path", path_target == target),
                                    ("picture", bool(near) and (near[0]["status"], near[0]["key"]) == target),
@@ -492,7 +504,7 @@ def map_main():
         if first_only and confidence == "unsure" and any("/Meme/" in p for p in old["paths"]):
             target, confidence, why = None, None, []           # a meme folder's copy (a joke on a live card): evidence
             evidence["meme_copy"] = True                       # for the Morgue's joke cards, never a live card's map
-        if not target:                                         # moved into MDW/The Morgue: today's Morgue card
+        if not target and not off:                             # moved into MDW/The Morgue: today's Morgue card
             for blob in [d["blob"] for d in old["deleted"]] + list(old["at_end"].values()):
                 for p in morgue_old.get(blob, ()):
                     psd = splitext(p)[0] + ".psd"
@@ -524,7 +536,7 @@ def map_main():
             record["read"] = {k: last_read.get(k) for k in ("title", "type", "stars", "types", "stats")}
         cards[oid] = record
         meme = any("/Meme/" in p for p in old["paths"])
-        if not target and first_only:                         # the first repo's 'Grapes2': a second picture of a card
+        if not target and first_only and not off:             # the first repo's 'Grapes2': a second picture of a card
             base = SECOND.match(stems[0]) if len(stems) == 1 else None
             hit = names.get(alnum(base.group(1))) if base else None
             if hit and len(hit) == 1 and next(iter(hit))[0] == "live":
@@ -532,7 +544,7 @@ def map_main():
                     evidence["meme_copy"] = True
                 else:
                     record.update(key=next(iter(hit))[1], status="second picture", confidence="sure", how=["name"])
-        tie = ties.get(oid)
+        tie = ties.get(oid) if not ruled else None             # the owner's ruling over the eye's
         if tie_applies(tie, target, confidence, meme, stats):  # by eye: the picture is that live card's (Blooper, Eldman)
             record.update(key=tie["key"], status=tie.get("status") or "live", confidence="sure", how=["picture", "eye"],
                           eye=tie.get("why"), why_unsure=None)

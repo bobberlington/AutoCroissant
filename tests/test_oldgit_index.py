@@ -73,6 +73,12 @@ def test_the_owner_s_old_maps_rule_over_the_evidence(monkeypatch):
                                                                                 "a2000-fire-bomb")
     assert om.owner_map("Eldman", maps, stats) == (("live", "Elmadan"), "a1940-eldman")
     assert om.owner_map("Gone", maps, stats) is None and om.owner_map("Fire Bomb", maps, stats) is None
+    maps.update({"Giegue (Cards/Meme/5 Stars)": {"key": "Giegue", "answer": "a1117-meme"},    # owner 11-17: archived
+                 "Zero Two (Cards/Meme/2 Stars)": {"key": None, "answer": "a1117-meme"}})      # a different card
+    archived = {"Giegue": {"path": "Creatures/Other/6 Stars/Giegue.psd"}}
+    assert om.owner_map("Giegue (Cards/Meme/5 Stars)", maps, stats, archived) == (("archived", "Giegue"), "a1117-meme")
+    assert om.owner_map("Giegue (Cards/Meme/5 Stars)", maps, stats) is None
+    assert om.owner_map("Zero Two (Cards/Meme/2 Stars)", maps, stats, archived) == ((None, None), "a1117-meme")
     tie = {"key": "Elmadan", "status": "live"}                 # an eye tie: a lost file, or over unsure evidence
     assert om.tie_applies(tie, None, None, False, stats) and om.tie_applies(tie, ("live", "Firebomb"), "unsure", False, stats)
     assert not om.tie_applies(tie, ("live", "Firebomb"), "sure", False, stats)
