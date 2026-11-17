@@ -1,8 +1,9 @@
 # Card timelines from Discord
 
-**Status:** stage 2 in progress (2026-11-13; 11-14: the first repo found on GitHub, its commits picture rows): mined, old repo indexed, matcher run over every
+**Status:** stage 3 done, S10 publish (2026-11-17: the owner's last answers applied, the tools read only the first
+repo's store, the eras readers in `scripts/era_readers.py`): mined, old repo indexed, matcher run over every
 post, fields read, chains and Created built, review page built; a local preview built (`discord_preview`, the
-website's `HISTORY_DIR`). Nothing published (preview first, owner 11-13).
+website's `HISTORY_DIR`).
 
 ## Goal
 
@@ -41,10 +42,13 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
 
 0. **The first repo** (2022-08-24..2023-04-21): the same GitHub repo's history before the old .git, cut by the
    force-pushes of 2023-04-02 and 2023-04-21, still served by GitHub by commit id. Fetched read only (blobless, then its
-   card PNGs in one batched fetch) into a bare repo outside every repo (`~/Documents/Tools/firstrepo.git`; its
-   alternates read the old .git's objects, so one store holds both; its remote URL disabled: no lazy fetch; one path, `discord_match.FIRST_GIT`, env `TIMELINES_FIRST_GIT` after a
-   move: a step that reads it stops with an error when its `refs/first` (or the lost 2023 refs) are missing, never
-   the old .git alone).
+   card PNGs in one batched fetch) into a bare repo outside every repo (`~/Documents/Tools/firstrepo.git`; since
+   2026-11-17 it holds the old .git's pre-cut history too, objects and refs: `refs/old/main` 268c2b1 and
+   `refs/old/tc-init` 36d62e53 reach exactly the old .git's `log --all --before=<cut>`, so no tool reads
+   `~/Downloads/Old TTSCardMaker` any more: `oldgit_index` reads `--glob=refs/old/*`, env `TIMELINES_OLD_GIT` an old
+   .git instead; its remote URL disabled: no lazy fetch; one path, `discord_match.FIRST_GIT`, env `TIMELINES_FIRST_GIT` after a
+   move: a step that reads it stops with an error when its `refs/first`, `refs/old` (or the lost 2023 refs) are
+   missing, never the old .git alone).
    `scripts/oldgit_index.py` indexes its main history before the old repo's as one history (its rows: repo 'first';
    'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
    2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old
@@ -90,7 +94,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    badge "old repo", its file name shown when it is not the card's (`old_file`). The card's stop is then that draft,
    but a Discord draft (a look in no git record) posted before the first card-folder record still enters
    (`psd_first.json` `folders`, the chain's `fs_folder`: Tainted Bethany 2023-09-09 12:55, Tainted Keeper 09-10 05:32);
-   a Discord look of a draft or card-folder version posted in between is that row's.
+   a Discord look of a draft or card-folder version posted in between is that row's. A Meme folder's copy the owner
+   gave a card counts so too (`oldgit_rows.side_file`: Tyler's 2019 Mao card, filed 2022-08-24 in Cards/Meme, before
+   his own folder's 2023-10-30 file: his 2023 Discord drafts still enter).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
@@ -106,7 +112,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    owner's map rulings (`derived/review/owner.json` `maps`, read only on the review page) come over all the evidence:
    sure, how 'owner', the old name shown on the rows, never an alias (11-15: Eldman -> Elmadan, its first file under a
    misspelt title, the same PSD document; Dark_Matter.png of Cards/Kirby/4 Stars -> Dark Nebula; Fire_Bomb.png of
-   Auxillary/Items/4 Stars -> Flame Bomb; Humphreys Belly, Gasoline, Magolor and Hemorrhaging -> their live cards).
+   Auxillary/Items/4 Stars -> Flame Bomb; Humphreys Belly, Gasoline, Magolor and Hemorrhaging -> their live cards;
+   11-17: the first repo's Meme folder files Tyler, Mini Bees -> Mini Bee, Something ('Mr. Grabby') -> SOMETHING, The
+   Puppet, Double Pain -> their live cards and Giegue -> the archived Giegue; a map's key may be an archived card's,
+   and a null key is the owner's 'a different card' (Zero Two's Meme file): no later rule, eye tie or Morgue move maps
+   it, it stays the Morgue joke's evidence).
    A map change moves a card's first record (`fs`: `discord_match score`'s references), so its stop and Created
    follow only after the rerun: map, `oldgit_rows rows`, `discord_match score`, `discord_verdicts local
    --before-git`, then step 2's verdicts on (verdicts, Morgue, facts, chain, Morgue, chain, review page), the preview
@@ -278,7 +288,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    they are not collected (no item; a sure read compares as no types; so is another card's version read sure as
    kinds alone, an item then: Rock Bottom's 2023 equip); its other types stay, or go to review, without them. Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
-   40 not judged; formatting-only text is no change; types compare as the card data's tokens, the same mapping as
+   40 not judged; formatting-only text is no change; an ability box blank by eye after a text is 'removed', not
+   unknown (owner 11-17, Panda's counter damage: `derived/readers/text/eye/s10_blank_ability.json`, ability '' by
+   picture or PNG blob; a read failure stays unknown; the website shows "Ability removed" and "No ability then");
+   types compare as the card data's tokens, the same mapping as
    answers, 'infection' as 'infected', the deprecated type the owner named (11-17; Hive Knight, God Tamer, Traitor
    Lord, Uumuu, Mini Bee's orange Hollow Knight blob); an item's kinds, its subtypes, are no types change). A Discord
    look folds under "minor changes" only when every field is sure and unchanged AND its picture is near the one
