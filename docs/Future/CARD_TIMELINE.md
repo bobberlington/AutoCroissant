@@ -70,7 +70,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    its form over a known text of the same words (text_key); a field its row has none of is the picture's own sure read;
    its types, with no PSD, by eye (`derived/readers/types/eye_rows.json`, by PNG blob: the eras A-C, items and fields
    read off zoomed headers with each era's icon bank; an item's kind icons are no type), else a git version's when
-   its header matches that version's, `header_types rows` on D1-D3 as for Discord pictures, else proposed; a name
+   its header matches that version's, `header_types rows` on D1-D3 as for Discord pictures (a type an earlier run of
+   it gave counts as none, so a rerun after `oldgit_rows rows` gives the same), else proposed; a name
    sure only as the file name its PSD's composite carries goes to review when another version of the same file
    prints a longer title holding it (the title layers unread: Satou's 'Satou Matsuzaka'), and an empty ability is
    never sure with no OCR of the picture).
@@ -84,7 +85,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    card's folder; untied ones (art PSDs, icons, Ech's work files) are evidence only (`lost.json` `mdw_drafts`), never a
    lost card. A draft counts only before the card's first card-folder record (`oldgit_rows.before_folders`, and the
    matcher's references), as a picture row or, a PSD with no PNG in its commit, a `psd_only` row of its composite;
-   badge "old repo", its file name shown when it is not the card's (`old_file`).
+   badge "old repo", its file name shown when it is not the card's (`old_file`). The card's stop is then that draft,
+   but a Discord draft (a look in no git record) posted before the first card-folder record still enters
+   (`psd_first.json` `folders`, the chain's `fs_folder`: Tainted Bethany 2023-09-09 12:55, Tainted Keeper 09-10 05:32);
+   a Discord look of a draft or card-folder version posted in between is that row's.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
@@ -319,14 +323,20 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    is its id or a name only one card has; listed and skipped, never an error: an answer whose item left the page at a
    rebuild, one now read only, and, from an older page's export (its `page`, or `--page` for a file made without
    one), one carrying a value the item no longer offers), keeps them in `derived/review/rulings.json` with the file's
-   source (owner > triage > triage guess: a lower one never replaces or clears a higher; a field so given is method
+   source (owner > triage > triage guess: a lower one never replaces or clears a higher, the same answer from a higher
+   one takes its source; a field so given is method
    'owner' or 'triage', an item card's kinds stripped from given types as from read ones, and types kept in the card
    data's tokens: 'defensive minion' is defensive_minion, a minion's 2023 shield 'protective' and sword 'equip' are its
    role, defensive_minion and offensive_minion, as the old rows map raw icons; 11-16), reruns the facts when a
-   line was given a card, the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created picked, with `owner.source`
+   line was given a card, the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created
+   picked (the owner's own pick whose day the item no longer offers is held, `owner.held`, until answered again, and no
+   triage hint's yes goes below a held day: Holy Card 2023-05-31), with `owner.source`
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
-   item left the page shows as taken in (in `ruled.json`) or as not applied (its item changed: answer it again). A git
+   item left the page shows as taken in (in `ruled.json`, or settled: the rerun gives the same, e.g. its version's field
+   now from the git look's own answer, the same old blob's row, the picture's card, the Created date in use, a
+   Morgue 'no' whose entry left), as waiting (a field of a picture whose look item is open) or as not applied (its
+   item changed: answer it again, orange). A git
    look is answered by its first version's key, not its number (numbers shift when a version is added), and a
    confirming answer carries what it confirms (a field's 'yes' its value, a Created pick or hint its day, a picture's
    or a map's answer its card): an answer no radio takes any more (that version gone, a rerun proposing another value,
