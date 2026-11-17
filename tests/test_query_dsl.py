@@ -207,6 +207,32 @@ def test_rulebook_lines(monkeypatch):
                     "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]
 
 
+def test_website_rulebook_search_takes_curly_quotes(tmp_path):
+    """The website's rulebook search (app.js bookFold, highlight): a phone's curly ' and " list the same chapters and
+    marks as plain ones, the marks keeping the printed characters."""
+    assets, app = SITE_SRC / "site" / "assets", (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    code = app[app.index("const bookFold"):app.index("// ---- deck builder")]
+    script = tmp_path / "book.mjs"
+    script.write_text(f"""import fs from "fs";
+const {{ straight }} = await import({json.dumps((assets / "search.js").as_uri())});
+const RB = await import({json.dumps((assets / "rulebook.js").as_uri())});
+const NodeFilter = {{ SHOW_TEXT: 4 }}, out = [];
+const document = {{ createTreeWalker: el => {{ let i = -1; return {{ nextNode: () => ++i < el.length, get currentNode() {{ return el[i]; }} }}; }},
+  createDocumentFragment: () => ({{ append: x => x.textContent && out.push(x.textContent) }}), createElement: () => ({{}}) }};
+{code}
+const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, texts = fs.readdirSync(dir).filter(f => f.endsWith(".md")).sort()
+  .map(f => [f, bookFold(RB.plainText(RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"))))]);
+const seen = q => {{ out.length = 0; highlight([[{{ nodeValue: "It's “On Death”: can't.", replaceWith() {{}} }}]], bookFold(q));
+  return [texts.filter(([, t]) => t.includes(bookFold(q))).map(([f]) => f), [...out]]; }};
+process.stdout.write(JSON.stringify(["can't", "creature's hp", '"on death"', "it's"].map(q =>
+  [seen(q), seen(q.replace(/'/g, "\\u2019").replace(/"([^"]*)"/, "\\u201c$1\\u201d"))])));""", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    found = json.loads(done.stdout)
+    assert all(plain == curly and plain[0] for plain, curly in found), found
+    assert [marks for (_, marks), _ in found] == [["can't"], [], ["\u201cOn Death\u201d"], ["It's"]]
+
+
 def test_replies_ping_nobody(monkeypatch):
     """A reply quotes the typed text: '@everyone' in it pings nobody."""
     import commands.utils as utils
