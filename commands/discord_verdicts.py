@@ -1373,6 +1373,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         if row["id"] in eye:
             by_eye(row, eye[row["id"]] or {}, versions, cards)
         by_owner(row, owner, versions, cards)
+    hand_over(rows, dm.read_json(join(root, *MORGUE_EYE), {}) or {}, cards, {*eye, *(owner.get("pictures") or {})})
     reposts = repost_groups(rows, images, by_sha)
     memes = meme_dates(images, by_sha, records, morgue)
     meme_copy = meme_files(root)
@@ -1393,7 +1394,8 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
         if row["verdict"] in ("lost", "morgue"):
             row["card_evidence"] = card_evidence(image if row.get("cell") is None else cell, row["size_class"],
                                                  eras.get(row["sha256"]), bool(run.checked.get(row["sha256"])))
-        dated = sorted((p for p in row["posts"] if dating(p)), key=lambda p: int(p["message"]))
+        dated = sorted((p for p in row["posts"] if dating(p) or row.get("meme_dated") and not (p["bot"] or p.get("embed"))),
+                       key=lambda p: int(p["message"]))
         row["first"] = {k: dated[0][k] for k in ("date", "channel", "thread", "message")} if dated else None
         cid = row.get("card")
         if cid and row["first"] and cards.get(cid, {}).get("fs"):
@@ -1409,7 +1411,7 @@ def _build(paths: Paths, log: Callable, cards_repo: str = "") -> dict:
                          cards_repo)
     makedirs(paths.out, exist_ok=True)
     order = ["id", "verdict", "card", "cards", "conf", "review", "first", "after_git", "name_only", "created_review",
-             "eye", "owner", "no_created", "joke", "meme_repost", "meme_live", "family", "version",
+             "eye", "owner", "no_created", "joke", "meme_repost", "meme_live", "meme_dated", "handed", "family", "version",
              "methods", "maybe",
              "looks_like", "lost_group", "reason", "repost_of", "twin_of",
              "sha256", "cell", "box", "sheet", "file", "thumb", "w", "h", "shape", "size_class", "whole", "art",
@@ -1458,6 +1460,29 @@ def by_eye(row: dict, ruling: dict, versions: dict, cards: dict, by: str = "eye"
                cards=[cid], conf=1.0, version=note, reason=why, **({"eye": why} if by == "eye" else {}))
     for k in ("maybe", "meme_live", "looks_like"):
         row.pop(k, None)
+    if ruling.get("meme_dated"):                 # a meme channel's picture told the live card's: dated by those posts
+        row.update(joke=False, meme_dated=True)
+        row.pop("joke_draft", None)
+
+
+def hand_over(rows: list, morgue_eye: dict, cards: dict, told: set) -> None:
+    """The Morgue eye's 'live' and 'renamed' entries (no candidates: a live card's picture, its early or renamed look)
+    hand their pictures (the entry's own, its 'add' list) to that card: card told, look not (its review: 'look not
+    told', a 'joke picture' first when posted in meme channels), dated by any post, meme ones too. A picture the eye
+    or the owner told keeps that ruling."""
+    entries = {k: e for k, e in morgue_eye.items() if isinstance(e, dict) and e.get("status") in ("live", "renamed")
+               and e.get("card") in cards}
+    for row in rows:
+        if row["id"] in told or row["verdict"] not in ("morgue", "lost", "unsure", "none", "art"):
+            continue
+        gid = group_id(row["sha256"], row.get("cell"))
+        key = next((k for k, e in sorted(entries.items()) if row["id"] in (k, *(e.get("add") or ())) or k == gid), None)
+        if key:
+            cid = entries[key]["card"]
+            row.update(verdict="version_unsure", card=cid, cards=[cid], conf=1.0, meme_dated=True, handed=key,
+                       version={"shows": None, "unsure": f"the Morgue's eye: {cid}'s picture ({key}), not its look"})
+            for k in ("maybe", "meme_live", "looks_like", "name_only"):
+                row.pop(k, None)
 
 
 def by_owner(row: dict, owner: dict, versions: dict, cards: dict) -> None:

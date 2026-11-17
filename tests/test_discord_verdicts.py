@@ -413,3 +413,22 @@ def test_a_meme_copy_is_the_first_repos_meme_only_file_or_near_and_untold(tmp_pa
     assert copy({"file": "attachments/c.png"}, None) is None
     assert copy({"file": "attachments/c.png"}, dict(h)) == "near Cards/Meme/5 Stars/X.png"
     assert copy({"file": "attachments/c.png", "eye": "eye: its own card"}, dict(h)) is None
+
+
+def test_a_meme_picture_told_a_live_card_s_is_dated_by_its_meme_posts():
+    """s3 gap round 2: the eye's meme_dated pin (The Panda Future's 2021 meme-cards draft) and the Morgue eye's 'live'
+    and 'renamed' entries hand a meme channel's picture to the live card: no joke, dated by its meme posts."""
+    row = {"id": "P-4e0aea4307a3", "verdict": "morgue", "joke": True, "sha256": "4e0aea4307a3" + "0" * 52}
+    dv.by_eye(row, {"card": "c", "look": "draft", "meme_dated": True}, {}, {"c": {}})
+    assert (row["verdict"], row["card"], row["joke"], row["meme_dated"]) == ("draft", "c", False, True)
+    rows = [{"id": "P-29a600a85e80", "verdict": "morgue", "joke": True, "sha256": "29a600a85e" + "0" * 54},
+            {"id": "P-aaaaaaaaaaaa", "verdict": "morgue", "joke": True, "sha256": "a" * 64},
+            {"id": "P-bbbbbbbbbbbb", "verdict": "morgue", "joke": True, "sha256": "b" * 64}]
+    eye = {"LC-29a600a85e": {"status": "renamed", "card": "c"}, "LC-bbbbbbbbbb": {"status": "candidate", "card": "c"},
+           "LC-cccccccccc": {"status": "live", "card": "c", "add": ["P-aaaaaaaaaaaa"]}}
+    dv.hand_over(rows, eye, {"c": {}}, set())
+    assert [(r["verdict"], r.get("card"), r.get("handed")) for r in rows] == [
+        ("version_unsure", "c", "LC-29a600a85e"), ("version_unsure", "c", "LC-cccccccccc"), ("morgue", None, None)]
+    told = [{"id": "P-29a600a85e80", "verdict": "draft", "card": "c", "sha256": "29a600a85e" + "0" * 54}]
+    dv.hand_over(told, eye, {"c": {}}, {"P-29a600a85e80"})
+    assert told[0]["verdict"] == "draft" and "handed" not in told[0]
