@@ -76,6 +76,15 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    never sure with no OCR of the picture).
    Its rows carry the badge "first repo" (owner Q5, 11-14: picture rows, no text-only rows; its push notices in
    github-updates are evidence only: Created hints); each card's timeline stops at its first first-repo record.
+   **MDW drafts** (11-16, `oldgit_index.MDW_DRAFTS`: `MDW/Croissant's Special Folder`, `MDW/Ech's stuff`): their
+   PNGs and PSDs are indexed as lineages of their own (`M1..`, walked apart from the card folders: no move, copy or
+   name join across; old ids named after every other card's, so none changes), rows marked `mdw`. An old card of
+   drafts alone is a live card's only by an eye tie (`oldgit/eye.json` ties: t beth, Tainted_Beathany -> Tainted
+   Bethany, t laz, t teek, peak -> Crystal Peak, Star_Dream, Colosseum_Of_Fools, Hot_Spring, Baba, Baba2), read in that
+   card's folder; untied ones (art PSDs, icons, Ech's work files) are evidence only (`lost.json` `mdw_drafts`), never a
+   lost card. A draft counts only before the card's first card-folder record (`oldgit_rows.before_folders`, and the
+   matcher's references), as a picture row or, a PSD with no PNG in its commit, a `psd_only` row of its composite;
+   badge "old repo", its file name shown when it is not the card's (`old_file`).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
@@ -164,6 +173,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    first picture evidence sets Created only through review (the chain lets one dated on or after the file's Created
    day in: it can't move Created). A joke picture that is a live card's (named so by its posts
    outside meme channels, or a git version's look and text) goes to review, never the Morgue candidates.
+   A meme channel's picture the eye tells a live card's (`meme_dated`: The Panda Future's 2021 item draft, Shell
+   Shock's cursed draft) is no joke and is dated by its meme posts; the Morgue eye's `live` and `renamed` entries hand
+   their pictures (the entry's own, its `add` list) to that card (`discord_verdicts.hand_over`: card told, look not:
+   its review, a joke picture's first), never the Morgue. An eye tie may take a Meme folder's file when it says so
+   (`meme: true`: Items/Meme's The_Panda_Future, a second picture); Blanket.png is Holy Card under its old name.
    Reposts link only pictures of one card's one look. A card-sure draft first posted in a card channel (port,
    update-NN-port, card-classification, ideas-discussion, new-cards) before any meme repost of it (its own or a
    twin's) is the card's look, not a joke picture (`shown_first`; never a picture the first repo filed only in a Meme
