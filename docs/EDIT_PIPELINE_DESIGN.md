@@ -1329,7 +1329,8 @@ branch adds only its commits and trees to them; the local clones fetch main only
 
 **Warm lane (owner D22, 2026-11-16; `commands/card_preview_lane.py`).** After a press that went well and was handed
 over directly, the preview job's process (Start's, `--code` then `--lane`) stays up 240 s for its editor's next
-presses, taking none in its job's last 2 minutes (Start stops it 35 s before the 11-minute cap). It bakes each in
+presses, taking none in its job's last 2 minutes (Start stops it 35 s before the 20-minute cap; 11 before 2026-11-17:
+recent presses 4 minutes apart went cold at the old 9-minute cap 6 times in 194). It bakes each in
 process with `preview()`: the same venv, fonts, trees, bot files and records, with no setup or imports. The website
 names the lane for a press (input `lane` = `<run id>-<blob sha>`): the run that handed over the editor's newest
 result, while it should still be up. The press
@@ -1338,8 +1339,12 @@ Discord post), because GitHub cuts run titles at 512 characters (72 of the 104 r
 fit with their card and edit); the run-name is `Card preview <request> lane <lane>`, under 150 characters. The lane
 lists its editor's card-preview runs every 0.3 s with If-None-Match; a 304 isn't counted. It takes a newer run only when
 the title names it, its blob (a 404 tried for 5 s) hashes to its sha and names its request, the editor is its own,
-`head_sha` is its commit, and the bot's main (a conditional ref read)
-and the data's records (read again beside the card's blobs, as the Reads step does) are the ones it read. Any other
+and the bot's main (a conditional ref read)
+and the data's records (read again beside the card's blobs, as the Reads step does) are the ones it read. A run on a
+newer commit of the card repo (`head_sha`) is baked at that commit (`follow`, 2026-11-17): the lane
+fetches its trees (`--depth 1 --filter=blob:none`, about 0.4 s) and follows it when `MDW/Fonts`, `card-preview.yml` and
+`.github/actions` are the same there (the cold run's fonts and steps); else it ends. 5 of the 194 real presses went
+cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Any other
 newer run of its editor ends it, and that run is the next lane. A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
