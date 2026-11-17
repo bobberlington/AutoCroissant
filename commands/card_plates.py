@@ -53,6 +53,8 @@ QUALITY = 60
 KINDS = ("title", "ability")
 LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: the layout isn't the card's, none kept
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
+TEXTURES = ("pixel", "smartobject", "shape", "solidcolorfill", "gradientfill", "patternfill")   # adjustments alone: none
+BAND = 4                                    # a letter look's band: the layer's box and 1/BAND of its height past it
 BRANCH = "plates"
 LOCAL_REF = "refs/card-plates/head"         # where publish fetches the branch head (no remote-tracking ref moved)
 TRIES = 5
@@ -111,6 +113,47 @@ def crop(psd: PSDImage, layer, png: np.ndarray, icc: bool, step: int, extra=()) 
     box, (plate,), seam, (ink,) = got
     ys, xs = np.nonzero(ink)
     return box, plate, seam, (box[0] + int(xs.min()), box[1] + int(ys.min()), box[0] + int(xs.max()) + 1, box[1] + int(ys.max()) + 1)
+
+
+def textured(psd: PSDImage, layer) -> bool:
+    """A shown pixel, smart-object or fill layer (TEXTURES) clipped onto the layer or onto a group above it."""
+    while layer is not None and layer is not psd:
+        if any(clip.visible and clip.kind in TEXTURES for clip in layer.clip_layers):
+            return True
+        layer = layer.parent
+    return False
+
+
+def letter_look(psd: PSDImage, raw: bytes, layer, icc: bool, step: int) -> Optional[tuple]:
+    """
+    (box, image, colour) of the card drawn with the layer's letters an opaque band of their own colour ("#rrggbb", its
+    most used), across the card and its box with 1/BAND of its height past it both ways (canvas px): a typed letter's
+    look under the layer's clipped textures (Earth Totem's stone) and effects, as the bake draws it. None when not
+    textured().
+
+    Args:
+        raw: The bytes psd was opened from (the band goes on a copy)
+    """
+    if layer.kind != "type" or not layer.is_visible() or not textured(psd, layer):
+        return None
+    colour, shape = layer.numpy("color"), layer.numpy("shape")
+    if colour is None or shape is None or not (shape[..., 0] > 0.5).any():
+        return None
+    inked = np.round(colour[shape[..., 0] > 0.5] * 255).astype(np.uint8)
+    values, counts = np.unique(inked, axis=0, return_counts=True)
+    x0, y0, x1, y1 = layer.bbox
+    reach = (y1 - y0) // BAND
+    box = _snap((0, y0 - reach, psd.width, y1 + reach), step, psd.size)
+    from psd_tools.api.layers import TypeLayer  # the bake's raster writer (psd_edit): its effects and clips kept
+    copy = psd_edit.edit_copy(psd, raw)
+    band = next(other for other in copy.descendants() if other.layer_id == layer.layer_id)
+    fill = values[counts.argmax()]
+    pixels = np.ones((box[3] - box[1], box[2] - box[0], 4), np.float32)
+    pixels[..., :3] = fill / 255
+    TypeLayer._store_raster(band, pixels, box)
+    band._invalidate_bbox()
+    image = like_mode(psd_edit.render_region(copy, box, icc, edited=(layer.layer_id,)), "RGB")
+    return box, image, "#%02x%02x%02x" % tuple(fill)
 
 
 def _without(psd: PSDImage, groups: list, png: np.ndarray, icc: bool, step: int, tight: int = 0) -> Optional[tuple]:
@@ -212,13 +255,14 @@ def layout(layer, fonts_dir: str) -> Optional[dict]:
 
 
 def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None,
-           pictures: Optional[dict] = None) -> Optional[dict]:
+           pictures: Optional[dict] = None, raw: Optional[bytes] = None) -> Optional[dict]:
     """
     The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"}, or None when no layer gave one.
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
     layer with FX layers on it has a second crop without them too, its "fx" their status words (the mock-up's when
     one leaves the text: the bake moves FX layers with their words). With fonts_dir, a layer's first crop also has
-    its layout() keys ("text", "lines", "glyphs", "frame").
+    its layout() keys ("text", "lines", "glyphs", "frame"). With raw, a textured layer's letter_look() is in img too:
+    "letters": [{"id", "fill", "box", "at"}] (the mock-up fills typed letters of that colour with it).
 
     Args:
         psd: The card
@@ -226,6 +270,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
         parts: Its details record's parts (psd_parts.card_parts)
         fonts_dir: MDW/Fonts (the layouts'); None: none
         pictures: A tagged PSD's {n: picture n's PNG}: the layers shown in picture n alone (Name #2) cropped against it
+        raw: The bytes psd was opened from (letter looks); None: none
     """
     if psd.width <= 0 or png.size != psd.size:
         return None
@@ -233,7 +278,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
-    found = []
+    found, looks = [], []
     tagged = len(variants_of(psd)) > 1
     views = [(1 if tagged else None, png, dict.fromkeys(layer_ids(parts)))]
     for n, picture in sorted((pictures or {}).items()) if tagged else ():
@@ -261,19 +306,31 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                 if got:
                     words = [w.strip() for x in fx for w in x.name.split(EFFECT_LAYER_TAG, 1)[1].split("#")[0].split("|") if w.strip()]
                     found.append(({"id": lid, "fx": list(dict.fromkeys(words))}, *got))
-    if not found:
+                try:
+                    look = letter_look(psd, raw, layer, icc, step) if raw is not None else None
+                except Exception as error:          # noqa: BLE001 - none: flat letters
+                    print(f"{layer.name}: no letter look: {type(error).__name__}: {error}", file=stderr)
+                    look = None
+                if look:
+                    looks.append(({"id": lid, "fill": look[2]}, look[0], look[1], None, None))
+    if not found and not looks:
         return None
     small = [(key, box, ink, image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),
-                                          Image.LANCZOS)) for key, box, image, _, ink in found]
-    width, last, crops, parts, y = max(im.width for *_, im in small), len(small) - 1, [], [], 0
+                                          Image.LANCZOS)) for key, box, image, _, ink in found + looks]
+    width, last, crops, letters, parts, y = max(im.width for *_, im in small), len(small) - 1, [], [], [], 0
     for n, (key, box, ink, im) in enumerate(small):     # gaps and the right side: edge pixels, no seam bleeds in
         top, bottom = (GAP // 2 if n else 0), (GAP - GAP // 2 if n < last else 0)
         parts.append(np.pad(np.asarray(im), ((top, bottom), (0, width - im.width), (0, 0)), mode="edge"))
-        crops.append({**key, "box": list(box), "ink": list(ink), "at": [0, y + top, im.width, im.height]})
+        at = [0, y + top, im.width, im.height]
+        if ink is None:
+            letters.append({**key, "box": list(box), "at": at})
+        else:
+            crops.append({**key, "box": list(box), "ink": list(ink), "at": at})
         y += top + im.height + bottom
     buf = BytesIO()
     Image.fromarray(np.concatenate(parts)).save(buf, "AVIF", quality=QUALITY)
-    return {"v": VERSION, "w": psd.width, "crops": crops, "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}
+    return {"v": VERSION, "w": psd.width, "crops": crops, **({"letters": letters} if letters else {}),
+            "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}
 
 
 # ========================
@@ -925,6 +982,7 @@ __all__ = [
     'crop',
     'layer_ids',
     'layout',
+    'letter_look',
     'looks',
     'main',
     'mock_misses',
@@ -935,6 +993,7 @@ __all__ = [
     'publish',
     'star_changes',
     'star_value',
+    'textured',
     'view',
     'with_bars',
     'with_stars',

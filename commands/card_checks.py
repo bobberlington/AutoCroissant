@@ -734,7 +734,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     if image is not None and parts is not None:
         try:
             old = _published(ctx, rel)
-            plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn))
+            plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn), raw)
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old)
             plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
