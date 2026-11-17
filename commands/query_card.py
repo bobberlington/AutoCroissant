@@ -52,6 +52,7 @@ SYNONYM_WORDS = compile(r"\b(" + "|".join(sorted(SYNONYMS, key=len, reverse=True
 BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
 MAX_CONTENT = 2000                                       # Discord's message length limit
+URL_MAX = 512                                            # Discord's longest link-button url (else no message)
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
@@ -1378,6 +1379,21 @@ def _image_at(png: Optional[str], end: float, read: float) -> tuple:
     return (raw_url_at(card_repo.repository, png, sha), f"Image: as of {_day(at)} (it has changed since).")
 
 
+def search_link(route: str, text: str) -> str:
+    """The website's search for text (route: cards, rules); a long paste cut at a word end to fit URL_MAX."""
+    head = f"{SITE_URL}/#/{route}?q="
+    if len(head + quote(text)) <= URL_MAX:
+        return head + quote(text)
+    room, n = URL_MAX - len(head + quote('"')), 0
+    while room >= len(quote(text[n])):                  # quote() encodes each character on its own
+        room, n = room - len(quote(text[n])), n + 1
+    cut = text[:n]
+    if text[n] != " " and " " in cut:                   # at a word end
+        cut = cut[:cut.rfind(" ")]
+    cut = cut.rstrip()
+    return head + quote(cut + '"' * (text.endswith('"') and cut.count('"') % 2))   # a cut "phrase" closed
+
+
 def query_ability(interaction: Interaction,
                   ability: str,
                   limit: int = -1) -> None:
@@ -1412,7 +1428,7 @@ def query_ability(interaction: Interaction,
     results_to_show = total_results if limit < 0 else min(limit, total_results)
 
     text = typed(ability, quotes=True).strip()
-    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(text)}")]
+    links = [("All results on the website", search_link("cards", text))]
     if not total_results:                                # one reply: the website's "did you mean", each a Card page
         names = []
         for label, title in card_repo.suggest(text):
@@ -1551,7 +1567,7 @@ def query_rulebook(interaction: Interaction,
         return
 
     pages = rulebook_lines(card_repo.rulebook_search_engine(text), text)
-    links = [("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(text)}")]
+    links = [("Rulebook on the website", search_link("rules", text))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
         queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
