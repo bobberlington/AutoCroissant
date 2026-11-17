@@ -1,7 +1,8 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, no stat read off its bars, old-style bars, a stat edit that cannot bake or
+hand: the picture says other than the data, no stat read off its bars, a stat the data lacks or holds above 20
+(CardValidator's), old-style bars, a stat edit that cannot bake or
 would bake bar cells unlike the card's (look_notes), a linked picture the repo lacks, one that looks the same as another
 file, or one Card sync
 could not draw again (db/links.json, worded at each
@@ -30,7 +31,7 @@ tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from glob import glob
 from io import BytesIO
 from json import dumps, load as json_load, loads
@@ -54,13 +55,13 @@ import commands.png_export as png_export
 import commands.psd_details as psd_details
 import commands.psd_edit as psd_edit
 from commands.card_bake import Snapshot, local_snapshot, vocabulary
-from commands.card_db import CHECKS_JSON, STATS_JSON
+from commands.card_db import CHECKS_JSON, STATS_JSON, card as data_card
 from commands.card_edits import NAMES_OK, CardAuthors, CardEdits
-from commands.card_models import RAID_STARS, card_name, file_stem, picture_only, small_case
+from commands.card_models import RAID_STARS, STAT_LIMIT, card_name, file_stem, picture_only, small_case
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
-from commands.psd_parser import NO_STATS, picture_numbers, variant_view
+from commands.psd_parser import NO_STATS, CardValidator, picture_numbers, variant_view
 from commands.psd_regions import (STATS, bar_box, comp_bars, comp_creature, drawn_bar, linked_items, placed_id,
                                   stat_rows, union_box)
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
@@ -102,6 +103,7 @@ MAX_STARS = 7                               # the census's: a star added up to h
 # the notes
 NO_STATS_NOTE = ("No stat is read off its bars, so the website, TTS and the bot show none: set them on the website as "
                  "Website only, or put its bars on the template in Photoshop.")     # the parser's NO_STATS
+STAT_DATA_NOTE = "{}: fix its bars in Photoshop, or {} on the website."     # CardValidator's stat notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 # these and _note's "Stat edits need Photoshop": TC site/assets/mockup.js HAND_STATS reads them (keep in step)
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
@@ -901,11 +903,37 @@ def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     return NAME_BOTH.format(printed=printed, site=shown, file=basename(rel)) if off else NAME_SITE.format(site=shown, printed=printed)
 
 
+def stat_notes(data: Optional[dict], site=()) -> list:
+    """CardValidator's stat notes on the data (a stat not read, one above 20; Card sync only prints them), a sentence
+    per creature (Chris & Jordi 11-11: HP 26, no DEF, ATK or SPD); none for a stat the website sets or answered there
+    (problems_ok, allow_high_stats), nor for NO_STATS (NO_STATS_NOTE)."""
+    card = data_card(data) if data and "creatures" not in site else None
+    out = []
+    for n, stats in enumerate([one for one in card.creatures or [card.stats] if one] if card else ()):
+        said = CardValidator.validate(replace(card, stats=stats))
+        values = {STAT_NAMES[stat]: getattr(stats, DATA_STATS[stat]) for stat in STAT_ORDER if stat not in site}
+        missing = [stat for stat in values if f"{stat} NOT FOUND" in said]
+        high = [f"{stat} {value}" for stat, value in values.items() if "STATS TOO HIGH" in said and value > STAT_LIMIT]
+        whose = f"creature {n + 1}'s" if card.creatures else "its"
+        parts = []
+        if missing:
+            listed = ", ".join(missing[:-1]) + (" or " if len(missing) > 1 else "") + missing[-1]
+            parts.append(f"no {listed} is read off {whose} bars")
+        if high:
+            parts.append(f"{whose} {' and '.join(high)} {'is' if len(high) == 1 else 'are'} above {STAT_LIMIT}")
+        if parts:
+            text = " and ".join(parts)
+            out.append(STAT_DATA_NOTE.format(text[0].upper() + text[1:], "set them" if missing
+                                             else f"mark them 'above {STAT_LIMIT} is intended'"))
+    return out
+
+
 def flags(record: dict, data: Optional[dict], site=(), linked=(), name: Optional[str] = None) -> dict:
     """{"hand", "bars", "name": note or None} of a record against the card's data (linked: link_notes; name: name_note);
-    no stat read (the parser's NO_STATS, gone once all four have website values) is a hand note."""
+    no stat read (the parser's NO_STATS, gone once all four have website values) is a hand note, so are stat_notes."""
     lost = [NO_STATS_NOTE] if any(p.startswith(NO_STATS) for p in (data or {}).get("problems") or ()) else []
-    hand = (mismatches(record, data, site) if data else []) + lost + list(record.get("notes") or []) + list(linked)
+    hand = ((mismatches(record, data, site) if data else []) + lost + stat_notes(data, site)
+            + list(record.get("notes") or []) + list(linked))
     return {"hand": " ".join(hand) or None, "bars": record.get("bars"), "name": name}
 
 
