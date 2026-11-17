@@ -1,11 +1,12 @@
 """
 The website's Stats page (TTSCardMaker site/assets/stats.js, balance.js, insights.js, in node), one smoke test (owner
-2026-11-12): power creep; and a card's Balance block for an auxiliary creature (analytics.py, owner D21). Loads the site
-from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
+2026-11-12): power creep; and a card's Balance block for an auxiliary creature (analytics.py, owner D21) and for a stat
+mistake put back the same day. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import importlib.util
 import json
 from subprocess import run as run_process
+from types import SimpleNamespace
 
 from conftest import SITE_SRC
 
@@ -83,12 +84,17 @@ out({ wide: widths(render(cards, A)), narrow: widths(render(cards, A, "", { narr
     assert out == {"wide": [320, 560, 1000], "narrow": [320, 340, 360]}
 
 
-def test_auxiliary_creature_by_printed_stars(tmp_path):
-    """Owner D21: an auxiliary creature is compared with the creatures of its printed stars, counted only in all
-    creatures (nobody else's numbers move, nor the 4★ list's cards); its Balance line has no 'no star level' sentence."""
+def site_analytics():
     spec = importlib.util.spec_from_file_location("site_analytics", SITE / "build" / "analytics.py")
     an = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(an)
+    return an
+
+
+def test_auxiliary_creature_by_printed_stars(tmp_path):
+    """Owner D21: an auxiliary creature is compared with the creatures of its printed stars, counted only in all
+    creatures (nobody else's numbers move, nor the 4★ list's cards); its Balance line has no 'no star level' sentence."""
+    an = site_analytics()
     card = lambda id, kind, total: {"id": id, "key": id, "type": kind, "stars": 4, "hp": total - 3, "def": 1, "atk": 1, "spd": 1}
     plain, aux = [card(f"c{t}", "creature", t) for t in (10, 12, 14, 16, 18)], card("mett", "creatures", 20)
     A, without = an.build(plain + [aux], {}, {}, now=1e9), an.build(plain, {}, {}, now=1e9)
@@ -102,3 +108,20 @@ out({{ line: text(bal.balanceBlock(aux, A)), aux: ["creature|4", "creature|all",
   plain: bal.inCohort(A, plain, "creature|4") }});""")
     assert "in the top 10% of 4★ creatures: 5 of the 5 have a lower total" in out["line"] and "star level" not in out["line"]
     assert (out["aux"], out["plain"]) == ([False, True, True], True)   # the cohort= list holds the n it counts
+
+
+def test_stat_mistake_put_back_within_a_day():
+    """A stat line the next version puts back within a day (Tainted Cain's bars, 16 min) is no nerf and buff, nor a dip
+    in the trend; put back two days later, it stays."""
+    an = site_analytics()
+    day, line = 86400, lambda *x: SimpleNamespace(**dict(zip(("hp", "defense", "attack", "speed"), x)))
+    v = lambda t, *x: SimpleNamespace(timestamp=t, stats=line(*x), stars=4, card_type="creature")
+    cards = [{"id": k, "key": k, "type": "creature", "stars": 4, "hp": 6, "def": 4, "atk": 3, "spd": 8} for k in ("quick", "slow")]
+    old = {"quick": [v(0, 6, 4, 3, 7), v(day, 6, 4, 3, 5), v(day + 960, 6, 4, 3, 7)],
+           "slow": [v(0, 6, 4, 3, 7), v(day, 6, 4, 3, 5), v(3 * day, 6, 4, 3, 7)]}
+    stats = {k: v(30 * day, 6, 4, 3, 8) for k in old}
+    A = an.build(cards, stats, old, now=40 * day)["cards"]
+    bal = lambda k: [(r["ts"], r["bal"]) for r in A[k]["changes"]]
+    totals = lambda k: [p["total"] for p in A[k]["trend"]]
+    assert (bal("quick"), totals("quick")) == ([(30 * day, "buff")], [20, 21])
+    assert (bal("slow"), totals("slow")) == ([(30 * day, "buff"), (3 * day, "buff"), (day, "nerf")], [20, 18, 20, 21])
