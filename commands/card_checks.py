@@ -737,6 +737,7 @@ def check_card(ctx: Context, rel: str) -> dict:
             plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn))
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old)
+            plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
     notes = [OLD_NOTE] if style == "old" else []

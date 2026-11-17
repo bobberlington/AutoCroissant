@@ -16,10 +16,12 @@ from psd_tools import PSDImage
 import commands.card_plates as cp
 import commands.psd_edit as psd_edit
 from commands.psd_edit import card_parts, _bare_parser
+from helpers import parser  # noqa: F401 (fixture)
 
 DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Ability FX: Blazing"
 PUZZLED = "Creatures/Other/3 Stars/Puzzled_Cat.psd"    # her own pictures under the old template's digit rows
 PIX = "Creatures/Kirby/3 Stars/Pix.psd"                 # three creatures: their own DEF rows, one HP bar for all
+BOLTS = "Items/Heal/1 Stars/Bolts_and_Screws.psd"      # two type icons over its art (Mr Krabs)
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
          "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
          "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
@@ -53,6 +55,25 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+
+
+def test_the_card_under_its_type_icons(clone, parser):
+    """with_under: Bolts and Screws' art where its two type icons were, the card's own pixels round them, a mask of
+    each icon's ink."""
+    psd, png = PSDImage.open(clone / BOLTS), Image.open(clone / BOLTS.replace(".psd", ".png"))
+    u = cp.with_under(None, psd, png, parser, "Bolts and Screws")["under"]
+    sheet = np.asarray(Image.open(io.BytesIO(base64.b64decode(u["img"].split(",", 1)[1]))).convert("RGB"), np.int16)
+    s = cp.VIEW_W / psd.width
+    x0, y0, x1, y1 = (round(v * s) for v in u["box"])
+    bare, masks = sheet[:y1 - y0], [sheet[n * u["pitch"]:][:y1 - y0, :, 0] > 127 for n in (1, 2)]
+    off = np.abs(bare - np.asarray(cp.view(png).convert("RGB"), np.int16)[y0:y1, x0:x1]).max(-1)
+    inked = np.logical_or.reduce(masks)
+    assert bare.shape[:2] == inked.shape == (y1 - y0, x1 - x0) and off[~inked].mean() < 8 and off[inked].mean() > 40
+    icons = {tuple(layer.bbox): layer for _, layer in psd_edit.type_row(psd, parser, "Bolts and Screws")[0]}
+    assert len(u["icons"]) == len(icons) == len(u["patch"]) == 2
+    for at, mask in zip(u["icons"], masks):
+        a, b, c, d = (round(v * s) for v in psd_edit._core(icons[tuple(at)]))
+        assert mask[b - y0:d - y0, a - x0:c - x0].mean() > 0.5
 
 
 def test_an_icons_drawing_keeps_the_layout(clone, monkeypatch):

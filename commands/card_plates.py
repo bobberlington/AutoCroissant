@@ -9,7 +9,8 @@ dropped; the website fetches the open card's in edit mode. With the fonts, a lay
 of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows the mock-up's cells
 cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it takes, at that view,
 which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own stars at every count,
-pasted in place of the mock-up's erased and redrawn ones.
+pasted in place of the mock-up's erased and redrawn ones; a card with header type icons gets "under" (with_under): the
+card without them, shown where a types edit takes one away.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
@@ -27,7 +28,7 @@ from time import sleep
 from typing import Optional
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from psd_tools import PSDImage
 from psd_tools.composite import rcache
 
@@ -70,6 +71,12 @@ def _snap(box: tuple, step: int, size: tuple) -> tuple:
             min(size[0], -(-x1 // step) * step), min(size[1], -(-y1 // step) * step))
 
 
+def _step(psd: PSDImage) -> int:
+    """Canvas px whose multiples are whole px at the view's scale (1 past 20)."""
+    step = psd.width // gcd(psd.width, VIEW_W)
+    return step if step <= 20 else 1
+
+
 def _rgb(image: Image.Image) -> np.ndarray:
     return np.asarray(like_mode(image, "RGB"), np.int16)
 
@@ -98,28 +105,56 @@ def crop(psd: PSDImage, layer, png: np.ndarray, icc: bool, step: int, extra=()) 
         return None
     if _padded(layer) is None:
         return None
-    hide = [layer, *(other for other in extra if _meets(layer, other))]
-    boxes = [_padded(x) for x in hide]
-    box = _snap((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)), step, psd.size)
-    full = psd_edit.render_region(psd, box, icc)
-    eyes = [(x, x.visible) for x in hide]
-    for x in hide:
-        x.visible = False
-    try:
-        plate = psd_edit.render_region(psd, box, icc)
-    finally:
-        for x, eye in eyes:
-            x.visible = eye
-    a, b = _rgb(full), _rgb(plate)
-    ink = np.abs(a - b).max(-1) > INK
-    if not ink.any():
+    got = _without(psd, [[layer, *(other for other in extra if _meets(layer, other))]], png, icc, step)
+    if got is None:
         return None
-    off = ~ink
-    seam = int(((np.abs(b - png[box[1]:box[3], box[0]:box[2]]).max(-1) > SEAM) & off).sum())
-    if seam > SEAM_SHARE * off.sum():
-        return None
+    box, (plate,), seam, (ink,) = got
     ys, xs = np.nonzero(ink)
-    return box, like_mode(plate, "RGB"), seam, (box[0] + int(xs.min()), box[1] + int(ys.min()), box[0] + int(xs.max()) + 1, box[1] + int(ys.max()) + 1)
+    return box, plate, seam, (box[0] + int(xs.min()), box[1] + int(ys.min()), box[0] + int(xs.max()) + 1, box[1] + int(ys.max()) + 1)
+
+
+def _without(psd: PSDImage, groups: list, png: np.ndarray, icc: bool, step: int, tight: int = 0) -> Optional[tuple]:
+    """
+    (box, [image], seam px, [ink mask]) of the card drawn without each group of layers in turn, over their padded boxes
+    (canvas px), or None: none draws there, or a drawing's backdrop (off every group's ink) is not the PNG's. tight: the
+    box cut to their ink and this many px past it.
+    """
+    boxes = [b for hide in groups for b in map(_padded, hide) if b]
+    if not boxes:
+        return None
+    box = _snap((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)), step, psd.size)
+    full = _rgb(psd_edit.render_region(psd, box, icc))
+    images, arrays, inks = [], [], []
+    for hide in groups:
+        eyes = [(x, x.visible) for x in hide]
+        for x in hide:
+            x.visible = False
+        try:
+            plate = psd_edit.render_region(psd, box, icc)
+        finally:
+            for x, eye in eyes:
+                x.visible = eye
+        images.append(like_mode(plate, "RGB"))
+        arrays.append(_rgb(plate))
+        inks.append(np.abs(full - arrays[-1]).max(-1) > INK)
+    every = np.logical_or.reduce(inks)
+    if not every.any():
+        return None
+    if tight:                                   # a layer's box far past its pixels (a card-sized smart object)
+        ys, xs = np.nonzero(every)
+        cut = _snap((box[0] + int(xs.min()) - tight, box[1] + int(ys.min()) - tight, box[0] + int(xs.max()) + 1 + tight,
+                     box[1] + int(ys.max()) + 1 + tight), step, psd.size)
+        cut = (max(cut[0], box[0]), max(cut[1], box[1]), min(cut[2], box[2]), min(cut[3], box[3]))
+        x0, y0, x1, y1 = (cut[0] - box[0], cut[1] - box[1], cut[2] - box[0], cut[3] - box[1])
+        box, images = cut, [image.crop((x0, y0, x1, y1)) for image in images]
+        arrays, inks = [a[y0:y1, x0:x1] for a in arrays], [ink[y0:y1, x0:x1] for ink in inks]
+    seam, off = 0, ~np.logical_or.reduce(inks)  # off every group's ink: the backdrop
+    for b in arrays:
+        n = int(((np.abs(b - png[box[1]:box[3], box[0]:box[2]]).max(-1) > SEAM) & off).sum())
+        if n > SEAM_SHARE * off.sum():
+            return None
+        seam += n
+    return box, images, seam, inks
 
 
 def layout(layer, fonts_dir: str) -> Optional[dict]:
@@ -194,9 +229,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     """
     if psd.width <= 0 or png.size != psd.size:
         return None
-    scale = VIEW_W / psd.width
-    step = psd.width // gcd(psd.width, VIEW_W)
-    step = step if step <= 20 else 1
+    scale, step = VIEW_W / psd.width, _step(psd)
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
@@ -254,6 +287,7 @@ BAR_SIDE = 16383                            # WebP's largest side: the sheet's c
 WEBP_URL = "data:image/webp;base64,"
 REACH = 3                                   # LANCZOS's reach in view rows
 EDGE = REACH + 1                            # view rows at a crop's cut whose clipped reach isn't view()'s
+UNDER_GROW = 2                              # view px the under mask reaches past the icons' ink (LANCZOS's rim)
 
 
 def _view_mode(image: Image.Image) -> str:
@@ -693,6 +727,66 @@ def with_stars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Imag
     return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "icons": sheet}
 
 
+def with_under(plate: Optional[dict], psd: PSDImage, png: Image.Image, parser, name: str) -> Optional[dict]:
+    """
+    The plates file with its "under": the card drawn without its header type icons (psd_edit.type_row's, those the bake
+    hides or moves; their clipped layers and effects go with them) over their ink and a margin, at the view's scale,
+    which the mock-up shows where a types edit takes an icon away. {"box": canvas px, "icons": each icon's layer box
+    (the details record's header row "box"), "reach": its padded box (its effects'), "pitch": px from one band of "img"
+    (AVIF) to the next, "patch": per icon, its band where its ink is in another's reach, or 0}; band 0: the card
+    without them, then a mask of each icon's ink (white, UNDER_GROW view px wider), then the patches (the card without
+    that icon alone). plate as it was without icons, or when a backdrop off their ink is not the PNG's (crop()'s seam
+    rule).
+
+    Args:
+        name: The card's name (type_row's title rule)
+    """
+    if psd.width <= 0 or png.size != psd.size:
+        return plate
+    scale, step = VIEW_W / psd.width, _step(psd)
+    with variant_view(psd, 1 if len(variants_of(psd)) > 1 else None):     # a tagged PSD: picture 1's
+        images, _ = psd_edit.type_row(psd, parser, name)
+        icons = [layer for _, layer in images if not psd_edit._icon_reason(layer)]
+        alone = [[layer] for layer in icons] if len(icons) > 1 else []     # each on its own: where inks meet
+        got = _without(psd, [icons, *alone], _rgb(png), psd_edit.export_icc(psd, png), step,
+                       tight=PAD + ceil((EDGE + UNDER_GROW) / scale)) if icons else None
+    if got is None:
+        return plate
+    box, drawn, _, inks = got
+    size = (max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale)))
+    small = [np.asarray(image.resize(size, Image.LANCZOS)) for image in drawn]
+    grow = ImageFilter.MaxFilter(2 * UNDER_GROW + 1)
+    masks = [np.asarray(Image.fromarray(ink.astype(np.uint8) * 255).resize(size, Image.BOX)
+                        .point(lambda v: 255 if v else 0).filter(grow)) > 127 for ink in (inks[1:] or inks)]
+    reach = [_padded(layer) for layer in icons]
+    spans = []                                  # each icon's reach in the bands
+    for r in reach:
+        span = np.zeros(size[::-1], bool)
+        x0, y0, x1, y1 = (min(max(round((v - o) * scale), 0), top) for v, o, top in zip(r, box[:2] * 2, size * 2))
+        span[y0:y1, x0:x1] = True
+        spans.append(span)
+    bands, patch, soft = [small[0], *(np.repeat(m[..., None] * np.uint8(255), 3, -1) for m in masks)], [], None
+    for n, mask in enumerate(masks):
+        meets = mask & np.logical_or.reduce([m for k, m in enumerate(spans) if k != n] or [np.zeros_like(mask)])
+        if not meets.any():
+            patch.append(0)
+            continue
+        if soft is None:                        # off the patch: smooth, so it costs little
+            soft = np.asarray(Image.fromarray(small[0]).filter(ImageFilter.GaussianBlur(8)))
+        near = np.asarray(Image.fromarray(meets.astype(np.uint8) * 255).filter(grow)) > 127
+        patch.append(len(bands))
+        bands.append(np.where(near[..., None], small[n + 1], soft))
+    pitch = -(-(size[1] + GAP) // 8) * 8        # each band on an 8 px block
+    sheet = np.concatenate([np.pad(band, ((0, pitch - size[1] if n < len(bands) - 1 else 0), (0, 0), (0, 0)),
+                                   mode="edge") for n, band in enumerate(bands)])
+    buf = BytesIO()
+    Image.fromarray(sheet).save(buf, "AVIF", quality=QUALITY)
+    return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}),
+            "under": {"box": list(box), "icons": [list(layer.bbox) for layer in icons],
+                      "reach": [list(r) for r in reach], "pitch": pitch, "patch": patch,
+                      "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}}
+
+
 # ========================
 # The plates branch
 # ========================
@@ -844,4 +938,5 @@ __all__ = [
     'view',
     'with_bars',
     'with_stars',
+    'with_under',
 ]
