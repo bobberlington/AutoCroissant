@@ -1342,9 +1342,11 @@ the title names it, its blob (a 404 tried for 5 s) hashes to its sha and names i
 and the bot's main (a conditional ref read)
 and the data's records (read again beside the card's blobs, as the Reads step does) are the ones it read. A run on a
 newer commit of the card repo (`head_sha`) is baked at that commit (`follow`, 2026-11-17): the lane
-fetches its trees (`--depth 1 --filter=blob:none`, about 0.4 s) and follows it when `MDW/Fonts`, `card-preview.yml` and
+fetches its trees (`--depth 1 --filter=blob:none`, 0.4-1.2 s from a Mac) and follows it when `MDW/Fonts`, `card-preview.yml` and
 `.github/actions` are the same there (the cold run's fonts and steps); else it ends. 5 of the 194 real presses went
-cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Any other
+cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Replayed (`s1110/r44-3/`, a
+real lane in a shallow GitHub clone across TTSCardMaker d0f0eae3 -> 2d3bab82 -> e897b00c): 4 presses, two on cards
+those pushes changed (Marilyn, Astr Meiana), all byte-identical to cold runs at their commits. Any other
 newer run of its editor ends it, and that run is the next lane. A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
