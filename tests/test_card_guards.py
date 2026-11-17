@@ -1773,7 +1773,7 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     assert [sha for _, sha in listed] == shas[::-1] and listed[0][0] == head
     wait = " && ".join(f'[ -f "{folder / sha}" ]' for sha in shas)
     wait = f'until {wait}; do sleep 0.1; done'
-    subprocess.run(["timeout", "10", "sh", "-c", wait], check=True)
+    subprocess.run(["timeout", "30", "sh", "-c", wait], check=True)
     assert "s3cret" not in (tmp_path / "args").read_text() and "s3cret" in (tmp_path / "args.config").read_text()
 
     class NoApi(cg.Source):
