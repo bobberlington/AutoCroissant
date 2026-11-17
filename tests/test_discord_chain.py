@@ -134,20 +134,26 @@ def test_a_draft_after_an_mdw_draft_but_before_the_card_folders_enters():
 def test_a_picture_that_is_no_card_on_its_own_dates_only():
     """Owner 11-16 23:10/23:15: a picture the eye found is no card on its own (match/eye.json dates_only: a cut-off
     piece, a screenshot of several cards) enters no timeline, split halves' neither, and asks nothing (a read-only
-    'dates only' item shows it), yet still dates Created."""
+    'dates only' item shows it), yet still dates Created, also the other cards printed plainly on it (dates_also)."""
     shot = "a phone screenshot of a sheet of two cards, both cut off"
     verdicts = [picture(1, T), picture(2, T - DAY, dates_only=shot), picture(3, T + DAY, "version_unsure",
                                                                              dates_only=shot)]
-    chain = dc.Chain(inputs(verdicts))
+    got = inputs(verdicts)
+    got.dates_also = {"P-000000000002": ["pike", "bolt", "gone"]}
+    chain = dc.Chain(got)
     found, split = chain.discord_rows()
-    assert [r["id"] for r in found["bolt"]] == ["P-000000000001"]
+    assert [r["id"] for r in found["bolt"]] == ["P-000000000001"] and not found.get("pike")
     items = {i["picture"]: i for i in chain.review.values()}
     assert {p: (i["kind"], i.get("read_only")) for p, i in items.items()} == {
         "P-000000000002": ("dates only", True), "P-000000000003": ("dates only", True)}
+    assert items["P-000000000002"]["also"] == ["pike"] and "also" not in items["P-000000000003"]
     t = chain.card("bolt", found["bolt"], [])
     assert [e["id"] for e in t["entries"]] == ["D-P-000000000001"]
     made = chain.created("bolt", t, verdicts)
     assert (made["ours"]["picture"], made["ours"]["dates_only"]) == ("P-000000000002", True)
+    pike = chain.created("pike", chain.card("pike", [], []), [])        # printed beside bolt: dated by it too
+    assert (pike["ours"]["picture"], pike["ours"]["dates_only"], pike["ours"]["beside"]) == ("P-000000000002", True,
+                                                                                            "bolt")
     group = {"id": "LG-1", "split_of": {"name": "Twin", "into": ["bolt", "pike"]}}
     chain = dc.Chain(inputs([]))
     split = defaultdict(list)

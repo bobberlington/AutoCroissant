@@ -371,6 +371,10 @@ def chain_items(inputs: Inputs) -> list:
             it["meta"] = [f"by eye: {r.get('why')}", "Only a card on its own is shown (your rule, 11-16 23:10/23:15): "
                           "this picture counts for dates only (Created, a version existed by then), never on the "
                           "timeline.", created_note(inputs, cid, r.get("picture"), r.get("date"))]
+            if r.get("also"):                       # other cards printed plainly on it: it dates them too
+                it["meta"].append(f"Also printed on it (by eye), so it dates them too: "
+                                  f"{', '.join(inputs.name(c) for c in r['also'])}.")
+                it["meta"] += [created_note(inputs, c, r.get("picture"), r.get("date")) for c in r["also"]]
             it["pics"] = [row_pic(row, "the picture")]
         elif kind == "cropped":
             it = item(kind, r["id"], "matches", "crops", head + date, read_only=True, **common)
@@ -530,6 +534,9 @@ def fact_items(inputs: Inputs) -> list:
 
 SOURCE_WORDS = {"discord": "an earlier Discord picture", "old repo": "the old repo", "first repo": "the first repo",
                 "old repo (PSD)": "the old repo's PSD", "changelog": "a 2019 balance list"}
+HINT_FROM = {"changelog line": ("changelog earlier", "a changelog line"),       # owner.source's from: its item kind
+             "first repo push": ("first repo earlier", "a first-repo push notice"),
+             "morgue picture": ("morgue hint", "a Morgue list picture")}
 
 
 def created_note(inputs: Inputs, cid: Optional[str], pid: Optional[str], date) -> str:
@@ -541,16 +548,23 @@ def created_note(inputs: Inputs, cid: Optional[str], pid: Optional[str], date) -
     whose = inputs.name(cid) + ("'" if inputs.name(cid).endswith("s") else "'s")     # its possessive
     if made.get("status") == "hand":
         return f"Created: not set by this picture: {whose} Created, {used}, is entered by hand."
+    who = lambda a: "your" if (a.get("source") or "owner") == "owner" else f"the {str(a['source']).split(' (')[0]}'s"
     r = inputs.rulings.get(made.get("review") or "") or {}
-    who = "your" if (r.get("source") or "owner") == "owner" else f"the {str(r['source']).split(' (')[0]}'s"
-    kept = f"{who} answer on {whose} Created item ({made['review']})" if r else "the website's date"
+    kept = f"{who(r)} answer on {whose} Created item ({made['review']})" if r else "the website's date"
+    by = ((made.get("owner") or {}).get("source") or {}) if made.get("status") == "owner" else {}
+    hint = HINT_FROM.get(by.get("from"))              # an earlier hint answered yes sets the date in use
+    if hint:
+        hid = next((x for x in (made.get("owner") or {}).get("ruled") or [] if (inputs.rulings.get(x) or {}).get(
+            "kind") == hint[0] and inputs.rulings[x].get("choice") == "yes"), None)
+        kept = f"{who(inputs.rulings.get(hid) or {})} yes on {hint[1]} ({hid + ', ' if hid else ''}{by.get('day')})"
     if ours.get("picture") == pid:
         if ours.get("day") == used:
             how = {"same": "the website has that day too", "new": "proposed",
                    "earlier": f"earlier than the website's {(made.get('file') or {}).get('date')}: proposed"}
             how = how.get(made.get("status"), "as answered")
             return f"Created: this picture sets {whose} Created, {used} ({how})."
-        return f"Created: NOT set by this picture: it gives {ours.get('day')}, but {kept} keeps {used}."
+        return f"Created: NOT set by this picture: it gives {ours.get('day')}, but {kept} " \
+            f"{'sets it to' if hint else 'keeps'} {used}."
     mine = dc.day(dm.epoch(date)) if date else None
     if mine and mine < created_sort(used):
         return f"Created: NOT set by this picture, though it is earlier ({mine}) than {whose} Created, {used}."
@@ -570,7 +584,8 @@ def created_item(inputs: Inputs, r: dict) -> dict:
                   f"from {ours.get('source')} {where}".rstrip(), r.get("why") or ""]
     if ours.get("dates_only"):
         it["meta"].append("ours is a picture that is no card on its own: it dates the card, never shown (your rule, "
-                          "11-16 23:15)")
+                          "11-16 23:15)" + (f"; the card is printed on it beside {inputs.name(ours['beside'])}, the "
+                                            "picture's own card" if ours.get("beside") else ""))
     if ours.get("picture"):
         it["pics"].append(row_pic(inputs.verdicts.get(ours["picture"]), f"ours {ours.get('day')}"))
     elif ours.get("commit"):
@@ -767,8 +782,9 @@ def settled(inputs: Inputs, r: dict) -> Optional[str]:
     left for it, the same old blob's) now publishes
     sure the same way (from another answer: the git look's own; a 'no' while the value it turned down stays out); a
     picture's card it has now, on or off the timeline as answered; a fact kept or dropped as answered; the Created
-    date in use; a Morgue entry answered 'no' that left the list; any answer on a picture that is no card on its own;
-    a field of a picture answered 'not this card' (its version gone with it)."""
+    date in use; a Created hint no earlier than the Created date in use; a Morgue entry answered 'no' that left the
+    list; any answer on a picture that is no card on its own; a field of a picture answered 'not this card' (its
+    version gone with it)."""
     off = off_timeline(inputs, r)
     if off:
         return off
@@ -809,6 +825,10 @@ def settled(inputs: Inputs, r: dict) -> Optional[str]:
     if str(kind).startswith("created") and c in ("file", "ours", "date"):
         made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
         return "the Created date in use is that day" if made.get("date") and made["date"] == r.get("value") else None
+    if kind in ("changelog earlier", "first repo earlier", "morgue hint") and c in ("yes", "no"):
+        day, before = it.get("day") or str(it.get("date") or "")[:10], inputs.created_before(cid)
+        return f"the Created date in use ({before}) is not later than this hint's {day}: no longer asked" \
+            if day and before and created_sort(day) >= before else None
     if kind in ("morgue not candidate", "morgue idea", "morgue candidate") and c == "no":
         return "the entry is off the Morgue list"
     return None

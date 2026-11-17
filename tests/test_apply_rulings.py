@@ -141,7 +141,7 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                            "field": "stars", "proposed": 9},
                                           {"id": "chain-d1", "kind": "dates only", "card": "bolt", "picture": "P-5",
                                            "date": "2020-07-19T00:00:00+00:00", "channel": "ideas",
-                                           "why": "a sheet of two cards", "read_only": True},
+                                           "why": "a sheet of two cards", "also": ["kit"], "read_only": True},
                                           {"id": "chain-d2", "kind": "dates only", "card": "kit", "picture": "P-7",
                                            "date": "2019-11-01T00:00:00+00:00", "channel": "ideas",
                                            "why": "bare art", "read_only": True},
@@ -154,7 +154,9 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
         "Kit": {"card": "kit", "status": "owner", "date": "2020-01-01", "sort": "2020-01-01",
-                "owner": {"base": "2020-09-01"}, "ours": {"day": "2019-11-01", "picture": "P-7", "dates_only": True}}}})
+                "owner": {"base": "2020-09-01", "ruled": ["chain-h1"], "source": {"day": "2020-01-01", "from":
+                                                                                    "changelog line"}},
+                "ours": {"day": "2019-11-01", "picture": "P-7", "dates_only": True}}}})
     hint = lambda n, card, date, **x: {"entry": f"LC-{n}", "card": card, "date": date, "channel": "port", **x}
     put(("morgue", "candidates.json"), {"candidates": [], "not_candidates": [
         {"id": f"LC-{n}", "name": "x", "pictures": [{"id": f"P-m{n}", "date": "2020-04-01T00:00:00+00:00"}]}
@@ -169,7 +171,9 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                                  "chain-l1": number,                 # a yes on what it proposed then
                                                  "chain-x5": stale("chain-x5", card="bolt", entry="D-P-5"),
                                                  "chain-f1": {"kind": "field", "choice": "yes",
-                                                              "value": {"hp": 6, "def": 2}}}})
+                                                              "value": {"hp": 6, "def": 2}},
+                                                 "chain-h1": {"kind": "changelog earlier", "choice": "yes",
+                                                              "source": "triage (owner-delegated)"}}})
     put(("chain", "ruled.json"), {"used": ["chain-old1"]})
     inputs = tr.Inputs(str(tmp_path))
     got = {i["id"]: i for i in tr.gather(inputs)}
@@ -181,9 +185,12 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert got["hint:LC-1:bolt"]["picture"] == "P-m1"
     assert (got["chain-old1"]["gone"], got["chain-old2"]["gone"]) == ("taken", "changed")
     assert got["chain-d1"]["read_only"] and got["chain-d1"]["sub"] == "dates" and not got["chain-d1"]["choices"]
-    assert got["chain-d1"]["meta"][-1] == "Created: not set by this picture: Bolt's Created, 2020-05-01, comes from " \
-        "the website's date." and got["chain-d2"]["meta"][-1] == "Created: NOT set by this picture: it gives " \
-        "2019-11-01, but the website's date keeps 2020-01-01."                  # each says whether it sets Created
+    assert got["chain-d1"]["meta"][2:] == [
+        "Created: not set by this picture: Bolt's Created, 2020-05-01, comes from the website's date.",
+        "Also printed on it (by eye), so it dates them too: Kit.",                # each card it dates, its own line
+        "Created: not set by this picture: Kit's Created, 2020-01-01, comes from the triage's yes on a changelog "
+        "line (chain-h1, 2020-01-01)."] and got["chain-d2"]["meta"][-1] == "Created: NOT set by this picture: it " \
+        "gives 2019-11-01, but the triage's yes on a changelog line (chain-h1, 2020-01-01) sets it to 2020-01-01."
     assert got["chain-x5"]["gone"] == "taken" and "dates only" in got["chain-x5"]["settled"]   # no card on its own
     assert got["chain-k1"]["read_only"] and got["chain-k1"]["sub"] == "crops" and \
         got["chain-k1"]["pics"][1]["src"] == "crops/P-6.webp"                    # a crop by eye: shown, read only
@@ -193,14 +200,14 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert tr.picture_page(str(tmp_path), inputs, list(got.values()), "now") == 3
     shown = (derived / "review" / tr.PICTURES_PAGE).read_text()
     assert shown.count("data:image/webp;base64,") == 2 and "Cropped: " in shown and "Dates only: " in shown and \
-        "NOT set by this picture" in shown and \
+        "NOT set by this picture" in shown and "so it dates them too: Kit." in shown and \
         "Answers on this picture (identification only): yes (owner)" in shown   # P-5 has no file here
     assert "taken in by the rerun" in tr.item_html(got["chain-old1"]) and \
         "Not applied" in tr.item_html(got["chain-old2"])
     assert "changed" not in tr.item_html(got["chain-old1"]).split(">")[0]        # taken: its stored copy's mark gone
     page = tr.page(list(got.values()), inputs, "now")
     assert "<option value='kit2' label='Kit (kit2)'>" in page and "<option value='Bolt'>" in page
-    assert "2 answered and applied, 3 answered but not applied" in page
+    assert "3 answered and applied, 3 answered but not applied" in page        # chain-h1: Kit's hint, taken
     names = {cid: c["name"] for cid, c in cards.items()}
     assert (ar.parse("card", "kit2", names), ar.parse("card", "Tentacle", names)) == ("kit2", "tentacle")
     try:
@@ -367,7 +374,8 @@ def test_changelog_lines_take_a_card(tmp_path, monkeypatch):
 def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
     """s3 gap 2 fix: an answer whose item left the page but whose version still shows it (from the git look's own
     answer, a repost's entry, the same old blob's row) is taken in, not 'answer it again'; so are a picture's card, a
-    Created date in use and a Morgue 'no'. Another value or a gone entry stays not applied."""
+    Created date in use, a Created hint no earlier than it and a Morgue 'no'. Another value or a gone entry stays not
+    applied."""
     from types import SimpleNamespace
     sure = lambda v: {"value": v, "confidence": "sure", "method": "triage"}
     ns = SimpleNamespace(
@@ -392,6 +400,10 @@ def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
                            "item": {"kind": "card not told", "picture": "P-9"}})
     assert tr.settled(ns, {"kind": "created earlier", "choice": "file", "value": "2020-01-01",
                            "item": {"kind": "created earlier", "card": "bolt"}})
+    ns.created_before = lambda cid: tr.Inputs.created_before(ns, cid)
+    hint = lambda day: {"kind": "changelog earlier", "choice": "yes", "value": day,
+                        "item": {"kind": "changelog earlier", "card": "bolt", "date": day + "T10:28:10+00:00"}}
+    assert "no longer asked" in tr.settled(ns, hint("2020-07-21")) and not tr.settled(ns, hint("2019-07-21"))
     assert tr.settled(ns, {"kind": "morgue not candidate", "choice": "no", "item": {"kind": "morgue not candidate"}})
     assert not tr.settled(ns, {"kind": "morgue idea", "choice": "yes", "item": {"kind": "morgue idea"}})
     ns.dates_only = {"P-7": "two cards in one screenshot"}           # no card on its own: any answer on it taken

@@ -318,6 +318,11 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    Wigfrid's bare 2019-05-06 portrait. Each such item says whether the picture sets its card's Created (the
    earliest confident appearance, unless an answer keeps another day): Contracted's 2021-12-04 bare art does since the
    triage's 'file' answer on it was withdrawn (11-17: its premise, no card version, fell to the owner's look 2 answer).
+   It dates the other live cards printed plainly on it too (`eye.json` `dates_also`, picture id -> {cards, why};
+   `ours.beside` names the picture's own card): the 2019-04-28 sheet beside Magic Hammer gives Golden Metronome,
+   Golden Bomb and Holy Blade 2019-04-28 (their 2020-07-22 port cards' art, stars and words), open 'created earlier'
+   items, and its item has a Created line per card. A Created hint answered before an earlier date came into use is
+   taken, no longer asked (Golden Metronome's 2020-07-21 changelog line).
    The whole card cut out of a bigger picture (`eye.json` `crops`, picture id -> {box, why}: a share of the trimmed
    picture, as a sheet's cell) is shown as that crop (its webp named by the box, so a new box makes it again) with a
    read-only 'cropped' item: Fawful's 2021-08-31 Discord screenshot (the channel header and the post's text cut

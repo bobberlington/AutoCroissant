@@ -44,9 +44,11 @@ build   Under derived/chain/:
                         (Q1-Q6, read only); pictures that are no card on its own (read only, below).
         Only a card on its own is shown (owner 11-16 23:10/23:15): a picture the eye found is not one (a cut-off piece,
         a screenshot of several cards or of a window: derived/match/eye.json dates_only) enters no timeline and asks
-        nothing, but still counts for dates (Created) as any card-sure picture does; a read-only 'dates only' item
-        shows it. The whole card cut out of a bigger picture (eye.json crops: {picture: {box, why}}, the box a share
-        of the trimmed picture, as a sheet's cell) is shown as that crop; a read-only 'cropped' item shows it.
+        nothing, but still counts for dates (Created) as any card-sure picture does, and for the other live cards
+        printed plainly on it (eye.json dates_also: {picture: {cards, why}}; ours.beside names its own card); a
+        read-only 'dates only' item shows it. The whole card cut out of a bigger picture (eye.json crops: {picture:
+        {box, why}}, the box a share of the trimmed picture, as a sheet's cell) is shown as that crop; a read-only
+        'cropped' item shows it.
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
         scripts/apply_rulings.py) are honoured: pictures named, told (a git look by its first version's key) or
@@ -99,7 +101,8 @@ ISSUED = ("derived", "review", "ids.json")                  # every review id th
 PICTURE_KINDS = ("named only", "look not told", "joke picture")   # review ids keyed by their picture
 OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
 PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
-MATCH_EYE = ("derived", "match", "eye.json")                # dates_only {picture: why}, crops {picture: {box, why}}
+MATCH_EYE = ("derived", "match", "eye.json")                # dates_only {picture: why}, dates_also {picture: {cards,
+                                                            # why}}, crops {picture: {box, why}}
 FS_SOURCE = {"old git": "old repo", "first git": "first repo"}   # a card's first git record: where (else the card repo)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
@@ -511,6 +514,8 @@ class Inputs:
                 row["dates_only"] = only[row["id"]]
             elif row["id"] in crops and row.get("cell") is None:    # the whole card cut out: the crop is shown
                 row["box"], row["crop"] = list(crops[row["id"]]["box"]), crops[row["id"]]["why"]
+        self.dates_also = {pid: list((v or {}).get("cards") or ()) for pid, v in (eye.get("dates_also") or {}).items()
+                           if pid in only}           # other cards printed plainly on it: it dates them too
         self.psds = defaultdict(list)
         for r in dm.read_jsonl(p.at(PSDS)):
             if r.get("card") and r.get("fields"):
@@ -1116,6 +1121,14 @@ class Chain:
                            and not r.get("morgue_taken")), key=lambda r: r["first"]["date"]):
             for cid in row.get("maybe") or []:
                 self.maybe.setdefault(cid, row)
+        self.also = defaultdict(list)            # card -> dates-only pictures it is printed on beside their own card
+        also = getattr(inputs, "dates_also", None) or {}
+        for row in inputs.verdicts:
+            for cid in also.get(row["id"]) or ():
+                if cid in inputs.cards and cid != row.get("card"):
+                    self.also[cid].append(row)
+                else:
+                    self.tally["discord: dates_also names no other live card (left out)"] += 1
 
     def ocr_lines(self, sha: str) -> list:
         """A picture's OCR'd lines with their boxes (the text readers' whole-card read), read once when first asked."""
@@ -1195,9 +1208,12 @@ class Chain:
 
     def dates_only(self, cid: str, row: dict) -> None:
         """A picture that is no card on its own (owner 11-16 23:10/23:15; derived/match/eye.json dates_only): never on
-        a timeline, nothing asked about it; created() still dates the card by it. A read-only item shows it."""
+        a timeline, nothing asked about it; created() still dates the card by it, and the other cards printed plainly
+        on it (eye.json dates_also). A read-only item shows it."""
+        also = [c for c in (getattr(self.inputs, "dates_also", None) or {}).get(row["id"]) or ()
+                if c in self.inputs.cards and c != cid]
         self.add_review("dates only", row["id"], card=cid, picture=row["id"], date=row["first"]["date"],
-                        channel=row["first"]["channel"], why=row["dates_only"], read_only=True)
+                        channel=row["first"]["channel"], why=row["dates_only"], also=also or None, read_only=True)
         self.tally["discord: no card on its own (by eye): dates only, not shown"] += 1
 
     def before_folders(self, cid: str, row: dict, when: float) -> bool:
@@ -1866,6 +1882,11 @@ class Chain:
                                                                           "channel": row["first"]["channel"],
                                                                           "dates_only": bool(row.get("dates_only"))
                                                                           or None}))
+        for row in self.also.get(cid, ()):         # printed plainly on a dates-only picture beside its own card
+            if row.get("first") and not row.get("no_created"):
+                found.append((dm.epoch(row["first"]["date"]), "discord", {
+                    "picture": row["id"], "channel": row["first"]["channel"], "dates_only": True,
+                    "beside": row.get("card")}))
         if card["key"] in getattr(inputs, "heads", {}):    # a 2019 list's head, its first picture keeping the name
             for f in inputs.facts:
                 if f.get("card") == card["key"] and f.get("source") == "changelog" and \
