@@ -278,9 +278,11 @@ def test_the_rest_blob_path(cards, tmp_path, monkeypatch):
 def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     """card_preview_reads (card-preview.yml's Reads step: the standard library alone) takes what the preview reads first
     (a key, a PSD path in another case, a numbered picture's parts or stars, a picture-only duplicate's any fields, an MDW PSD, an
-    unknown card) and Card Edits.json (a duplicate's first: it names the PSD), and writes the blobs into a blobless clone,
-    where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
+    unknown card) and Card Edits.json (a duplicate's first: it names the PSD), each file at head (contents; git/blobs on a
+    non-200), into a blobless clone or to a file per sha (--blobs), where the bake reads them; a record it cannot read is
+    left out. It and its imports run on 3.12."""
     assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD, cp.VERDICTS_JSON))
+    assert early.BLOBS_ENV == cb.BLOBS_ENV
     assert cp.VERDICTS_JSON == card_db.VERDICTS_JSON
     assert early.PICTURE_FIELDS == cp.PICTURE_FIELDS
     for python in filter(None, (executable, shutil.which("python3.12"))):     # the runner's python3: 3.12 (ubuntu-24.04)
@@ -316,22 +318,50 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     blobless = tmp_path / "blobless"
     _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(blobless))
 
+    asked = []
+
     def get(url):
+        from urllib.error import HTTPError
+        from urllib.parse import unquote
         if "/contents/db/" in url:
             if pe.SPOT_RECORD in url:
                 raise OSError("down")
             return b'{"x": {}}'
-        return run_process(["git", "-C", str(cards.repo), "cat-file", "blob", url.rsplit("/", 1)[1]], capture_output=True, check=True).stdout
+        if "/contents/" in url:
+            path, ref = url.split("/contents/", 1)[1].split("?ref=")
+            asked.append(unquote(path))
+            if unquote(path) == DOOMER_PNG:
+                raise HTTPError(url, 404, "Not Found", None, None)
+            spec = f"{ref}:{unquote(path)}"
+        else:
+            asked.append(spec := url.rsplit("/", 1)[1])
+        return run_process(["git", "-C", str(cards.repo), "cat-file", "blob", spec], capture_output=True, check=True).stdout
     monkeypatch.setattr(early, "_get", get)
     done = early.reads("Mini Doomer", {"hp": 8}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
     blobs = [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, cb.EDITS_PATH]
     assert sorted(done) == sorted(blobs + [f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}", f"db/{cp.VERDICTS_JSON}"])
     assert [done[p][1] for p in blobs] == ["ok"] * 4 and done[f"db/{pe.SPOT_RECORD}"][1] == "OSError: down"
+    assert sorted(asked) == sorted(blobs + [_sha(cards.files[DOOMER_PNG])])  # the 404's by sha
     assert sorted(p.name for p in (tmp_path / "records").iterdir()) == [pe.RENDER_RECORD, cp.VERDICTS_JSON]
     done = early.reads("Breakfast", {"name": "x"}, str(blobless), cb.CARD_REPO, head, str(tmp_path / "records"))
     assert {p: done[p][1] for p in blobs + [dup]} == {**dict.fromkeys(blobs, "in the clone"), cb.EDITS_PATH: "ok", dup: "ok"}
     for path in blobs + [dup]:
         assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
+    other, kept = tmp_path / "other", tmp_path / "blobs"                    # --blobs: files the bake reads first
+    _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(other))
+    for _ in range(2):
+        done = early.reads("Breakfast", {"name": "x"}, str(other), cb.CARD_REPO, head, str(tmp_path / "records"), str(kept))
+    assert {p: done[p][1] for p in blobs + [dup]} == {**dict.fromkeys(blobs, "read already"), cb.EDITS_PATH: "ok", dup: "read already"}
+    monkeypatch.setenv(cb.BLOBS_ENV, str(kept))
+    monkeypatch.setattr(github_api, "fetch_verified", lambda *a, **k: pytest.fail("REST"))
+    (kept / _sha(cards.files[DOOMER_PNG])).write_bytes(b"tampered")
+    for path in blobs + [dup]:
+        sha = _sha(cards.files[path])
+        assert cb._local_blob(str(other), sha) is None
+        if path == DOOMER_PNG:                  # a bad file: the clone's, then REST
+            assert cb._kept_blob(sha) is None
+            continue
+        assert cb.fetch_verified(cb.CARD_REPO, sha, local=str(other)) == cards.files[path]
 
 
 def test_the_preview_reads_the_verdict(tmp_path, monkeypatch):
