@@ -660,6 +660,40 @@ def test_an_item_cards_kinds_are_never_asked():
     assert not dc.old_kinds_only({"field": "types", "proposed": ["food"]}, "creature")
 
 
+def test_answered_types_take_the_chain_s_tokens():
+    """Types given or confirmed in an answer are the card data's tokens: 'defensive minion' -> defensive_minion; on a
+    minion the 2023 shield ('protective') and sword ('equip') are its role (Miasma, Electro Probe; s3-gap1fix3), and
+    compare() maps both sides, so no '+offensive_minion -offensive minion' change."""
+    assert dc.type_tokens(["Defensive  Minion", "fragile_equip", "tornado"]) == ["defensive_minion", "fragile equip",
+                                                                               "wind"]
+    assert dc.type_tokens(["dark", "protective"], "minion") == ["dark", "defensive_minion"]
+    assert dc.type_tokens(["equip", "machine"], "item") == ["equip", "machine"]          # an item's kind stays
+    text = {"attachments/1.png": {"types": {"value": ["offensive minion"], "sure": False, "conf": 0.2,
+                                            "method": "icon+known"}},
+            "attachments/2.png": {"types": {"value": ["dark"], "sure": False, "conf": 0.2, "method": "icon+known"}},
+            "attachments/3.png": {"types": {"value": ["offensive_minion"], "sure": False, "conf": 0.2,
+                                            "method": "icon+known"}}}
+    got = inputs([picture(1, T, card="lorn"), picture(2, T + DAY, whole=FAR, card="lorn"),
+                  picture(3, T + 2 * DAY, whole={"p": "0f" * 8, "d": "0f" * 8, "q": "0f" * 32}, card="lorn")], text)
+    yes, given, again = (dc.review_id("field", f"lorn|D-P-00000000000{n}|types") for n in (1, 2, 3))
+    got.rulings = {yes: {"choice": "yes", "value": ["offensive minion"], "source": "triage (owner-delegated)"},
+                   given: {"choice": "value", "value": ["dark", "protective"], "source": "triage guess"},
+                   again: {"choice": "yes", "value": ["offensive minion"]}}    # proposed in the data's form since
+    chain = dc.Chain(got)
+    found, split = chain.discord_rows()
+    t = chain.card("lorn", found["lorn"], split.get("lorn", []))
+    types = [e["fields"]["types"] for e in t["entries"] if e["kind"] == "discord"]
+    assert [(f["value"], f["method"], f["ruled"]) for f in types] == [(["offensive_minion"], "triage", yes),
+                                                                   (["dark", "defensive_minion"], "triage", given),
+                                                                   (["offensive_minion"], "owner", again)]
+    assert t["entries"][1]["changes"]["types"] == {"add": ["dark", "defensive_minion"], "drop": ["offensive_minion"]}
+    spaced, data = {"types": dc.sure(["offensive minion"], "triage")}, {"types": dc.sure(["offensive_minion"], "psd")}
+    assert "types" not in dc.compare(spaced, data, "minion") and dc.settled(spaced, data)
+    sword = {"types": dc.sure(["equip", "machine"], "triage")}
+    assert "types" not in dc.compare(sword, {"types": dc.sure(["machine", "offensive_minion"], "psd")}, "minion")
+    assert dc.compare(sword, {"types": dc.sure(["machine"], "psd")}, "item") == {}       # an item's kind: no change
+
+
 def test_two_creatures_told_by_eye_publish_each_half():
     """A two-creature card's bar truth with both halves (stats, stats2) is sure, never summed; a split card's half
     takes its own half's rows (owner Q3)."""

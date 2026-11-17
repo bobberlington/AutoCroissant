@@ -24,9 +24,10 @@ build   Under derived/chain/:
                         icon-read star change nothing backs: review, star_guard). Each is diffed with the version
                         before (sure fields on both sides): stats with the website's buff/nerf rule (analytics.change:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
-                        (text_key; formatting alone is no change, owner 11-09); an item's kinds are no types change
-                        (never collected). A title read that is another live card's name goes to review (other_name).
-                        A Discord look folds as minor only when
+                        (text_key; formatting alone is no change, owner 11-09); types as the card data's tokens
+                        (type_tokens: an answer's 'defensive minion', a minion's 2023 'protective' shield or 'equip'
+                        sword); an item's kinds are no types change (never collected). A title read that is another
+                        live card's name goes to review (other_name). A Discord look folds as minor only when
                         every field is sure on both sides and unchanged and its picture is near the one before (the
                         same git look, or under png_changes.VISIBLE of the card changed: png_changes' own rule for two
                         PNGs of one size, as the old rows fold, else aligned: look_share; owner 11-09).
@@ -44,8 +45,9 @@ build   Under derived/chain/:
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
         scripts/apply_rulings.py) are honoured: pictures named, told (a git look by its first version's key) or
-        refused, fields given (method 'owner'), unsure changelog facts and old maps, older templates shown, facts
-        against pictures, Created picked (status 'owner', owner.source shaped like ours: where the date came from).
+        refused, fields given (method 'owner'; types in the chain's tokens), unsure changelog facts and old maps, older
+        templates shown, facts against pictures, Created picked (status 'owner', owner.source shaped like ours: where
+        the date came from).
         ruled.json      the answers this build acted on (only while rulings.json has answers).
 checks  Contact sheets of n random cards' whole timelines (each version's picture beside its fields) for the by-eye
         check, under derived/chain/checks/.
@@ -126,6 +128,10 @@ ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "at
               "negation", "deploy", "offense", "protective"}  # an item's kind (its subtype; the last two the old
                                                               # repo's): never a fact or a version's change here
 ITEM_CARDS = ("item", "aux item", "nme")                      # cards whose types are item kinds
+TYPE_FORMS = {"defensive minion": "defensive_minion", "offensive minion": "offensive_minion",
+              "fragile_equip": "fragile equip", "dark matter": "darkmatter",
+              "undread": "undead", "tornado": "wind"}         # a type as the card data writes it; renamed types
+MINION_ROLES = {"equip": "offensive_minion", "protective": "defensive_minion"}  # a minion's 2023 role icons
 BEFORE_DAY, BEFORE_SORT = "Before 2020", "0000-00-00"         # owner Q6 (11-14 22:20): a Created with no day, first
 PHOTO_SOURCE = "physical card photo"                          # its source (the photos themselves are in no timeline)
 PHOTO_CREATED = {"pep-drink": "Pep Drink", "wham-bam-bone": "Wham Bam Bone"}   # the live cards dated so: only these
@@ -240,7 +246,8 @@ def ability_change(a: dict, b: dict) -> str:
 def compare(before: dict, after: dict, kind: Optional[str] = None) -> dict:
     """What changed from one version's fields to the next: only fields sure on both sides; the rest are unknown.
     The buff/nerf verdict is the website's (build analytics.change): the stat total up or down, the same total
-    'shift', a total over OFF_SCALE not judged. An item's kinds are no types change (kind: the card's)."""
+    'shift', a total over OFF_SCALE not judged. Types compare as the chain's tokens (type_tokens); an item's kinds
+    are no types change (kind: the card's)."""
     out, unknown = {}, []
     for key in ("name", "stars", "types", "stats"):
         a, b = before.get(key), after.get(key)
@@ -257,7 +264,8 @@ def compare(before: dict, after: dict, kind: Optional[str] = None) -> dict:
         elif key == "stars" and x != y:
             out["stars"] = [x, y]
         elif key == "types":
-            x, y = ([t for t in v or [] if kind not in ITEM_CARDS or t not in ITEM_KINDS] for v in (x, y))
+            x, y = ([t for t in type_tokens(v or [], kind) if kind not in ITEM_CARDS or t not in ITEM_KINDS]
+                    for v in (x, y))
             if Counter(x) != Counter(y):
                 out["types"] = {"add": sorted((Counter(y) - Counter(x)).elements()),
                                 "drop": sorted((Counter(x) - Counter(y)).elements())}
@@ -297,6 +305,15 @@ def first_changes(last: Optional[dict], fields: dict, kind: Optional[str], versi
             del changes["name"]
             changes["same_title"] = True
     return changes
+
+
+def type_tokens(value, kind: Optional[str] = None):
+    """A types list in the chain's tokens (the card data's): a spaced or renamed form ('defensive minion', 'tornado'),
+    and on a minion the 2023 role icons (the Equip sword, the Protective shield), as oldgit_rows maps raw icons."""
+    if not isinstance(value, list):
+        return value
+    out = [TYPE_FORMS.get(t, t) for t in (" ".join(str(x).lower().split()) for x in value)]
+    return [MINION_ROLES.get(t, t) for t in out] if kind == "minion" else out
 
 
 def without_kinds(value, kind: Optional[str]):
@@ -582,15 +599,15 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
     for key, src in (("name", "title"), ("stars", "stars"), ("types", "types"), ("ability", "ability")):
         read = text.get(src) or {}
         if src in eye and eye[src] not in (None, ""):
-            value = sorted(eye[src]) if key == "types" else eye[src]
+            value = sorted(type_tokens(eye[src], kind)) if key == "types" else eye[src]
             fields[key] = sure(value, "eye")
         elif key == "name" and read.get("sure") and other_name(inputs, row.get("card"), read.get("value")):
             ocr = f" (OCR '{read['ocr']}')" if read.get("ocr") else ""
             fields[key] = unsure(read.get("method") or "ocr", f"its title read is another live card's name{ocr}",
                                  read["value"], read.get("conf"))
         elif read.get("sure") and read.get("value") not in (None, ""):
-            fields[key] = sure(sorted(read["value"]) if key == "types" else read["value"], read.get("method") or "ocr",
-                               read.get("conf"))
+            fields[key] = sure(sorted(type_tokens(read["value"], kind)) if key == "types" else read["value"],
+                               read.get("method") or "ocr", read.get("conf"))
         elif key == "types" and row["id"] in getattr(inputs, "header", {}) and \
                 inputs.header[row["id"]].get("card") == row.get("card"):
             got = inputs.header[row["id"]]                 # the header's icons as a git version's (same template)
@@ -1421,6 +1438,8 @@ class Chain:
                 continue
             change = {"ability": "changed"} if fact.get("kind") == "ability changed" else \
                 {k: fact[k] for k in ("field", "from", "to", "by", "op", "unit", "stated") if fact.get(k) is not None}
+            if change.get("field") == "type" and isinstance(change.get("to"), str):
+                change["to"] = type_tokens([change["to"]])[0]          # the chain's token ('defensive minion')
             entry = {"id": "F-" + fact["id"], "kind": "text", "date": dm.iso(when), "day": day(when),
                      "channel": fact.get("channel"), "source": "changelog", "change": change, "confidence": "sure"}
             if fact.get("repeat_of"):
@@ -1654,7 +1673,9 @@ class Chain:
     def owner_fields(self, cid: str, entries: list) -> None:
         """The owner's answers on fields to review: yes takes the value it confirmed while that is still the one
         proposed (else not applied: the page asks again), a value given takes that (both sure, method 'owner'); no
-        leaves it to review."""
+        leaves it to review. Types answered are kept in the chain's tokens (type_tokens: 'defensive minion', a
+        minion's 'protective' shield -> defensive_minion), as answered in rulings.json."""
+        kind = self.inputs.cards[cid].get("type")
         for e in entries if self.rulings else []:
             if e["kind"] not in ("discord", "old repo"):
                 continue
@@ -1669,13 +1690,15 @@ class Chain:
                     r = self.rulings.get(rid) or {}         # a git look's row item, else this entry's own (its
                     value = r.get("value") if r.get("choice") == "value" else None    # answer given before the
                     if r.get("choice") == "yes":                                      # row had an item)
-                        if confirms(r, proposed):
+                        if confirms(r, proposed) or key == "types" and isinstance(proposed, list) and \
+                                type_tokens(r.get("value"), kind) == type_tokens(proposed, kind):
                             value = r["value"]
                         elif rid not in self.not_applied:   # owner_fields runs twice: counted once
                             self.not_applied.add(rid)
                             self.tally[f"owner: {e['kind']} field {key} yes, its value no longer proposed "
                                        "(not applied)"] += 1
                     if value is not None:
+                        value = type_tokens(value, kind) if key == "types" else value     # the chain's tokens
                         e["fields"][key] = sure(value, ruled_by(r), ruled=rid)
                         self.used.add(rid)
                         self.tally[f"owner: {e['kind']} field {key} given"] += 1
