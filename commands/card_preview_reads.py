@@ -3,11 +3,12 @@ A card preview's reads, started early: card-preview.yml runs this in the backgro
 render and spot records and the bake's verdicts (db/ on the data branch) go to a folder (CARD_RECORDS_DIR), and the
 blobs card_preview reads first (card_preview.blobs_of: the icon manifest, the card's PSD and PNG, a picture-only
 duplicate's own PNG, the status chart for an ability, parts or colors edit; and Card Edits.json, bake_card's first read,
-which a duplicate's PSD waits for) into the clone's object store, where card_bake.fetch_verified looks before REST. The
-same reads, earlier; a miss only costs the time (the bake checks every blob's sha and fetches what the clone lacks).
+which a duplicate's PSD waits for), each file at head (contents, raw), to a file per sha in --blobs (BLOBS_ENV's folder),
+else into the clone's object store: card_bake.fetch_verified looks there before REST. The same reads, earlier; a miss
+only costs the time (the bake checks every blob's sha and fetches what the clone lacks).
 
     python3 -S -m commands.card_preview_reads --card <key or PSD path> --edit <json file> --clone <checkout>
-                                              --repo <owner/name> --head <sha> --records <dir>
+                                              --repo <owner/name> --head <sha> --records <dir> [--blobs <dir>]
 
 Standard library only (the runner's python3, before the venv): card_edits, card_models and global_config, so a card key
 is card_preview.resolve's. One JSON line on stdout: what was read, and when.
@@ -17,12 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha1
 from json import dumps, loads
 from os import environ, getpid, makedirs, replace
-from os.path import basename, dirname, join
+from os.path import basename, dirname, exists, join
 from re import fullmatch
 from subprocess import run
 from sys import argv
 from time import perf_counter
 from typing import Optional
+from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from commands.card_edits import CardAuthors, dup_pictures
@@ -38,6 +41,7 @@ RECORDS = ("render_record.json", "spot_record.json", "verdicts.json")  # psd_edi
 PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # card_preview's
 TIMEOUT = 60                                    # seconds a read (the preview waits 20 s, then goes on without it)
 NO_LAZY = {**environ, "GIT_NO_LAZY_FETCH": "1"}
+BLOBS_ENV = "CARD_BLOBS_DIR"                    # card_bake's: the blobs read, a file each by sha
 API = environ["GITHUB_API_URL"].rstrip("/") + "/repos/" if environ.get("GITHUB_API_URL") else API_BASE   # the runner's
 
 
@@ -130,25 +134,61 @@ def missing(clone: str, shas: list) -> set:
     return {line.split(" ")[0] for line in out.splitlines() if line.endswith(" missing")}
 
 
-def read_blob(repository: str, sha: str, clone: str) -> bytes:
-    """A blob by REST into the clone's object store; raises when it does not hash to sha."""
-    data = _get(f"{API}{repository}/git/blobs/{sha}")
-    if sha1(b"blob %d\0" % len(data) + data).hexdigest() != sha:
-        raise ValueError(f"blob {sha[:8]} does not hash to its sha")
-    run(["git", "-C", clone, "hash-object", "-w", "--stdin"], input=data, capture_output=True, env=NO_LAZY, check=True,
-        timeout=60)
+def _hashes(data: bytes, sha: str) -> bool:
+    return sha1(b"blob %d\0" % len(data) + data).hexdigest() == sha
+
+
+def read_blob(repository: str, sha: str, clone: str, path: str = "", head: str = "", blobs: str = "") -> bytes:
+    """
+    A blob by REST: path at head (contents, raw: sooner than git/blobs), else by sha (git/blobs: no path, a non-200 or
+    other bytes); raises when it does not hash to sha. To blobs/<sha> (temp file, then rename), else (blobs "") into
+    the clone's object store.
+    """
+    data = None
+    if path and head:
+        try:
+            data = _get(f"{API}{repository}/contents/{quote(path)}?ref={head}")
+        except HTTPError:
+            pass
+    if data is None or not _hashes(data, sha):
+        data = _get(f"{API}{repository}/git/blobs/{sha}")
+        if not _hashes(data, sha):
+            raise ValueError(f"blob {sha[:8]} does not hash to its sha")
+    if blobs:
+        makedirs(blobs, exist_ok=True)
+        temp = join(blobs, f"{sha}.{getpid()}")
+        with open(temp, "wb") as fh:
+            fh.write(data)
+        replace(temp, join(blobs, sha))
+    else:
+        run(["git", "-C", clone, "hash-object", "-w", "--stdin"], input=data, capture_output=True, env=NO_LAZY,
+            check=True, timeout=60)
     return data
 
 
-def read_cards(repository: str, sha: str, clone: str) -> dict:
-    """Card Edits.json's "cards" from the clone, else by REST into it (read_blob)."""
-    out = run(["git", "-C", clone, "cat-file", "blob", sha], capture_output=True, env=NO_LAZY, timeout=60)
-    cards = loads(out.stdout if out.returncode == 0 else read_blob(repository, sha, clone)).get("cards")
+def _kept(blobs: str, sha: str) -> Optional[bytes]:
+    """blobs/<sha> when it hashes to sha, else None."""
+    try:
+        with open(join(blobs, sha), "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return data if _hashes(data, sha) else None
+
+
+def read_cards(repository: str, sha: str, clone: str, head: str = "", blobs: str = "") -> dict:
+    """Card Edits.json's "cards" from blobs or the clone, else by REST (read_blob)."""
+    data = _kept(blobs, sha) if blobs else None
+    if data is None:
+        out = run(["git", "-C", clone, "cat-file", "blob", sha], capture_output=True, env=NO_LAZY, timeout=60)
+        data = out.stdout if out.returncode == 0 else read_blob(repository, sha, clone, EDITS_PATH, head, blobs)
+    cards = loads(data).get("cards")
     return cards if isinstance(cards, dict) else {}
 
 
-def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str) -> dict:
-    """The records and the card's blobs side by side. Returns {what: [seconds, "ok" or why not]}; never raises."""
+def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str, blobs: str = "") -> dict:
+    """The records and the card's blobs side by side (blobs: read_blob's). Returns {what: [seconds, "ok" or why not]};
+    never raises."""
     started, done = perf_counter(), {}
 
     def one(what: str, read, *args):
@@ -167,7 +207,7 @@ def reads(card: str, fields: dict, clone: str, repository: str, head: str, recor
             tree = tree_of(clone, head)
             paths = paths_of(tree, card, fields)
             if paths == [ICON_MANIFEST_PATH] and EDITS_PATH in tree:    # no PSD of its own: a duplicate's? Edits first
-                cards = one(EDITS_PATH, read_cards, repository, tree[EDITS_PATH], clone)
+                cards = one(EDITS_PATH, read_cards, repository, tree[EDITS_PATH], clone, head, blobs)
                 paths = paths_of(tree, card, fields, cards)
             if paths and EDITS_PATH in tree and EDITS_PATH not in done:
                 paths.append(EDITS_PATH)        # bake_card's first read (Snapshot.dup_pictures)
@@ -176,8 +216,10 @@ def reads(card: str, fields: dict, clone: str, repository: str, head: str, recor
             done["tree"] = [round(perf_counter() - started, 2), f"{type(error).__name__}: {error}"[:200]]
             paths, lacking = [], set()
         for path in paths:
-            if tree[path] in lacking:
-                pool.submit(one, path, read_blob, repository, tree[path], clone)
+            if blobs and exists(join(blobs, tree[path])):
+                done[path] = [0, "read already"]    # a lane's earlier press
+            elif tree[path] in lacking:
+                pool.submit(one, path, read_blob, repository, tree[path], clone, path, head, blobs)
             else:
                 done[path] = [0, "in the clone"]
     return done
@@ -192,6 +234,7 @@ def main(args: Optional[list] = None) -> int:
                             description="Read a card preview's records and blobs early (card-preview.yml's Reads step).")
     for name in ("card", "edit", "clone", "repo", "head", "records"):
         parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--blobs", default="", help="a folder for the blobs read (default: the clone's object store)")
     options = parser.parse_args(list(argv[1:] if args is None else args))
     try:
         with open(options.edit, "rb") as fh:
@@ -200,7 +243,7 @@ def main(args: Optional[list] = None) -> int:
         edit = {}
     fields = {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
     started = perf_counter()
-    done = reads(options.card, fields, options.clone, options.repo, options.head, options.records)
+    done = reads(options.card, fields, options.clone, options.repo, options.head, options.records, options.blobs)
     print(dumps({"reads": done, "took_s": round(perf_counter() - started, 2)}, ensure_ascii=True))
     return 0
 
@@ -213,6 +256,7 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
+    'BLOBS_ENV',
     'main',
     'paths_of',
     'reads',

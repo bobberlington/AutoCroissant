@@ -38,7 +38,7 @@ from typing import Callable, NamedTuple, Optional
 from urllib.parse import quote
 
 from commands.card_preview_branch import HAND_DONE, LANE_ARTIFACT, LANE_END, _Api, clean
-from commands.card_preview_reads import RECORDS, reads
+from commands.card_preview_reads import BLOBS_ENV, RECORDS, reads
 
 # ========================
 # Configuration
@@ -208,7 +208,7 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
             edit = {}
         fields = {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
         with ThreadPoolExecutor(1) as pool:
-            done = pool.submit(reads, card, fields, clone, repository, head, records)
+            done = pool.submit(reads, card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""))
             why = bot_moved(api, bot_repo, bot)
             done.result()
         for name in RECORDS if not why else ():

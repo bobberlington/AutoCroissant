@@ -100,6 +100,7 @@ FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNC
 KIND = CardEdits.KIND
 BOT_BY = AUTHOR["name"]                         # the bot's _by (changelog.BOT)
 PREFETCH_WORKERS = 4                            # blob downloads at once (Snapshot.prefetch)
+BLOBS_ENV = "CARD_BLOBS_DIR"                    # card_preview_reads' blobs read, a file each by sha (card-preview.yml)
 POOL_MIN = 3                                    # cards due before a runner bakes them side by side (pool_size)
 
 
@@ -365,6 +366,19 @@ def local_snapshot(repository: str, clone: str, head: str = "") -> Snapshot:
     return Snapshot(repository, head, info, tree, clone)
 
 
+def _kept_blob(sha: str) -> Optional[bytes]:
+    """BLOBS_ENV's file of sha when it hashes to sha, else None."""
+    folder = environ.get(BLOBS_ENV, "")
+    if not folder:
+        return None
+    try:
+        with open(join(folder, sha), "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return data if blob_sha(data) == sha else None
+
+
 def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -> bytes:
     """
     A blob's bytes by sha, checked against the tree (gate blob) and written to path when given.
@@ -374,16 +388,18 @@ def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -
         sha: The blob sha the tree lists
         path: Where to write the bytes ("" keeps them in memory only)
         local: A clone whose object store is read first (never a lazy fetch); a blob in github_api.PENDING_ENV's list is
-            waited for
+            waited for. BLOBS_ENV's file of sha comes before it.
 
     Returns:
         The bytes; raises Refused("blob") when they don't hash to sha
     """
-    data = _local_blob(local, sha) if local else None
+    data = _kept_blob(sha)
     if data is None and local:
-        data = github_api.pending_blob(local, sha)
-    if data is not None and blob_sha(data) != sha:
-        raise Refused("blob", f"blob {sha[:8]} hashes to {blob_sha(data)[:8]} in {local}")
+        data = _local_blob(local, sha)
+        if data is None:
+            data = github_api.pending_blob(local, sha)
+        if data is not None and blob_sha(data) != sha:
+            raise Refused("blob", f"blob {sha[:8]} hashes to {blob_sha(data)[:8]} in {local}")
     if data is None:
         try:
             data = github_api.fetch_verified(repository, sha, timeout=API_TIMEOUT)
