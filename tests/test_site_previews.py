@@ -246,6 +246,24 @@ out(["hp", "def", "atk", "spd"].filter(k => !bars.some(r => r.k === k)));""")
     assert set(js) <= set(cp.mock_misses(image, psd, card, kinds))
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function followSpecs"), reason="no followSpecs in this mockup.js")
+def test_a_retyped_title_rewrites_its_copies_elsewhere(tmp_path):
+    """card_plates' crops of follow layers: a copy takes the title's new text, a watermark the joined title; none for a
+    copy under a layer the draw wipes too, nor one without a crop (never shown); a deleted title: erased only."""
+    out = node(tmp_path, """
+const rec = { parts: { title: [{ id: 1, text: "Mosling", layer: "Name" }], ability: [{ id: 2, text: "Hit.", layer: "Ability" }],
+  follow: [{ id: 3, of: [1], how: "copy" }, { id: 4, of: [1], how: "watermark" }, { id: 5, of: [1], how: "copy" }] },
+  text: [[3, "Art/Name", [500, 1800, 1100, 2300]], [4, "Mark", [400, 1000, 800, 1100]], [5, "Hid", [0, 0, 9, 9]]].map(([id, layer, box]) => ({ id, layer, box, text: "Mosling" })) };
+const crop = (id, box, ink, more = {}) => ({ id, box, ink, ...more });
+const plate = { crops: [crop(1, [300, 0, 900, 200], [350, 20, 850, 180]), crop(2, [0, 1700, 1200, 2100], [50, 1750, 1150, 2050]),
+  crop(3, [480, 1780, 1120, 2320], [500, 1800, 1100, 2300], { over: [2] }), crop(4, [380, 980, 820, 1120], [400, 1000, 800, 1100])] };
+const spec = (id, text, old) => ({ part: true, id: String(id), text, old, role: id === 2 ? "ability" : "name", label: id === 2 ? "text" : "name" });
+const got = specs => m.followSpecs(rec, plate, specs, 0.6).map(s => [s.id, s.text, s.own]);
+out([got([spec(1, "Moslings", "Mosling")]), got([spec(1, "Moslings", "Mosling"), spec(2, "Hit twice.", "Hit.")]), got([spec(1, null, "Mosling")])]);""")
+    assert out == [[["3", "Moslings", [300, 1080, 660, 1380]], ["4", "Moslings", [240, 600, 480, 660]]],
+                   [["4", "Moslings", [240, 600, 480, 660]]], [["3", None, [300, 1080, 660, 1380]], ["4", None, [240, 600, 480, 660]]]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
 def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's

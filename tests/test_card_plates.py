@@ -25,6 +25,8 @@ BOLTS = "Items/Heal/1 Stars/Bolts_and_Screws.psd"      # two type icons over its
 EARTH = ("dd70ddfd9e430de6b51b301f822b52294382b57b",    # Earth_Totem.psd (TC 5743332b): its title under clipped stone
          "d7bf86ab789310481b48a3db0c8b9b45db837b98")    # its PNG
 CLOT = "3f7040af67a5f605e0220b79051da3d0f9b43e57"       # Clot_Gold.psd (TC 96c3608e): its title's group under a Gradient Map
+AUTOPSY = "Auxiliary/Items/Autopsy_Report.psd"        # its title printed again in its Evidence box (parts' follow)
+EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"     # two copies on its title, a few px aside: its red and cyan
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
          "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
          "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
@@ -58,6 +60,25 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+
+
+def test_copies_of_a_title(clone):
+    """A title's copy elsewhere has a crop of its own (Autopsy Report's Evidence title: its layout, its orange); copies
+    on the title are told with its crop: Tainted Eden's two, each a few px aside over it, painting R or G and B."""
+    psd, png = PSDImage.open(clone / AUTOPSY), Image.open(clone / AUTOPSY.replace(".psd", ".png"))
+    parts = card_parts(psd, AUTOPSY, "Autopsy Report", _bare_parser())
+    (copy,) = parts["follow"]
+    crops = cp.plates(psd, png, parts, str(clone / "MDW/Fonts"))["crops"]
+    own, title = (next(c for c in crops if c["id"] == i and "fx" not in c) for i in (copy["id"], copy["of"][0]))
+    assert own["text"].strip() == "Autopsy Report" and own["lines"] and "over" not in own and "stacked" not in title
+    assert own["box"][1] > title["box"][3] and max(abs(a - b) for a, b in zip(own["fill"], (0xe7, 0xa3, 0x1b))) < 16
+    psd, png = PSDImage.open(clone / EDEN), Image.open(clone / EDEN.replace(".psd", ".png"))
+    by = {x.layer_id: x for x in psd.descendants()}
+    name = next(x for x in by.values() if x.kind == "type" and x.name == "Name")
+    copies = [x for x in by.values() if x.kind == "type" and x.name.startswith("Name copy")]
+    got = cp._stacked(psd, name, copies, cp._rgb(png), psd_edit.export_icc(psd, png), cp._step(psd))
+    assert sorted((s["at"], s["ch"]) for s in got) == [([-5.0, 0.0], [1, 2]), ([4.0, 0.0], [0])]
+    assert all(s["above"] and max(s["fill"][c] for c in s["ch"]) > 200 for s in got)
 
 
 def test_the_card_under_its_type_icons(clone, parser):
