@@ -156,7 +156,8 @@ def test_cards_json_columns(bs):
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
     """Alpha's text started at c2 (the bot's carried start), though its PSD was last committed at c3: cards.json keeps
     ts (the last commit, "updated") and adds since; history.json holds the older text at c1. A variant picture's goes
-    back through its picture 1's."""
+    back through its picture 1's. recent.json holds the earlier texts of the cards whose update changed the text (not
+    Alpha's)."""
     t1, t2, t3 = repo["t"]
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"])["Alpha"]
@@ -165,6 +166,8 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"])["Watermelon"]      # its text started at its last commit
     melon2 = _by_name(out["cards.json"])["Watermelon2"]
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
+    melon = _by_name(out["cards.json"])["Watermelon"]                   # Recently updated: only the texts that changed
+    assert out["recent.json"] == {melon["id"]: "Heal 1.", melon2["id"]: "Heal 1."}
 
 
 def test_older_versions_copied_onto_the_plates_branch(bs, repo, tmp_path, monkeypatch):
