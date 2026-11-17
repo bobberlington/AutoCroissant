@@ -37,6 +37,7 @@ DEFAULT_MATCH_RATIO = 0.6
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
 FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~|=)\s*(.*)$")   # a condition: field, operator, value
+NOT_TERM = compile(r"(?:^|[&|])\s*!")                    # a term starting with ! (search.js NOT_TERM)
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
 URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
@@ -478,13 +479,13 @@ class CardRepository:
                          [flat(p) for p in pics], pictures)
         return self._hay[2]
 
-    def _plain_matches(self, text: str, pictures: bool = False):
-        """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer: a
-        whole name), or a series' or subseries' name, so 'moms knife' and 'hollow knight' find their cards.
+    def _plain_matches(self, text: str, pictures: bool = False, whole: bool = False):
+        """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer, or
+        whole: a whole name), or a series' or subseries' name, so 'moms knife' and 'hollow knight' find their cards.
         pictures: second pictures' names instead."""
         self._haystack()
         term = squash(text)
-        probe = term if len(term) > 3 else "\n" + term + "\n"
+        probe = term if len(term) > 3 and not whole else "\n" + term + "\n"
         if pictures:
             return array([bool(term) and probe in flat for flat in self._hay[6]], dtype=bool)
         return array([bool(term) and (probe in flat or term in series) for flat, series in zip(*self._hay[3:5])], dtype=bool)
@@ -536,6 +537,18 @@ class CardRepository:
                 raise QueryError(NO_TERM)
         return parts
 
+    def _named(self, found: DataFrame, text: str) -> DataFrame:
+        """found and the cards a name, alias, old name or (sub)series is text, squashed (search.js named): typed with &
+        or | ('Kirby & The Amazing Mirror', 'Mario & Luigi'), its cards too; not with quotes or a !term."""
+        if '"' in text or NOT_TERM.search(text):
+            return found
+        hit = self._plain_matches(text, whole=True)
+        pics = self._plain_matches(text, pictures=True, whole=True)
+        if not hit.any() and not pics.any():
+            return found
+        more = concat([self.cards_dff[hit], self._hay[7][pics]])
+        return concat([found, more[~more.index.isin(found.index)]])
+
     def ability_search_engine(self, ability: str) -> DataFrame:
         """
         Search for cards by ability text or column values.
@@ -549,7 +562,8 @@ class CardRepository:
         - String exact match: "type==creature", "subtype==attack"
         - String contains: "type~aux", "series~kirby"
         - Quoted values keep & and |: 'subseries=="mario & luigi"'
-        - A series, a subseries or a name without punctuation: "hollow knight", "moms knife"
+        - A series, a subseries or a name without punctuation: "hollow knight", "moms knife"; with & or | too:
+          "kirby & the amazing mirror" also finds that subseries' cards
 
         Args:
             ability: Search query string
@@ -566,7 +580,7 @@ class CardRepository:
             combined = concat(results)
             combined = combined[~combined.index.duplicated(keep='first')]
             combined.attrs = {}                         # near: one text term only
-            return combined
+            return self._named(combined, ability)
 
         # Handle AND queries
         queries = self._terms(queries[0], "&")
@@ -575,7 +589,7 @@ class CardRepository:
             for q in queries[1:]:
                 result = result[result.index.isin(self.ability_search_engine(q).index)]
             result.attrs = {}
-            return result
+            return self._named(result, ability)
         ability = queries[0]                            # 'fire |' is 'fire'
 
         # NOT: any term, conditions too (!type==creature)

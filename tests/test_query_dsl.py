@@ -26,7 +26,8 @@ CARDS = [
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
     dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="(2U)(OYT) Pop: heal 2 health."),
     dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]. On the PF: 1 CDMG, lose 1 SP."),
-    dict(name="Power Ring", type="item", ability="+1 ATK to every friendly minion."),
+    dict(name="Power Ring", type="item", series="mario", subseries="Mario & Luigi: Superstar Saga",
+         ability="+1 ATK to every friendly minion."),
     dict(name="Enfeebled", type="debuff", ability="-1 ATK."),
     dict(name="Mom's Knife", type="item", series="The Binding of Isaac", ability="Throw it."),
 ]
@@ -108,11 +109,14 @@ def test_website_synonyms_are_the_bots():
 
 def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
     """A plain term also finds a series' or subseries' cards and a name typed without its punctuation, series== and
-    series~ a subseries too, and a known field's lone = is ==, on the bot and the website."""
+    series~ a subseries too, a known field's lone = is ==, and a name typed with & finds its cards (& inside quotes is
+    text), on the bot and the website."""
     rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
             ("moms knife", {"Mom's Knife"}), ("msk", set()),           # 3 letters or fewer: a whole name only
             ("kirby's return to dream land", {"King Dedede"}), ("series==kirby's return to dream land", {"King Dedede"}),
-            ("series~dream", {"King Dedede"}), ("series=undertale", {"sans."}), ("hp = 6", {"Mettaton EX"})]
+            ("series~dream", {"King Dedede"}), ("series=undertale", {"sans."}), ("hp = 6", {"Mettaton EX"}),
+            ("mario & luigi: superstar saga", {"Power Ring"}), ("mario & luigi", {"Power Ring"}),
+            ('subseries~"mario & luigi"', {"Power Ring"})]
     for query, cards in rows:
         assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
     shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp")} for c in CARDS]
