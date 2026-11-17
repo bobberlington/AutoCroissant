@@ -97,8 +97,9 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    a Discord look of a draft or card-folder version posted in between is that row's. A Meme folder's copy the owner
    gave a card (11-17) is a row of the card only: never a matcher reference (`discord_match.old_versions`: no look to
    tell pictures by, no first record; the joke pictures of it stay the Morgue's, The Puppet's and Mini Bee's port
-   pictures keep their looks), and before the card folders it counts as a draft does (`oldgit_rows.side_file`: Tyler's
-   2019 Mao card, filed 2022-08-24 in Cards/Meme, before his own folder's 2023-10-30 file).
+   pictures keep their looks), never the version the next one is diffed with (`meme_copy`: no change of its own; the
+   card's own file of the same commit keeps its run), and before the card folders it counts as a draft does
+   (`oldgit_rows.side_file`: Tyler's 2019 Mao card, filed 2022-08-24 in Cards/Meme, before his own 2023-10-30 file).
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex

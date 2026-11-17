@@ -1496,7 +1496,8 @@ class Chain:
                      "author": row.get("author"), "subject": row.get("subject"),
                      "commit": row.get("commit"), "path": row.get("path"), "blob": row.get("blob"),
                      "thumb": row.get("thumb"), "minor": bool(row.get("minor")), "share": row.get("share"),
-                     "old_ability_change": row.get("ability_change"), "fields": self.row_fields(cid, row)}
+                     "old_ability_change": row.get("ability_change"), "fields": self.row_fields(cid, row),
+                     **({"meme_copy": True} if row.get("meme_copy") else {})}
             if row.get("split_from"):
                 entry["as"] = row["split_from"]
             for k in ("old_name", "old_file", "in_tc_init", "two_creatures", "psd_only"):
@@ -1715,6 +1716,9 @@ class Chain:
                 if not e["minor"] and before and before["kind"] == "discord" and settled(before["fields"], e["fields"]):
                     self.tally["discord: settled, kept apart (a new picture)" if share is not None else
                                "discord: settled, kept apart (pictures not compared)"] += 1
+            if e.get("meme_copy"):                 # the owner's Meme folder copy beside the card's own file: shown,
+                e["changes"] = {}                  # no change of its own, never the version the next is diffed with
+                continue
             before = e
         for e in entries:
             e.pop("old_ability_change", None)

@@ -31,6 +31,13 @@ def test_compare_counts_the_website_way():
     unread = dc.compare(a, {"stats": dc.unsure("picture", "bars under their bar", {"hp": 1}),
                             "ability": dc.sure("Heal 3 HP.", "psd")})
     assert unread["unknown"] == ["stats"] and unread["ability_change"] == "changed" and "bal" not in unread
+    joke = {"stats": stats(5, 9, 9, 4), "ability": dc.sure("Heal 9 HP.", "psd")}         # owner 11-17: a Meme copy
+    rows = [{"kind": "old repo", "fields": a}, {"kind": "old repo", "fields": joke, "meme_copy": True},
+            {"kind": "old repo", "fields": {**a, "stats": stats(5, 2, 4, 4)}}]
+    chain = dc.Chain.__new__(dc.Chain)
+    chain.inputs, chain.tally = SimpleNamespace(root="/nonexistent"), Counter()
+    chain.diff(rows, "creature")
+    assert rows[1]["changes"] == {} and rows[2]["changes"]["buffs"] == ["ATK 3 -> 4"]   # diffed with the card's own
     gone = {"ability": dc.sure("", "eye")}                     # owner 11-17: a blank box after an ability (Panda)
     assert dc.compare(a, gone)["ability_change"] == "removed" and dc.compare(gone, dict(gone))["ability_change"] == "same"
     assert dc.blank({"fields": gone}) and not dc.blank({"fields": {"ability": dc.sure("", "psd")}})

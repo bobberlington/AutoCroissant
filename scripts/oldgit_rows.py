@@ -1241,16 +1241,24 @@ def before_folders(versions: list) -> list:
     return [v for v in versions if not v.get("mdw") or v["ts"] < first]
 
 
-def side_file(v: dict) -> bool:
-    """An MDW draft, or a Meme folder's copy the owner gave the card (Tyler's 2019 Mao card, owner 11-17)."""
-    return bool(v.get("mdw")) or oi.MEME in v["path"].lower()
+def joke_copy(data, old_id: str) -> bool:
+    """A Meme folder's copy the owner gave a card (owner.json maps, 11-17: Tyler's Mao card): a row of the card,
+    never the version the next one is diffed with."""
+    card = ((getattr(data, "map", None) or {}).get("cards") or {}).get(old_id) or {}
+    return "owner" in (card.get("how") or ()) and bool(card.get("paths")) and \
+        all(oi.MEME in p.lower() for p in card["paths"])
 
 
-def folder_first(versions: list):
+def side_file(v: dict, jokes=frozenset()) -> bool:
+    """An MDW draft, or a Meme folder's copy the owner gave the card (jokes: their old ids)."""
+    return bool(v.get("mdw")) or v.get("old_id") in jokes
+
+
+def folder_first(versions: list, jokes=frozenset()):
     """The card's first card-folder record (PNG or PSD) when an MDW draft or a Meme folder's copy comes before it,
     else None: Discord drafts posted in between still enter the chain (their looks are in no git record)."""
-    first = min((v for v in versions if not side_file(v)), key=lambda v: (v["ts"], v["path"]), default=None)
-    if not any(side_file(v) and v["ts"] < (first["ts"] if first else float("inf")) for v in versions):
+    first = min((v for v in versions if not side_file(v, jokes)), key=lambda v: (v["ts"], v["path"]), default=None)
+    if not any(side_file(v, jokes) and v["ts"] < (first["ts"] if first else float("inf")) for v in versions):
         return None
     return {k: first.get(k) for k in ("ts", "date", "commit", "path", "repo")} if first else {"ts": None}
 
@@ -1283,8 +1291,9 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
     PNG (and the PNG's own PSD is not), else a psd_only row when a look of its own."""
     from commands.png_changes import VISIBLE
     versions = sorted((v for o in old_ids for v in data.versions.get(o, [])), key=lambda v: (v["ts"], v["path"]))
+    jokes = {o for o in old_ids if joke_copy(data, o)}
     if key:
-        data.folder_firsts[key] = folder_first(versions)
+        data.folder_firsts[key] = folder_first(versions, jokes)
     versions = before_folders(versions)
     pngs = [v for v in versions if v["ext"] == "png"]
     names = {norm(n) for n in today.get("names") or ()}
@@ -1342,11 +1351,16 @@ def card_rows(data: Data, key, old_ids: list, today: dict, psd_from=frozenset())
             row["old_file"] = stem                             # a renamed file (oldgit map's renames)
         if two:
             row["two_creatures"], row["creatures"] = True, two
+        if png["old_id"] in jokes:
+            row["meme_copy"] = True                # the owner's Meme folder copy: never the row the next is diffed with
         rows.append(row)
     title_stand_in(rows)
     confirm_stars(rows, today)                                 # before the fold: it moves stars' confidence
-    run = 0
-    for prev, row in zip([None] + rows, rows):
+    run, last = 0, None
+    for row in rows:
+        prev = last
+        if not row.get("meme_copy"):
+            last = row
         if prev is None:
             row["minor"], row["data_change"], row["ability_change"] = False, [], "first"
         else:
