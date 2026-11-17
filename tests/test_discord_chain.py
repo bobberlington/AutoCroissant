@@ -748,6 +748,7 @@ def test_answered_types_take_the_chain_s_tokens():
                                                                                "wind"]
     assert dc.type_tokens(["dark", "protective"], "minion") == ["dark", "defensive_minion"]
     assert dc.type_tokens(["equip", "machine"], "item") == ["equip", "machine"]          # an item's kind stays
+    assert dc.type_tokens(["infection", "wind"]) == ["infected", "wind"]                # owner 11-17: 'infected'
     text = {"attachments/1.png": {"types": {"value": ["offensive minion"], "sure": False, "conf": 0.2,
                                             "method": "icon+known"}},
             "attachments/2.png": {"types": {"value": ["dark"], "sure": False, "conf": 0.2, "method": "icon+known"}},

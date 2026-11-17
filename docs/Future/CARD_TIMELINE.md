@@ -277,7 +277,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    kinds alone, an item then: Rock Bottom's 2023 equip); its other types stay, or go to review, without them. Each version is
    diffed with the one before on fields sure on both sides (the website's buff/nerf rule: the stat total, a total over
    40 not judged; formatting-only text is no change; types compare as the card data's tokens, the same mapping as
-   answers; an item's kinds, its subtypes, are no types change). A Discord
+   answers, 'infection' as 'infected', the deprecated type the owner named (11-17; Hive Knight, God Tamer, Traitor
+   Lord, Uumuu, Mini Bee's orange Hollow Knight blob); an item's kinds, its subtypes, are no types change). A Discord
    look folds under "minor changes" only when every field is sure and unchanged AND its picture is near the one
    before (owner 11-09): the same git look, or under 5% of the card changed. Two shown pictures that are PNGs of one
    size take png_changes' own share, as the old rows fold; others (JPEGs, resized copies, sheet cells) are trimmed

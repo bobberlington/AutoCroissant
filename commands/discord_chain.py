@@ -26,11 +26,12 @@ build   Under derived/chain/:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
                         (text_key; formatting alone is no change, owner 11-09); types as the card data's tokens
                         (type_tokens: an answer's 'defensive minion', a minion's 2023 'protective' shield or 'equip'
-                        sword); an item's kinds are no types change (never collected). A title read that is another
-                        live card's name goes to review (other_name). A Discord look folds as minor only when
-                        every field is sure on both sides and unchanged and its picture is near the one before (the
-                        same git look, or under png_changes.VISIBLE of the card changed: png_changes' own rule for two
-                        PNGs of one size, as the old rows fold, else aligned: look_share; owner 11-09).
+                        sword, 'infection': owner 11-17 'infected'); an item's kinds are no types change (never
+                        collected). A title read that is another live card's name goes to review (other_name). A
+                        Discord look folds as minor only when every field is sure on both sides and unchanged and its
+                        picture is near the one before (the same git look, or under png_changes.VISIBLE of the card
+                        changed: png_changes' own rule for two PNGs of one size, as the old rows fold, else aligned:
+                        look_share; owner 11-09).
         created.json    Created = the earliest confident appearance (a card-sure Discord picture, the first repo, the
                         old repo, the card repo; "Before 2020" from a physical card photo for PHOTO_CREATED only, the
                         owner's ruling of 11-14 22:20) with its source, against
@@ -139,7 +140,9 @@ ITEM_KINDS = {"equip", "fragile equip", "active", "heal", "food", "support", "at
 ITEM_CARDS = ("item", "aux item", "nme")                      # cards whose types are item kinds
 TYPE_FORMS = {"defensive minion": "defensive_minion", "offensive minion": "offensive_minion",
               "fragile_equip": "fragile equip", "dark matter": "darkmatter",
-              "undread": "undead", "tornado": "wind"}         # a type as the card data writes it; renamed types
+              "undread": "undead", "tornado": "wind",
+              "infection": "infected"}                        # a type as the card data writes it; renamed types
+                                                              # (owner 11-17: the deprecated type is 'infected')
 MINION_ROLES = {"equip": "offensive_minion", "protective": "defensive_minion"}  # a minion's 2023 role icons
 BEFORE_DAY, BEFORE_SORT = "Before 2020", "0000-00-00"         # owner Q6 (11-14 22:20): a Created with no day, first
 PHOTO_SOURCE = "physical card photo"                          # its source (the photos themselves are in no timeline)
