@@ -609,6 +609,14 @@ def _copied(order: list, container) -> Optional[str]:
     return sub(r"\s+copy(\s+\d+)?$", "", source.layers[len(source.layers) - 1].name).strip().lower() or None
 
 
+def _scale_of(plan) -> float:
+    """The size a plan draws the stars at against today's: option B's shrink, or an undo's back to the maker's (D14)."""
+    if plan.scaled:
+        return plan.scaled[0][1]
+    leaf, source = plan.restored[0][:2]
+    return round(source.width / leaf.width, 3) if leaf.width else 1.0
+
+
 def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     """A header without one Stars group drawing them: the stars the bake lays out loose (plan_stars' _loose_units:
     layers named star, several groups; R2, R3), each count's centres (its plan's) and the counts it refuses."""
@@ -620,8 +628,8 @@ def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
         try:
             plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = [_ints(centre) for centre in plan.centres]
-            if plan.scaled:
-                scale[str(n)] = plan.scaled[0][1]
+            if plan.scaled or plan.restored:
+                scale[str(n)] = _scale_of(plan)
         except Refused as e:
             refused[str(n)] = _why(e)
     groups = [group for group in PSDParser._star_groups(psd) if PSDParser.stars_in(group, types)]
@@ -641,10 +649,10 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     """
     The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
     a move on a folder card as card_bake's; else the layout's: first n, then _star_layouts), the counts the bake
-    refuses ("*": all, for one reason) and, when any, the size every star shrinks to at a count (scale; option B).
-    Without exactly one Stars group drawing them: the bake's loose stars and plans (_kept_stars). parser: the build's
-    (its Types/Stars names count the stars outside the group, as the bake's does: Massive Moss Charger's 'Hk star');
-    None: one from vocab.
+    refuses ("*": all, for one reason) and, when any, the size every star shrinks to at a count (scale; option B), or
+    grows back to (an undo after one, D14). Without exactly one Stars group drawing them: the bake's loose stars and
+    plans (_kept_stars). parser: the build's (its Types/Stars names count the stars outside the group, as the bake's
+    does: Massive Moss Charger's 'Hk star'); None: one from vocab.
     """
     parser = parser or _icon_parser(vocab)
     types, stars = parser.all_types, parser.star_names()
@@ -666,8 +674,8 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
         try:
             plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = _plan_centres(plan, container, types, size)
-            if plan.scaled:                     # every star shrunk to fit the banner (option B)
-                scale[str(n)] = plan.scaled[0][1]
+            if plan.scaled or plan.restored:    # every star shrunk to fit the banner (option B), or back (D14)
+                scale[str(n)] = _scale_of(plan)
             continue
         except Refused as e:
             refused[str(n)] = _why(e)
