@@ -159,7 +159,7 @@ copy only as its source's record moved (new id and name), a moved layer only wit
 transform and anchor blocks changed, a made icon only as a pixel record with the reference's effect blocks; the
 re-parse reads the stars back and the types in any order.
 **Stars back to the card maker's count (owner 2026-11-15, D14).** A stars bake remembers its own moves in the PSD's
-XMP (`psd_edit.star_memo`: an `autocroissant:starMoves` packet with the maker's count, the bake's net moves of the
+XMP (`psd_edit.icon_memo`: an `autocroissant:starMoves` packet with the maker's count, the bake's net moves of the
 maker's star layers, their first visibility, the layers it added, where it left each one and the XMP InstanceID then;
 `memo_after`, built on the memo it was planned with). When a later stars edit asks for the maker's count again and
 the memo still holds (`_memo_holds`: no Photoshop save since, the stars it left, each named layer where and as shown
@@ -168,6 +168,12 @@ their FEid items, `gate_bytes` taking them as removed records; the maker's layer
 they were): the maker's layout and XMP come back as drawn. A shrink (option B), a split or a text copy can't be
 undone: such a bake drops the memo. The previews take the same path (`card_plates.star_value`, `psd_details`' header
 centres, the Rendered preview's bake).
+**Types back to the card maker's (D14 for types).** A types bake keeps the same memo in its own packet
+(`autocroissant:typeMoves`: the maker's row, the bake's hides and close-up moves, its made icons). A types edit naming
+the maker's types again, in any order (the data's order is not the row's: Heavy Mole), while it holds undoes them in
+`plan_types` (`_undo`: the maker's icons shown and moved back, the made ones deleted with their Types/ lnkE items,
+`gate_stories` taking those as gone): the maker's own icons (their size, tint and place) come back, not Types/ copies at
+the template's spot or after the slid-over ones. The mock-up follows `psd_details`' `header.types_back` (`backPlan`).
 
 Classification is value-aware: PSD-kind only when the value differs from a fresh offline parse of the PSD (the goldens' route,
 `tests/golden_cards.py:62-76`: `PSDParser` on an empty `StatsDatabase` + `IconVocabulary.build` from the committing tree's
