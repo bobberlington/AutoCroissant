@@ -413,7 +413,8 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    doesn't ask about it). The `history` branch (owner D10): `scripts/history_branch.py`, by hand, makes one commit of that
    folder (an orphan root first, then on the branch's head, fetched alone and shallow into its own bare repo
    `~/Documents/Tools/history.git`; trailer `Card-sweep: history`), refuses a folder failing a check (layout, JSON keys,
-   links/mentions/snowflakes, the left-out channels' pictures, webps at most 720 px with no metadata, sizes) and prints
+   links/mentions/snowflakes in the JSON and the file names, the left-out channels' pictures, webps at most 720 px with
+   no metadata, sizes: at most 700 MB, as Pages' 1 GB is the whole site's) and prints
    what it would push; `--push` sends `refs/heads/history` only, never forced. TTSCardMaker's site.yml clones that
    branch alone, depth 1, as `HISTORY_DIR` (no branch or a failed clone: the site builds without it).
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions

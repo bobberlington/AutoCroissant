@@ -39,7 +39,8 @@ AUTHOR = "MichaelJSr"
 MORGUE = "_morgue"
 WEBP_W = 720                                                      # discord_preview.WEBP_W
 FILE_MAX = 50_000_000                                             # GitHub warns past 50 MB a file
-TOTAL_MAX = 1_000_000_000                                         # the site copies every webp: Pages' 1 GB
+TOTAL_MAX = 700_000_000                                           # the site copies every webp; Pages' 1 GB is the whole
+                                                                  # site's (161 MB without it, 11-17): room to grow
 INDEX_KEYS = {"version", "generated", "about", "cards", "morgue", "mdw", "created"}
 TIMELINE_KEYS = {"card", "key", "name", "entries", "kind", "stop", "created", "git_first", "morgue", "first", "kind_of",
                  "git_file"}
@@ -49,7 +50,8 @@ ENTRY_KEYS = {"id", "kind", "date", "day", "badge", "image", "w", "h", "fields",
 RAW_KEYS = {"message", "message_id", "messages", "content", "poster", "author_id", "jump_url", "url", "link", "links",
             "mentions", "attachment", "attachments", "note", "notes", "why", "review", "conf", "box", "channel_id",
             "guild_id"}                                           # the archive's and the review page's: never published
-LINKS = re_compile(r"https?://|www\.|discord(?:app)?\.(?:com|gg)|discordapp|<[@#][!&]?\d|@everyone|@here|\b\d{17,20}\b")
+LINKS = re_compile(r"https?://|www\.|discord(?:app)?\.(?:com|gg)|discordapp|<[@#][!&]?\d|@everyone|@here|\d{17,}")
+# 17+ digits anywhere: a snowflake glued to letters or '_' too (today's longest digit run: 12)
 
 
 def log(*args) -> None:
@@ -108,6 +110,8 @@ def check(folder: str, photos: set) -> tuple:
             path = join(top, name)
             if name.startswith(".") or islink(path):
                 problems.append(f"{relpath(path, folder)}: a hidden file or link")
+            if LINKS.search(name):
+                problems.append(f"{relpath(path, folder)}: a link or snowflake in its name")
         for name in dirs:
             if depth == 1 and rel != MORGUE or depth > 1:
                 problems.append(f"{relpath(join(top, name), folder)}/: a folder inside a card's")
@@ -126,7 +130,8 @@ def check(folder: str, photos: set) -> tuple:
             if any(k in name for k in photos):
                 problems.append(f"{relpath(path, folder)}: a left-out channel's picture")
     if counts["bytes"] > TOTAL_MAX:
-        problems.append(f"{counts['bytes'] / 1e6:.0f} MB in all (at most {TOTAL_MAX / 1e6:.0f})")
+        problems.append(f"{counts['bytes'] / 1e6:.0f} MB in all (at most {TOTAL_MAX / 1e6:.0f}: "
+                        "Pages' 1 GB less the site)")
 
     def text_of(path):
         with open(path, encoding="utf-8") as fh:
@@ -280,7 +285,8 @@ def main(argv: Optional[list] = None) -> int:
     folder = join(root, *FOLDER)
     problems, counts = check(folder, left_out_ids(root))
     log(f"{folder}: {counts['cards']} cards, {counts['morgue']} Morgue folders, {counts['timelines']} timelines, "
-        f"{counts['webps']} webps, {counts['files']} files, {counts['bytes'] / 1e6:.1f} MB; largest "
+        f"{counts['webps']} webps, {counts['files']} files, {counts['bytes'] / 1e6:.1f} MB (at most "
+        f"{TOTAL_MAX / 1e6:.0f}); largest "
         + ", ".join(f"{n} {s / 1e6:.2f} MB" for s, n in counts.get("largest", [])))
     if problems:
         for p in problems[:30]:

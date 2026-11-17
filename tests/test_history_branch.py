@@ -77,7 +77,8 @@ def test_one_commit_an_orphan_first_then_on_the_branch_head(tmp_path, hb, monkey
     assert subprocess.run(["git", "--git-dir", str(tmp_path / "s2"), "cat-file", "-e", main]).returncode != 0
 
 
-@pytest.mark.parametrize("bad", ["review", "message", "link", "snowflake", "photo", "wide", "orphan", "hidden", "key"])
+@pytest.mark.parametrize("bad", ["review", "message", "link", "snowflake", "glued", "name", "photo", "wide", "orphan",
+                                 "hidden", "key"])
 def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
     root = archive(tmp_path, hb)
     folder = root.joinpath(*hb.FOLDER)
@@ -92,6 +93,11 @@ def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
         entry["subject"] = "see https://example.com"
     elif bad == "snowflake":
         entry["subject"] = "id 123456789012345678"
+    elif bad == "glued":
+        entry["id"] = "D-m123456789012345678"                               # no word boundary before it
+    elif bad == "name":
+        entry["image"] = "P-111111111111_123456789012345678.webp"
+        (folder / "a-card" / "P-111111111111.webp").rename(folder / "a-card" / entry["image"])
     elif bad == "photo":
         Image.new("RGB", (10, 10)).save(folder / "a-card" / f"P-{PHOTO[:12]}.webp")
     elif bad == "wide":
@@ -105,6 +111,8 @@ def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
     timeline.write_text(json.dumps(t))
     problems, _ = hb.check(str(folder), hb.left_out_ids(str(root)))
     assert problems
+    if bad == "name":
+        assert f"a-card/{entry['image']}: a link or snowflake in its name" in problems
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
     assert hb.main(["--root", str(root), "--remote", f"file://{remote}", "--store", str(tmp_path / "s"), "--push"]) == 1
