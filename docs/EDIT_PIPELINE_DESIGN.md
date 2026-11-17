@@ -1344,17 +1344,30 @@ lists its editor's card-preview runs every 0.3 s with If-None-Match; a 304 isn't
 the title names it, its blob (a 404 tried for 5 s) hashes to its sha and names its request, the editor is its own,
 and the bot's main (a conditional ref read)
 and the data's records (read again beside the card's blobs, as the Reads step does) are the ones it read. A run on a
-newer commit of the card repo (`head_sha`) is baked at that commit (`follow`, 2026-11-17): the lane
+newer commit of the card repo (`head_sha`; a rung press: main) is baked at that commit (`follow`, 2026-11-17): the lane
 fetches its trees (`--depth 1 --filter=blob:none`, 0.4-1.2 s from a Mac) and follows it when `MDW/Fonts`, `card-preview.yml` and
 `.github/actions` are the same there (the cold run's fonts and steps); else it ends. 5 of the 194 real presses went
 cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Replayed (`s1110/r44-3/`, a
 real lane in a shallow GitHub clone across TTSCardMaker d0f0eae3 -> 2d3bab82 -> e897b00c): 4 presses, two on cards
-those pushes changed (Marilyn, Astr Meiana), all byte-identical to cold runs at their commits. Any other
-newer run of its editor ends it, and that run is the next lane. A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
+those pushes changed (Marilyn, Astr Meiana; one rung), all byte-identical to cold runs at their commits. Any other
+newer run of its editor ends it, and that run is the next lane. The doorbell (2026-11-16, actbake r41): GitHub's runs
+lists show a new run 2-6 s after it is made (the D22 land probe's lane saw press 2 4.9 s after its run's `created_at`,
+after a fresh runner had already started that press's cold job), so beside the blob and the dispatch the website
+creates `refs/preview-lane/<lane run>/<request>-<blob sha>` at the lane's commit, a ref outside refs/heads and
+refs/tags (no workflow starts on it). The lane lists `git/matching-refs/preview-lane/<its run id>/` beside its runs
+(conditional, a 304 isn't counted) and takes a rung press at once (`rung`), with the same blob, records and bot's-main
+checks plus a read of the card repo's main in place of the run's `head_sha`; a request rung twice is none
+(a ref doesn't say who made it; its run's title does). That press's run, listed later, is served (no end, no lane of
+its own). The website deletes the ref once the lane's hand-over is in; the press's publish job deletes it too. The
+runs list stays the way in for a press the website couldn't ring. Replayed (`s1110/actbake-r41-0/`: the lane's own
+listen/take against a stand-in GitHub with those lags, 11 presses, a 0.5 s ref post): taken a median 0.92 s after the
+press instead of 5.06 s, its hand-over written at 2.34 s instead of 6.31 s; with no ref, 5.23 s (the runs list's). The
+land measures it on the runners (`tools/lane_probe_bell.py` there). A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
-press's own run). Every press is still dispatched, baked cold and published as ever. A run whose named lane handed its
-press over starts no lane of its own. The lane also ends past 2 GB peak memory, or after 30 s of failed listings.
+press's own run; none for a rung press). Every press is still dispatched, baked cold and published as ever. A run
+whose named lane handed its press over starts no lane of its own. The lane also ends past 2 GB peak memory, or after
+30 s of failed listings.
 Measured (2026-11-16, this Mac at load 64-80 while the owner gamed, TTSCardMaker bdc78630, data 05de2e10; scratch
 `s1110/d22/`): 27 real presses (name, ability, stats, stars, types, creatures, a redundant one) baked cold, each in a
 fresh process, and warm, by one lane process against a stand-in GitHub, its hand-overs made by the real `--hand --lane`
