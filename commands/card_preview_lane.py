@@ -11,13 +11,18 @@ A press names the lane in its run's title (card-preview.yml's run-name, from the
 
     Card preview <request> lane <run id>-<blob>
 
-blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each; no
-ref, so no push): GitHub cuts run titles at 512 characters, so the press itself never rides in one. The lane takes a run
-only when its title names this run, its editor is this run's, its blob hashes to its sha and names its request, and the
-bot's main and the data's records are still the ones this process read. A press on a newer commit of the card repo is
-taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the lane's commit.
-Any other newer run of its editor ends the lane (that run, not served, starts the next one). A run whose press its named
-lane served starts none.
+blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each):
+GitHub cuts run titles at 512 characters, so the press itself never rides in one. The website also rings the lane's
+doorbell beside them, a ref outside refs/heads and refs/tags (no push event, no workflow), at the lane's commit:
+
+    refs/preview-lane/<run id>/<request>-<blob>
+
+listed in about a second where a new run takes 2-6 s to show (rung). The lane takes a rung press at once (its blob, the card repo's main read in place of the run's commit) and a run only when
+its title names this run and its editor is this run's; each only when its blob hashes to its sha and names its request,
+and the bot's main and the data's records are still the ones this process read. A press on a newer commit of the card
+repo is taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the
+lane's commit. A rung press's run, listed later, is served; any other newer run of its editor ends the lane (that run,
+not served, starts the next one). A run whose press its named lane served starts none.
 """
 from base64 import b64decode
 from binascii import Error as Base64Error
@@ -57,6 +62,8 @@ MAX_BLOB = 1 << 16                              # bytes of a press's blob (an ed
 WORKFLOW = "card-preview.yml"
 RECORDS_ENV = "CARD_RECORDS_DIR"                # psd_edit.RECORDS_DIR: the data's records the first press read
 TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]{40})")
+BELL = "preview-lane"                           # the doorbell's refs: refs/preview-lane/<run id>/<request>-<blob>
+RUNG = re_compile(r"refs/preview-lane/(\d{1,20})/([A-Za-z0-9-]{8,64})-([0-9a-f]{40})")
 NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
 KEPT = ("MDW/Fonts", ".github/workflows/card-preview.yml", ".github/actions")    # the same at a commit the lane follows
 SHA = re_compile(r"[0-9a-f]{40}")
@@ -83,6 +90,17 @@ def press_of(title: str) -> Optional[Press]:
     """A run title's press, None when it names no lane."""
     match = TITLE.fullmatch(title or "")
     return Press(match.group(1), int(match.group(2)), match.group(3)) if match else None
+
+
+def rung(body: bytes, me: int) -> list:
+    """The presses rung at lane me's doorbell (a matching-refs listing), by name; a request rung twice is none (a ref
+    doesn't say who made it: its run's title still can)."""
+    try:
+        found = [m for m in (RUNG.fullmatch(r.get("ref", "")) for r in loads(body)) if m and int(m.group(1)) == me]
+    except (ValueError, TypeError, AttributeError):
+        return []
+    twice = {r for r in (m.group(2) for m in found) if sum(m.group(2) == r for m in found) > 1}
+    return sorted(Press(m.group(2), me, m.group(3)) for m in found if m.group(2) not in twice)
 
 
 def read_press(api: _Api, repository: str, press: Press) -> tuple:
@@ -151,14 +169,14 @@ def served_elsewhere(api: _Api, repository: str, named: str, request: str) -> st
     return ""
 
 
-def bot_moved(api: _Api, bot_repo: str, bot: str) -> str:
-    """Why the bot's main is not this process's commit (bot) any more; "" while it is (a 304 isn't counted)."""
+def bot_moved(api: _Api, bot_repo: str, bot: str, what: str = "the bot's main") -> str:
+    """Why bot_repo's main is not the commit bot (this process's) any more; "" while it is (a 304 isn't counted)."""
     status, _, body = api.get(f"/repos/{bot_repo}/git/ref/heads/main", conditional=True)
     if status == 304:
         return ""
     if status == 200:
-        return "" if loads(body).get("object", {}).get("sha") == bot else "the bot's main moved"
-    return f"the bot's main not read ({status})"
+        return "" if loads(body).get("object", {}).get("sha") == bot else f"{what} moved"
+    return f"{what} not read ({status})"
 
 
 def fits(run: dict, press: Optional[Press], me: int, actor: str) -> str:
@@ -206,12 +224,20 @@ def _log_to(path: str) -> None:
     close(fd)
 
 
-def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone: str, repository: str, head: str,
-         kept: dict, bot_repo: str, bot: str, limit: int) -> str:
+def main_of(api: _Api, repository: str) -> tuple:
+    """(the sha of repository's main, "") or ("", why not)."""
+    status, _, body = api.get(f"/repos/{repository}/git/ref/heads/main")
+    sha = (loads(body).get("object") or {}).get("sha", "") if status == 200 else ""
+    return (sha, "") if SHA.fullmatch(sha or "") else ("", f"the card repo's main not read ({status})")
+
+
+def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: str, clone: str, repository: str, head: str,
+         kept: dict, bot_repo: str, bot: str, limit: int, moved: Optional[Callable] = None) -> str:
     """
-    One press: its out dir made (the hand-over's artifact created then), its blob (read_press), its reads
-    (card_preview_reads, as the Reads step) beside the bot's check, then bake() into it; <out>.code after. Returns ""
-    when baked, else why the lane ends.
+    One press (run: its run, None when rung): its out dir made (the hand-over's artifact created then), its blob
+    (read_press), its reads (card_preview_reads, as the Reads step) beside the bot's check (a rung one's: the card
+    repo's main too: on a newer main, moved(main) and its reads there), then bake() into it; <out>.code after. Returns
+    "" when baked, else why the lane ends.
     """
     out, seen = join(lane, press.request), monotonic()
     makedirs(out, exist_ok=True)
@@ -230,22 +256,29 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
         with ThreadPoolExecutor(1) as pool:
             done = pool.submit(reads, card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""))
             why = bot_moved(api, bot_repo, bot)
+            main, why = (head, why) if run or why else main_of(api, repository)
             done.result()
+        if not why and main != head:            # a rung press on a newer main
+            why = moved(main) if moved else "the card repo's main moved"
+            if not why:
+                head = main
+                reads(card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""))
         for name in RECORDS if not why else ():
             fresh = _read(join(records, name))
             why = why or ("the data's records not read" if fresh is None else "the data's records changed" if fresh != kept[name] else "")
         if why:
             return why
         read = monotonic()
-        url = f"{environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repository}/actions/runs/{run['id']}"
+        url = f"{environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repository}/actions/runs/{run['id']}" if run else ""
         result = bake(card, text.encode("utf-8")[:limit + 1], out, repository, clone=clone,
                       request=press.request, head=head, run=url)
         code = "0" if result.get("state") != "error" else "2" if str(result.get("reason", "")).startswith("input:") else "1"
-        made, now = _epoch(run.get("created_at")), monotonic()
+        made, now = _epoch(run.get("created_at")) if run else None, monotonic()
         _say(f"{press.request} ({clean(card, 80)}): {result.get('state')} in {now - seen:.2f} s (blob {blob - seen:.2f} s, "
              f"reads {read - blob:.2f} s, "
              f"bake {now - read:.2f} s)" + (f"; seen {time() - (now - seen) - made:.1f} s after its run was made (to the "
-                                            "second)" if made else ""))
+                                            "second)" if made
+                                            else "; rung" if run is None else ""))
         return ""
     finally:
         with open(out + ".code.tmp", "w", encoding="utf-8") as fh:     # the hand-over: done (none when skipped)
@@ -255,10 +288,12 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
 
 
 def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
-    """The lane's loop: its editor's runs listed every POLL s (conditional GETs), each newer one taken (take; at its
-    commit: follow) or the lane's end (fits). Returns why it ended (press: take's keywords)."""
+    """The lane's loop: its doorbell and its editor's runs listed every POLL s (conditional GETs), each press rung taken
+    (take), then each newer run taken (at its commit: follow), served (rung before) or the lane's end (fits). Returns why
+    it ended (press: take's keywords)."""
     runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
-    last, failing, seen, listed = monotonic(), None, set(), []
+    bells = f"/repos/{press['repository']}/git/matching-refs/{BELL}/{me}/"
+    last, failing, seen, listed, rang, taken = monotonic(), None, set(), [], [], set()
 
     def moved(new: str) -> str:                 # a press at new: the lane's commit from now on
         started, why = monotonic(), follow(press.get("clone", ""), press["head"], new)
@@ -272,30 +307,44 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
         if time() > until:
             return "the job's end is near"
         try:
-            status, _, body = api.get(runs, conditional=True)
+            status, _, body = api.get(bells, conditional=True)
+            rang = rung(body, me) if status == 200 else rang
         except (OSError, HTTPException, ValueError):
-            status = 0
-        if status in (200, 304):
-            failing = None
-        else:
-            failing = failing or monotonic()
-            if monotonic() - failing > FAILING:
-                return f"the runs list failed for {FAILING} s ({status})"
-        if status == 200:
-            listed = loads(body).get("workflow_runs", [])
-        newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen), key=lambda r: int(r["id"]))
-        if newer:
+            pass                                # the runs list still brings it
+        pressed, run = next((p for p in rang if p.request not in taken), None), None
+        if pressed is None:
+            try:
+                status, _, body = api.get(runs, conditional=True)
+            except (OSError, HTTPException, ValueError):
+                status = 0
+            if status in (200, 304):
+                failing = None
+            else:
+                failing = failing or monotonic()
+                if monotonic() - failing > FAILING:
+                    return f"the runs list failed for {FAILING} s ({status})"
+            if status == 200:
+                listed = loads(body).get("workflow_runs", [])
+            newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen),
+                           key=lambda r: int(r["id"]))
+            if not newer:
+                sleep(POLL_SLOW if api.left is not None and api.left < LOW else POLL)
+                continue
             run = newer[0]
             seen.add(run["id"])
             pressed = press_of(run.get("display_title", ""))
-            why = fits(run, pressed, me, actor) or moved(run.get("head_sha") or "") or take(api, pressed, run, **press)
+            if pressed is not None and pressed.request in taken:
+                continue                        # rung: served
+            why = fits(run, pressed, me, actor) or moved(run.get("head_sha") or "")
             if why:
                 return why
-            last = monotonic()
-            if _rss() > MAX_RSS:
-                return f"peak memory {_rss() >> 20} MB"
-            continue                            # the list again at once: the others' states as of now
-        sleep(POLL_SLOW if api.left is not None and api.left < LOW else POLL)
+        taken.add(pressed.request)
+        why = take(api, pressed, run, moved=moved, **press)
+        if why:
+            return why
+        last = monotonic()
+        if _rss() > MAX_RSS:
+            return f"peak memory {_rss() >> 20} MB"
 
 
 def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, head: str, request: str, named: str,
@@ -359,9 +408,11 @@ __all__ = [
     'fits',
     'follow',
     'listen',
+    'main_of',
     'press_blob',
     'press_of',
     'read_press',
+    'rung',
     'serve',
     'served_elsewhere',
     'take',
