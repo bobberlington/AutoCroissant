@@ -662,6 +662,63 @@ def offered(it: dict, r: dict) -> bool:
         r.get("choice") == (it.get("other") or {}).get("c")
 
 
+def same_value(key: str, a, b, kind: Optional[str] = None) -> bool:
+    """Two values of a field that say the same: names by their letters, abilities by their words (formatting
+    alone is no change, owner 11-09), types as the card data's tokens (an item's kinds aside), else equal."""
+    if key == "name":
+        return dm.squash(str(a or "")) == dm.squash(str(b or ""))
+    if key == "ability":
+        return dc.text_key(dm.strip_tokens(str(a or ""))) == dc.text_key(dm.strip_tokens(str(b or "")))
+    if key == "types" and isinstance(a, list) and isinstance(b, list):
+        return sorted(dc.without_kinds(dc.type_tokens(a, kind), kind)) == \
+            sorted(dc.without_kinds(dc.type_tokens(b, kind), kind))
+    return dumps(a, sort_keys=True) == dumps(b, sort_keys=True)
+
+
+def settled(inputs: Inputs, r: dict) -> Optional[str]:
+    """Why an answer whose item left the page needs no new answer, or None (not applied: answer it again): the rerun
+    gives what it said. A field its version (the picture's entry, a repost's, the same old blob's) now publishes
+    sure the same way (from another answer: the git look's own; a 'no' while the value it turned down stays out); a
+    picture's card it has now, on or off the timeline as answered; a fact kept or dropped as answered; the Created
+    date in use; a Morgue entry answered 'no' that left the list."""
+    it, c = r.get("item") or {}, r.get("choice")
+    kind, cid = r.get("kind") or it.get("kind"), it.get("card")
+    t = inputs.timelines.get(cid) or {}
+    entries = t.get("entries") or []
+    pic = it.get("picture") or (it["entry"][2:] if str(it.get("entry") or "").startswith("D-P-") else None)
+    shown = [e for e in entries if pic and (e["id"] == f"D-{pic}" or any(
+        p.get("id") == pic for p in e.get("pictures") or []))]
+    if kind in ("field", "old field") and it.get("field"):
+        key = it["field"]
+        if kind == "old field":
+            blob = (((it.get("pics") or [{}])[0].get("src") or "").rsplit("/", 1)[-1])[:-5]
+            shown = [e for e in entries if e.get("kind") == "old repo" and blob and e.get("blob") == blob]
+        turned = next((x.get("value") for x in it.get("choices") or [] if x["c"] == "yes"), None)
+        for e in shown:
+            f = (e.get("fields") or {}).get(key)
+            if not dc.is_sure(f):
+                continue
+            if c == "no" and (turned is None or not same_value(key, turned, f["value"], t.get("kind"))) or \
+                    c in ("yes", "value") and same_value(key, r.get("value"), f["value"], t.get("kind")):
+                return f"its version now shows this {key} ({f.get('method')})"
+        return None
+    if kind == "card not told" and c in ("card", "none"):
+        row = inputs.verdicts.get(pic or str(r.get("item", {}).get("id", "")).split(":", 1)[-1]) or {}
+        return "the picture is that card's now" if c == "card" and row.get("card") == r.get("value") else None
+    if kind in ("joke picture", "look not told") and pic:
+        off = c in ("joke", "no")
+        return ("the picture stays out" if off else "the picture is on its timeline") if bool(shown) != off else None
+    if kind == "fact vs picture" and it.get("fact"):
+        kept = any(e["id"] == f"F-{it['fact']}" for e in entries)
+        return ("the line is kept" if kept else "the line is left out") if kept == (c == "fact") else None
+    if str(kind).startswith("created") and c in ("file", "ours", "date"):
+        made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
+        return "the Created date in use is that day" if made.get("date") and made["date"] == r.get("value") else None
+    if kind in ("morgue not candidate", "morgue idea", "morgue candidate") and c == "no":
+        return "the entry is off the Morgue list"
+    return None
+
+
 def gather(inputs: Inputs) -> list:
     items = owner_answers(inputs) + old_maps(inputs) + match_items(inputs) + chain_items(inputs) + \
         psd_items(inputs) + fact_items(inputs) + morgue_items(inputs)
@@ -680,11 +737,20 @@ def gather(inputs: Inputs) -> list:
     for it in items:                                 # answered, but no radio here takes that answer any more (a
         r = inputs.rulings.get(it["id"])             # look's version gone): not applied
         if r and not it.get("read_only") and not offered(it, r):
-            it["stale"] = True
-    for rid, r in inputs.rulings.items():            # answered, its item gone: taken in (the chain acted on it) or
-        if rid not in have and r.get("item"):        # changed (a regrouped look, a Created status that moved)
-            items.append({**{k: v for k, v in r["item"].items() if k != "stale"},
-                          "gone": "taken" if rid in inputs.used else "changed"})
+            made = inputs.created.get((inputs.cards.get(it.get("card")) or {}).get("key")) or {}
+            if str(it["kind"]).startswith("created") and (made.get("owner") or {}).get("held") == r.get("value"):
+                it["held"] = r.get("value")          # the owner's day kept until answered again (discord_chain)
+            else:
+                it["stale"] = True
+    waits = {i.get("picture") for i in items if i.get("picture") and i["kind"] in ("look not told", "card not told")
+             and not inputs.rulings.get(i["id"]) and not i.get("read_only")}       # pictures whose look is open
+    for rid, r in inputs.rulings.items():            # answered, its item gone: taken in (the chain acted on it, or
+        if rid not in have and r.get("item"):        # the rerun gives the same: settled), waiting (its picture's
+            why = None if rid in inputs.used else settled(inputs, r)    # look is open) or changed (a regrouped
+            pic = str(r["item"].get("entry") or "")[2:] if r.get("kind") == "field" else None    # look, a Created
+            gone = "taken" if rid in inputs.used or why else "waiting" if pic and pic in waits else "changed"
+            items.append({**{k: v for k, v in r["item"].items() if k != "stale"}, "gone": gone,
+                          **({"settled": why} if why else {})})
     order = {s[0]: n for n, s in enumerate(SECTIONS)}
     subs = {s: {p[0]: n for n, p in enumerate(parts)} for s, parts in SUBS.items()}
     return sorted(items, key=lambda i: (order[i["section"]], subs.get(i["section"], {}).get(i.get("sub"), 0),
@@ -835,8 +901,16 @@ def item_html(it: dict) -> str:
     if it.get("gone") == "changed":
         meta += ("<div><b>Not applied: this item changed or left the page since you answered (a look regrouped, a "
                  "Created date that moved). Answer it again where it is now, or clear this one.</b></div>")
+    elif it.get("gone") == "waiting":
+        meta += ("<div><b>Answered; waits for this picture's open look item above: it applies once that is "
+                 "answered.</b></div>")
+    elif it.get("settled"):
+        meta += f"<div><b>Answered; the rerun gives the same now: {escape(it['settled'])}.</b></div>"
     elif it.get("gone"):
         meta += "<div><b>Answered and taken in by the rerun.</b></div>"
+    elif it.get("held"):
+        meta += (f"<div><b>Your answer's day ({escape(str(it['held']))}) is kept until you answer again: this item "
+                 "now proposes other days (an earlier picture was found).</b></div>")
     elif it.get("stale"):
         meta += ("<div><b>Not applied: your answer is no longer one this item offers (it proposes another value, "
                  "date or card now, a look's version left the card's history, a card no longer live). Answer it "

@@ -265,6 +265,7 @@ def test_a_rebuild_s_settled_answers_skip_and_the_owner_s_win(tmp_path):
     assert "match:P-1: kept: owner's answer" in " ".join(logs)
     assert run(export("triage guess (owner-delegated)", **{"R1": {"choice": "yes", "value": "points"}})) == 0
     assert stored()["R1"]["choice"] == "no"                                          # the triage's over its guess
+    assert run(export(**{"R1": {"choice": "no"}})) == 0 and "source" not in stored()["R1"]  # the same: owner's now
     ids = json.loads((review / "ids.json").read_text())["ids"]
     tr.register(str(tmp_path), [tr.item("look not told", "chain-gone", "matches", "looks", "Pike: 2020",
                                         card="pike")], "2026-11-16T12:10:04+00:00")
@@ -296,3 +297,29 @@ def test_changelog_lines_take_a_card(tmp_path, monkeypatch):
     monkeypatch.setattr(tr, "match_items", lambda i: [made])    # one item from a part, the owner's answer over it
     got = tr.gather(inputs)
     assert got[0]["read_only"] and not got[0]["choices"] and "The owner's answer (2026-11-15 21:50)" in got[0]["meta"][-1]
+
+
+def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
+    """s3 gap 2 fix: an answer whose item left the page but whose version still shows it (from the git look's own
+    answer, a repost's entry, the same old blob's row) is taken in, not 'answer it again'; so are a picture's card, a
+    Created date in use and a Morgue 'no'. Another value or a gone entry stays not applied."""
+    from types import SimpleNamespace
+    sure = lambda v: {"value": v, "confidence": "sure", "method": "triage"}
+    ns = SimpleNamespace(
+        timelines={"bolt": {"kind": "creature", "entries": [
+            {"id": "D-P-1", "pictures": [{"id": "P-1"}, {"id": "P-2"}], "fields": {"ability": sure("Heal 2 HP.")}},
+            {"id": "O-x", "kind": "old repo", "blob": "b1", "fields": {"stats": sure({"hp": 6, "def": 5})}}]}},
+        verdicts={"P-9": {"card": "bolt"}}, created={"Bolt": {"date": "2020-01-01"}}, cards={"bolt": {"key": "Bolt"}})
+    field = lambda entry, value, c="value": {"kind": "field", "choice": c, "value": value, "item": {
+        "kind": "field", "card": "bolt", "entry": entry, "field": "ability", "choices": [{"c": "yes", "value": "Heal 3 HP."}]}}
+    assert tr.settled(ns, field("D-P-2", "heal 2 hp")) and tr.settled(ns, field("D-P-1", None, "no"))
+    assert not tr.settled(ns, field("D-P-2", "Heal 3 HP.")) and not tr.settled(ns, field("D-P-7", "Heal 2 HP."))
+    old = {"kind": "old field", "choice": "value", "value": {"hp": 6, "def": 5}, "item": {
+        "kind": "old field", "card": "bolt", "field": "stats", "pics": [{"src": "../oldgit/thumbs/b1.webp"}]}}
+    assert tr.settled(ns, old)
+    assert tr.settled(ns, {"kind": "card not told", "choice": "card", "value": "bolt",
+                           "item": {"kind": "card not told", "picture": "P-9"}})
+    assert tr.settled(ns, {"kind": "created earlier", "choice": "file", "value": "2020-01-01",
+                           "item": {"kind": "created earlier", "card": "bolt"}})
+    assert tr.settled(ns, {"kind": "morgue not candidate", "choice": "no", "item": {"kind": "morgue not candidate"}})
+    assert not tr.settled(ns, {"kind": "morgue idea", "choice": "yes", "item": {"kind": "morgue idea"}})

@@ -17,7 +17,7 @@ value now, or none: answer it again). An answer the same as the one stored is ke
 longer offers it (the page marks it not applied).
 The file's "source" (the triage's files: 'triage ...'; else the owner) is kept with each answer: an owner's answer is
 never replaced by the triage's, nor the triage's by its guesses (owner > triage > triage guess); otherwise a later
-answer of an id wins; "clear" withdraws one. Good answers go into derived/review/rulings.json, then the timelines are
+answer of an id wins (the same answer from a higher source takes its source); "clear" withdraws one. Good answers go into derived/review/rulings.json, then the timelines are
 rebuilt (a changelog line given a card: python -m commands.discord_facts build first; python -m commands.discord_chain
 build reads rulings.json), the Morgue list with the answers written to derived/review/morgue.json, and the page
 rebuilt with the answers checked. Never a repo; no message text.
@@ -139,6 +139,9 @@ def check(answers: dict, items: dict, stored: dict, cards: dict, issued: dict = 
         if rid in stored and {k: stored[rid].get(k) for k in ("choice", "value")} == {"choice": c,
                                                                                     "value": answer.get("value")}:
             good[rid] = stored[rid]              # unchanged: kept as stored (its item may no longer offer it)
+            if rank(source) < rank(stored[rid].get("source")):                  # given again by a higher source
+                good[rid] = {k: v for k, v in stored[rid].items() if k not in ("source", "at")}
+                good[rid].update({"source": source} if source != OWNER else {})
             continue
         if rid in stored and rank(stored[rid].get("source")) < rank(source):
             skipped.append((rid, f"kept: {stored[rid].get('source') or OWNER}'s answer"))
@@ -203,7 +206,8 @@ def apply(export: dict, root: str, cards_repo: str = None, build: bool = True, l
             log(f"  {rid}: {why}")
     now = dm.now_iso()
     same = [rid for rid, r in good.items() if rid in stored and
-            {k: stored[rid].get(k) for k in ("choice", "value")} == {k: r.get(k) for k in ("choice", "value")}]
+            {k: stored[rid].get(k) for k in ("choice", "value", "source")} ==
+            {k: r.get(k) for k in ("choice", "value", "source")}]
     lines = any(r.get("kind") == "ambiguous card" for rid, r in good.items() if rid not in same) or \
         any((stored.get(rid) or {}).get("kind") == "ambiguous card" for rid in clear)    # facts to rebuild
     for rid, r in good.items():
