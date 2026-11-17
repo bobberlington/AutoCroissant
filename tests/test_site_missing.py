@@ -38,3 +38,18 @@ process.stdout.write(JSON.stringify({{ missing, x, hp: [order(c => c.hp ?? null,
     assert out["hp"] == [["Ed", "Al", "Bob", "Cy", "Di"], ["Cy", "Bob", "Al", "Ed", "Di"]]
     # by series, then subseries: no series last, and in a series no subseries last, either way
     assert out["series"] == [["Ed", "Bob", "Di", "Al", "Cy"], ["Bob", "Ed", "Di", "Al", "Cy"]]
+
+
+def test_name_order_skips_leading_punctuation(tmp_path):
+    """'[Thunderfury: …]' sorts under T, not first (2026-11-17): the Name sort, another sort's ties and the deck builder's
+    picker (pick.js) alike."""
+    script = tmp_path / "probe.mjs"
+    script.write_text(f"""const G = await import({json.dumps(GRID_JS.as_uri())});
+const P = await import({json.dumps((GRID_JS.parent / "pick.js").as_uri())});
+const cards = ["Bo", "[Ax: Blade]", "Ab", "Cy"].map(name => ({{ name, type: "item", stars: 4 }})), names = l => l.map(c => c.name);
+process.stdout.write(JSON.stringify([names(cards.slice().sort(G.byKey(G.nameKey))), names(cards.slice().sort(G.byKey(c => c.stars, true))),
+  names(P.pickList(cards).list)]));
+""", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [["Ab", "[Ax: Blade]", "Bo", "Cy"], ["Cy", "Bo", "[Ax: Blade]", "Ab"], ["Ab", "[Ax: Blade]", "Bo", "Cy"]]
