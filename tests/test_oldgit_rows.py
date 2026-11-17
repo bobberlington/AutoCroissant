@@ -468,6 +468,33 @@ def test_a_png_with_no_psd_text_takes_the_text_readers_and_its_header(rows):
     assert (t["value"], t["method"], t["confidence"]) == (["dark", "fire"], "eye", "sure")
 
 
+def test_types_by_eye_win_over_a_psd_of_another_look(rows):
+    """A PNG whose PSD is another look (types to review) takes its types by eye when told (Mini Bees 2022: the
+    tornado only, the PSD's minion sword not printed); a sure PSD read stands."""
+    path = "Auxillary/Minions/3 Stars/Mini_Bees"
+    v = lambda ext, blob: {"id": f"{blob}:{path}.{ext}", "old_id": "Mini_Bees", "commit": "c" * 40, "ts": 100,
+                           "date": "2022-08-24T00:00:00-07:00", "author": "Michael", "subject": "s",
+                           "path": f"{path}.{ext}", "ext": ext, "blob": blob, "kind": "add", "new_look": True}
+    read = {"type": "minion", "name": "Mini Bees", "printed_title": "Mini Bees", "stars": 3,
+            "types": ["offensive_minion", "wind"], "stats": stats(1, 2, 3, 6), "ability": "Non-Protecting Minion"}
+    ocr = {"g1": {"title": [["Mini Bees", 1.0]], "lines": [["Non-Protecting Minion", 1.0, 0.1, 0.8, 0.8, 0.05]]}}
+
+    class Apart(FakeData):
+        def thumb(self, blob):
+            import numpy as np
+            return np.full((64, 32, 3), 200 if blob == "p1" else 0, dtype=np.int16)
+    today = {"names": {"Mini Bee"}, "type": "minion", "creatures": False}
+    for kind, sure in ((Apart, False), (FakeData, True)):
+        data = kind({"Mini_Bees": [v("psd", "p1"), v("png", "g1")]}, {("p1", f"{path}.psd"): {"read": read}},
+                    {"g1": {"best": stats(1, 2, 3, 6), "halves": {"apart": 0}}}, {}, ocr, {"p1": 3})
+        data.psd_firsts = {}
+        t = rows.card_rows(data, "Mini_Bees", ["Mini_Bees"], today)[-1]["fields"]["types"]
+        assert t["confidence"] == ("sure" if sure else "review")
+        data.eye_types = {"g1": {"types": ["wind"]}}
+        t = rows.card_rows(data, "Mini_Bees", ["Mini_Bees"], today)[-1]["fields"]["types"]
+        assert (t["value"], t["method"]) == ((["offensive_minion", "wind"], "psd") if sure else (["wind"], "eye"))
+
+
 def test_a_file_name_standing_in_for_an_unread_title_is_no_sure_name(rows):
     """'composite, file name' makes a name sure only as the PSD's title: when the same file's other versions print a
     longer title holding it (Satou: 'Satou Matsuzaka' on two lines), the title layers were not read -> review."""

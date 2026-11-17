@@ -50,7 +50,7 @@ TEXT_RAW = (join(DERIVED, "readers", "text", "raw.jsonl"),       # the text read
             join(DERIVED, "readers", "text", "raw_ability.jsonl"))   # and their ability-alone reads (read-ability)
 TEXT_CAL = join(DERIVED, "readers", "text", "calibration.json")  # their eras' bars (never fitted here)
 HEADER_ROWS = join(DERIVED, "readers", "types", "header_rows.jsonl")   # header_types rows: types by a git header
-TYPES_EYE = join(DERIVED, "readers", "types", "eye_rows.json")  # rows with no PSD: types by eye (by PNG blob)
+TYPES_EYE = join(DERIVED, "readers", "types", "eye_rows.json")  # types by eye (by PNG blob): no PSD, or another look
 READERS = os.environ.get("OLDROWS_READERS") or join(oi.HOME, "Documents/Tools/wt/scratch/s1110/timelines/eras")
 ORDER = ("hp", "def", "atk", "spd")
 BADGE = "old repo"
@@ -896,9 +896,10 @@ def check_fields(data: Data, png: dict, psd, pick: str, off, today: dict) -> tup
             fields["ability"] = text_ability(data, png["blob"], today.get("known") or ()) or fields["ability"]
         if not ocr and fields["ability"].get("value") == "" and fields["ability"]["confidence"] == "sure":
             fields["ability"] = field("", "psd", False, why="no OCR of the picture to tell it prints none")
-    eye = data.eye_types.get(png["blob"]) if read is None else None
+    unsure = (fields.get("types") or {}).get("confidence") != "sure"
+    eye = data.eye_types.get(png["blob"]) if read is None or unsure else None   # or a PSD of another look
     got = data.header.get(png["blob"]) if read is None and eye is None else None
-    if eye is not None:                                        # no PSD: its header by eye
+    if eye is not None:                                        # its header by eye
         fields["types"] = field(list(eye["types"]), "eye", True, "header by eye")
     if got:                                                    # no PSD: its header against a git version's
         fields["types"] = field(sorted(got["types"]), "git header", got["sure"], f"{got['version']} ncc {got['ncc']}",

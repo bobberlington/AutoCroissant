@@ -68,8 +68,10 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    that text as written, or at its era's stored bar, never fitted again, else proposed for review; a git look's
    Discord picture takes an answer given on its row's item or on its own, and an answer typed off the picture keeps
    its form over a known text of the same words (text_key); a field its row has none of is the picture's own sure read;
-   its types, with no PSD, by eye (`derived/readers/types/eye_rows.json`, by PNG blob: the eras A-C, items and fields
-   read off zoomed headers with each era's icon bank; an item's kind icons are no type), else a git version's when
+   its types, with no PSD or a PSD of another look, by eye (`derived/readers/types/eye_rows.json`, by PNG blob: the
+   eras A-C, items and fields read off zoomed headers with each era's icon bank; an item's kind icons are no type; an
+   icon outside the band too: False Knight's rock beside its mid-card name; 2022's minions print no minion icon,
+   Mini Bees only its tornado), else a git version's when
    its header matches that version's, `header_types rows` on D1-D3 as for Discord pictures (a type an earlier run of
    it gave counts as none, so a rerun after `oldgit_rows rows` gives the same), else proposed; a name
    sure only as the file name its PSD's composite carries goes to review when another version of the same file
