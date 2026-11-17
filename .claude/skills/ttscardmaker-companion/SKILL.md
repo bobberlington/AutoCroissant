@@ -703,7 +703,10 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
   `Types/`, the fonts and the card files in `site/` start Card sync, which dispatches this build after its data commit),
   a daily cron `0 12 * * *` (the fallback), and `workflow_dispatch`. A push that also changes a Card sync data input
   (not TTS/Global.*, the save) stops at its first step (Early build) once Card sync's early build for it is found in
-  30 s: that one builds the push's site code with the new data (since 2026-11-12).
+  30 s: that one builds the push's site code with the new data (since 2026-11-12). Since 2026-11-17 a push's own run
+  that is that early build also builds the guards' follow-up: after its deploy, when the push's guards land fixes and
+  started a Card sync, its Follow-up build waits (90 s at most) for a `Card data` commit on a main holding the landing,
+  then builds and deploys again (versions 3 and 4); the follow-up's data job dispatches no build of its own meanwhile.
 - **Checkout:** `actions/checkout@v7`, depth 1 + `filter: blob:none`, a non-cone sparse checkout of `/site/` (which
   holds the four hand-kept website files since 2026-10-20), the font manifest and `.github/actions/history/`. Main's
   every commit and tree (no contents, ~2.6 MB) come into a bare `history.git` beside it and join it in the background
