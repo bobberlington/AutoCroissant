@@ -131,7 +131,11 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                           {"id": "chain-l1", "kind": "look not told", "card": "bolt", "picture": "P-1",
                                            "near": 1},
                                           {"id": "chain-f3", "kind": "field", "card": "bolt", "entry": "D-ai",
-                                           "field": "stars", "proposed": 9}]))
+                                           "field": "stars", "proposed": 9},
+                                          {"id": "chain-d1", "kind": "dates only", "card": "bolt", "picture": "P-5",
+                                           "date": "2020-07-19T00:00:00+00:00", "channel": "ideas",
+                                           "why": "a sheet of two cards", "read_only": True}]))
+    put(("match", "eye.json"), {"dates_only": {"P-5": "a sheet of two cards"}})
     put(("preview", "eye.json"), {"leave_out": {"bolt|D-ai": "an AI restyle"}})
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
@@ -149,6 +153,7 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     put(("review", "rulings.json"), {"rulings": {"chain-old1": stale("chain-old1", stale=True),
                                                  "chain-old2": stale("chain-old2"),
                                                  "chain-l1": number,                 # a yes on what it proposed then
+                                                 "chain-x5": stale("chain-x5", card="bolt", entry="D-P-5"),
                                                  "chain-f1": {"kind": "field", "choice": "yes",
                                                               "value": {"hp": 6, "def": 2}}}})
     put(("chain", "ruled.json"), {"used": ["chain-old1"]})
@@ -161,12 +166,14 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert sorted(i for i in got if i.startswith("hint:")) == ["hint:LC-1:bolt", "hint:LC-3:kit"]
     assert got["hint:LC-1:bolt"]["picture"] == "P-m1"
     assert (got["chain-old1"]["gone"], got["chain-old2"]["gone"]) == ("taken", "changed")
+    assert got["chain-d1"]["read_only"] and got["chain-d1"]["sub"] == "dates" and not got["chain-d1"]["choices"]
+    assert got["chain-x5"]["gone"] == "taken" and "dates only" in got["chain-x5"]["settled"]   # no card on its own
     assert "taken in by the rerun" in tr.item_html(got["chain-old1"]) and \
         "Not applied" in tr.item_html(got["chain-old2"])
     assert "changed" not in tr.item_html(got["chain-old1"]).split(">")[0]        # taken: its stored copy's mark gone
     page = tr.page(list(got.values()), inputs, "now")
     assert "<option value='kit2' label='Kit (kit2)'>" in page and "<option value='Bolt'>" in page
-    assert "1 answered and applied, 3 answered but not applied" in page
+    assert "2 answered and applied, 3 answered but not applied" in page
     names = {cid: c["name"] for cid, c in cards.items()}
     assert (ar.parse("card", "kit2", names), ar.parse("card", "Tentacle", names)) == ("kit2", "tentacle")
     try:
@@ -327,3 +334,7 @@ def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
                            "item": {"kind": "created earlier", "card": "bolt"}})
     assert tr.settled(ns, {"kind": "morgue not candidate", "choice": "no", "item": {"kind": "morgue not candidate"}})
     assert not tr.settled(ns, {"kind": "morgue idea", "choice": "yes", "item": {"kind": "morgue idea"}})
+    ns.dates_only = {"P-7": "two cards in one screenshot"}           # no card on its own: any answer on it taken
+    assert "dates only" in tr.settled(ns, field("D-P-7", "Heal 2 HP.")) and \
+        "dates only" in tr.settled(ns, field("D-P-7", None, "no")) and \
+        not tr.off_timeline(ns, {"kind": "look not told", "choice": "no", "item": {"picture": "P-7"}})

@@ -5,7 +5,8 @@ timelines keep out for the owner, with stable ids and radio answers that export 
     python -m commands.timeline_review build [--root <dir>]
 
 Reads the parts' outputs under the archive's derived/ (chain, match, matcher, oldrows, facts, morgue; never a repo; the
-preview's eye.json: its leave_out pictures, no version of the card, are not asked about) and writes derived/review/:
+preview's eye.json: its leave_out pictures, no version of the card, are not asked about; match/eye.json dates_only:
+pictures that are no card on its own, shown read only, their answers taken in as that) and writes derived/review/:
     index.html   the page (open it in a browser: its pictures are the archive's own thumbnails, by relative path)
     items.json   every item with its id, kind, section and the answers it takes (what apply_rulings checks against)
 Sections: the owner's answers (Q1-Q6 and the later ones, read only), the unsure old maps, unsure matches and
@@ -46,6 +47,7 @@ RULINGS = ("derived", "review", "rulings.json")
 ISSUED = dc.ISSUED                                    # every id the page showed, with its card (ids keep their meaning)
 OWNER = ("derived", "review", "owner.json")           # the owner's rulings outside the page (answers shown read only)
 EYE = ("derived", "preview", "eye.json")              # the preview's eye: leave_out = pictures that are no version
+MATCH_EYE = dc.MATCH_EYE                              # dates_only: pictures that are no card on its own (owner 11-16)
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
 RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
 GUILD = "545138546021892096"                          # Impossibility Simulator (a changelog line's Discord link)
@@ -66,7 +68,8 @@ SUBS = {                                              # section -> its parts in 
                 ("named", "Named only: is this the card? (confirm in bulk)", "yes"),
                 ("jokes", "Joke pictures", None), ("older", "An older template posted later", None),
                 ("fields", "Fields read on Discord versions", None),
-                ("facts", "Changelog lines", None)),
+                ("facts", "Changelog lines", None),
+                ("dates", "No card on its own: dates only, never shown (read only)", None)),
     "created": (("earlier", "Earlier than the website's date (proposed: the preview uses ours)", None),
                 ("new", "No date on the website yet", None),
                 ("later", "Later than the website's date (the website's date kept)", None),
@@ -113,6 +116,7 @@ class Inputs:
         self.answers = {a["id"]: a for a in self.owner.get("answers") or []}
         self.used = set((dm.read_json(at(USED), {}) or {}).get("used") or [])
         self.left_out = {tuple(k.split("|")) for k in (dm.read_json(at(EYE), {}) or {}).get("leave_out") or {}}
+        self.dates_only = (dm.read_json(at(MATCH_EYE), {}) or {}).get("dates_only") or {}
         names = Counter(str(c.get("name") or cid).casefold() for cid, c in self.cards.items())
         self.shared = {n for n, k in names.items() if k > 1}          # a name two cards share: shown with the id
 
@@ -352,6 +356,12 @@ def chain_items(inputs: Inputs) -> list:
                              choice("picture", "the picture is right (drop the line)")]
         elif kind.startswith("created ") or kind in ("changelog earlier", "first repo earlier"):
             it = created_item(inputs, r)
+        elif kind == "dates only":
+            it = item(kind, r["id"], "matches", "dates", head + date, read_only=True, **common)
+            it["meta"] = [f"by eye: {r.get('why')}", "Only a card on its own is shown (your rule, 11-16 23:10/23:15): "
+                          "this picture counts for dates only (Created, a version existed by then), never on the "
+                          "timeline."]
+            it["pics"] = [row_pic(row, "the picture")]
         elif kind == "split":
             it = item(kind, r["id"], "splits", None, f"{r.get('name')} -> " + " + ".join(
                 inputs.name(h) for h in r.get("halves") or []), read_only=True)
@@ -676,18 +686,37 @@ def same_value(key: str, a, b, kind: Optional[str] = None) -> bool:
     return dumps(a, sort_keys=True) == dumps(b, sort_keys=True)
 
 
+def answer_picture(r: dict) -> Optional[str]:
+    """The Discord picture an answer is about: its item's, or its entry's first (D-<picture id>)."""
+    it = r.get("item") or {}
+    return it.get("picture") or (it["entry"][2:] if str(it.get("entry") or "").startswith("D-P-") else None)
+
+
+def off_timeline(inputs: Inputs, r: dict) -> Optional[str]:
+    """Why an answer about a picture that is no card on its own (match/eye.json dates_only) needs nothing more: the
+    picture counts for dates only, never shown, whatever its look or fields; a 'not this card' aside."""
+    kind = r.get("kind") or (r.get("item") or {}).get("kind")
+    if answer_picture(r) not in (getattr(inputs, "dates_only", None) or {}) or \
+            kind in ("look not told", "named only", "card not told") and r.get("choice") in ("no", "none"):
+        return None
+    return "the picture is no card on its own: it counts for dates only, never shown (your rule, 11-16)"
+
+
 def settled(inputs: Inputs, r: dict) -> Optional[str]:
     """Why an answer whose item left the page needs no new answer, or None (not applied: answer it again): the rerun
     gives what it said. A field its version (the picture's entry, a repost's, its git look's row once the picture
     left for it, the same old blob's) now publishes
     sure the same way (from another answer: the git look's own; a 'no' while the value it turned down stays out); a
     picture's card it has now, on or off the timeline as answered; a fact kept or dropped as answered; the Created
-    date in use; a Morgue entry answered 'no' that left the list."""
+    date in use; a Morgue entry answered 'no' that left the list; any answer on a picture that is no card on its own."""
+    off = off_timeline(inputs, r)
+    if off:
+        return off
     it, c = r.get("item") or {}, r.get("choice")
     kind, cid = r.get("kind") or it.get("kind"), it.get("card")
     t = inputs.timelines.get(cid) or {}
     entries = t.get("entries") or []
-    pic = it.get("picture") or (it["entry"][2:] if str(it.get("entry") or "").startswith("D-P-") else None)
+    pic = answer_picture(r)
     shown = [e for e in entries if e["id"] == it.get("entry") or pic and (e["id"] == f"D-{pic}" or any(
         p.get("id") == pic for p in e.get("pictures") or []))]
     looks = ((inputs.verdicts.get(pic) or {}).get("version") or {}).get("commits") or [] if pic else []
@@ -749,9 +778,10 @@ def gather(inputs: Inputs) -> list:
     waits = {i.get("picture") for i in items if i.get("picture") and i["kind"] in ("look not told", "card not told")
              and not inputs.rulings.get(i["id"]) and not i.get("read_only")}       # pictures whose look is open
     for rid, r in inputs.rulings.items():            # answered, its item gone: taken in (the chain acted on it, or
-        if rid not in have and r.get("item"):        # the rerun gives the same: settled), waiting (its picture's
-            why = None if rid in inputs.used else settled(inputs, r)    # look is open) or changed (a regrouped
-            pic = str(r["item"].get("entry") or "")[2:] if r.get("kind") == "field" else None    # look, a Created
+        if rid not in have and r.get("item"):        # the rerun gives the same: settled; a picture off the timeline),
+            why = off_timeline(inputs, r) or (None if rid in inputs.used else settled(inputs, r))
+            pic = str(r["item"].get("entry") or "")[2:] if r.get("kind") == "field" else None    # waiting (its
+            # picture's look is open) or changed (a regrouped look, a Created date that moved)
             gone = "taken" if rid in inputs.used or why else "waiting" if pic and pic in waits else "changed"
             items.append({**{k: v for k, v in r["item"].items() if k != "stale"}, "gone": gone,
                           **({"settled": why} if why else {})})

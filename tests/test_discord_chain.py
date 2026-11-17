@@ -131,6 +131,30 @@ def test_a_draft_after_an_mdw_draft_but_before_the_card_folders_enters():
     assert [r["id"] for r in found["bolt"]] == ["P-000000000001"]
 
 
+def test_a_picture_that_is_no_card_on_its_own_dates_only():
+    """Owner 11-16 23:10/23:15: a picture the eye found is no card on its own (match/eye.json dates_only: a cut-off
+    piece, a screenshot of several cards) enters no timeline, split halves' neither, and asks nothing (a read-only
+    'dates only' item shows it), yet still dates Created."""
+    shot = "a phone screenshot of a sheet of two cards, both cut off"
+    verdicts = [picture(1, T), picture(2, T - DAY, dates_only=shot), picture(3, T + DAY, "version_unsure",
+                                                                             dates_only=shot)]
+    chain = dc.Chain(inputs(verdicts))
+    found, split = chain.discord_rows()
+    assert [r["id"] for r in found["bolt"]] == ["P-000000000001"]
+    items = {i["picture"]: i for i in chain.review.values()}
+    assert {p: (i["kind"], i.get("read_only")) for p, i in items.items()} == {
+        "P-000000000002": ("dates only", True), "P-000000000003": ("dates only", True)}
+    t = chain.card("bolt", found["bolt"], [])
+    assert [e["id"] for e in t["entries"]] == ["D-P-000000000001"]
+    made = chain.created("bolt", t, verdicts)
+    assert (made["ours"]["picture"], made["ours"]["dates_only"]) == ("P-000000000002", True)
+    group = {"id": "LG-1", "split_of": {"name": "Twin", "into": ["bolt", "pike"]}}
+    chain = dc.Chain(inputs([]))
+    split = defaultdict(list)
+    chain.to_halves(group, picture(4, T, dates_only=shot), split)
+    assert not split and chain.tally["discord: no card on its own (by eye): dates only, not shown"] == 2
+
+
 def test_the_physical_card_photos_date_exactly_three_cards():
     """Owner Q6 (11-14 22:15/22:20): the photos are in no timeline (no paper entry, no paper review item); Created
     'Before 2020' (sorting first, source 'physical card photo', read only) for Pep Drink and Wham Bam Bone, the
@@ -377,6 +401,13 @@ def test_the_owner_s_answers():
         made = chain.created("bolt", chain.card("bolt", found["bolt"], split.get("bolt", [])), later.verdicts)
         assert made["date"] == dc.day(date) and (rid("changelog earlier", "bolt") in chain.used) == (n == 2)
     assert chain.tally["owner: a changelog line hint's yes, its day changed (not applied)"] == 1
+    later.rulings = {**ours, rid("changelog earlier", "bolt"): {"choice": "yes", "value": dc.day(T + 2 * DAY),
+                                                                "source": "triage (x)"}}
+    chain = dc.Chain(later)                                    # the triage's yes never goes below the owner's own pick
+    found, split = chain.discord_rows()
+    made = chain.created("bolt", chain.card("bolt", found["bolt"], split.get("bolt", [])), later.verdicts)
+    assert made["date"] == dc.day(T + 3 * DAY) and rid("changelog earlier", "bolt") not in chain.used
+    assert chain.tally["owner: a triage changelog line hint's yes below the owner's day (not applied)"] == 1
     # a rerun proposing other than what the answer carries: not applied, not used, the item back on the page
     live = {"id": "oldrows-m2", "kind": "unsure map", "card": "Bolt", "status": "live",
             "rows": [old_row("Bolt", T + 60 * DAY, "e" * 40, 5)]}
@@ -406,7 +437,7 @@ def test_the_owner_s_answers():
     chain.rulings["hint:LC-x:bolt"] = {"kind": "morgue hint", "choice": "yes", "source": "triage (x)",
                                        "item": {"card": "bolt", "day": dc.day(T - 3 * DAY), "entry": "LC-x"}}
     assert chain.created("bolt", t, again.verdicts)["date"] == dc.day(T + 8 * DAY)    # no triage hint below it
-    assert chain.tally["owner: a triage Morgue hint's yes below the owner's held day (not applied)"] == 1
+    assert chain.tally["owner: a triage Morgue hint's yes below the owner's day (not applied)"] == 1
     chain.rulings[rid("created earlier", "bolt")]["source"] = "triage (x)"           # the triage's: not applied
     made = chain.created("bolt", t, again.verdicts)
     assert made["status"] == "owner" and made["date"] == dc.day(T - 3 * DAY) and "held" not in made["owner"]

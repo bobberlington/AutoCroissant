@@ -303,10 +303,15 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    card's first picture keeps that name by eye (`eye_lines.json` `heads`, source 'changelog'); a PSD the old repo added before any PNG of the card, 'old
    repo (PSD)', the first repo's 'first repo' (psd): `derived/oldrows/psd_first.json`; its composite, when a look of its own, is the card's first old repo
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
-   date nothing) against `site/Card Creation Dates.json`: same, earlier
-   (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog lines and
-   first-repo push notices before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
-   check.
+   date nothing; a picture that is no card on its own dates it too) against `site/Card Creation Dates.json`: same,
+   earlier (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog
+   lines and first-repo push notices before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
+   check. **Only a card on its own is shown** (owner 11-16 23:10/23:15): a picture the eye finds is no card on its own
+   (a cut-off piece, a screenshot of several cards, of a browser or Photoshop window: `derived/match/eye.json`
+   `dates_only`, picture id -> why) enters no timeline and asks nothing, but still counts for dates (Created); a
+   read-only 'dates only' review item shows it (the owner sees every picture moved off a timeline before publishing,
+   11-17). Kalecgos' 2019-05-10 phone screenshot and Twin Emperors' two 2022-06-17 stat-and-ability crops were the
+   first.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
    local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only; Morgue
    items the owner answered show read only, listed by id, the joke edits of live cards each by eye; an open item a
@@ -330,13 +335,14 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    role, defensive_minion and offensive_minion, as the old rows map raw icons; 11-16), reruns the facts when a
    line was given a card, the chain (which honours them: method 'owner' for a field given, status 'owner' for a Created
    picked (the owner's own pick whose day the item no longer offers is held, `owner.held`, until answered again, and no
-   triage hint's yes goes below a held day: Holy Card 2023-05-31), with `owner.source`
+   triage hint's yes goes below the owner's own pick, held or not: Holy Card 2023-05-31, Standstill 2020-07-22, whose
+   2019 changelog hint came after the pick and is the owner's to answer), with `owner.source`
    shaped like `ours`: where the date came from; the ids it acted on in `derived/chain/ruled.json`), writes the Morgue
    list with the answers (`derived/review/morgue.json`) and rebuilds the page with the answers checked. An answer whose
    item left the page shows as taken in (in `ruled.json`, or settled: the rerun gives the same, e.g. its version's field
    now from the git look's own answer, the same old blob's row, the picture's card, the Created date in use, a
-   Morgue 'no' whose entry left), as waiting (a field of a picture whose look item is open) or as not applied (its
-   item changed: answer it again, orange). A git
+   Morgue 'no' whose entry left, any answer on a picture that is no card on its own), as waiting (a field of a
+   picture whose look item is open) or as not applied (its item changed: answer it again, orange). A git
    look is answered by its first version's key, not its number (numbers shift when a version is added), and a
    confirming answer carries what it confirms (a field's 'yes' its value, a Created pick or hint its day, a picture's
    or a map's answer its card): an answer no radio takes any more (that version gone, a rerun proposing another value,

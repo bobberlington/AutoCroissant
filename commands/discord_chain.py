@@ -41,7 +41,11 @@ build   Under derived/chain/:
         review.jsonl    what the chain keeps out (stable ids): looks not told, named-only pictures before the card's
                         first picture evidence (one section to confirm in bulk), joke drafts, unsure fields, facts a
                         picture contradicts, Created changes, splits, and the owner's answers
-                        (Q1-Q6, read only).
+                        (Q1-Q6, read only); pictures that are no card on its own (read only, below).
+        Only a card on its own is shown (owner 11-16 23:10/23:15): a picture the eye found is not one (a cut-off piece,
+        a screenshot of several cards or of a window: derived/match/eye.json dates_only) enters no timeline and asks
+        nothing, but still counts for dates (Created) as any card-sure picture does; a read-only 'dates only' item
+        shows it.
         stats.txt       counts.
         The owner's answers on the review page (derived/review/rulings.json: commands.timeline_review, applied by
         scripts/apply_rulings.py) are honoured: pictures named, told (a git look by its first version's key) or
@@ -94,6 +98,7 @@ ISSUED = ("derived", "review", "ids.json")                  # every review id th
 PICTURE_KINDS = ("named only", "look not told", "joke picture")   # review ids keyed by their picture
 OWNER = ("derived", "review", "owner.json")                 # the owner's rulings outside the review page (answers)
 PSD_FIRST = ("derived", "oldrows", "psd_first.json")        # cards first recorded as a PSD in the old repo (S6)
+MATCH_EYE = ("derived", "match", "eye.json")                # dates_only: {picture: why} no card on its own (by eye)
 FS_SOURCE = {"old git": "old repo", "first git": "first repo"}   # a card's first git record: where (else the card repo)
 CREATED_PATH = "site/Card Creation Dates.json"
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
@@ -495,6 +500,10 @@ class Inputs:
                 row["morgue_taken"] = taken[row["id"]]
                 if row["verdict"] in SURE_CLASSES:
                     row["verdict"] = "unsure"
+        only = (dm.read_json(p.at(MATCH_EYE), {}) or {}).get("dates_only") or {}
+        for row in self.verdicts:                # no card on its own (by eye): dates only, never shown
+            if row["id"] in only:
+                row["dates_only"] = only[row["id"]]
         self.psds = defaultdict(list)
         for r in dm.read_jsonl(p.at(PSDS)):
             if r.get("card") and r.get("fields"):
@@ -1150,6 +1159,9 @@ class Chain:
                     self.tally["discord: after the card's first git record"] += 1
                     continue
                 self.tally["discord: a draft after an MDW draft, before the card folders"] += 1
+            if row.get("dates_only") and not row.get("created_review"):
+                self.dates_only(cid, row)
+                continue
             if row.get("joke_draft") or (row.get("joke") and row["verdict"] != "version_sure"):
                 self.add_review("joke picture", row["id"], card=cid, picture=row["id"], date=first["date"],
                                 channel=first["channel"], why=row.get("review") or "a joke picture's look")
@@ -1170,6 +1182,13 @@ class Chain:
                 found[cid].append(row)
         return found, split
 
+    def dates_only(self, cid: str, row: dict) -> None:
+        """A picture that is no card on its own (owner 11-16 23:10/23:15; derived/match/eye.json dates_only): never on
+        a timeline, nothing asked about it; created() still dates the card by it. A read-only item shows it."""
+        self.add_review("dates only", row["id"], card=cid, picture=row["id"], date=row["first"]["date"],
+                        channel=row["first"]["channel"], why=row["dates_only"], read_only=True)
+        self.tally["discord: no card on its own (by eye): dates only, not shown"] += 1
+
     def before_folders(self, cid: str, row: dict, when: float) -> bool:
         """A draft (a look in no git record) posted after the card's first record, an MDW draft, but before its
         first card-folder record (fs_folder): still the card's (Tainted Bethany 2023-09-09 12:55)."""
@@ -1177,11 +1196,15 @@ class Chain:
             when < (self.inputs.cards[cid].get("fs_folder") or 0)
 
     def to_halves(self, group: dict, row: dict, split: dict) -> None:
-        """A split card's picture into each half's chain, before that half's first git record."""
+        """A split card's picture into each half's chain, before that half's first git record (one that is no card on
+        its own: neither's)."""
         when = dm.epoch(row["first"]["date"])
         for half in group["split_of"]["into"]:
             fs = (self.inputs.cards.get(half) or {}).get("fs")
             if half in self.inputs.cards and (not fs or when < fs):
+                if row.get("dates_only"):
+                    self.dates_only(half, row)
+                    continue
                 split[half].append({**row, "as": group["split_of"]["name"]})
 
     def joint_of(self, cid: str, row: dict) -> Optional[dict]:
@@ -1817,7 +1840,9 @@ class Chain:
                     not row.get("joke_draft") and not (row.get("joke") and row["verdict"] != "version_sure") and \
                     not row.get("no_created"):
                 found.append((dm.epoch(row["first"]["date"]), "discord", {"picture": row["id"],
-                                                                          "channel": row["first"]["channel"]}))
+                                                                          "channel": row["first"]["channel"],
+                                                                          "dates_only": bool(row.get("dates_only"))
+                                                                          or None}))
         if card["key"] in getattr(inputs, "heads", {}):    # a 2019 list's head, its first picture keeping the name
             for f in inputs.facts:
                 if f.get("card") == card["key"] and f.get("source") == "changelog" and \
@@ -1931,19 +1956,20 @@ class Chain:
         hints said yes to (a changelog line, a first-repo push notice, a Morgue entry's picture); the earliest wins and
         its source is kept (owner.source, shaped like ours: the preview's source for status 'owner'). 'hand' is never
         touched; a hint not earlier than base is never one (the review page leaves it out), nor one the triage said
-        yes to below the owner's held day (owner > triage: Holy Card's 2023-05-31, picked over that very picture)."""
+        yes to below the owner's own pick, held or not (owner > triage: Holy Card's 2023-05-31, picked over that very
+        picture; Standstill's 2020-07-22, picked before its 2019 hint was asked): that hint is the owner's to answer."""
         if not self.rulings:
             return
         ruled = [out["review"]] if r else []
         picks = [base]
-        held = bool(r.get("held"))               # the owner's day held (the item changed since): no triage hint below
-        lower = lambda h: held and h.get("source") not in (None, "owner")
+        mine = bool(r) and r.get("source") in (None, "owner")    # the owner's own pick (held too): no triage hint below
+        lower = lambda h: mine and h.get("source") not in (None, "owner")
         for k, source, what in (("changelog_earlier", "changelog", "changelog line"),
                                 ("first_repo_earlier", "first repo", "first repo push")):
             hint = out.get(k)
             answer = (self.rulings.get(hint["review"]) or {}) if hint else {}
             if lower(answer) and answer.get("choice") == "yes":
-                self.tally[f"owner: a triage {what} hint's yes below the owner's held day (not applied)"] += 1
+                self.tally[f"owner: a triage {what} hint's yes below the owner's day (not applied)"] += 1
                 continue
             if answer.get("choice") == "yes" and not confirms(answer, hint["day"]):     # another line's day now
                 self.tally[f"owner: a {what} hint's yes, its day changed (not applied)"] += 1
@@ -1962,7 +1988,7 @@ class Chain:
             if not when or created_sort(when) >= created_sort(base[0]) or h.get("choice") not in ("yes", "no"):
                 continue
             if lower(h) and h.get("choice") == "yes":
-                self.tally["owner: a triage Morgue hint's yes below the owner's held day (not applied)"] += 1
+                self.tally["owner: a triage Morgue hint's yes below the owner's day (not applied)"] += 1
                 continue
             ruled.append(hid)
             self.used.add(hid)
