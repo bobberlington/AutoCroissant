@@ -214,10 +214,11 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
     return out, jobs
 
 
-def leave_out(t: dict, ids, versions: list = ()) -> list:
+def leave_out(t: dict, ids, versions: list = (), root: Optional[str] = None) -> list:
     """A chain timeline without the entries the eye left out (ids: pictures that are no version of the card): the version
-    after them is diffed again against the one before them (as the chain's diff), git_first too when the last ones went,
-    and a fact they confirmed loses confirmed_by. Returns the entries taken out."""
+    after them is diffed again against the one before them (as the chain's diff; its fold measured from root's
+    pictures), git_first too when the last ones went, and a fact they confirmed loses confirmed_by. Returns the entries
+    taken out."""
     gone = [e for e in t["entries"] if e["id"] in ids]
     if not gone:
         return []
@@ -235,7 +236,10 @@ def leave_out(t: dict, ids, versions: list = ()) -> list:
             e["changes"] = dc.compare(before["fields"], e["fields"], t.get("kind")) if before else \
                 ({"ability_change": "first"} if e["fields"].get("ability") else {})
             if e["kind"] == "discord":
-                e["minor"] = bool(before) and before["kind"] == "discord" and dc.settled(before["fields"], e["fields"])
+                e["minor"], share = dc.fold(root, before, e)
+                e.pop("share", None)
+                if share is not None:
+                    e["share"] = round(share, 4)
             redo = False
         before = e
     if redo and t.get("git_first"):
@@ -674,7 +678,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         if not t or not t.get("entries"):
             continue
         c = by_key.get(t["key"]) or {}
-        taken = leave_out(t, out_of.get(t["card"]) or (), versions[t["card"]])
+        taken = leave_out(t, out_of.get(t["card"]) or (), versions[t["card"]], root)
         if taken:
             left[t["card"]] = len(taken)
             if (c.get("ours") or {}).get("picture") in {p["id"] for e in taken for p in e.get("pictures") or ()}:

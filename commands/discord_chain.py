@@ -26,9 +26,10 @@ build   Under derived/chain/:
                         the total up or down, a total over OFF_SCALE not judged), stars, name, types, the ability
                         (text_key; formatting alone is no change, owner 11-09); an item's kinds are no types change
                         (never collected). A title read that is another live card's name goes to review (other_name).
-                        Discord looks fold as minor only when
-                        every field is sure on both sides and unchanged (as the old rows; their types are never sure,
-                        so they never fold).
+                        A Discord look folds as minor only when
+                        every field is sure on both sides and unchanged and its picture is near the one before (the
+                        same git look, or under png_changes.VISIBLE of the card changed, aligned: look_share; owner
+                        11-09), as the old rows fold.
         created.json    Created = the earliest confident appearance (a card-sure Discord picture, the first repo, the
                         old repo, the card repo; "Before 2020" from a physical card photo for PHOTO_CREATED only, the
                         owner's ruling of 11-14 22:20) with its source, against
@@ -111,6 +112,12 @@ CLASS_Y, CLASS_MID, CLASS_WORDS = 0.96, 0.13, 5               # a class line: mi
 LOCAL_W, LOCAL_CELL = 240, 12                                 # drafts compared in grey at this width, by these cells
 LOCAL_EDIT, LOCAL_RATIO, LOCAL_FLOOR = 15, 10, 1.5           # a local edit: a cell this far apart (grey levels) and
                                                               # this many times the pair's 90th percentile cell (floored)
+FOLD_W, FOLD_BLUR, FOLD_TOL, FOLD_PATCH = 160, 1.0, 32, 3     # a Discord look's changed share: both this wide, aligned,
+                                                              # blurred; a pixel off by more than this (of 255) inside a
+                                                              # square this big (JPEG noise, resizing, a few px of crop
+                                                              # aside; calibration 11-16)
+FOLD_ASPECT, FOLD_MARGIN, FOLD_PICTURES = 0.08, 0.02, 3       # shapes this far apart: not compared; border left out;
+                                                              # each look's first pictures compared
 BACKED = ("eye", "psd", "git look", "owner", "triage")        # star reads no icon reader made
 APART_DAYS = 30                                               # two icon reads this far apart: read separately
 FACT_GRACE_DAYS = 3                                           # a picture this near before a changelog line: its port
@@ -321,6 +328,78 @@ def settled(before: dict, after: dict) -> bool:
         return False
     change = compare(before, after)
     return not (set(change) - {"ability_change"}) and change.get("ability_change") in (None, "same", "formatting")
+
+
+@lru_cache(maxsize=256)
+def fold_picture(path: str, box: Optional[tuple]):
+    """A picture as the preview cuts it (a sheet's cell: its box of the trimmed sheet), trimmed, RGB at FOLD_W wide
+    (float32); None when it can't be read."""
+    import numpy as np
+    from PIL import Image
+    try:
+        img = dm.trim(dm.load_image(path))
+        if box:
+            w, h = img.size
+            img = dm.trim(img.crop((round(box[0] * w), round(box[1] * h), round(box[2] * w), round(box[3] * h))))
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
+    if img.width < 8 or img.height < 8:
+        return None
+    return np.asarray(img.resize((FOLD_W, max(8, round(FOLD_W * img.height / img.width))), Image.LANCZOS),
+                      dtype=np.float32)
+
+
+def changed_share(a, b) -> Optional[float]:
+    """The share of the card that changed from picture a to b (fold_picture's): a aligned onto b (ECC, affine, at half
+    size first), both blurred, a pixel changed when a channel is off by more than FOLD_TOL inside a FOLD_PATCH square,
+    the border's margin left out; None when their shapes differ (FOLD_ASPECT)."""
+    import cv2
+    import numpy as np
+    if abs(a.shape[1] / a.shape[0] - b.shape[1] / b.shape[0]) > FOLD_ASPECT * b.shape[1] / b.shape[0]:
+        return None
+    h = b.shape[0]
+    x = cv2.resize(a, (FOLD_W, h), interpolation=cv2.INTER_AREA)
+    gx, gb = x.mean(axis=2), b.mean(axis=2)
+    warp = np.eye(2, 3, dtype=np.float32)
+    steps = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 80, 1e-5)
+    try:
+        half = [cv2.resize(g, (FOLD_W // 2, h // 2), interpolation=cv2.INTER_AREA) for g in (gb, gx)]
+        _, warp = cv2.findTransformECC(*half, warp, cv2.MOTION_AFFINE, steps, None, 3)
+        warp[:, 2] *= 2
+        _, warp = cv2.findTransformECC(gb, gx, warp, cv2.MOTION_AFFINE, steps, None, 3)
+    except cv2.error:
+        pass                                     # no alignment found: compared as it stands
+    x = cv2.warpAffine(x, warp, (FOLD_W, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+                       borderMode=cv2.BORDER_REPLICATE)
+    d = np.abs(cv2.GaussianBlur(x, (0, 0), FOLD_BLUR) - cv2.GaussianBlur(b, (0, 0), FOLD_BLUR)).max(axis=2) > FOLD_TOL
+    m = round(FOLD_MARGIN * FOLD_W)
+    k = np.ones((FOLD_PATCH, FOLD_PATCH), np.uint8)
+    return float(cv2.dilate(cv2.erode(d[m:h - m, m:FOLD_W - m].astype(np.uint8), k), k).mean())
+
+
+def look_share(root: Optional[str], before: dict, after: dict) -> Optional[float]:
+    """How much of the card changed from one Discord look to the next: 0 for one git look, else the least
+    changed_share between their first FOLD_PICTURES pictures (reposts of one look); None when none compare."""
+    git = [((e.get("look") or {}).get("git") or {}) for e in (before, after)]
+    if git[0] and (git[0].get("row") or (git[0].get("commit"), git[0].get("path"))) == \
+            (git[1].get("row") or (git[1].get("commit"), git[1].get("path"))):
+        return 0.0
+    if not root:
+        return None
+    cut = lambda e: [fold_picture(join(root, p["file"]), tuple(p["box"]) if p.get("box") else None)
+                     for p in (e.get("pictures") or [])[:FOLD_PICTURES] if p.get("file")]
+    shares = [changed_share(a, b) for a in cut(before) if a is not None for b in cut(after) if b is not None]
+    return min((s for s in shares if s is not None), default=None)
+
+
+def fold(root: Optional[str], before: Optional[dict], after: dict) -> tuple:
+    """(minor, share) of a Discord look after the one before: minor only when settled (every field sure and unchanged)
+    and its picture near (look_share under png_changes.VISIBLE: the owner's 11-09 rule, as the old rows fold)."""
+    from commands.png_changes import VISIBLE
+    if not before or before["kind"] != "discord" or not settled(before["fields"], after["fields"]):
+        return False, None
+    share = look_share(root, before, after)
+    return share is not None and share < VISIBLE, share
 
 
 # ========================
@@ -1490,8 +1569,8 @@ class Chain:
         return [e for e in entries if e["id"] not in gone]
 
     def diff(self, entries: list, kind: Optional[str] = None) -> None:
-        """Each version against the one before (text rows aside); Discord looks fold when settled. kind: the card's (an
-        item's kinds are no change)."""
+        """Each version against the one before (text rows aside); a Discord look folds when settled and its picture
+        is near the one before (fold). kind: the card's (an item's kinds are no change)."""
         before = None
         for e in entries:
             if e["kind"] == "text":
@@ -1503,7 +1582,13 @@ class Chain:
                 if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change"):
                     e["changes"]["ability_change"] = e["old_ability_change"]
             if e["kind"] == "discord":
-                e["minor"] = bool(before) and before["kind"] == "discord" and settled(before["fields"], e["fields"])
+                e["minor"], share = fold(self.inputs.root, before, e)
+                e.pop("share", None)
+                if share is not None:
+                    e["share"] = round(share, 4)
+                if not e["minor"] and before and before["kind"] == "discord" and settled(before["fields"], e["fields"]):
+                    self.tally["discord: settled, kept apart (a new picture)" if share is not None else
+                               "discord: settled, kept apart (pictures not compared)"] += 1
             before = e
         for e in entries:
             e.pop("old_ability_change", None)

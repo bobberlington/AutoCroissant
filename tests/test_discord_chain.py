@@ -695,3 +695,37 @@ def test_weak_pictures_set_no_created_and_a_first_psd_dates_the_card():
     assert chain.created("bolt", t, [weak, seen])["ours"]["source"] == "first repo"
     got.cards["bolt"]["fs_from"] = "old git"
     assert chain.created("bolt", t, [weak, seen])["ours"]["source"] == "old repo (PSD)"
+
+
+def test_a_settled_look_folds_only_near_the_picture_before(tmp_path):
+    """A Discord look folds (minor) only when every field is sure and unchanged AND its picture is near the one before
+    (owner 11-09: under png_changes.VISIBLE of the card): a smaller JPEG copy cut a few px off or a small icon edit
+    folds; new art with the same fields is listed, as is another shape; one git look needs no picture."""
+    import numpy as np
+    from PIL import Image
+    (tmp_path / "attachments").mkdir()
+    rng = np.random.RandomState(3)
+    base = rng.uniform(0, 255, (35, 25, 3)).repeat(16, 0).repeat(16, 1)               # 400 x 560 blocks
+    art, icon = base.copy(), base.copy()
+    art[40:260, 40:360] = rng.uniform(0, 255, (11, 16, 3)).repeat(20, 0).repeat(20, 1)  # new art
+    icon[10:50, 10:50] = 0                                                              # an icon added
+    save = lambda n, a, **kw: Image.fromarray(a.clip(0, 255).astype(np.uint8)).save(tmp_path / f"attachments/{n}", **kw)
+    save("1.png", base)
+    Image.fromarray(base[3:-4, 4:-3].astype(np.uint8)).resize((300, 418)).save(tmp_path / "attachments/2.jpg", quality=70)
+    save("3.png", art)
+    save("4.png", icon)
+    save("5.png", base[:400])                                                           # square: another shape
+    same = {"stars": dc.sure(3, "eye"), "stats": stats(5, 2, 3, 4)}
+    entry = lambda n, file, look=None: {"id": f"D-{n}", "kind": "discord", "look": look or {"draft": True},
+                                        "fields": dict(same), "pictures": [{"id": f"P-{n}", "file": f"attachments/{file}"}]}
+    chain = dc.Chain(inputs([], root=tmp_path))
+    entries = [entry(1, "1.png"), entry(2, "2.jpg"), entry(3, "3.png"), entry(4, "1.png"), entry(5, "4.png"),
+               entry(6, "5.png")]
+    chain.diff(entries, "creature")
+    assert [e["minor"] for e in entries] == [False, True, False, False, True, False]
+    assert entries[2]["share"] >= 0.05 > entries[1]["share"] and "share" not in entries[5]
+    assert chain.tally["discord: settled, kept apart (a new picture)"] == 2
+    assert chain.tally["discord: settled, kept apart (pictures not compared)"] == 1
+    git = {"git": {"row": "c1:Creatures/Bolt.png"}}                                  # one git look: no picture read
+    assert dc.fold(None, entry(7, "x.png", git), entry(8, "y.png", git)) == (True, 0.0)
+    assert dc.fold(None, entry(7, "x.png"), entry(8, "y.png")) == (False, None)
