@@ -31,6 +31,9 @@ def test_compare_counts_the_website_way():
     unread = dc.compare(a, {"stats": dc.unsure("picture", "bars under their bar", {"hp": 1}),
                             "ability": dc.sure("Heal 3 HP.", "psd")})
     assert unread["unknown"] == ["stats"] and unread["ability_change"] == "changed" and "bal" not in unread
+    gone = {"ability": dc.sure("", "eye")}                     # owner 11-17: a blank box after an ability (Panda)
+    assert dc.compare(a, gone)["ability_change"] == "removed" and dc.compare(gone, dict(gone))["ability_change"] == "same"
+    assert dc.blank({"fields": gone}) and not dc.blank({"fields": {"ability": dc.sure("", "psd")}})
     assert dc.settled({"stars": dc.sure(2, "eye")}, {"stars": dc.sure(2, "psd")})
     assert not dc.settled({"stars": dc.sure(2, "eye"), "types": dc.unsure("ocr", "x")},
                           {"stars": dc.sure(2, "psd"), "types": dc.unsure("ocr", "x")})
@@ -628,6 +631,10 @@ def test_named_only_after_created_psds_and_header_types():
     inp.header = {"P-000000000003": {"card": "bolt", "types": ["fire"], "ncc": 0.97, "version": "k"}}
     inp.text = {"attachments/3.png": {"types": {"sure": False}}}
     assert dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")["types"]["method"] == "git header"
+    inp.text_truth = {"d:" + "3".zfill(64): {"ability": "", "title": ""}}   # a blank box by eye: no ability
+    got = dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")
+    assert (got["ability"]["value"], got["ability"]["method"]) == ("", "eye") and got["name"]["method"] != "eye"
+    inp.text_truth = {}
     inp.header = {}
     inp.header_eye = {"P-000000000003": {"card": "bolt", "types": ["rock"], "ncc": 0.9, "ref": "P-9"}}
     got = dc.picture_fields(inp, {**inp.verdicts[0]}, "creature")["types"]

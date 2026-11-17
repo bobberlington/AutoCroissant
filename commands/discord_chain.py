@@ -231,6 +231,12 @@ def is_sure(field: Optional[dict]) -> bool:
     return bool(field) and field.get("confidence") == "sure" and field.get("value") is not None
 
 
+def blank(e: dict) -> bool:
+    """A version whose ability box is blank by eye (the readers' eye files: ability '')."""
+    field = (e.get("fields") or {}).get("ability") or {}
+    return is_sure(field) and field["value"] == "" and field.get("method") == "eye"
+
+
 def stat_line(value) -> Optional[tuple]:
     """A stats value as the website's line (hp, def, atk, spd), None when it isn't one creature's four stats."""
     if not isinstance(value, dict) or any(not isinstance(value.get(k), int) for k in STATS):
@@ -239,13 +245,15 @@ def stat_line(value) -> Optional[tuple]:
 
 
 def ability_change(a: dict, b: dict) -> str:
-    """same | formatting | changed | unknown: two versions' abilities (formatting alone, owner 11-09; an OCR'd text
-    against a PSD's: icons aside, they print as pictures)."""
+    """same | formatting | changed | removed | unknown: two versions' abilities (formatting alone, owner 11-09; an
+    OCR'd text against a PSD's: icons aside, they print as pictures; removed: a blank box after a text, owner 11-17)."""
     if not (is_sure(a) and is_sure(b)):
         return "unknown"
     x, y = a["value"] or "", b["value"] or ""
     if x == y:
         return "same"
+    if not y.strip():
+        return "removed"
     if text_key(x) == text_key(y):
         return "formatting"
     if "psd" not in (a["method"] + b["method"]) or "ocr" in (a["method"] + b["method"]) or "eye" in (a["method"] +
@@ -627,7 +635,7 @@ def picture_fields(inputs: Inputs, row: dict, kind: Optional[str]) -> dict:
     eye = inputs.text_truth.get("d:" + row["sha256"] + (f"#c{row['cell']}" if row.get("cell") else "")) or {}
     for key, src in (("name", "title"), ("stars", "stars"), ("types", "types"), ("ability", "ability")):
         read = text.get(src) or {}
-        if src in eye and eye[src] not in (None, ""):
+        if src in eye and (eye[src] not in (None, "") or key == "ability" and eye[src] == ""):   # "": a blank box
             value = sorted(type_tokens(eye[src], kind)) if key == "types" else eye[src]
             fields[key] = sure(value, "eye")
         elif key == "name" and read.get("sure") and other_name(inputs, row.get("card"), read.get("value")):
@@ -1280,7 +1288,7 @@ class Chain:
         fields = old_fields(row, self.review_of)
         for key, src in (("name", "title"), ("stars", "stars"), ("types", "types"), ("ability", "ability")):
             eye = getattr(self.inputs, "old_eye", {}).get(row.get("blob") or "", {}).get(src)
-            if eye not in (None, ""):
+            if eye not in (None, "") or key == "ability" and eye == "":     # "": a blank box by eye
                 fields[key] = sure(sorted(type_tokens(eye, self.inputs.cards[cid].get("type"))) if key == "types"
                                    else eye, "eye")
         return fields
@@ -1696,7 +1704,8 @@ class Chain:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
             else:
                 e["changes"] = compare(before["fields"], e["fields"], kind)
-                if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change"):
+                if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change") and \
+                        e["changes"].get("ability_change") != "removed" and not (blank(before) or blank(e)):
                     e["changes"]["ability_change"] = e["old_ability_change"]
             if e["kind"] == "discord":
                 e["minor"], share = fold(self.inputs.root, before, e)

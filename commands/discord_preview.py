@@ -202,7 +202,7 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
                 ch = other["changes"]
                 for key in CHANGE_OF.get(field, ()):
                     ch.pop(key, None)
-                if field == "ability" and ch.get("ability_change") in ("changed", "same", "formatting"):
+                if field == "ability" and ch.get("ability_change") in ("changed", "same", "formatting", "removed"):
                     ch["ability_change"] = "unknown"
     stop = t.get("stop") or {}
     out = {"card": t["card"], "key": t["key"], "name": t["name"], "kind": t.get("kind"),

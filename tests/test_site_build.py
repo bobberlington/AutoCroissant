@@ -585,6 +585,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
              "subject": "Initial commit", "fields": {}, "changes": {"stars": [2, 3]}}
     assert bs.history_rows("alpha", {"entries": [first]})[0]["r"] == "first"
     assert bs.history_stats({"entries": [first]}, "creature")["rows"][0]["early"] == "first repo"
+    assert bs.history_change({"ability_change": "removed"}) == {"words": True, "gone": True}   # a blank box (11-17)
     assert bs.HISTORY_FROM["first repo"] == "first repo" and bs.HISTORY_FROM["changelog"] == "changelog"
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")

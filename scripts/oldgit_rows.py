@@ -1218,13 +1218,15 @@ def settled(a: dict, b: dict) -> bool:
 
 
 def ability_change(prev: dict, row: dict) -> str:
-    """same / formatting / changed between two sure texts; unknown when either is missing or not sure (a text run never
-    joins across it); same for one picture."""
+    """same / formatting / changed / removed (a blank box after a text) between two sure texts; unknown when either is
+    missing or not sure (a text run never joins across it); same for one picture."""
     a, b = prev["fields"].get("ability") or {}, row["fields"].get("ability") or {}
     if prev["blob"] == row["blob"]:
         return "same"                                          # one picture prints one card
     if any(f.get("value") is None or f.get("confidence") != "sure" for f in (a, b)):
         return "unknown"
+    if a["value"].strip() and not b["value"].strip():
+        return "removed"
     from commands.changelog import formatting_only
     return "same" if a["value"] == b["value"] else "formatting" if formatting_only(a["value"], b["value"]) else "changed"
 
