@@ -212,6 +212,23 @@ out(["Gain 1 (3 points) now.", "Gain 1 (1 point) now."].map(fit));""")
     assert out == [[7, 100, 0], [7, 90, -10]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "const iconEm"), reason="no icon glyph shapes in this mockup.js")
+def test_an_icon_swap_keeps_the_line_at_the_glyphs_shape(tmp_path):
+    """A typed icon steps as its stoogedings glyph (its picture's width over height, 1 em tall or 1.4 wide, 0.04 em each
+    side); one icon for another is spliced alone at the old icon's size (its pen step, or its ink where tracking spaces
+    it out), the rest of the line moved by the glyphs' difference."""
+    out = node(tmp_path, """
+const icons = { machine: { file: "m.webp", a: 1 }, field: { file: "f.webp", a: 0.5 }, wide: { file: "w.webp", a: 2 }, odd: { file: "o.webp" } };
+const measure = t => [...t].length * 10; measure.hx = 1;
+const widths = m.layout(m.tokenize("[field] [machine] [wide] [odd]", icons), Infinity, 10, measure)[0].pieces.filter(p => p.icon).map(p => +p.w.toFixed(2));
+const text = "Deal [machine] now.", g = [...text].map((ch, i) => { const x = i < 5 ? 10 + i * 10 : 114 + (i - 14) * 10; return ch === " " ? [i, x] : [i, x, x + 1, x + 9]; });
+const c = ink => ({ text, lines: [[0, 19, 100, 10, 164, 60, 105, 0]], glyphs: [...g.slice(0, 5), [5, 60, ...ink], ...g.slice(14)], frame: [0, 300] });   // the icon 54 px
+const fit = ink => { const R = m.recordLayout(c(ink), text, 1), f = m.spliceFit(R, m.geoPlan(R, "Deal [field] now.").splice, { measure, z: 20, icons });
+  return f && [f.tag.at, Math.round(f.tag.w), Math.round(f.ds), Math.round(f.tag.ez), f.tag.left]; };
+out([widths, fit([62, 112]), fit([67, 107])]);""")
+    assert out == [[5.8, 10.8, 14.8, 11], [5, 29, -25, 50, False], [5, 34, -20, 40, True]]
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
