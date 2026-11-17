@@ -313,6 +313,21 @@ def test_a_shrunk_ability_reaches_the_mock_up(bs):
         assert card.get("abilityFit") == want
 
 
+def test_web_fonts_say_which_typed_characters_they_lack(bs, tmp_path, monkeypatch):
+    """data/fonts.json: a used font's missing typed characters and its .notdef (mockup.js draws them as the bake does),
+    read once per blob and only for fonts the cards use."""
+    from helpers import build_font
+    raw, reads = Path(build_font(str(tmp_path / "a.ttf"), "Fix-Regular", "Fix", "Regular")).read_bytes(), []
+    monkeypatch.setattr(bs, "CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr(bs, "font_bytes", lambda p: reads.append(p) or raw)
+    tree = {"MDW/Fonts/a.ttf": "1" * 40, "MDW/Fonts/b.ttf": "2" * 40}   # b: the same face, unused (a wins by path)
+    first, again = bs.web_fonts(tree, {"Fix-Regular"}), bs.web_fonts(tree, {"Fix-Regular"})
+    fix = first["Fix-Regular"]
+    assert first == again and sorted(reads) == ["MDW/Fonts/a.ttf", "MDW/Fonts/a.ttf", "MDW/Fonts/b.ttf"]
+    assert fix["file"] == "MDW/Fonts/a.ttf" and fix["notdef"] == [500]   # an empty .notdef: the bake leaves a gap
+    assert "A" not in fix["lacks"] and {"+", ".", "\u2014", "\u2026"} <= set(fix["lacks"])
+
+
 def test_parser_notes_answered_as_the_bot_does(bs):
     """build_site's FIXED_BY and FIXED_BY_ALL are card_edits': NO STATS FOUND stays until all four stats or creatures are
     edited, so a card with a stat still unread keeps its note (B3, 2026-10-26)."""

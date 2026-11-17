@@ -169,6 +169,23 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
     assert out[1] is True and out[2] is True and out[3] == 1
 
 
+def test_typed_letters_the_font_lacks_look_as_the_bake_prints_them(tmp_path):
+    """A typed letter the card's font can't draw (fonts.json lacks): a dash or ellipsis plain (owner D13), any other (a
+    plain one it lacks too) the font's .notdef, said in the caption; kept letters, typed badges and letters typed into
+    another font's run (The Structure's digit) stay; the bake's note in plain words."""
+    out = node(tmp_path, """
+const D = String.fromCharCode(0x2014), E = String.fromCharCode(0x2026), typed = "Heal 2 " + D + " now" + E + " (1CD)";
+const show = r => [[...r.text].map(c => (c.charCodeAt(0) >= 0xfdd0 ? `<${m.glyphRuns(c)[0]}>` : c)).join(""), r.boxes];
+out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+")), show(m.glyphPlan(typed, "Heal 2", D + E)),
+  show(m.glyphPlan(typed, "Heal 2", "+.:()-" + D + E)), show(m.glyphPlan("by 2 bars.", "by 1 bar.", "0123456789")),
+  p.plainNote("font: name: '()' has no glyph in its font (drawn as a box)"),
+  p.mockNote({ noGlyph: [["text", "+", false], ["name", ".", true]] })]);""")
+    assert out[:4] == [["(WOF) +1 Heal (<1>1 DEF).", "+"], ["Heal 2 <-> now<...> (1CD)", ""], ["Heal 2 <1> now<3> (1CD)", "-."],
+                       ["by 2 bars.", ""]]
+    assert out[4] == "The title's font has no '(' or ')': it prints as a box or a gap."
+    assert out[5] == "The ability's font has no '+': the bake prints a box there. The title's font has no '.': the bake leaves a gap there."
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function lineSplices"), reason="no lineSplices in this mockup.js")
 def test_words_changed_on_several_lines_splice_each_line(tmp_path):
     """geoPlan on the card's own lines: changes on two lines or in two paragraphs give one splice per line (a paragraph's
