@@ -667,8 +667,9 @@ def same_value(key: str, a, b, kind: Optional[str] = None) -> bool:
     alone is no change, owner 11-09), types as the card data's tokens (an item's kinds aside), else equal."""
     if key == "name":
         return dm.squash(str(a or "")) == dm.squash(str(b or ""))
-    if key == "ability":
-        return dc.text_key(dm.strip_tokens(str(a or ""))) == dc.text_key(dm.strip_tokens(str(b or "")))
+    if key == "ability":                         # a dash left at a line break ('counter- damage'), a ` for ' too
+        plain = lambda v: dc.text_key(dm.strip_tokens(str(v or "")).replace("-", "").replace("`", "'"))
+        return plain(a) == plain(b)
     if key == "types" and isinstance(a, list) and isinstance(b, list):
         return sorted(dc.without_kinds(dc.type_tokens(a, kind), kind)) == \
             sorted(dc.without_kinds(dc.type_tokens(b, kind), kind))
@@ -677,7 +678,8 @@ def same_value(key: str, a, b, kind: Optional[str] = None) -> bool:
 
 def settled(inputs: Inputs, r: dict) -> Optional[str]:
     """Why an answer whose item left the page needs no new answer, or None (not applied: answer it again): the rerun
-    gives what it said. A field its version (the picture's entry, a repost's, the same old blob's) now publishes
+    gives what it said. A field its version (the picture's entry, a repost's, its git look's row once the picture
+    left for it, the same old blob's) now publishes
     sure the same way (from another answer: the git look's own; a 'no' while the value it turned down stays out); a
     picture's card it has now, on or off the timeline as answered; a fact kept or dropped as answered; the Created
     date in use; a Morgue entry answered 'no' that left the list."""
@@ -686,15 +688,17 @@ def settled(inputs: Inputs, r: dict) -> Optional[str]:
     t = inputs.timelines.get(cid) or {}
     entries = t.get("entries") or []
     pic = it.get("picture") or (it["entry"][2:] if str(it.get("entry") or "").startswith("D-P-") else None)
-    shown = [e for e in entries if pic and (e["id"] == f"D-{pic}" or any(
+    shown = [e for e in entries if e["id"] == it.get("entry") or pic and (e["id"] == f"D-{pic}" or any(
         p.get("id") == pic for p in e.get("pictures") or []))]
+    looks = ((inputs.verdicts.get(pic) or {}).get("version") or {}).get("commits") or [] if pic else []
+    rows = [e for e in entries if e.get("kind") == "old repo" and e.get("commit") in looks]    # its git look's row
     if kind in ("field", "old field") and it.get("field"):
         key = it["field"]
         if kind == "old field":
             blob = (((it.get("pics") or [{}])[0].get("src") or "").rsplit("/", 1)[-1])[:-5]
             shown = [e for e in entries if e.get("kind") == "old repo" and blob and e.get("blob") == blob]
         turned = next((x.get("value") for x in it.get("choices") or [] if x["c"] == "yes"), None)
-        for e in shown:
+        for e in shown or rows:
             f = (e.get("fields") or {}).get(key)
             if not dc.is_sure(f):
                 continue

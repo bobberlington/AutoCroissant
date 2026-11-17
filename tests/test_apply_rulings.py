@@ -314,6 +314,10 @@ def test_an_answer_the_rerun_gives_the_same_way_is_settled_not_orange():
         "kind": "field", "card": "bolt", "entry": entry, "field": "ability", "choices": [{"c": "yes", "value": "Heal 3 HP."}]}}
     assert tr.settled(ns, field("D-P-2", "heal 2 hp")) and tr.settled(ns, field("D-P-1", None, "no"))
     assert not tr.settled(ns, field("D-P-2", "Heal 3 HP.")) and not tr.settled(ns, field("D-P-7", "Heal 2 HP."))
+    ns.verdicts["P-8"] = {"card": "bolt", "version": {"commits": ["c1"]}}           # a git look's picture, gone to its row
+    ns.timelines["bolt"]["entries"].append({"id": "O-c1", "kind": "old repo", "commit": "c1",
+                                            "fields": {"ability": sure("Heal 4 HP.")}})
+    assert tr.settled(ns, field("D-P-8", "Heal 4 HP.")) and tr.settled(ns, field("O-c1", "heal 4 hp"))
     old = {"kind": "old field", "choice": "value", "value": {"hp": 6, "def": 5}, "item": {
         "kind": "old field", "card": "bolt", "field": "stats", "pics": [{"src": "../oldgit/thumbs/b1.webp"}]}}
     assert tr.settled(ns, old)
