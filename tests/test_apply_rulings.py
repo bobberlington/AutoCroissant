@@ -142,16 +142,19 @@ def test_the_page_s_items_from_the_parts(tmp_path):
                                           {"id": "chain-d1", "kind": "dates only", "card": "bolt", "picture": "P-5",
                                            "date": "2020-07-19T00:00:00+00:00", "channel": "ideas",
                                            "why": "a sheet of two cards", "read_only": True},
+                                          {"id": "chain-d2", "kind": "dates only", "card": "kit", "picture": "P-7",
+                                           "date": "2019-11-01T00:00:00+00:00", "channel": "ideas",
+                                           "why": "bare art", "read_only": True},
                                           {"id": "chain-k1", "kind": "cropped", "card": "bolt", "picture": "P-6",
                                            "date": "2020-07-20T00:00:00+00:00", "channel": "ideas",
                                            "why": "a TTS table: the card cut out", "read_only": True}]))
-    put(("match", "eye.json"), {"dates_only": {"P-5": "a sheet of two cards"},
+    put(("match", "eye.json"), {"dates_only": {"P-5": "a sheet of two cards", "P-7": "bare art"},
                                 "crops": {"P-6": {"box": [0.6, 0.05, 0.9, 0.95], "why": "a TTS table"}}})
     put(("preview", "eye.json"), {"leave_out": {"bolt|D-ai": "an AI restyle"}})
     put(("chain", "created.json"), {"cards": {
         "Bolt": {"card": "bolt", "status": "later", "date": "2020-05-01", "sort": "2020-05-01"},
         "Kit": {"card": "kit", "status": "owner", "date": "2020-01-01", "sort": "2020-01-01",
-                "owner": {"base": "2020-09-01"}}}})
+                "owner": {"base": "2020-09-01"}, "ours": {"day": "2019-11-01", "picture": "P-7", "dates_only": True}}}})
     hint = lambda n, card, date, **x: {"entry": f"LC-{n}", "card": card, "date": date, "channel": "port", **x}
     put(("morgue", "candidates.json"), {"candidates": [], "not_candidates": [
         {"id": f"LC-{n}", "name": "x", "pictures": [{"id": f"P-m{n}", "date": "2020-04-01T00:00:00+00:00"}]}
@@ -178,15 +181,19 @@ def test_the_page_s_items_from_the_parts(tmp_path):
     assert got["hint:LC-1:bolt"]["picture"] == "P-m1"
     assert (got["chain-old1"]["gone"], got["chain-old2"]["gone"]) == ("taken", "changed")
     assert got["chain-d1"]["read_only"] and got["chain-d1"]["sub"] == "dates" and not got["chain-d1"]["choices"]
+    assert got["chain-d1"]["meta"][-1] == "Created: not set by this picture: Bolt's Created, 2020-05-01, comes from " \
+        "the website's date." and got["chain-d2"]["meta"][-1] == "Created: NOT set by this picture: it gives " \
+        "2019-11-01, but the website's date keeps 2020-01-01."                  # each says whether it sets Created
     assert got["chain-x5"]["gone"] == "taken" and "dates only" in got["chain-x5"]["settled"]   # no card on its own
     assert got["chain-k1"]["read_only"] and got["chain-k1"]["sub"] == "crops" and \
         got["chain-k1"]["pics"][1]["src"] == "crops/P-6.webp"                    # a crop by eye: shown, read only
     assert tr.crop_thumbs(str(tmp_path), inputs) == 1
     with Image.open(derived / "review" / "crops" / "P-6.webp") as im:
         assert im.size == (60, 90)                                                 # the card alone, as the preview
-    assert tr.picture_page(str(tmp_path), inputs, list(got.values()), "now") == 2
+    assert tr.picture_page(str(tmp_path), inputs, list(got.values()), "now") == 3
     shown = (derived / "review" / tr.PICTURES_PAGE).read_text()
     assert shown.count("data:image/webp;base64,") == 2 and "Cropped: " in shown and "Dates only: " in shown and \
+        "NOT set by this picture" in shown and \
         "Answers on this picture (identification only): yes (owner)" in shown   # P-5 has no file here
     assert "taken in by the rerun" in tr.item_html(got["chain-old1"]) and \
         "Not applied" in tr.item_html(got["chain-old2"])

@@ -370,7 +370,7 @@ def chain_items(inputs: Inputs) -> list:
             it = item(kind, r["id"], "matches", "dates", head + date, read_only=True, **common)
             it["meta"] = [f"by eye: {r.get('why')}", "Only a card on its own is shown (your rule, 11-16 23:10/23:15): "
                           "this picture counts for dates only (Created, a version existed by then), never on the "
-                          "timeline."]
+                          "timeline.", created_note(inputs, cid, r.get("picture"), r.get("date"))]
             it["pics"] = [row_pic(row, "the picture")]
         elif kind == "cropped":
             it = item(kind, r["id"], "matches", "crops", head + date, read_only=True, **common)
@@ -528,6 +528,37 @@ def fact_items(inputs: Inputs) -> list:
     return out
 
 
+SOURCE_WORDS = {"discord": "an earlier Discord picture", "old repo": "the old repo", "first repo": "the first repo",
+                "old repo (PSD)": "the old repo's PSD", "changelog": "a 2019 balance list"}
+
+
+def created_note(inputs: Inputs, cid: Optional[str], pid: Optional[str], date) -> str:
+    """Whether a dates-only picture sets its card's Created (it still dates the card, owner 11-16 23:15); why not."""
+    made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
+    used, ours = made.get("date"), made.get("ours") or {}
+    if not used:
+        return ""
+    whose = inputs.name(cid) + ("'" if inputs.name(cid).endswith("s") else "'s")     # its possessive
+    if made.get("status") == "hand":
+        return f"Created: not set by this picture: {whose} Created, {used}, is entered by hand."
+    r = inputs.rulings.get(made.get("review") or "") or {}
+    who = "your" if (r.get("source") or "owner") == "owner" else f"the {str(r['source']).split(' (')[0]}'s"
+    kept = f"{who} answer on {whose} Created item ({made['review']})" if r else "the website's date"
+    if ours.get("picture") == pid:
+        if ours.get("day") == used:
+            how = {"same": "the website has that day too", "new": "proposed",
+                   "earlier": f"earlier than the website's {(made.get('file') or {}).get('date')}: proposed"}
+            how = how.get(made.get("status"), "as answered")
+            return f"Created: this picture sets {whose} Created, {used} ({how})."
+        return f"Created: NOT set by this picture: it gives {ours.get('day')}, but {kept} keeps {used}."
+    mine = dc.day(dm.epoch(date)) if date else None
+    if mine and mine < created_sort(used):
+        return f"Created: NOT set by this picture, though it is earlier ({mine}) than {whose} Created, {used}."
+    src = f"{SOURCE_WORDS.get(ours.get('source'), ours.get('source'))} ({ours.get('day')})" \
+        if ours.get("day") == used else kept
+    return f"Created: not set by this picture: {whose} Created, {used}, comes from {src}."
+
+
 def created_item(inputs: Inputs, r: dict) -> dict:
     kind, cid = r["kind"], r.get("card")
     made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
@@ -537,6 +568,9 @@ def created_item(inputs: Inputs, r: dict) -> dict:
     where = f"#{ours['channel']}" if ours.get("channel") else ""
     it["meta"] = [f"website: {file.get('date') or 'none'} ({file.get('from') or '-'}); ours: {ours.get('day')} "
                   f"from {ours.get('source')} {where}".rstrip(), r.get("why") or ""]
+    if ours.get("dates_only"):
+        it["meta"].append("ours is a picture that is no card on its own: it dates the card, never shown (your rule, "
+                          "11-16 23:15)")
     if ours.get("picture"):
         it["pics"].append(row_pic(inputs.verdicts.get(ours["picture"]), f"ours {ours.get('day')}"))
     elif ours.get("commit"):
@@ -1145,7 +1179,8 @@ def picture_page(root: str, inputs: Inputs, items: list, built: str) -> int:
            f"<div>Built {escape(built)}. Only a card on its own is shown (your rule, 11-16 23:10/23:15). "
            f"{sum(i['kind'] == 'cropped' for i in shown)} pictures are shown cut out to the card (the crop is what "
            f"the timeline shows); {sum(i['kind'] == 'dates only' for i in shown)} are no card on its own: they count "
-           "for dates only and are never shown, and any answer on them only identifies the picture. Check them "
+           "for dates only (each says whether it sets its card's Created) and are never shown, and any answer on "
+           "them only identifies the picture. Check them "
            "before publishing. Nothing here is published.</div></header>"]
     for it in shown:
         row = inputs.verdicts.get(it["picture"]) or {}

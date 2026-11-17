@@ -315,15 +315,17 @@ the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unse
    first; gap round 3 (11-17) added 12: the 2019 phone photos of printed cards (Yin Yarn, Nightmare, a printed sheet
    of Magic Hammer), TTS tables (Waxwell, False Knight, The Radiance), a TTS deck sheet (Rope), Photoshop and editor
    windows (Twin Emperors, Dogma, Markoth), a header-and-art piece (Crystal Bits) and bare art (Contracted), then
-   Wigfrid's bare 2019-05-06 portrait.
+   Wigfrid's bare 2019-05-06 portrait. Each such item says whether the picture sets its card's Created (the
+   earliest confident appearance, unless an answer keeps another day): Contracted's 2021-12-04 bare art does since the
+   triage's 'file' answer on it was withdrawn (11-17: its premise, no card version, fell to the owner's look 2 answer).
    The whole card cut out of a bigger picture (`eye.json` `crops`, picture id -> {box, why}: a share of the trimmed
    picture, as a sheet's cell) is shown as that crop (its webp named by the box, so a new box makes it again) with a
    read-only 'cropped' item: Fawful's 2021-08-31 Discord screenshot (the channel header and the post's text cut
    off). A picture the owner answered only to identify it (an in-game or several-card picture, 11-16 23:10) stays
    dates only even when its whole card is in it: a crop would publish that answer as a version (Waxwell's and Rope's
    name git looks their cut-out cards don't show). `timeline_review build` also writes `derived/review/pictures.html`:
-   every dates-only picture and crop with the answers on it, pictures embedded, for the owner's check before
-   publishing (11-17 00:30), and `crops/` the crops' thumbs.
+   every dates-only picture (whether it sets Created) and crop with the answers on it, pictures embedded, for the
+   owner's check before publishing (11-17 00:30), and `crops/` the crops' thumbs.
 5. **Review page** (`python -m commands.timeline_review build` -> the archive's `derived/review/index.html` + `items.json`;
    local, never published): the owner's answers Q1-Q6 and the later ones (`owner.json` answers; read only; Morgue
    items the owner answered show read only, listed by id, the joke edits of live cards each by eye; an open item a
