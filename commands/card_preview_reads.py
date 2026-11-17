@@ -22,6 +22,7 @@ from os.path import basename, dirname, exists, join
 from re import fullmatch
 from subprocess import run
 from sys import argv
+from threading import get_ident
 from time import perf_counter
 from typing import Optional
 from urllib.error import HTTPError
@@ -156,7 +157,7 @@ def read_blob(repository: str, sha: str, clone: str, path: str = "", head: str =
             raise ValueError(f"blob {sha[:8]} does not hash to its sha")
     if blobs:
         makedirs(blobs, exist_ok=True)
-        temp = join(blobs, f"{sha}.{getpid()}")
+        temp = join(blobs, f"{sha}.{getpid()}.{get_ident()}")   # two paths of one blob: two threads
         with open(temp, "wb") as fh:
             fh.write(data)
         replace(temp, join(blobs, sha))
