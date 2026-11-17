@@ -746,9 +746,13 @@ Steps already due run at once, in order (an old post found open is pinged, then 
 `forum_votes.json` at once (`on_raw_thread_delete`), else at the next start or within the hour (the open posts the
 gateway does not list are read: only Discord's Unknown Channel drops one; any other error keeps it, logged once). A
 post given Closed or locked and archived by a person is dropped; a post a person only locks waits (no step runs) until it is unlocked,
-then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
-part Discord refuses for good (Missing Permissions, or another 4xx such as the 20-reactions limit) is logged once
-(`Forum votes: post N: lock failed: Forbidden ...`) and skipped, so the later steps still run; a server error, rate
+then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing. The
+tags and the lock need **Manage Threads** in the forum (the bot's role; tags on a person's post, lock, archive): without
+it, or when Discord refuses one, that part WAITS (since 11-16: logged once, `Forum votes: post N: lock waits (...)`, kept
+in the post's `waiting` list, tried again every pass, never recorded as done; `/forum_votes` shows "⚠ N posts wait"); the
+note and winner message still go, and the post closes at the first pass after the permission is granted (Open and
+Closing Soon, moot by day 7, are skipped). Any other part Discord refuses for good (a 4xx such as the 20-reactions
+limit) is logged once (`... reactions failed: ...`) and skipped, so the later steps still run; a server error, rate
 limit or network failure is retried next pass (5 minutes). A failed winner message is logged and the close goes on; the
 winner message is sent once (after a restart mid-close the bot finds them in the results channel's
 last 50 messages). A failed listing of the forum's archived posts at a start is asked again every pass until it works.

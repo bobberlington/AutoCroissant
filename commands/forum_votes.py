@@ -10,8 +10,11 @@ run_pass every PASS_MINUTES, post_created on on_thread_create and post_deleted o
 shows or sets the settings; /reminders lists the open posts' next steps (upcoming, read-only). FORUM_JSON
 (gitignored, per machine) holds the settings and the parts done per post, so a restart never repeats one; the ping and
 the note also look for a bot's message in the post first, the winner message in the results channel (a
-lost file, a restart mid-close). A post a person locks waits until unlocked. A deleted post is dropped at once (the
-delete event), else by the check of the open posts at the start and every RECHECK (only Discord's Unknown Channel).
+lost file, a restart mid-close). A tag change, lock or archive needs Manage Threads in the forum: without it (or when
+Discord refuses one) that part waits, logged once, and is tried again every pass (never recorded as done); a tag that
+is moot by day 7 (Open, Closing Soon) is skipped. A post a person locks waits until unlocked. A deleted post is dropped
+at once (the delete event), else by the check of the open posts at the start and every RECHECK (only Discord's Unknown
+Channel).
 """
 from asyncio import Lock, sleep, to_thread
 from datetime import datetime, timedelta, timezone
@@ -81,6 +84,10 @@ class Retry(Exception):
     """A part failed in a way that may pass: the step goes on next pass."""
 
 
+class Waits(Exception):
+    """A tag or lock edit the bot may not make yet (no Manage Threads in the forum)."""
+
+
 class Post:
     """A post being worked on: its thread and forum and its record (the parts done)."""
 
@@ -144,6 +151,17 @@ def _passing(e: Exception) -> bool:
     return isinstance(e, (OSError, ClientError))
 
 
+def _can_manage(forum) -> bool:
+    """Manage Threads in the forum (tags on a person's post, lock, archive); unknown (no member cached): tried."""
+    me = getattr(getattr(forum, "guild", None), "me", None)
+    return me is None or not hasattr(forum, "permissions_for") or forum.permissions_for(me).manage_threads
+
+
+def _late(entry: dict) -> bool:
+    """Day 7 reached: Closed replaces Open and Closing Soon."""
+    return _now() >= datetime.fromisoformat(entry["created"]) + CLOSE_AFTER
+
+
 def _unknown(e: Exception) -> bool:
     """Discord's Unknown Channel: the post was deleted (the only error that drops one)."""
     return isinstance(e, NotFound) and e.code == UNKNOWN_CHANNEL
@@ -189,7 +207,9 @@ def _due(entry: dict, now: datetime) -> list:
 
 
 def _finished(entry: dict, step: str) -> bool:
-    return STEPS[step][len(STEPS[step]) - 1] in entry["done"]
+    """The step's last part done and none of its parts waiting for Manage Threads."""
+    parts = STEPS[step]
+    return parts[len(parts) - 1] in entry["done"] and not set(parts) & set(entry.get("waiting", ()))
 
 
 def _id(text: str) -> Optional[int]:
@@ -230,7 +250,8 @@ def _check(data) -> tuple:
                 or (name != "enabled" and not str(value).isdigit()):
             raise ValueError(f"bad setting {name}")
     for key, entry in posts.items():
-        if not key.isdigit() or not isinstance(entry, dict) or not isinstance(entry.get("done"), list):
+        if not key.isdigit() or not isinstance(entry, dict) or not isinstance(entry.get("done"), list) \
+                or not isinstance(entry.get("waiting", []), list):
             raise ValueError(f"bad post {key}")
         datetime.fromisoformat(entry["created"])
     return settings, posts
@@ -301,11 +322,21 @@ async def _drop(keys) -> None:
 # ========================
 # Steps
 # ========================
-async def _part(post: Post, name: str, action, final: bool = False) -> None:
+async def _wait(post: Post, name: str, why: str) -> None:
+    """A part that needs Manage Threads: not done, tried again next pass (logged once)."""
+    _log_once((post.thread.id, name, "wait"), f"post {post.thread.id}: {name} waits ({why})")
+    waiting = post.entry.setdefault("waiting", [])
+    if name not in waiting:
+        waiting.append(name)
+        await _save()
+
+
+async def _part(post: Post, name: str, action, final: bool = False, manage: bool = False) -> None:
     """
     Run one part of a step unless done. A failure that may pass: logged once and Retry (the next pass goes on), unless
-    final (the winner message: never repeated). Any other (refused, missing, a 4xx such as the reaction
-    limit): logged once and recorded as done, so the later parts go on.
+    final (the winner message: never repeated). A manage part (tags, lock) without Manage Threads, or refused by
+    Discord: waits (not done; the later parts go on). Any other (missing, a 4xx such as the reaction limit): logged
+    once and recorded as done, so the later parts go on.
     """
     if name in post.done:
         return
@@ -314,11 +345,22 @@ async def _part(post: Post, name: str, action, final: bool = False) -> None:
     except Exception as e:
         if _unknown(e) and not final:
             raise Gone() from e
+        if isinstance(e, Waits) or (manage and isinstance(e, Forbidden)):
+            await _wait(post, name, f"{type(e).__name__}: {e}")
+            return
         _log_once((post.thread.id, name), f"post {post.thread.id}: {name} failed: {type(e).__name__}: {e}")
         if not final and _passing(e):
             raise Retry() from e
+    if name in post.entry.get("waiting", ()):
+        post.entry["waiting"].remove(name)
+        if not post.entry["waiting"]:
+            del post.entry["waiting"]
     post.done.append(name)
     await _save()
+
+
+async def _moot() -> None:
+    """A tag Closed replaces (day 7 reached): nothing to do."""
 
 
 async def _retag(post: Post, add: str = "", drop: tuple = ()) -> None:
@@ -335,6 +377,8 @@ async def _retag(post: Post, add: str = "", drop: tuple = ()) -> None:
             _log_once((thread.id, add), f"post {thread.id}: no room for the tag \"{add}\" ({MAX_TAGS} tags): skipped")
     if new == ids:
         return
+    if not _can_manage(forum):
+        raise Waits("the bot needs Manage Threads in the forum")
     unarchive = {"archived": False} if thread.archived else {}   # an archived post can't be edited
     post.thread = await thread.edit(applied_tags=[forum.get_tag(i) or Object(id=i) for i in new], **unarchive) or thread
 
@@ -463,6 +507,10 @@ async def _announce(post: Post, results_id: int) -> None:
 
 async def _shut(post: Post) -> None:
     thread = post.thread
+    if thread.locked and thread.archived:
+        return
+    if not _can_manage(post.forum):
+        raise Waits("the bot needs Manage Threads in the forum")
     if thread.archived:                         # an archived post can't be edited: lock it open, then archive
         thread = await thread.edit(archived=False, locked=True) or thread
     post.thread = await thread.edit(locked=True, archived=True) or thread
@@ -470,14 +518,16 @@ async def _shut(post: Post) -> None:
 
 async def open_post(post: Post) -> None:
     """A new post, or one found open: the tag Open, then the three reactions."""
-    await _part(post, "open tag", lambda: _retag(post, add=OPEN))
+    late = _late(post.entry)
+    await _part(post, "open tag", _moot if late else lambda: _retag(post, add=OPEN), manage=not late)
     await _part(post, "reactions", lambda: _react(post))
 
 
 async def ping_post(post: Post, role_id: int, close_at: datetime) -> None:
     """Day 6: ask the role to vote, add Closing Soon."""
     await _part(post, "ping", lambda: _ping(post, role_id, close_at))
-    await _part(post, "closing tag", lambda: _retag(post, add=SOON))
+    late = _late(post.entry)
+    await _part(post, "closing tag", _moot if late else lambda: _retag(post, add=SOON), manage=not late)
 
 
 async def close_post(post: Post, results_id: int) -> None:
@@ -489,8 +539,8 @@ async def close_post(post: Post, results_id: int) -> None:
     await _part(post, "note", lambda: _note(post))
     if _outcome(post)["announce"]:
         await _part(post, "winner", lambda: _announce(post, results_id), final=True)
-    await _part(post, "closed tags", lambda: _retag(post, add=CLOSED, drop=(OPEN, SOON)))
-    await _part(post, "lock", lambda: _shut(post))
+    await _part(post, "closed tags", lambda: _retag(post, add=CLOSED, drop=(OPEN, SOON)), manage=True)
+    await _part(post, "lock", lambda: _shut(post), manage=True)
 
 
 # ========================
@@ -542,8 +592,9 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
             await ping_post(post, setting("role"), datetime.fromisoformat(entry["created"]) + CLOSE_AFTER)
         if "close" in due:
             await close_post(post, setting("results"))
-            entry["end"] = "closed"
-            await _save()
+            if _finished(entry, "close"):
+                entry["end"] = "closed"
+                await _save()
     except Gone:
         await _drop([key])
     except Retry:
@@ -656,14 +707,15 @@ async def post_deleted(thread_id: int) -> None:
 
 def _listed(client) -> list:
     """
-    (key, record, thread or None, locked by a person) of the open posts the listings show: not ended, nor (as last
-    seen) closed by hand (the steps learn a hand close only when one falls due). Display only.
+    (key, record, thread or None, locked by a person) of the open posts the listings show: not ended, nor voted out
+    (the note sent: only a waiting tag or lock left), nor (as last seen) closed by hand (the steps learn a hand close
+    only when one falls due). Display only.
     """
     forum_id = setting("forum")
     forum = client.get_channel(forum_id) if client is not None else None
     found = []
     for key, entry in _posts.items():
-        if entry["forum"] != str(forum_id) or entry.get("end"):
+        if entry["forum"] != str(forum_id) or entry.get("end") or "note" in entry["done"]:
             continue
         thread = (client.get_channel(int(key)) if client is not None else None) or _known.get(key)
         held = _held(forum, thread, entry) if thread is not None and forum is not None else ""
@@ -708,6 +760,10 @@ def status_text(client=None) -> str:
              for e in open_posts]
     if steps:
         lines.append(f"Next step: <t:{int(min(steps).timestamp())}:R>")
+    waiting = [e for e in _posts.values() if e["forum"] == str(forum) and not e.get("end") and e.get("waiting")]
+    if waiting:
+        lines.append(f"⚠ {len(waiting)} {'post waits' if len(waiting) == 1 else 'posts wait'} for the bot's Manage "
+                     "Threads permission in the forum (tags, lock)")
     return "\n".join(lines)
 
 

@@ -244,7 +244,7 @@ part (`journalctl -u autocroissant | grep "Forum votes"` on the jetson).
 | Symptom | First check | Likely cause | Fix / pointer |
 |---|---|---|---|
 | New posts get no tag or reactions | `/forum_votes`: on? the right forum? | Off, another forum, or the forum is not visible ("the forum N can't be read") | `/forum_votes enabled:True forum:<#id>` |
-| "post N: open tag failed: Forbidden" (or closing tag, closed tags, lock) | The bot's role in the forum | No Manage Threads there (tags on others' posts, lock, archive) | Grant it; parts refused before stay skipped (recorded done) |
+| "post N: lock waits (...)" (or open tag, closing tag, closed tags); `/forum_votes` "⚠ N posts wait"; a post voted on but never Closed or locked | The bot's role in the forum | No Manage Threads there (tags on others' posts, lock, archive; 11-16: the bot's role never had it) | Grant it: waiting parts run at the next pass. Before 11-16 a refused part was recorded done ("... failed: Forbidden"): take it out of the post's `done` (and `end`) with the bot stopped |
 | "post N: reactions failed: HTTPException: 400 ... (error code: 30010)" (or another 4xx) | The post's first message | Discord refused for good (here: 20 different reactions already) | None needed: that part is skipped, the ping and the close still run |
 | "the forum N's archived posts can't be read (again next pass)" | The bot's Read Message History in the forum; Discord's status | A refusal or a Discord outage at the start | Asked again every pass; the archived open posts are included once it works |
 | "the forum N has no tag \"Closing Soon\"" | The forum's tags (any case) | The tag is missing; never made by the bot | Add the tag in the forum's settings |

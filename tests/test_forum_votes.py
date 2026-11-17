@@ -540,7 +540,9 @@ def test_listings_leave_out_posts_closed_by_hand(clock, monkeypatch, capsys):
     assert capsys.readouterr().out.count("the proposal forum's steps left out") == 1   # reminders still show
 
 
-def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):
+def test_refused_tags_and_lock_wait_then_close_once_allowed(clock, capsys):
+    """11-16: Discord refusing a tag or lock edit (no Manage Threads) leaves that part waiting, never done; the votes go
+    on, and once allowed the next pass swaps the tags for Closed and locks (Open, Closing Soon: moot by day 7)."""
     forum = Forum()
     client = Client(forum)
     post = Thread(forum, T0)
@@ -549,8 +551,32 @@ def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):
     out = capsys.readouterr().out
     assert post.tags == [] and len(post.starter.reactions) == 3 and len(post.messages) == 2 and not post.locked
     for part in ("open tag", "closing tag", "closed tags", "lock"):
-        assert out.count(f"post {post.id}: {part} failed: Forbidden") == 1, part
-    assert saved()["posts"][str(post.id)]["end"] == "closed"
+        assert out.count(f"post {post.id}: {part} waits (Forbidden") == 1, part
+    entry = saved()["posts"][str(post.id)]
+    assert not entry["end"] and entry["waiting"] == ["closed tags", "lock"]
+    assert fv.upcoming(client) == [] and "1 post waits for the bot's Manage Threads" in fv.status_text(client)
+    post.refuse = set()
+    passes(client, DAY7 + timedelta(minutes=10), now=clock)
+    entry = saved()["posts"][str(post.id)]
+    assert post.tags == ["Closed"] and post.locked and post.archived and len(post.edits) == 2
+    assert entry["end"] == "closed" and "waiting" not in entry and "waits for" not in fv.status_text(client)
+
+
+def test_without_manage_threads_no_edit_is_tried(clock, capsys):
+    """The forum's permissions read first: no refused request every pass; a no-op tag needs no permission."""
+    forum = Forum()
+    perms = SimpleNamespace(manage_threads=False, mention_everyone=True)
+    forum.guild.me, forum.permissions_for = SimpleNamespace(id=BOT), lambda member: perms
+    client = Client(forum)
+    post = Thread(forum, T0, tags=("Open",))
+    passes(client, T0, DAY6, DAY7, DAY7 + timedelta(minutes=5), now=clock)
+    out = capsys.readouterr().out
+    assert post.edits == [] and post.tags == ["Open"] and len(post.messages) == 2
+    assert out.count(f"post {post.id}: lock waits (Waits: the bot needs Manage Threads in the forum)") == 1
+    assert "open tag" in saved()["posts"][str(post.id)]["done"]
+    perms.manage_threads = True
+    passes(client, DAY7 + timedelta(minutes=10), now=clock)
+    assert post.tags == ["Closed"] and post.locked and saved()["posts"][str(post.id)]["end"] == "closed"
 
 
 def test_failed_winner_message_logged_once_and_the_close_goes_on(clock, capsys):
