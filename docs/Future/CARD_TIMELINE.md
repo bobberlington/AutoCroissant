@@ -29,14 +29,14 @@ the card's Image versions on the website before the git versions. Cards that nev
 
 ## Physical card photos (Q6, final: owner 2026-11-14 22:15 and 22:20)
 
-The 16 JPGs of the 'Old stuff' thread (#record-book, thread 1331913819563360288, 2025-01-23) are the only physical card
-photos; nothing else is one. They are in no timeline, review item or Morgue evidence and are never cropped: the
-matcher never reads the thread (`discord_match.LEFT_OUT`, as ai-images and patty-vault). Created = "Before 2020" (no
-day, sorting first, source 'physical card photo') for exactly Pep Drink and Wham Bam Bone (`discord_chain.PHOTO_CREATED`;
-their earliest appearance kept as `dated`; the review page shows the item read only) and M'uru, a Morgue candidate
-(`PHOTO_MORGUE`, LC-1c11be0504, slug m-uru: its entry's first); no other Created comes from the photos. The ids are
-fixed: an id that no longer names its card (a rename, a regrouped Morgue entry) is a WARNING in the chain's stats and
-the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unseen.
+The 16 JPGs of the 'Old stuff' thread (#record-book, 2025-01-23) are the only physical card photos; nothing else is one.
+They are in no timeline, review item or Morgue evidence and are never cropped: the matcher never reads the thread
+(`discord_match.LEFT_OUT`, by its channels.json name, as ai-images and patty-vault; no Discord id is in the code).
+Created = "Before 2020" (no day, sorting first, source 'physical card photo') for exactly Pep Drink and Wham Bam Bone
+(`discord_chain.PHOTO_CREATED`; their earliest appearance kept as `dated`; the review page shows the item read only) and
+M'uru, a Morgue candidate (`PHOTO_MORGUE`, LC-1c11be0504, slug m-uru: its entry's first); no other Created comes from
+the photos. The ids are fixed: an id that no longer names its card (a rename, a regrouped Morgue entry) is a WARNING in
+the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before 2020" never goes unseen.
 
 ## Pipeline
 

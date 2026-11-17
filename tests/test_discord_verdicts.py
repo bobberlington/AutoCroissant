@@ -8,11 +8,10 @@ import commands.discord_verdicts as dv
 
 G = "100000000000000001"
 T = 1600000000
-PORT, NEW, MEME = ("735328279619436666", "port"), ("875055733161488444", "new-cards"), ("835450716947873823",
-                                                                                     "meme-cards")
+PORT, NEW, MEME = ("201", "port"), ("204", "new-cards"), ("203", "meme-cards")   # made-up ids
 H = {"p": "0" * 16, "d": "0" * 16, "q": "0" * 64}   # one look's hashes
 FAR = {"p": "f" * 16, "d": "f" * 16, "q": "f" * 64}  # another's
-IDEAS, RECORDS = ("664256411907391509", "ideas-discussion"), ("1088034453319843840", "record-book")
+IDEAS, RECORDS = ("202", "ideas-discussion"), ("205", "record-book")
 
 
 def sha(n: int) -> str:
@@ -52,8 +51,8 @@ def archive(root: Path, posts: list, cards: dict, versions: list, kinds: dict, o
     for channel in {r["channel_id"] for r in lines}:
         (root / "messages" / f"{channel}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in lines
                                                                     if r["channel_id"] == channel))
-    (root / "channels.json").write_text(json.dumps([{"id": r["channel_id"], "name": r["channel_name"]}
-                                                    for r in lines]))
+    (root / "channels.json").write_text(json.dumps([{"id": r["channel_id"], "name": r["channel_name"]} for r in lines]
+                                                   + [r["thread"] for r in lines if r["thread"]]))
     (root / "derived/catalogue/channels.json").write_text(json.dumps({"channels": [
         {"id": i, "kind": k} for i, k in kinds.items()]}))
     (root / "derived/oldgit/lost.json").write_text(json.dumps({"cards": list(old_lost)}))
@@ -73,7 +72,7 @@ def test_one_verdict_a_picture_jokes_follow_the_picture_photos_never_read(tmp_pa
                                "look": 1, "whole": H}]
     joke_title = {"title": ["Fang But Funny"], "title_block": "Fang But Funny",
                   "lines": ["Fang But Funny", "Deal 5 damage to every creature on the field and laugh about it"]}
-    old_stuff = {"id": "1331913819563360288", "name": "Old stuff thread"}
+    old_stuff = {"id": "206", "name": "Old stuff thread"}
     bites = {"text": dm.read_text([["Fang", 1.0], ["Bite for 2", 1.0]])}
     posts = [(T + 5 * 86400, NEW, 1, seen("fang", ["old"]), dict(bites), None),     # 1: reposted; the port's first
              (T, PORT, 1, seen("fang", ["old"]), dict(bites), None),

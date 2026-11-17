@@ -51,8 +51,8 @@ from re import IGNORECASE, compile as re_compile, escape, finditer, fullmatch, m
 from typing import Callable, Iterable, Optional
 from unicodedata import normalize
 
-from commands.discord_match import (CATALOGUE, DEFAULT_ROOT, OLDGIT, check_root, git_dir_of, git_out, read_json,
-                                    read_jsonl, slugify, write_json, write_text)
+from commands.discord_match import (CATALOGUE, DEFAULT_ROOT, OLDGIT, channel_ids, check_root, git_dir_of, git_out,
+                                    read_json, read_jsonl, slugify, write_json, write_text)
 from global_config import CARD_BRANCH, DATA_BRANCH, EDITS_PATH, LOCAL_DIR_LOC
 
 # ========================
@@ -62,9 +62,8 @@ OUT = ("derived", "facts")
 STATS_FILE, OLD_STATS_FILE = "db/stats.json", "db/old_stats.json"
 TC_CUT = "2023-11-06T07:15:30+00:00"              # TTSCardMaker's last 'init' (36d62e53): git has it after this
 OLD_START = "2023-04-21T08:30:28+00:00"            # the old repo's first commit: push notices before it only
-UPDATE_IDS = {"692548660151582780", "737246900645920828", "745593281466990654", "765812180238598194",
-              "910809664785088532", "935455829124067348", "1091208792575844444"}   # update-01..06, finished-updates
-GITHUB_ID = "1011982154143633548"                  # github-updates
+UPDATES = ("update-01", "update-02", "update-03", "update-04", "update-05", "update-06", "finished-updates")
+GITHUB = "github-updates"                          # channels by name (channels.json; no Discord id in the code)
 SKIP_BRANCHES = {"meme"}                           # the first repo's meme branch: never a live card's
 CHAT_RELEVANCE = 0.1                               # other channels: the catalogue's card relevance at least this
 CHAT_SKIP_KINDS = {"meme/joke", "bot", "update"}   # morgue channels never date a live card (owner Q1)
@@ -936,9 +935,10 @@ def chat_channels(root: str) -> dict:
     """{channel id: (name, kind)} of the other card channels (catalogue relevance; morgue and bot channels left
     out)."""
     catalogue = read_json(join(root, *CATALOGUE), {}) or {}
+    skip = channel_ids(root, (*UPDATES, GITHUB))
     return {c["id"]: (c["name"], c.get("kind")) for c in catalogue.get("channels") or []
             if c.get("kind") not in CHAT_SKIP_KINDS and (c.get("card_relevance") or 0) >= CHAT_RELEVANCE
-            and c["id"] not in UPDATE_IDS and c["id"] != GITHUB_ID}
+            and c["id"] not in skip}
 
 
 def human(message: dict) -> bool:
@@ -948,7 +948,7 @@ def human(message: dict) -> bool:
 def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True,
                     given: Optional[dict] = None) -> Iterable[tuple]:
     """(source, channel id, channel name, message, line number, line, parse) before the card repo, humans only."""
-    channels = [(c, "changelog") for c in sorted(UPDATE_IDS)]
+    channels = [(c, "changelog") for c in sorted(channel_ids(root, UPDATES))]
     titles = {}
     if chat:
         titles = chat_channels(root)
@@ -1389,7 +1389,8 @@ def push_facts(root: str, names: Names, counts: Counter) -> tuple:
     hints)."""
     who = authors()
     facts, notices = [], []
-    for m in messages(root, GITHUB_ID):
+    github = next(iter(channel_ids(root, (GITHUB,))), None)
+    for m in messages(root, github) if github else ():
         date = iso(m["timestamp"])
         if date >= OLD_START:
             break
@@ -1409,7 +1410,7 @@ def push_facts(root: str, names: Names, counts: Counter) -> tuple:
             if not cards:
                 continue
             facts.append({"id": "p" + short_id(m["id"], sha), "source": "push", "kind": "push", "date": date,
-                          "channel": "github-updates", "channel_id": GITHUB_ID, "message": m["id"], "commit": sha,
+                          "channel": GITHUB, "channel_id": github, "message": m["id"], "commit": sha,
                           "author": author or raw, "author_mapped": author is not None, "cards": cards,
                           "branch": branch, "confidence": "evidence"})
         if len(union) != 1:

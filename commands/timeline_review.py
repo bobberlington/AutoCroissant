@@ -58,7 +58,6 @@ PICTURES_PAGE = "pictures.html"                       # every dates-only picture
 THUMB_W = 320                                         # a crop's thumb on the page (px wide)
 USED = CHAIN + ("ruled.json",)                        # the answers the chain's last build acted on
 RIVAL = r"its text reads (\S+)'s better"               # discord_verdicts.name_check's reason: a card read better
-GUILD = "545138546021892096"                          # Impossibility Simulator (a changelog line's Discord link)
 FORMAT = "card-timelines-rulings/1"                   # the export's format (apply_rulings checks it)
 STORE = "timelines-review"                            # the browser's saved answers (localStorage key prefix)
 SECTIONS = (                                          # id, title, what it asks
@@ -96,6 +95,7 @@ class Inputs:
     def __init__(self, root: str):
         at = lambda parts: join(root, *parts)
         self.root = root
+        self.guild = (dm.read_json(join(root, "summary.json"), {}) or {}).get("guild_id")
         pairs = dm.read_json(dm.Paths(root).pairs, {}) or {}
         self.cards = pairs.get("cards") or {}
         self.by_key = {c["key"]: cid for cid, c in self.cards.items()}
@@ -360,7 +360,7 @@ def chain_items(inputs: Inputs) -> list:
                 f"-> {r.get('fact_to')}"
             it["meta"] = [f"a changelog line: {r.get('field', '').upper()} {to}; the next picture reads "
                           f"{r.get('picture_reads')}"]
-            it["link"] = jump(fact)
+            it["link"] = jump(fact, inputs.guild)
             it["pics"] = [entry_pic(inputs, cid, r.get("entry") or "", "the next picture")]
             it["choices"] = [choice("fact", "the changelog is right (keep the line)"),
                              choice("picture", "the picture is right (drop the line)")]
@@ -472,9 +472,10 @@ def psd_items(inputs: Inputs) -> list:
     return out
 
 
-def jump(fact: dict) -> Optional[str]:
-    return f"https://discord.com/channels/{GUILD}/{fact['channel_id']}/{fact['message']}" \
-        if fact.get("channel_id") and fact.get("message") else None
+def jump(fact: dict, guild: Optional[str]) -> Optional[str]:
+    """A changelog line's Discord link (the archive's guild, summary.json)."""
+    return f"https://discord.com/channels/{guild}/{fact['channel_id']}/{fact['message']}" \
+        if guild and fact.get("channel_id") and fact.get("message") else None
 
 
 def change_text(fact: dict) -> str:
@@ -497,7 +498,7 @@ def fact_items(inputs: Inputs) -> list:
                       f"{inputs.name(cid) if cid else r.get('card')}: {when(r.get('date'))} #{r.get('channel')}",
                       card=cid, fact=r.get("fact"), date=r.get("date"))
             it["meta"] = [f"read as: {change_text(fact)}", f"unsure: {r.get('why')}"]
-            it["link"] = jump(fact)
+            it["link"] = jump(fact, inputs.guild)
             it["pics"] = [p for p in [card_pic(inputs, cid)] if p]
             if fact.get("unit") == "unknown":
                 it["choices"] = [choice("yes", "right, in points", "points"), choice("yes", "right, in bars", "bars")]
@@ -512,7 +513,7 @@ def fact_items(inputs: Inputs) -> list:
                       date=r.get("date"), line=r.get("line"))
             it["meta"] = [f"names: {', '.join(r.get('candidates') or []) or 'no card'}", r.get("why") or "",
                           "Which card is the line about? Its changes (data only) go to that card."]
-            it["link"] = jump(fact)
+            it["link"] = jump(fact, inputs.guild)
             given = (inputs.owner.get("lines") or {}).get(r["id"])
             answer = inputs.answers.get((given or {}).get("answer"))
             if given and answer:                       # the owner named it: shown, not asked
@@ -615,7 +616,7 @@ def created_item(inputs: Inputs, r: dict) -> dict:
         if kind == "changelog earlier":
             fact = inputs.facts.get(r.get("fact")) or {}
             it["meta"].append(f"the line: {change_text(fact)} (#{fact.get('channel')})")
-            it["link"] = jump(fact)
+            it["link"] = jump(fact, inputs.guild)
         else:
             row = next((q for q in inputs.first_repo if "Q-" + q["id"] == r.get("row")), {})
             it["meta"].append(f"first repo push: {row.get('author')}: {row.get('subject')}")

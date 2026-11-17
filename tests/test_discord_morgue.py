@@ -11,8 +11,7 @@ from PIL import Image
 import commands.discord_morgue as dmo
 import commands.discord_verdicts as dv
 
-PORT, IDEAS, MEME = ("735328279619436666", "port"), ("664256411907391509", "ideas-discussion"), \
-    ("835450716947873823", "meme-cards")
+PORT, IDEAS, MEME = ("201", "port"), ("202", "ideas-discussion"), ("203", "meme-cards")   # made-up ids
 MURU = "LC-1c11be0504"                          # discord_chain.PHOTO_MORGUE
 
 

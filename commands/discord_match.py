@@ -161,10 +161,10 @@ CANDIDATES = 8
 GIT_EARLIER_DAYS = 14                             # Discord first post this much after fs: an anomaly
 NOTES_PER_CARD = 12
 MORGUE = re_compile(r"meme|joke|cursed|graveyard")   # morgue channels: meme, joke and scrapped cards, never a live
-MORGUE_IDS = {"835450716947873823", "914367916676366406"}   # card's (owner 2026-11-13: meme-cards, joke-ideas)
-LEFT_OUT = {"1087297393403371550": "ai-images", "1092987235256766494": "patty-vault",    # never read (owner Q1=C,
-            "1331913819563360288": "Old stuff thread"}   # 11-13: AI copies of real cards; reaction pictures, no cards;
-                                                  # Q6 11-14: the physical card photos, in no timeline)
+                                                  # card's (owner 2026-11-13: meme-cards, joke-ideas)
+LEFT_OUT = ("ai-images", "patty-vault", "Old stuff thread")   # never read (channels.json names; owner Q1=C 11-13:
+                                                  # AI copies of real cards; reaction pictures, no cards; Q6 11-14:
+                                                  # the physical card photos, in no timeline)
 MENTION_ROUND = 600                               # seconds: a poster's message this close to an image is its caption
 
 CREATION = re_compile(r"\b(new (card|creature|item|field|minion|status|buff|debuff)s?|introducing|made (a|this|another|my)|"
@@ -1398,7 +1398,7 @@ def is_image(stored: str, entry: dict, kind: str) -> bool:
 
 def load_posts(root: str) -> tuple:
     """(records by id, images): every stored message, and every stored image with its message."""
-    records, images = {}, []
+    records, images, out = {}, [], channel_ids(root, LEFT_OUT)
     for path in sorted(glob(join(root, "messages", "*.jsonl"))):
         container = basename(path)[:-len(".jsonl")]
         with open(path, encoding="utf-8") as f:
@@ -1409,7 +1409,7 @@ def load_posts(root: str) -> tuple:
                     record = loads(line)
                 except ValueError:
                     continue
-                if isinstance(record, dict) and record.get("id") and not left_out(record):
+                if isinstance(record, dict) and record.get("id") and not left_out(record, out):
                     record["_container"] = container
                     records[record["id"]] = record
     for record in sorted(records.values(), key=lambda r: int(r["id"])):
@@ -1430,8 +1430,14 @@ def load_posts(root: str) -> tuple:
     return records, images
 
 
-def left_out(record: dict) -> bool:
-    return record.get("channel_id") in LEFT_OUT or (record.get("thread") or {}).get("id") in LEFT_OUT
+def channel_ids(root: str, names) -> dict:
+    """{id: name} of the archive's channels and threads named so (channels.json: no Discord id in the code)."""
+    rows = read_json(join(root, "channels.json"), []) or []
+    return {str(c["id"]): c["name"] for c in rows if isinstance(c, dict) and c.get("id") and c.get("name") in names}
+
+
+def left_out(record: dict, ids) -> bool:
+    return record.get("channel_id") in ids or (record.get("thread") or {}).get("id") in ids
 
 
 def is_bot(record: dict) -> bool:
@@ -2752,9 +2758,9 @@ def fs_check(fs, first: Optional[float]) -> dict:
 
 
 def morgue_ids(root: str, channels: dict) -> set:
-    """The morgue channels: meme, joke and scrapped cards (MORGUE_IDS, names like MORGUE, the channel pass's meme
-    and joke kinds); their threads' posts carry the channel's id."""
-    found = set(MORGUE_IDS) | {cid for cid, c in channels.items() if MORGUE.search(c.get("name") or "")}
+    """The morgue channels: meme, joke and scrapped cards (names like MORGUE, the channel pass's meme and joke
+    kinds); their threads' posts carry the channel's id."""
+    found = {cid for cid, c in channels.items() if MORGUE.search(c.get("name") or "")}
     catalogue = read_json(join(root, *CATALOGUE), []) or []
     rows = catalogue.get("channels") or catalogue if isinstance(catalogue, dict) else catalogue
     for key, row in (rows.items() if isinstance(rows, dict) else ((None, r) for r in rows)):

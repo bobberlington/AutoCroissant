@@ -524,7 +524,7 @@ def test_chain_stops_at_git_and_morgue_posts_are_lost_cards(tmp_path):
                   3: seen(["now"]), 4: []}                                         # morgue: a meme of Fang, a joke
     root = tmp_path / "archive"
     write_build_archive(root, posts, candidates, versions, cards, {4: {"title": ["Joke Card"]}},
-                        {3: ("835450716947873823", "meme-cards"), 4: ("914367916676366406", "joke-ideas")})
+                        {3: ("203", "meme-cards"), 4: ("207", "joke-ideas")})
     d = dm.build(str(root), log=lambda *a: None)["cards"]["fang"]["discord"]
     assert d["first"]["date"].startswith("2020-09-13") and d["posts"] == 3          # the meme's earlier post: no
     assert [r["shows"] for r in d["revisions"]] == ["current"] and d["after_git"] == 1

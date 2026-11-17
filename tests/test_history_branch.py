@@ -32,8 +32,8 @@ def archive(tmp_path, hb) -> Path:
     folder = root.joinpath(*hb.FOLDER)
     (folder / "a-card").mkdir(parents=True)
     (folder / "_morgue" / "lost").mkdir(parents=True)
-    container = next(iter(hb.dm.LEFT_OUT))
-    (root / "attachments.jsonl").write_text(json.dumps({"container_id": container, "sha256": PHOTO}) + "\n")
+    (root / "channels.json").write_text(json.dumps([{"id": str(n), "name": name} for n, name in enumerate(hb.dm.LEFT_OUT)]))
+    (root / "attachments.jsonl").write_text(json.dumps({"container_id": "2", "sha256": PHOTO}) + "\n")
     for sub, name in (("a-card", "A Card"), ("_morgue/lost", "Lost")):
         Image.new("RGB", (100, 140), (200, 30, 30)).save(folder / sub / "P-111111111111.webp")
         entry = {"id": "D-P-111111111111", "kind": "discord", "date": "2020-07-24T19:31:07+00:00", "day": "2020-07-24",
@@ -117,3 +117,11 @@ def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
     subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
     assert hb.main(["--root", str(root), "--remote", f"file://{remote}", "--store", str(tmp_path / "s"), "--push"]) == 1
     assert git(remote, "for-each-ref") == "" and not (tmp_path / "s").exists()
+
+
+def test_the_left_out_channels_are_found_by_name_or_refused(tmp_path, hb):
+    root = archive(tmp_path, hb)
+    assert hb.left_out_ids(str(root)) == {PHOTO[:12]}
+    (root / "channels.json").write_text(json.dumps([{"id": "2", "name": "Old stuff thread"}]))
+    with pytest.raises(SystemExit):
+        hb.left_out_ids(str(root))

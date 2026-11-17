@@ -72,7 +72,10 @@ def left_out_ids(root: str) -> set:
     path = join(root, "attachments.jsonl")
     if not exists(path):
         raise SystemExit(f"refused: {path} missing: the left-out pictures can't be checked")
-    return {row["sha256"][:12] for row in dm.read_jsonl(path) if row.get("container_id") in dm.LEFT_OUT and row.get("sha256")}
+    ids = dm.channel_ids(root, dm.LEFT_OUT)
+    if sorted(ids.values()) != sorted(dm.LEFT_OUT):
+        raise SystemExit(f"refused: {join(root, 'channels.json')} must name each of {', '.join(dm.LEFT_OUT)} once")
+    return {row["sha256"][:12] for row in dm.read_jsonl(path) if row.get("container_id") in ids and row.get("sha256")}
 
 
 def keys_of(obj) -> set:

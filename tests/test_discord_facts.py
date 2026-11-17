@@ -97,9 +97,10 @@ def test_build_writes_facts_without_text(tmp_path, monkeypatch):
     (root / "messages").mkdir(parents=True)
     (root / "derived" / "catalogue").mkdir(parents=True)
     (root / "derived" / "catalogue" / "channels.json").write_text(json.dumps({"channels": []}))
+    (root / "channels.json").write_text(json.dumps([{"id": "301", "name": "update-01"}, {"id": "302", "name": F.GITHUB}]))
     monkeypatch.setattr(F, "AUTHORS", str(tmp_path / "authors.json"))
     (tmp_path / "authors.json").write_text(json.dumps({"someone": "Somebody"}))
-    update = sorted(F.UPDATE_IDS)[0]
+    update = "301"
     rows = [{"id": "1", "timestamp": "2021-03-04T05:06:07+00:00", "author": {"bot": False},
              "content": "Iron Golem: zany wording tweak to its ability\nIron Golem: ATK 4 -> 5\nIron Golem: reword"},
             {"id": "4", "timestamp": "2021-04-04T05:06:07+00:00", "author": {"bot": False},
@@ -114,7 +115,7 @@ def test_build_writes_facts_without_text(tmp_path, monkeypatch):
                           "[`abcdef1`](u) Quirky Sun Cookie fix - someone\n[`abcdef2`](u) readme - someone"}]}
     listed = {**notice, "id": "6", "embeds": [{"title": "[Cards:main] 1 new commit", "description":
                                               "[`abcdef3`](u) Sun Cookie and Krabs update - someone"}]}
-    (root / "messages" / f"{F.GITHUB_ID}.jsonl").write_text(json.dumps(notice) + "\n" + json.dumps(listed) + "\n")
+    (root / "messages" / "302.jsonl").write_text(json.dumps(notice) + "\n" + json.dumps(listed) + "\n")
     F.build(str(root), names(), TYPES, log=lambda *a: None)
     out = root / "derived" / "facts"
     got = [json.loads(line) for line in (out / "facts.jsonl").read_text().splitlines()]
@@ -235,7 +236,8 @@ def test_eye_told_short_forms_and_the_february_document(tmp_path):
     (root / "derived" / "facts").mkdir(parents=True)
     msg = {"id": "900", "timestamp": "2020-08-01T10:00:00+00:00", "channel_name": "update-02",
            "content": "golem: +1 ATK\ngolem: +1 DEF", "author": {"id": "1"}}
-    channel = sorted(F.UPDATE_IDS)[0]
+    channel = "303"
+    (root / "channels.json").write_text(json.dumps([{"id": channel, "name": "update-02"}]))
     (root / "messages" / f"{channel}.jsonl").write_text(json.dumps(msg) + "\n")
     (root / "derived" / "facts" / "eye_lines.json").write_text(json.dumps(
         {"lines": {"900:0": {"card": "Iron Golem", "form": "golem"}}}))
