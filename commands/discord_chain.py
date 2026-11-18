@@ -1774,8 +1774,9 @@ class Chain:
 
     def diff(self, entries: list, kind: Optional[str] = None) -> None:
         """Each version against the one before (text rows aside); a Discord look folds when settled and its picture
-        is near the one before (fold). kind: the card's (an item's kinds are no change)."""
-        before = None
+        is near the one before (fold), or when the owner rules it minor (owner.json apart: minor). kind: the card's (an
+        item's kinds are no change)."""
+        before, apart = None, (getattr(self.inputs, "owner", None) or {}).get("apart") or {}
         for e in entries:
             if e["kind"] == "text":
                 continue
@@ -1789,6 +1790,9 @@ class Chain:
                     e["changes"]["ability_change"] = e["old_ability_change"]     # a label alone: the rule's
             if e["kind"] == "discord":
                 e["minor"], share = fold(self.inputs.root, before, e)
+                if not e["minor"] and before and (apart.get(e["pictures"][0]["id"]) or {}).get("minor"):
+                    e["minor"], share = True, look_share(self.inputs.root, before, e)     # the owner's (11-17 23:40)
+                    self.tally["owner: an apart picture a minor version"] += 1
                 e.pop("share", None)
                 if share is not None:
                     e["share"] = round(share, 4)

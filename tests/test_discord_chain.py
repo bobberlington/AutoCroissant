@@ -962,8 +962,9 @@ def test_an_owner_apart_picture_is_its_own_minor_version(tmp_path):
     clock[10:50, 10:50] = 0                                                             # a small icon added
     for n, a in ((1, base), (2, clock)):
         Image.fromarray(a.astype(np.uint8)).save(tmp_path / f"attachments/{n}.png")
-    truth = {f"d:{n:064d}": {"title": "Bolt", "stars": 3, "types": [], "ability": "Deal one damage."} for n in (1, 2)}
+    truth = {f"d:{n:064d}": {"title": "Bolt", "stars": 3, "ability": "Deal one damage."} for n in (1, 2)}
     del truth[f"d:{2:064d}"]["ability"]                                                # not read: its look's (as)
+    # types unread on both (an item's kinds alone, Double Pain): never settled, so minor only by the owner's rule
     bars = {f"attachments/{n}.png": {"truth": {"stats": {"hp": 5, "def": 2, "atk": 3, "spd": 4}}} for n in (1, 2)}
     meme = dict(old_row("Bolt", T + 60 * DAY, "m" * 40, 9), id="mmmm:Items/Meme/Bolt.png", path="Items/Meme/Bolt.png",
                 meme_copy=True, repo="first")
@@ -974,7 +975,7 @@ def test_an_owner_apart_picture_is_its_own_minor_version(tmp_path):
         [["P-000000000001", "P-000000000002"]]
     got = inputs(rows(), bars=bars, old_rows=[meme], root=tmp_path)
     got.text_truth = truth
-    got.owner = {"apart": {"P-000000000002": {"as": "P-000000000001", "answer": "a1"}},
+    got.owner = {"apart": {"P-000000000002": {"as": "P-000000000001", "minor": True, "answer": "a1"}},
                  "meme_rows": {"Items/Meme/Bolt.png": {"card": "Bolt", "how": "fold", "into": "P-000000000002"}}}
     chain = dc.Chain(got)
     found, _ = chain.discord_rows()
@@ -985,3 +986,4 @@ def test_an_owner_apart_picture_is_its_own_minor_version(tmp_path):
     assert chain.tally["owner: a picture kept apart, a look of its own"] == 1
     assert clocked["fields"]["ability"] == dc.sure("Deal one damage.", "owner (as P-000000000001)")
     assert not any(i.get("entry") == clocked["id"] for i in chain.review.values())     # nothing to review
+    assert chain.tally["owner: an apart picture a minor version"] == 1 and not dc.settled(first["fields"], clocked["fields"])
