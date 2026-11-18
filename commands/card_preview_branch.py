@@ -319,7 +319,8 @@ def _local(url) -> bool:
 
 
 class _Api:
-    """GETs on one kept HTTPS connection to the API host (the token's only host), conditional where asked."""
+    """GETs (and GraphQL reads) on one kept HTTPS connection to the API host (the token's only host), conditional where
+    asked."""
 
     def __init__(self, base: str, token: str):
         url = urlsplit(base)
@@ -330,21 +331,29 @@ class _Api:
         self.tags = {}                          # path -> ETag
         self.used, self.left, self.sent, self.unchanged = [], None, 0, 0
 
-    def get(self, path: str, conditional: bool = False) -> tuple:
-        """(status, reply, body); one retry on a fresh connection."""
-        headers = {**self.headers, **({"If-None-Match": self.tags[path]} if conditional and path in self.tags else {})}
+    def _send(self, method: str, path: str, headers: dict, data: Optional[bytes] = None) -> tuple:
         for retry in (False, True):
             if self.connection is None:
                 self.connection = (HTTPConnection if self.plain else HTTPSConnection)(self.host, timeout=10)
             try:
-                self.connection.request("GET", self.root + path, headers=headers)
+                self.connection.request(method, self.root + path, headers=headers, **({"body": data} if data else {}))
                 reply = self.connection.getresponse()
-                body = reply.read()
-                break
+                return reply, reply.read()
             except (OSError, HTTPException):
                 self.close()
                 if retry:
                     raise
+
+    def post(self, path: str, data: dict) -> tuple:
+        """(status, reply, body) of a JSON POST (a GraphQL read); one retry on a fresh connection."""
+        reply, body = self._send("POST", path, {**self.headers, "Content-Type": "application/json"}, dumps(data).encode())
+        self.sent += 1
+        return reply.status, reply, body
+
+    def get(self, path: str, conditional: bool = False) -> tuple:
+        """(status, reply, body); one retry on a fresh connection."""
+        headers = {**self.headers, **({"If-None-Match": self.tags[path]} if conditional and path in self.tags else {})}
+        reply, body = self._send("GET", path, headers)
         self.sent += 1
         self.unchanged += reply.status == 304
         if reply.getheader("X-RateLimit-Used"):

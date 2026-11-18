@@ -17,7 +17,8 @@ only when its title names this run, its editor is this run's, its blob hashes to
 bot's main and the data's records are still the ones this process read. A press on a newer commit of the card repo is
 taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the lane's commit.
 Any other newer run of its editor ends the lane (that run, not served, starts the next one). A run whose press its named
-lane served starts none.
+lane served starts none. A new run's check suite on the card repo's main, listed about 0.65 s after the run is made
+where the runs list takes 3-5 s, brings it sooner (Suites: one GraphQL query for its run).
 """
 from base64 import b64decode
 from binascii import Error as Base64Error
@@ -61,6 +62,10 @@ NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
 KEPT = ("MDW/Fonts", ".github/workflows/card-preview.yml", ".github/actions")    # the same at a commit the lane follows
 SHA = re_compile(r"[0-9a-f]{40}")
 FETCH_TIMEOUT = 20                              # s for a newer commit's trees
+ACTIONS_APP, PAGE = 15368, 100                  # GitHub Actions' app id (a check suite per run); suites per listing
+SUITE_LOOKS, SUITE_FAILS = 3, 3                 # looks at a suite whose run isn't read; failures that turn Suites off
+SUITE_RUNS = ("query($ids:[ID!]!){nodes(ids:$ids){... on CheckSuite{databaseId status creator{login} commit{oid} "
+              "workflowRun{databaseId displayTitle event createdAt file{path}}}}}")
 
 
 class Press(NamedTuple):
@@ -174,6 +179,76 @@ def fits(run: dict, press: Optional[Press], me: int, actor: str) -> str:
     return ""
 
 
+def suite_run(node: dict, me: int, actor: str) -> Optional[dict]:
+    """A check suite's run (a GraphQL CheckSuite) in the runs list's shape, when it is a newer press of actor's (the
+    runs list's filters: this workflow, dispatched, by actor); else None."""
+    run = (node or {}).get("workflowRun") or {}
+    if (run.get("file") or {}).get("path") != f".github/workflows/{WORKFLOW}" or run.get("event") != "workflow_dispatch" \
+            or ((node.get("creator") or {}).get("login") != actor) or int(run.get("databaseId") or 0) <= me:
+        return None
+    return {"id": int(run["databaseId"]), "display_title": run.get("displayTitle") or "",
+            "status": str(node.get("status") or "").lower(), "head_sha": (node.get("commit") or {}).get("oid") or "",
+            "triggering_actor": {"login": actor}, "created_at": run.get("createdAt"),
+            "suite": int(node.get("databaseId") or 0)}
+
+
+class Suites:
+    """The lane's quick look for its editor's presses (no ref, no website change): GitHub Actions' check suites on the
+    card repo's main (where the website dispatches), listed about 0.65 s after a run is made where the runs list takes
+    3-5 s; the new ones' runs read by one GraphQL query (suite_run). Off after a refusal or SUITE_FAILS failures (the
+    runs list still brings every press); never raises."""
+
+    def __init__(self, api: _Api, repository: str, me: int, actor: str):
+        self.api, self.me, self.actor, self.off, self.fails = api, me, actor, "", 0
+        self.path = f"/repos/{repository}/commits/heads/main/check-suites?app_id={ACTIONS_APP}&per_page={PAGE}"
+        self.looks = {}                         # node id -> looks (SUITE_LOOKS: done)
+
+    def _list(self, page: int = 1) -> Optional[list]:
+        status, _, body = self.api.get(self.path + (f"&page={page}" if page > 1 else ""), conditional=True)
+        if status == 304:
+            return None
+        if status != 200:
+            raise PermissionError(f"listed {status}") if status in (401, 403, 404, 422) else OSError(f"listed {status}")
+        reply = loads(body)
+        found, total = reply["check_suites"], int(reply.get("total_count") or 0)
+        if page == 1 and total > PAGE:          # a busy main: its newest on the last page
+            found += self._list(-(-total // PAGE)) or []
+        return found
+
+    def runs(self) -> list:
+        """Newer presses of its editor's among main's new suites ([] when none or off)."""
+        if self.off:
+            return []
+        try:
+            for suite in self._list() or []:
+                self.looks.setdefault(str(suite["node_id"]), 0)
+            ids = [node for node, looks in self.looks.items() if looks < SUITE_LOOKS][-PAGE:]
+            if not ids:
+                return []
+            status, _, body = self.api.post("/graphql", {"query": SUITE_RUNS, "variables": {"ids": ids}})
+            if status not in (200, 401, 403):
+                raise OSError(f"GraphQL {status}")
+            reply = loads(body) if status == 200 else {}
+            nodes, errors = (reply.get("data") or {}).get("nodes"), reply.get("errors") or []
+            if not isinstance(nodes, list) or any(e.get("type") == "FORBIDDEN" for e in errors):
+                raise PermissionError(f"GraphQL {status}: " + clean((errors or [{}])[0].get("message", ""), 80))
+            found = []
+            for node, suite in zip(ids, nodes):     # a suite not read yet: null (looked at again)
+                read = bool((suite or {}).get("workflowRun"))
+                self.looks[node] = SUITE_LOOKS if read else self.looks[node] + 1
+                found.append(suite_run(suite, self.me, self.actor) if read else None)
+            self.fails = 0
+            return [run for run in found if run]
+        except PermissionError as error:
+            self.off = str(error)
+        except Exception as error:              # noqa: BLE001 - the runs list still brings it
+            self.fails += 1
+            self.off = f"{type(error).__name__}: {clean(error, 80)}" if self.fails >= SUITE_FAILS else ""
+        if self.off:
+            _say(f"check suites off ({self.off}): the runs list alone")
+        return []
+
+
 def follow(clone: str, head: str, new: str) -> str:
     """Why the lane can't take a press at the card repo's commit new ("" when it can): new's trees fetched into the
     clone (shallow, blobless; the repo is public: no token) and KEPT there as at head (the cold run's fonts and steps)."""
@@ -245,7 +320,7 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
         _say(f"{press.request} ({clean(card, 80)}): {result.get('state')} in {now - seen:.2f} s (blob {blob - seen:.2f} s, "
              f"reads {read - blob:.2f} s, "
              f"bake {now - read:.2f} s)" + (f"; seen {time() - (now - seen) - made:.1f} s after its run was made (to the "
-                                            "second)" if made else ""))
+                                            "second)" + (", by its check suite" if run.get("suite") else "") if made else ""))
         return ""
     finally:
         with open(out + ".code.tmp", "w", encoding="utf-8") as fh:     # the hand-over: done (none when skipped)
@@ -255,10 +330,12 @@ def take(api: _Api, press: Press, run: dict, *, bake: Callable, lane: str, clone
 
 
 def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
-    """The lane's loop: its editor's runs listed every POLL s (conditional GETs), each newer one taken (take; at its
-    commit: follow) or the lane's end (fits). Returns why it ended (press: take's keywords)."""
+    """The lane's loop: main's check suites (Suites) and its editor's runs listed every POLL s (conditional GETs; the
+    runs list when the suites brought none new), each newer run taken (take; at its commit: follow) or the lane's end
+    (fits). Returns why it ended (press: take's keywords)."""
     runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
-    last, failing, seen, listed = monotonic(), None, set(), []
+    last, failing, seen, listed, found = monotonic(), None, set(), [], {}
+    suites = Suites(api, press["repository"], me, actor)
 
     def moved(new: str) -> str:                 # a press at new: the lane's commit from now on
         started, why = monotonic(), follow(press.get("clone", ""), press["head"], new)
@@ -271,19 +348,22 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
             return f"idle {LANE_IDLE} s"
         if time() > until:
             return "the job's end is near"
-        try:
-            status, _, body = api.get(runs, conditional=True)
-        except (OSError, HTTPException, ValueError):
-            status = 0
-        if status in (200, 304):
-            failing = None
-        else:
-            failing = failing or monotonic()
-            if monotonic() - failing > FAILING:
-                return f"the runs list failed for {FAILING} s ({status})"
-        if status == 200:
-            listed = loads(body).get("workflow_runs", [])
-        newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen), key=lambda r: int(r["id"]))
+        found.update((r["id"], r) for r in suites.runs() if r["id"] not in found)
+        if all(r in seen for r in found):       # none new from main's check suites: the runs list
+            try:
+                status, _, body = api.get(runs, conditional=True)
+            except (OSError, HTTPException, ValueError):
+                status = 0
+            if status in (200, 304):
+                failing = None
+            else:
+                failing = failing or monotonic()
+                if monotonic() - failing > FAILING:
+                    return f"the runs list failed for {FAILING} s ({status})"
+            if status == 200:
+                listed = loads(body).get("workflow_runs", [])
+        newer = sorted((r for r in [*found.values(), *listed] if int(r.get("id") or 0) > me and r["id"] not in seen),
+                       key=lambda r: int(r["id"]))
         if newer:
             run = newer[0]
             seen.add(run["id"])
@@ -355,6 +435,7 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
 # ========================
 __all__ = [
     'Press',
+    'Suites',
     'bot_moved',
     'fits',
     'follow',
@@ -364,5 +445,6 @@ __all__ = [
     'read_press',
     'serve',
     'served_elsewhere',
+    'suite_run',
     'take',
 ]
