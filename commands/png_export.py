@@ -104,7 +104,7 @@ OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng"
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 BAND = 64                                       # rows a band: its own IDAT, ending in a full flush (owner 2026-11-11)
 BAND_LEVEL = 8                                  # band()'s zlib level, Z_FILTERED (memLevel 9): smaller and faster than 9
-DEFLATES = 4                                    # band()'s deflate threads at most (zlib frees the GIL)
+DEFLATES = 4                                    # band()'s threads at most (numpy and zlib free the GIL)
 FLUSH = b"\x00\x00\xff\xff"                     # the empty stored block a full flush ends with
 PIXEL_BYTES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}    # a pixel's bytes at bit depth 8, by colour type
 STORED = 0                                      # zlib level of a PNG band() deflates again right after (encode, a bake)
@@ -469,7 +469,8 @@ def _filtered(rows: np.ndarray, above: np.ndarray, step: int) -> bytes:
 
 
 def use_cores(count: int) -> None:
-    """band() from now on in this process deflates on min(DEFLATES, count) threads (a pool worker: its share)."""
+    """band() from now on in this process filters and deflates on min(DEFLATES, count) threads (a pool worker: its
+    share)."""
     _cores[0] = max(1, count)
 
 
@@ -490,13 +491,13 @@ def _deflate(raw: bytes, last: bool) -> bytes:
     return deflate.compress(raw) + deflate.flush(zlib.Z_FINISH if last else zlib.Z_FULL_FLUSH)
 
 
-def _deflates(raw: list, last: list) -> list:
-    """_deflate of each band, side by side on this process's threads (use_cores)."""
-    count = min(DEFLATES, _cores[0], len(raw))
+def _threads(work: Callable, *bands: list) -> list:
+    """work over each band's arguments, side by side on this process's threads (use_cores)."""
+    count = min(DEFLATES, _cores[0], len(bands[0]))
     if count > 1:
         with ThreadPoolExecutor(count) as pool:
-            return list(pool.map(_deflate, raw, last))
-    return list(map(_deflate, raw, last))
+            return list(pool.map(work, *bands))
+    return list(map(work, *bands))
 
 
 def _bands(data: bytes, keep: Callable[[int, bytes], bool]) -> Optional[dict]:
@@ -538,9 +539,9 @@ def _kept(raw: list, old: Optional[bytes], header: tuple) -> dict:
 def band(data: bytes, old: Optional[bytes] = None) -> Optional[bytes]:
     """
     An 8-bit PNG deflated in BAND-row bands, each its own IDAT ending in a full flush (_filtered's rows, zlib at
-    BAND_LEVEL; the bands deflate side by side, _deflate): an unchanged band is the same bytes in the next version, so
-    git deltas a small change (owner, 2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every other
-    chunk kept in place. Unchecked: recompress checks it.
+    BAND_LEVEL; the bands filter and deflate side by side, _threads): an unchanged band is the same bytes in the next
+    version, so git deltas a small change (owner, 2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every
+    other chunk kept in place. Unchecked: recompress checks it.
     old: the file it replaces. A band whose filtered rows old's band has keeps old's deflate of it (a band deflates
     from its own rows alone), when this zlib deflates old's longest such band to the same bytes (else every band is
     deflated: old came from another zlib or level). Either way the same file.
@@ -566,15 +567,16 @@ def band(data: bytes, old: Optional[bytes] = None) -> Optional[bytes]:
         return None
     rows = np.ascontiguousarray(pixels, np.uint8).reshape(height, width * step)
     zero, tops = np.zeros(width * step, np.uint8), range(0, height, BAND)
-    raw = [_filtered(rows[top:top + BAND], rows[top - 1] if top else zero, step) for top in tops]
+    raw = _threads(_filtered, [rows[top:top + BAND] for top in tops], [rows[top - 1] if top else zero for top in tops],
+                   [step] * len(tops))
     last = [n == len(raw) - 1 for n in range(len(raw))]
     kept = _kept(raw, old, (width, height, 8, kind))
     probe = [max(kept, key=lambda n: len(kept[n]))] if kept else []    # old's zlib and level are ours: checked once
     todo = [n for n in range(len(raw)) if n not in kept] + probe
-    made = dict(zip(todo, _deflates([raw[n] for n in todo], [last[n] for n in todo])))
+    made = dict(zip(todo, _threads(_deflate, [raw[n] for n in todo], [last[n] for n in todo])))
     if probe and made[probe[0]] != kept[probe[0]]:
         rest = [n for n in kept if n not in made]
-        made.update(zip(rest, _deflates([raw[n] for n in rest], [last[n] for n in rest])))
+        made.update(zip(rest, _threads(_deflate, [raw[n] for n in rest], [last[n] for n in rest])))
     parts = [made[n] if n in made else kept[n] for n in range(len(raw))]
     adler = 1
     for part in raw:
