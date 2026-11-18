@@ -172,6 +172,32 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert out["recent.json"] == {melon["id"]: "Heal 1.", melon2["id"]: "Heal 1."}
 
 
+def test_a_merge_keeping_the_older_picture_stays_pinned(bs, tmp_path, monkeypatch):
+    """A merge that kept the other side's older PNG (TC a7b787f0, Chris & Jordi): the pin (og:image, deck.js) is the
+    commit that made that picture, not none (raw at each build's HEAD: every build redeployed)."""
+    root, png, start = tmp_path / "merge", tmp_path / "merge" / f"{ALPHA}.png", 1_780_000_000
+    for key in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{key}_NAME", "t")
+        monkeypatch.setenv(f"GIT_{key}_EMAIL", "t@t")
+    git = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True).stdout.strip()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    _png(png, 10)
+    _commit(root, "Card", start)
+    git("checkout", "-q", "-b", "guards")
+    _png(png, 20)
+    kept, _ = _commit(root, "Guards: re-export", start + DAY)
+    git("checkout", "-q", "main")
+    _png(png, 30)
+    (root / f"{ALPHA}.psd").write_text("psd")                    # both sides differ: the walk takes both
+    _commit(root, "New art", start + 2 * DAY)
+    git("merge", "-q", "-X", "theirs", "guards", "-m", "Merge")
+    last = {}
+    monkeypatch.setattr(bs, "REPO", str(root))
+    commits = bs.git_history(last)
+    newest = next(c[0] for c in commits if any(e[3] == f"{ALPHA}.png" for e in c[5]))
+    assert newest != kept and last[(f"{ALPHA}.png", git("rev-parse", f"HEAD:{ALPHA}.png"))] == kept
+
+
 def test_older_versions_copied_onto_the_plates_branch(bs, repo, tmp_path, monkeypatch):
     """site.yml's build lists every older version's PNG blob and plates file, newest first (VERSION_LIST), while the plates
     branch's v/ (VERSION_PLATES) lacks one, and puts none in the site; its versions job (--versions, a blobless depth-1
