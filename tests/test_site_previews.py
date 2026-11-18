@@ -265,6 +265,26 @@ out([widths, fit([62, 112]), fit([67, 107])]);""")
     assert out == [[5.8, 10.8, 14.8, 11], [5, 29, -25, 50, False], [5, 34, -20, 40, True]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "VARIANT_PAD"), reason="no icon variants in this mockup.js")
+def test_a_typed_icon_variant_steps_as_its_glyph(tmp_path):
+    """[x:glow] steps as the font's glyph with its halo spacers (0.26 em each side), [x:sticker] 0.03, [x:tint] and
+    [x:no] as the plain icon, each with its picture; a layered one typed on a tracked line is set untracked (psd_edit),
+    and an icon the plate spells with a variant steps as that one."""
+    out = node(tmp_path, """
+const icons = { machine: { file: "m.1.webp", a: 1, v: ["tint", "sticker", "glow", "darkglow"] } };
+const measure = t => [...t].length * 10; measure.hx = 1;
+const ps = m.tokenize("[machine] [machine:glow] [machine:sticker] [machine:tint] [machine:no]", icons)[0].map(c => c[0]);
+const widths = m.layout([ps.map(p => [p])], Infinity, 10, measure)[0].pieces.filter(p => p.icon).map(p => +p.w.toFixed(2));
+const text = "Deal [machine] now.", g = [...text].map((ch, i) => { const x = i < 5 ? 10 + i * 10 : 114 + (i - 14) * 10; return ch === " " ? [i, x] : [i, x, x + 1, x + 9]; });
+const c = (t, ink) => ({ text: t, lines: [[0, t.length, 100, 10, 164, 60, 105, 0]], glyphs: [...g.slice(0, 5), [5, 60, ...ink], ...g.slice(14).map(([i, ...r]) => [i + t.length - text.length, ...r])], frame: [0, 300] });
+const fit = (t, ink, now, z) => { const R = m.recordLayout(c(t, ink), text, 1), f = m.spliceFit(R, m.geoPlan(R, now).splice, { measure, z, icons }); return f && [Math.round(f.tag.w), Math.round(f.ds), Math.round(f.tag.ez)]; };
+out([ps.map(p => p.vary || (p.no ? "no" : "")), ps[1].vfile, widths, fit(text, [62, 112], "Deal [machine:glow] now.", 50),
+  fit(text, [67, 107], "Deal [machine:glow] now.", 40), fit(text, [67, 107], "Deal [machine:tint] now.", 40),
+  fit("Deal [machine:sticker] now.", [60, 114], "Deal [machine:glow] now.", 47)]);""")
+    assert out == [["", "glow", "sticker", "tint", "no"], "m.1.glow.webp", [10.8, 16, 11.4, 10.8, 10.8], [80, 26, 50], [64, 10, 40],
+                   [54, 0, 40], [76, 22, 47]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function firstBase"), reason="no firstBase in this mockup.js")
 def test_a_no_layout_ability_starts_on_its_own_first_baseline(tmp_path):
     """An Ability whose plate has no layout, retyped with the same words: line 1 on the record's first baseline, its ink
