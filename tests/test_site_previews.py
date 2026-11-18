@@ -497,6 +497,27 @@ out([got([spec(1, "Moslings", "Mosling")]), got([spec(1, "Moslings", "Mosling"),
                    [["4", "Moslings", [240, 600, 480, 660]]], [["3", None, [300, 1080, 660, 1380]], ["4", None, [240, 600, 480, 660]]]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function splitWhy"), reason="no splitWhy in this mockup.js")
+def test_a_split_titles_part_the_bake_refuses_is_said(tmp_path):
+    """psd_edit.split_title_check's refusals, said as the bake words them: off the card (The Bagel), onto another line
+    (a box), into another part; a part that fits, or titles in separate pictures, say nothing."""
+    out = node(tmp_path, """
+const ctx = { font: "", letterSpacing: "0px", measureText(t) { return { width: t.length * parseFloat(this.font) / 2 }; } };
+const part = (id, text, box, variants = null) => ({ id, text, box, variants });
+const fams = layers => layers.map(layer => ({ fam: "x", layer }));
+const why = (title, specs, layers) => m.splitWhy(ctx, { parts: { title } }, specs.map(([id, text, old]) => ({ role: "name", part: true, id: String(id), text, old })), fams(layers), 0.6, 720);
+const bagel = [part(1, "The Bagel", [268, 49, 954, 174]), part(2, "Or... is it", [537, 16, 643, 36])];
+const side = [part(1, "Azamoth", [100, 100, 500, 200]), part(2, "King", [520, 100, 900, 200])];
+out([why(bagel, [[1, "The Bagel Or... is it", "The Bagel"]], [{ px: 145 }]), why(bagel, [[1, "The Bagels", "The Bagel"]], [{ px: 145 }]),
+  why(side, [[1, "Azamoth Azamoth", "Azamoth"]], [{ px: 100, frame: [100, 0, 600, 0] }]), why(side, [[1, "Azamoth The", "Azamoth"]], [{ px: 100, just: 0 }]),
+  why([part(1, "Stubborn King", [100, 100, 500, 200], [1]), part(2, "Stubborn Queen", [520, 100, 900, 200], [2])], [[1, "Stubborn King Prime", "Stubborn King"]], [{ px: 100, just: 0 }])]);""")
+    off, fits, wraps, into, apart = out
+    assert off == "title part 1/2 ('The Bagel Or... is it') would run off the card: shorten it, or change the title in Photoshop"
+    assert wraps.endswith("would break onto another line: shorten it, or change the title in Photoshop")
+    assert into.startswith("title part 1/2 ('Azamoth The') would run into 'King', another part of the title")
+    assert fits == apart == ""
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
 def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's
