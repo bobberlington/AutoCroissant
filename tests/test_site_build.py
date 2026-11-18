@@ -703,3 +703,75 @@ def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
     assert re.fullmatch(r"[0-9a-f]{10}", meta["versions/"])
     app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
     assert 'getJson(`versions/${encodeURIComponent(c.id)}.json`)' in app and "(details|versions)\\/" in app and 'getJson("versions.json")' not in app
+
+
+def _changes(seed_events: int, edit_events: int, batches: int) -> dict:
+    """A card sync changelog: pushes over 40 days (minor art, a file rename, re-reads), one push older than the next
+    build's (its seq after, its time before), the edit events and batches."""
+    t0, events, seq = 1_790_000_000, [], 0
+    def push(at, kinds, build, by="Maker"):
+        nonlocal seq
+        after = f"{seq + 1:040x}"
+        for kind in kinds:
+            seq += 1
+            e = {"seq": seq, "at": at, "build": build, "kind": kind, "card": f"Card {seq}", "title": f"Card {seq}",
+                 "path": f"Creatures/Other/2 Stars/Card_{seq}.psd", "push": {"after": after, "before": "0" * 40, "by": by, "at": at}}
+            if kind in ("changed", "edited"):
+                e["fields"] = {"hp": [1, 2], "ability": ["Hit the foe.", "Hit the foe twice."]}
+            if kind == "art" and seq % 3:
+                e["minor"] = True
+            if kind == "moved":
+                e["from_path"] = f"Creatures/Other/2 Stars/Old_{seq}.psd" if seq % 2 else f"Items/Heal/2 Stars/Card_{seq}.psd"
+            if kind == "edited":
+                e["edit_by"] = "Ann"
+            events.append(e)
+    n = 0
+    while n < seed_events:
+        at = t0 + n * 9000
+        kinds = ["changed", "art", "art", "art", "new", "moved", "reparse"][n % 5:n % 5 + 1 + n % 4]
+        push(at, kinds, f"b{n // 7}")
+        n += len(kinds)
+    push(t0 + n * 9000 - 30 * 86400, ["changed", "art"], "late")      # an older push carried in by a later build
+    for i in range(edit_events):
+        push(t0 + (n + i) * 9000, ["edited", "authors"][i % 2:i % 2 + 1 + i % 3], f"e{i // 5}", by="Bob")
+    rows = [{"by": ["Ann"], "at": t0 + i * 5000, "via": ["website", "git"][i % 2], "sha": f"{i:040x}", "subject": f"Website edit {i}",
+             "cards": [{"id": f"card-{i}", "name": f"Card {i}", "fields": {"hp": [1, i]}}]} for i in range(batches, 0, -1)]
+    return {"days": 180, "repo": "o/r", "source": {"card_commit": "c" * 40}, "events": events, "archived": [], "edits": {"batches": rows}}
+
+
+def test_changes_tabs_first_screens(bs, tmp_path):
+    """The Changelog's and Database edits' first screens come from small head files (build_site changelog_heads): the
+    newest pushes (at least HEAD_ROWS events, none older than a push left out, also when a push's seq and time
+    disagree) with the whole file's heading counts, and the newest batches when every edit event fits. Drawn from the
+    head, then the whole file's other parts appended (changelog.js headDrawn, changelogParts, editsParts), a tab is the
+    same HTML as drawn from the whole file at once."""
+    cases = []
+    for name, (seed, edits, batches) in {"many": (400, 300, 12), "few edits": (600, 30, 12), "no edits": (60, 0, 0)}.items():
+        files = bs.changelog_files(_changes(seed, edits, batches))
+        heads = bs.changelog_heads(files)
+        late = next(e["at"] for e in files["changelog.json"]["events"] if e.get("build") == "late")
+        head = heads["changelog-head.json"]["events"]
+        if name == "few edits":                       # the late push: every push after it in time comes along
+            assert len(head) < len(files["changelog.json"]["events"]) and min(e["at"] for e in head) == late
+        for f in ("changelog.json", "edits.json", "changelog-head.json", "edits-head.json"):
+            (tmp_path / f"{len(cases)}-{f}").write_text(json.dumps({**files, **heads}[f]), encoding="utf-8")
+        cases.append(name)
+    probe = tmp_path / "heads.mjs"
+    probe.write_text(f"const cl = await import({json.dumps((BUILD_SITE.parents[1] / 'assets' / 'changelog.js').as_uri())});\n"
+                     "const fs = await import('fs'), p = new URLSearchParams(), read = f => JSON.parse(fs.readFileSync(f));\n"
+                     f"const dir = {json.dumps(str(tmp_path))}, out = [];\n"
+                     f"for (let i = 0; i < {len(cases)}; i++) {{ const r = {{}};\n"
+                     "  for (const [f, h, edits] of [['changelog.json', 'changelog-head.json', false], ['edits.json', 'edits-head.json', true]]) {\n"
+                     "    const C = read(`${dir}/${i}-${f}`), H = read(`${dir}/${i}-${h}`), from = cl.headDrawn(H, C, edits);\n"
+                     "    const whole = edits ? cl.editsHtml(C, p) : cl.changelogHtml(C, p), first = edits ? cl.editsHtml(H, p) : cl.changelogHtml(H, p);\n"
+                     "    const rest = from === null ? null : [...(edits ? cl.editsParts(C, p, from) : cl.changelogParts(C, p, from))].join('');\n"
+                     "    r[f] = { same: first + rest === whole, from, part: first.length / whole.length }; }\n"
+                     "  out.push(r); }\n"
+                     "process.stdout.write(JSON.stringify(out));\n", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    got = dict(zip(cases, json.loads(done.stdout)))
+    assert all(r["same"] for c in got.values() for r in c.values()), got
+    assert got["many"]["changelog.json"]["part"] < 0.5 and got["many"]["edits.json"]["from"]["header"] is False
+    assert got["few edits"]["edits.json"]["from"] == {"groups": got["few edits"]["edits.json"]["from"]["groups"], "header": True, "batches": bs.HEAD_BATCHES}
+    assert got["no edits"]["edits.json"]["from"]["batches"] == 0
