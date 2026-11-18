@@ -640,7 +640,16 @@ def vocabulary(snapshot: Snapshot):
     if ICON_MANIFEST_PATH in snapshot.tree:
         manifest = loads(snapshot.fetch(snapshot.sha(ICON_MANIFEST_PATH)).decode("utf-8"))
     parser = psd_edit.offline_parser(all_types, stars, manifest)
-    parser.linked = lambda path: snapshot.fetch(snapshot.sha(path)) if path in snapshot.tree else None  # placed titles
+    held: dict = {}                             # sha -> bytes: each placed title's file read once a run
+
+    def linked(path: str) -> Optional[bytes]:   # placed titles
+        if path not in snapshot.tree:
+            return None
+        sha = snapshot.sha(path)
+        if sha not in held:
+            held[sha] = snapshot.fetch(sha)
+        return held[sha]
+    parser.linked = linked
     return parser
 
 
