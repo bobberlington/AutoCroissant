@@ -10922,7 +10922,7 @@ def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDIm
         if layer is None:
             raise Refused("reparse", f"{part['layer']!r} is gone: no edit deleted it")
         reads, want = part_text(parser, layer), job["text"] if job else part["text"]
-        if not _part_same(reads, want, vocab, True):
+        if not _part_same(reads, want, vocab, True, layer.text if job else None):
             raise Refused("reparse", f"{part['layer']!r} reads {reads[:60]!r}, not {want[:60]!r}")
         if job and field_name == "name":
             notes += _gate_icons(new, layer, old, was.get(layer.layer_id), font_map(fonts_dir), vocab, "title")
@@ -11762,16 +11762,35 @@ def record_parts(record: dict) -> dict:
     return {str(part["id"]): (field_name, kind, part) for kind, field_name in PART_KINDS for part in record.get(kind) or []}
 
 
-def _part_same(a: Optional[str], b: Optional[str], vocab, marks: bool = False) -> bool:
+def _variants(text: Optional[str], vocab) -> list:
+    """The variant of each icon canonical_tokens reads in text, in order ("" for a plain one or an icon character)."""
+    out = []
+    for match in ICON_SCAN_PATTERN.finditer(text or ""):
+        piece = match.group(0)
+        if not piece.startswith("["):
+            name = vocab.codepoints.get(piece)
+            out += [""] if name and vocab.lookup(name) is not None else []
+        elif vocab.lookup(piece[1:-1].partition(":")[0]) is not None and token_variant(piece) is not None:
+            out.append(token_variant(piece))
+    return out
+
+
+def _part_same(a: Optional[str], b: Optional[str], vocab, marks: bool = False, raw: Optional[str] = None) -> bool:
     """Two part texts read alike: tokens canonical ([Fire] is [fire]), layer_text's whitespace rule (a part keeps its
     quotes and a space before punctuation: normalize_ability's stripping made "Lifesteal ." -> "Lifesteal." redundant);
-    marks: PLAIN_MARKS as plain (a read-back: the bake may have made them so)."""
+    marks: PLAIN_MARKS as plain (a read-back: the bake may have made them so). raw: a's layer's own text: a variant b
+    types ([fire:glow]) must be the one the layer prints there (the box shows variants as plain tokens)."""
     def key(text: Optional[str]) -> str:
         text = canonical_tokens(text, vocab) or ""
         text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x03", "\n").replace("\t", " ")
         text = plain_marks(text) if marks else text
         return straight(text).replace("\ufeff", "").strip(" \n")
-    return key(a) == key(b)
+    if key(a) != key(b):
+        return False
+    if raw is None or vocab is None:
+        return True
+    typed, have = _variants(b, vocab), _variants(raw, vocab)
+    return len(typed) != len(have) or all(t in ("", h) for t, h in zip(typed, have))
 
 
 def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None,
@@ -11823,11 +11842,11 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
             continue
         now = hit[2]["text"]
         if raw_sha(layer) != edit["sha"]:       # Photoshop's work stands
-            if not edit.get("delete") and _part_same(now, edit["text"], vocab, marks):
+            if not edit.get("delete") and _part_same(now, edit["text"], vocab, marks, layer.text):
                 plan.outcome[key] = "redundant"
             else:
                 skip(key, edit, CHANGED, now)
-        elif not edit.get("delete") and _part_same(now, edit["text"], vocab, marks):
+        elif not edit.get("delete") and _part_same(now, edit["text"], vocab, marks, layer.text):
             plan.outcome[key] = "redundant"
         else:
             plan.jobs[key] = edit

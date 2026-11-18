@@ -2076,7 +2076,23 @@ def test_icon_style_takes_the_commonest_size_first(parser, monkeypatch):
 PALACE = "Field/4 Stars/Palace_of_Shadow.psd"   # [dark:sticker] white on its white first line, [light:sticker] in grey
 
 
-BENCH = "Field/1 Stars/Bench.psd"           # its title 'Bench', no effects, room for an icon after it
+def test_a_typed_variant_is_an_edit(clone, parser):
+    """A box's token changed only to a variant ([light] -> [light:glow], the token picker's) is a job, not 'already on
+    the card'; the box's plain token, or the variant the layer prints ([dark:sticker]), stays redundant."""
+    path = _card(clone, PALACE)[0]
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, PALACE, psd)
+    box = pe.card_parts(psd, PALACE, pe._card_name(parsed), parser)["ability"][0]
+    assert "[dark]" in box["text"] and "[light]" in box["text"]
+    for typed, job in (("[dark:sticker]", False), ("[Dark]", False), ("[dark:glow]", True)):
+        edit = {"field": "ability", "sha": box["sha"], "text": box["text"].replace("[dark]", typed, 1)}
+        plan = pe.plan_parts(psd, parsed, {str(box["id"]): edit}, parser)
+        assert (str(box["id"]) in plan.jobs) == job, typed
+    assert not pe._part_same("Burn [fire]", "Burn [fire:tint]", parser.icons, raw="Burn [Fire]")
+    assert pe._part_same("Burn [fire]", "Burn [fire:tint]", parser.icons)     # no layer text: as before
+
+
+BENCH ="Field/1 Stars/Bench.psd"           # its title 'Bench', no effects, room for an icon after it
 NEO = "Auxiliary/Creatures/Mettaton_NEO.psd"   # its title under a gradient overlay
 
 
