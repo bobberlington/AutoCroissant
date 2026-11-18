@@ -439,6 +439,17 @@ def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
     assert sorted(json.loads((tmp_path / "cache" / "psd" / "sizes.json").read_text()).values()) == [4, 5]
 
 
+def test_every_dialog_has_a_name():
+    """Screen readers say a dialog's name, not just 'dialog' (2026-11-17): every role="dialog" carries aria-label or
+    aria-labelledby; showDialog's points at the heading it shows."""
+    for js in sorted(STYLE_CSS.parent.glob("*.js")):
+        for tag in re.findall(r'<div [^>]*role="dialog"[^>]*>', js.read_text(encoding="utf-8")):
+            assert re.search(r"aria-label(ledby)?=", tag), (js.name, tag)
+    app = (STYLE_CSS.parent / "app.js").read_text(encoding="utf-8")
+    show = re.search(r"^function showDialog\(html\) \{.*?modal\.hidden = false; \}", app, re.S | re.M)[0]
+    assert show.count('"dialog-title"') == 2                            # the tag's aria-labelledby and the heading's id
+
+
 def _contrast(a: str, b: str) -> float:
     """WCAG contrast ratio of two #rgb / #rrggbb colours."""
     def lum(h):
