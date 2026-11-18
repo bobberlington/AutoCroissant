@@ -23,6 +23,9 @@ Other files in the folder are left alone. Exit 1 when the pages could not be dra
 INPUTS (Card sync's look in the background: kept unless main's head moved one since).
 --kept FILE: another lane's pages.json (one that committed nothing): its key and pre are the known ones when its pages
 and PDF are the checkout's.
+--local URL: the push's Pages build served there (Card sync, before it deploys): the same look, deciding only. Its pages
+the same: pages.json's key and pre written as above; else (a page changed, not HEAD's build, not drawn) nothing written,
+exit 4 (Card sync looks at the website then, so a printed PDF always links the website).
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
@@ -75,10 +78,12 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js draws them)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
 # what the pages draw (key()): the sheets' HTML (text, and the pictures' and assets' URLs, which carry their content's
-# stamp), the style sheets (an inline <style>'s text: index.html's style.css; a linked one's stamped URL: the
-# rulebook's own, build_site split_css), the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain URL
+# stamp), the style sheets (an inline <style>'s text: index.html's style.css; a linked one's stamped URL from the site
+# root: the rulebook's own, build_site split_css), the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain
+# URL. Nothing of the origin: the push's build on localhost (--local) keys as the website does
 KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", '
-          '[...document.styleSheets].map(s => s.href || s.ownerNode?.textContent || ""), '
+          '[...document.styleSheets].map(s => { const root = new URL(".", document.baseURI).href; '
+          'return s.href ? (s.href.startsWith(root) ? s.href.slice(root.length) : s.href) : s.ownerNode?.textContent || ""; }), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
 UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
 FONTS_DIR = "MDW/Fonts"                        # the card repo's fonts (psd_edit.FONTS_DIR)
@@ -95,6 +100,7 @@ PICTURES = ("webp", "png", "jpg", "jpeg", "gif", "avif")
 SITE_PATHS = (*(f":(glob,icase)site/rulebook/img/*.{x}" for x in PICTURES), "site/rulebook/fonts/", ":(glob,icase)Types/*.png",
               ":(glob,icase)Types/Stars/*.png", "MDW/Fonts/stoogedings-src/stoogedings.json", "site/assets/")
 LAGS = "the website lags main's rulebook"     # in the report of a look that waited in vain: exit 3
+UNDECIDED = "the push's build did not decide"  # --local's report when it wrote nothing: exit 4
 INPUTS = (f"{RULEBOOK_SRC}/", f"{RULEBOOK_PAGES}/", f"{FONTS_DIR}/", *SITE_PATHS)   # what a look reads off the checkout
 LOOK_FILE = "inputs"                           # --out's: HEAD's sha, then INPUTS
 # Chrome's copies of the fonts and pictures the page's CSS (inline, and the rulebook's sheet) loads by plain URL (no
@@ -375,14 +381,15 @@ def read_pages(checkout: str, folder: str = "", path: str = "") -> dict:
     return data if isinstance(data, dict) and isinstance(data.get("pages"), list) else {}
 
 
-def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "") -> dict:
+def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "") -> Optional[dict]:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
     PDF is missing; key (draw's, of a settled website: update_pages) kept for the next run, else the last print's when
     not printed. pre (pre_key() of the build drawn) goes with a kept key; the last one stays with the last key.
+    pdf_maker None (--local): nothing written when it would print.
 
     Returns:
-        {"pages": n, "changed": [page names], "printed": bool}
+        {"pages": n, "changed": [page names], "printed": bool}; None when it would print without a pdf_maker
     """
     makedirs(folder, exist_ok=True)
     pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png), **({"t": entry["text"]} if entry.get("text") else {})}
@@ -398,6 +405,8 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "
     before = [(p.get("name"), p.get("sha")) for p in old.get("pages") or [] if isinstance(p, dict)]
     changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"])]
     need = bool(changed) or len(before) != len(pages) or not isfile(pdf)
+    if need and pdf_maker is None:
+        return None
     out = {"pages": len(pages), "changed": changed, "printed": False}
     if need:
         data = pdf_maker()
@@ -523,7 +532,8 @@ def _out_start(checkout: str, out: str) -> None:
     replace(join(out, LOOK_FILE + ".part"), join(out, LOOK_FILE))
 
 
-def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False, out: str = "", kept: str = "") -> str:
+def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: bool = False, out: str = "", kept: str = "",
+                 local: str = "") -> str:
     """
     The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
     and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
@@ -531,6 +541,8 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     pre_key() and the PDF is there (full: Chrome looks in any case). out: the PDF and pages.json go there
     (_out_start(): the checkout's copied in first, LOOK_FILE written), the checkout left alone. kept: another lane's
     pages.json: its key and pre stand for pages.json's when its pages and PDF are the same (written with the pages).
+    local: the push's build at that URL, looked at once instead (no wait), deciding only: nothing printed or written
+    unless its pages are the PDF's; else the report says UNDECIDED.
 
     Returns:
         The report (one line; then a ::warning:: line when the pre-key held but the key changed)
@@ -554,10 +566,13 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     if has_pdf and other.get("key") and [other.get(k) for k in ("pages", "pdf")] == [old.get(k) for k in ("pages", "pdf")]:
         old = {**old, "key": other["key"], "pre": other.get("pre", "")}       # a lane's look that committed nothing
     note = "; a kept look" if (old.get("key"), old.get("pre")) != stored else ""
+    where = "; the push's build" if local else ""
     known = old.get("key", "") if has_pdf else ""
-    until = monotonic() + wait
+    until = monotonic() + (0 if local else wait)
     while True:
-        seen = wait_for_site(site, checkout, mine, until - monotonic())   # before the draw: that build or a later one
+        seen = wait_for_site(local or site, checkout, mine, until - monotonic())   # before the draw: that build or a later one
+        if not seen and local:
+            return f"Rulebook PDF: {UNDECIDED} (not main's chapters, pictures, web fonts, icons or code); left as it is."
         if not seen:
             return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
                     f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
@@ -566,8 +581,8 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
         if held and not full:
             if note:
                 _put_listing(join(folder, PAGES_JSON), old)
-            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started{note})."
-        theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
+            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started{note}{where})."
+        theirs, shots, printer, drawn, page, plain = draw(local or site, exe, lambda text: key(text, checkout, trees), known, fonts)
         try:
             met = page != seen["page"]                                   # a deploy mid-look: the new build is live
             lags = met or theirs != mine or plain != heads(checkout, plain)   # the CDN's old copy (same page: its data's)
@@ -577,10 +592,12 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
                 if shots is None:
                     if (drawn, pre) != stored:
                         _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
-                    return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''}{note})."
-                done = write_pages(folder, shots, printer.pdf, drawn, pre)
+                    return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''}{note}{where})."
+                done = write_pages(folder, shots, None if local else printer.pdf, drawn, pre)
         finally:
             printer.close()
+        if local and (lags or done is None):
+            return f"Rulebook PDF: {UNDECIDED} ({'a page changed' if not lags else 'Chrome drew another build or file'}); left as it is."
         if not lags:
             break
         if monotonic() + (0 if met else SITE_POLL) >= until:
@@ -588,14 +605,15 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
         if not met:
             sleep(SITE_POLL)                            # the CDN's new copy: drawn again (that build: looked at at once)
     if not done["printed"]:
-        return f"Rulebook PDF: {done['pages']} pages, as they were (key {drawn[:8]} kept).{warn}"
+        return f"Rulebook PDF: {done['pages']} pages, as they were (key {drawn[:8]} kept{where}).{warn}"
     size = getsize(join(folder, PDF_FILE))
     what = f"{len(done['changed'])} pages changed" if done["changed"] and len(done["changed"]) < done["pages"] else "printed"
     return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB).{warn}"
 
 
 def main(args: Optional[list] = None) -> int:
-    """The command line (card-sync.yml): update_pages, its report on stdout; exit 3 when the website lags (LAGS)."""
+    """The command line (card-sync.yml): update_pages, its report on stdout; exit 3 when the website lags (LAGS), 4 when
+    --local wrote nothing (UNDECIDED, or the pages not drawn)."""
     parser = ArgumentParser(prog="python -m commands.rulebook_pages", description="Print the rulebook's TTS PDF from the website.")
     parser.add_argument("checkout", help="the card repo's checkout (its site/rulebook; the PDF goes to TTS/Rulebook)")
     parser.add_argument("--site", default=SITE_URL, help="the website (default: the card browser)")
@@ -603,14 +621,16 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--full", action="store_true", help="Chrome looks even when the pre-key held (the schedule's run)")
     parser.add_argument("--out", default="", help="the PDF and pages.json go here (the checkout's copied in first), with inputs")
     parser.add_argument("--kept", default="", help="another lane's pages.json: its key and pre count when its pages and PDF are the checkout's")
+    parser.add_argument("--local", default="", help="the push's build served here: decides only (else nothing written, exit 4)")
     options = parser.parse_args(args)
     try:
-        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full, out=options.out, kept=options.kept)
+        report = update_pages(options.checkout, options.site, wait=options.wait, full=options.full, out=options.out,
+                              kept=options.kept, local=options.local)
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError, HTTPException) as e:
         print(f"Rulebook PDF not printed: {e}")
-        return 1
+        return 4 if options.local else 1
     print(report)
-    return 3 if LAGS in report else 0
+    return 3 if LAGS in report else 4 if UNDECIDED in report else 0
 
 
 if __name__ == "__main__":
