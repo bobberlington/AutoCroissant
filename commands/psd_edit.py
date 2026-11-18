@@ -138,6 +138,7 @@ ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be th
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
 FIT_STEP, FIT_MIN = 0.94, 0.4  # fit_below: smaller by this, down to this share of its size (the website's preview)
+LIFT_GAP = 2                   # lift: px kept clear of the text above
 BOX_DESCENT = 0.35          # hold_lines: em of the layer's largest size a grown box keeps under its last baseline
 BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
                             # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
@@ -340,7 +341,7 @@ class Edit:
     fonts: list = field(default_factory=list)   # faces it added to the document's FontSets (ICON_FONT on a plain card)
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
     lines: Optional[tuple] = None  # a plain layer spliced in place: the splice zone, the only pixels it changes
-    lifted: int = 0         # px an Ability edit moved its layer up (lift)
+    lifted: int = 0         # px an Ability edit moved its layer up (lift; negative: down under the text above, fit_below)
     fit: float = 1.0        # an Ability's scale against the card maker's size (fit_below; the bake's verdict keeps it)
     boxed: bool = False     # its box grown to hold its lines (hold_lines): its Txt2 frames change (gate_stories)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
@@ -5222,9 +5223,9 @@ def _ink_box(psd: PSDImage, layer, before: np.ndarray, pad: int = 0) -> Optional
 def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
     """
     What an Ability's new ink would print over (ink_beyond's fallback): a visible layer drawn below it (earlier in paint
-    order; no group, no clipped one) that, alone, inks past INK_ALPHA under the text's changed ink past INK_ALPHA, the
-    old text's ink touching none of it. By pixels, not names. The panel and background the old text lies on are the
-    design.
+    order; no group, no clipped one), or text drawn above it (a stacked box's other rows), that, alone, inks past
+    INK_ALPHA under the text's changed ink past INK_ALPHA, the old text's ink touching none of it. By pixels, not names.
+    The panel and background the old text lies on are the design.
 
     Args:
         psd: The card, the text set and rasterized
@@ -5246,9 +5247,10 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
     ys, xs = (ink | was).nonzero()
     box = (int(xs.min()) + ox, int(ys.min()) + oy, int(xs.max()) + 1 + ox, int(ys.max()) + 1 + oy)
     order = list(psd.descendants())
-    below = order[:next(i for i, other in enumerate(order) if other._record is layer._record)]
-    for other in below:
-        if other.is_group() or other.clipping or other.kind not in DRAWN_LAYER_KINDS or not other.is_visible():
+    at = next(i for i, other in enumerate(order) if other._record is layer._record)
+    for i, other in enumerate(order):
+        if i == at or i > at and other.kind != "type" or other.is_group() or other.clipping \
+                or other.kind not in DRAWN_LAYER_KINDS or not other.is_visible():
             continue
         reach = _pad(tuple(other.bbox), fx_pad(other), psd)
         x0, y0, x1, y1 = max(reach[0], box[0]), max(reach[1], box[1]), min(reach[2], box[2]), min(reach[3], box[3])
@@ -5260,7 +5262,8 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray) -> Optional[str]:
         drawn = np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255
         over = int((ink[y0 - oy:y1 - oy, x0 - ox:x1 - ox] & drawn).sum())
         if over and not (was[y0 - oy:y1 - oy, x0 - ox:x1 - ox] & drawn).any():
-            return f"it would print over {other.name!r} below it ({over} px)"
+            return f"it would print over {other.name!r} below it ({over} px)" if i < at else \
+                f"it would print over the text {other.name!r} ({over} px)"
     return None
 
 
@@ -5430,17 +5433,22 @@ def set_sizes(layer, runs: list, scale: float) -> None:
                                           for key, value in keys.items()})
 
 
-def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool, check) -> tuple:
+def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool, check,
+              stacked: bool = False) -> tuple:
     """
     An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
     line under its panel) or off the canvas (Soul Sanctum's wrapped line) set smaller until it doesn't, no lower than
     the old text, as the website's preview draws it (mockup.js drawText): by FIT_STEP, down to FIT_MIN of its size,
     every run's FontSize, Leading and BaselineShift scaled alike (badges keep their size and middle against the
-    letters). No size fits: left at its size, ink_beyond tells it; one running off the card is set at the largest size
-    on it no lower than the old text, unless moving it up (lift: off the bottom) keeps it on the card printing over no
-    more (r32: lifted, Dryya's text covered its ATK and SPD rows); with no such size, the largest that stays on it once
-    moved up (a status effect's added line, lifted at its size, printed past both sides). A layer with tabs (its stops
-    don't shrink: Michael's Blessing's arrow column would break): left at its size, moved up off the bottom.
+    letters); one that rises onto text above it as it shrinks moved back down under it, no lower than the old text. A
+    stacked box (a full-frame copy, blank rows above its own line) tries each size with those rows at their size first,
+    so it stays in its row, then risen with them (r49: Apex Predator's last line rose onto the line above; Miracle
+    Matter's Fire row fits only risen). No size fits: left at its size, ink_beyond tells it; one running off the card
+    is set at the largest size on it no lower than the old text, unless moving it up (lift: off the bottom) keeps it on
+    the card printing over no more (r32: lifted, Dryya's text covered its ATK and SPD rows); with no such size, the
+    largest that stays on it once moved up (a status effect's added line, lifted at its size, printed past both sides).
+    A layer with tabs (its stops don't shrink: Michael's Blessing's arrow column would break): left at its size, moved
+    up off the bottom.
 
     Args:
         psd: The card, the text set and rasterized
@@ -5450,52 +5458,77 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
         draw: Rasterizes the layer as set_text_layer did (its splice); returns the engine's report
         off_before: It inked off the canvas before the edit (then that is no reason)
         check: ink_beyond(psd, layer, before) (set_text_layer's, which keeps the last verdict)
+        stacked: One of a card's several Ability boxes (set_parts)
 
     Returns:
-        (scale, report, up): (1.0, None, up) when it was left as it was; up: px lift moved it
+        (scale, report, up): (1.0, None, up) when it was left as it was; up: px lift moved it (negative: moved down)
     """
     off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
     if "\t" in layer.text or not off and check() is None:
         return 1.0, None, lift(psd, layer, before) if off else 0
-    runs = size_runs(layer)
-
-    def scaled(scale: float) -> None:
-        set_sizes(layer, runs, scale)
+    runs, text = size_runs(layer), layer.text
+    lead = max(text.rfind(brk, 0, len(text) - len(text.lstrip(PAD))) for brk in "\r\n\x03") + 1
+    blank = [(a, min(b, lead), keys) for a, b, keys in runs if a < lead] if stacked else []    # its blank rows
     rows = (before[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
     floor = int(rows.max()) + 1 + BEYOND[0] if len(rows) else psd.height
+    ceiling = _text_above(psd, layer, int(rows[0])) + LIFT_GAP if len(rows) else 0
+    down = 0
+
+    def scaled(scale: float, keep: bool = True) -> None:   # keep: those rows at their size (it stays in its row)
+        nonlocal down
+        if down:
+            nudge(layer, 0, -down)
+            down = 0
+        set_sizes(layer, runs, scale)
+        if keep and blank and scale != 1:
+            set_sizes(layer, blank, 1.0)
+
+    def settle() -> bool:                       # risen onto the text above: back down under it
+        nonlocal down
+        ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
+        if not len(ink) or ink[0] >= ceiling or int(ink.max()) + 1 + ceiling - int(ink[0]) > floor:
+            return False
+        down = ceiling - int(ink[0])
+        nudge(layer, 0, down)
+        return True
 
     def placed() -> bool:                       # no lower than the old text (ink_beyond lets a few px onto the design)
         ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
         return (not len(ink) or int(ink.max()) + 1 <= floor) \
             and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
-    largest = lifted = None                     # (scale, px it prints over): the largest size placed
+    largest = lifted = None                     # (scale, keep, px it prints over): the largest size placed
     for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
         if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
             break
-        scaled(scale)
-        report = layer.rasterize(fonts=fonts)
-        if placed():
-            if check() is None:
-                return scale, report, 0
-            largest = largest or (scale, _over_px(check()))
-        elif off and largest is None and lifted is None:    # none placed: the largest on the card once moved up
-            moved = lift(psd, layer, before)
-            lifted = None if _ink_off_canvas(layer, psd.width, psd.height) else scale
-            nudge(layer, 0, moved)
+        for keep in (True, False) if blank else (True,):    # in its row, else risen with its blank rows (into the
+            scaled(scale, keep)                             # room above: Miracle Matter's Fire row)
+            report = layer.rasterize(fonts=fonts)
+            if placed():
+                if check() is None:
+                    return scale, report, 0
+                if settle():
+                    if placed() and check() is None:
+                        return scale, report, -down
+                    scaled(scale, keep)
+                largest = largest or (scale, keep, _over_px(check()))
+            elif off and largest is None and lifted is None:    # none placed: the largest on the card once moved up
+                moved = lift(psd, layer, before)
+                lifted = None if _ink_off_canvas(layer, psd.width, psd.height) else (scale, keep)
+                nudge(layer, 0, moved)
     scaled(1.0)
     report = draw()
     up = lift(psd, layer, before) if off else 0
     if largest is None and lifted and _ink_off_canvas(layer, psd.width, psd.height):    # moved up, still off the
         nudge(layer, 0, up)                     # card (a status effect's added line past both sides): lifted's size
-        scaled(lifted)
+        scaled(*lifted)
         report = layer.rasterize(fonts=fonts)
-        return lifted, report, lift(psd, layer, before)
+        return lifted[0], report, lift(psd, layer, before)
     if not off or largest is None or up and not _ink_off_canvas(layer, psd.width, psd.height) \
-            and _over_px(check()) <= largest[1]:
+            and _over_px(check()) <= largest[2]:
         return 1.0, report, up
     if up:                                      # still off the card, or printing over more: that size
         nudge(layer, 0, up)
-    scaled(largest[0])
+    scaled(*largest[:2])
     return largest[0], layer.rasterize(fonts=fonts), 0
 
 
@@ -5766,11 +5799,29 @@ def back_on(psd: PSDImage, layer) -> int:
     return dx
 
 
+def _text_above(psd: PSDImage, layer, top: int) -> int:
+    """lift's and fit_below's ceiling: the lowest row (+1) the visible text layers across the layer's columns ink, their
+    effects too (as inks_over sees them), of those ending at or above top; -LIFT_GAP when none."""
+    ceiling = -LIFT_GAP
+    for other in psd.descendants():
+        box = tuple(other.bbox)
+        if other._record is layer._record or other.kind != "type" or box[1] >= top or box[2] <= layer.bbox[0] \
+                or box[0] >= layer.bbox[2] or not other.is_visible():
+            continue
+        reach = _pad(box, fx_pad(other), psd)
+        alone = other.composite(viewport=reach, apply_icc=False)
+        rows = () if alone is None else np.flatnonzero(np.asarray(alone.convert("RGBA"))[..., 3].max(axis=1) > INK_ALPHA * 255)
+        if len(rows) and reach[1] + int(rows[len(rows) - 1]) + 1 <= top:
+            ceiling = max(ceiling, reach[1] + int(rows[len(rows) - 1]) + 1)
+    return ceiling
+
+
 def lift(psd: PSDImage, layer, before: np.ndarray) -> int:
     """
     An Ability whose new ink runs off the card's bottom (no size fits it: fit_below) moved up until its last line ends
     where the old text's did: back_on's rule for the bottom (a box's Txt2 frame is relative to the transform). Not past
-    the top, nor a layer that clips, is clipped to, or has a mask.
+    the top, nor within LIFT_GAP px of the ink of visible text above the old text (a stacked box's rows above), nor a
+    layer that clips, is clipped to, or has a mask.
 
     Returns:
         The px moved (0: not moved)
@@ -5786,6 +5837,9 @@ def lift(psd: PSDImage, layer, before: np.ndarray) -> int:
     y0, y1 = layer.bbox[1] + int(rows[0]), layer.bbox[1] + int(rows[len(rows) - 1]) + 1
     dy = y1 - int(old[len(old) - 1]) - 1
     if y1 <= psd.height or dy <= 0 or y0 < dy:
+        return 0
+    dy = min(dy, y0 - _text_above(psd, layer, int(old[0])) - LIFT_GAP)
+    if dy <= 0:
         return 0
     nudge(layer, 0, -dy)
     return dy
@@ -5804,7 +5858,8 @@ def nudge(layer, dx: int, dy: int) -> None:
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None, layer=None, copy: bool = False,
-                   area: Optional[tuple] = None, anchor: int = 0, up: int = 0, fit: float = 1.0) -> Edit:
+                   area: Optional[tuple] = None, anchor: int = 0, up: int = 0, fit: float = 1.0,
+                   stacked: bool = False) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs (SPLICE_UNIT), Photoshop's raster staying on the rest.
@@ -5833,6 +5888,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         up: A copy's: px its Ability moved up (lift), which it follows
         fit: The scale an earlier bake set this Ability at (fit_below, its verdict): its runs go back to the card
             maker's size first, so a text that fits there prints at it again (Edit.fit: the scale it prints at now)
+        stacked: One of the card's several Ability boxes (set_parts): fit_below's
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
@@ -6080,7 +6136,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         grown = hold_lines(layer, fonts, undrawn=True)
         if grown:                               # every line drawn first, so none is lost
             report = draw()
-        scale, again, up = fit_below(psd, layer, room, fonts, draw, off_before, check)
+        scale, again, up = fit_below(psd, layer, room, fonts, draw, off_before, check, stacked)
         fitted = base * scale
         if shrunk and scale >= 1 and again is not None:    # no size fits: at the size it had
             if up:
@@ -12149,7 +12205,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, parser,
                                   original, layer=layer,
                                   anchor=anchor if kind == "title" and len(joined[kind]) == 1 else 0,
-                                  fit=fit if kind == "ability" and len(joined[kind]) == 1 else 1.0)
+                                  fit=fit if kind == "ability" and len(joined[kind]) == 1 else 1.0,
+                                  stacked=kind == "ability" and len(joined[kind]) > 1)
             edit.story = first_story(layer)
             typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
             edit.notes = [note for note in edit.notes if not _typed_lines(note, typed)]    # an Enter in the box is no overflow
