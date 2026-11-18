@@ -113,7 +113,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    Doll)'s. A `meme_rows` 'before' rule (an undated first entry, shown "before <the oldest dated picture's day>") is
    kept in the code, unused. Two in-jokes are on both a live card and the Morgue (`owner.json` `morgue` entries keyed by
    the picture with `in_joke`: `discord_morgue` gives them the id `<group id>-joke` and never takes the picture from the
-   card): Tyler (Mao), Tyler's 2019-05-02 picture, and The Panda Future (Meme), its 2021-04-29 #meme-cards picture.
+   card): Tyler's 2019-05-02 picture and The Panda Future's 2021-04-29 #meme-cards picture, each named as its card
+   (11-17 ~23:50: 'Tyler', 'The Panda Future'; pages `tyler-morgue`, `the-panda-future-morgue`) and linked to it
+   (`in_joke` on the candidate, the timeline's `live`: the card's name; the site's "Live card").
    Alex YIIK's auto-mapped Meme file stays.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
@@ -464,7 +466,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    ability's words), from what each has (a row's sure fields; this repo's versions: the card data, the text then, its
    recorded changes rolled back); a field one side lacks is said so. Its modes (owner 11-17 ~20:35, TC
    `site/assets/compare.js`): 2-up, Swipe, Onion skin and Difference (CSS mix-blend-mode, no canvas reads, so the raw
-   pictures need no CORS), both pictures in one box size, the last mode kept. Dates are Pacific days throughout.
+   pictures need no CORS), both pictures in one box size, the last mode kept; wherever two pictures sit side by side,
+   a version beside the current card too (11-17 ~23:50 (1)); a pair with a picture missing stays 2-up with a note.
+   Dates are Pacific days throughout.
 
 ## Verification
 
