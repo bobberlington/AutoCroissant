@@ -1934,18 +1934,7 @@ def edit_parts(old: str, new: str, start: int, end: int) -> list:
     Returns:
         [(old start, old end, new start, new end, kept)]
     """
-    # aligned over the whole text (text_align: a new line never takes the line above's leftover letters, Pot Full of
-    # Spiders! 2026-11-03; a common "." at the end is no sign two paragraphs are one, Azamoth's swapped lines); kept
-    # text outside the span left out
-    out = []
-    for tag, a0, a1, b0, b1, group in text_segments(old, new):
-        if tag == "equal" and (a1 - a0 >= SAME_RUN or any(c in TEXT_BREAKS for c in old[a0:a1])):
-            out.append([a0, a1, b0, b1, True, group])
-        elif out and not out[-1][4] and out[-1][5] == group:     # a short kept stretch joins its paragraph's change
-            out[-1][1], out[-1][3] = a1, b1
-        else:
-            out.append([a0, a1, b0, b1, False, group])
-    out = [_inside(tuple(part[:5]), start, end) for part in out]
+    out = [_inside(part, start, end) for part in aligned_parts(old, new)]     # kept text outside the span left out
     out = [part for part in out if part is not None]
     for k, (a0, a1, b0, b1, kept) in enumerate(out):     # a deletion slid to whole lines or words (deletion_start)
         if kept or b1 > b0 or a1 <= a0:
@@ -1964,6 +1953,27 @@ def edit_parts(old: str, new: str, start: int, end: int) -> list:
             pa0, pa1, pb0, pb1, _ = out[k - 1]
             out[k - 1] = (pa0, pa1 - shift, pb0, pb1 - shift, True)
     return [part for part in out if part[1] > part[0] or part[3] > part[2]]
+
+
+def aligned_parts(old: str, new: str) -> list:
+    """
+    edit_parts over the whole text, before its span and slides: text_align's segments (a new line never takes the line
+    above's leftover letters, Pot Full of Spiders! 2026-11-03; a common "." at the end is no sign two paragraphs are
+    one, Azamoth's swapped lines), a kept stretch under SAME_RUN characters without a break joining its paragraph's
+    change. The website's mock-up has its port (TTSCardMaker site/assets/textalign.js taParts).
+
+    Returns:
+        [(old start, old end, new start, new end, kept)]
+    """
+    out = []
+    for tag, a0, a1, b0, b1, group in text_segments(old, new):
+        if tag == "equal" and (a1 - a0 >= SAME_RUN or any(c in TEXT_BREAKS for c in old[a0:a1])):
+            out.append([a0, a1, b0, b1, True, group])
+        elif out and not out[-1][4] and out[-1][5] == group:     # a short kept stretch joins its paragraph's change
+            out[-1][1], out[-1][3] = a1, b1
+        else:
+            out.append([a0, a1, b0, b1, False, group])
+    return [tuple(part[:5]) for part in out]
 
 
 def _inside(part: tuple, start: int, end: int) -> Optional[tuple]:
@@ -12336,6 +12346,7 @@ __all__ = [
     'COST_TAGS',
     'ICON_FONT',
     'ability_layer',
+    'aligned_parts',
     'project',
     'badge_fit',
     'badge_fits',

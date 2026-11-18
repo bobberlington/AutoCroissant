@@ -1,7 +1,16 @@
 """
 commands/text_align: an edit lined up by paragraphs, then words (owner 2026-11-03, Pot Full of Spiders!).
+Against the website mock-up's port (TTSCardMaker site/assets/textalign.js, from $AC_SITE_SRC or the clone).
 """
+import json
+from pathlib import Path
+from subprocess import run as run_process
+
+import pytest
+
 from commands import text_align as ta
+from commands.psd_edit import aligned_parts
+from conftest import SITE_SRC
 
 SPIDERS = ("This creature starts with 2 spider counters and gains 2 spider counters per turn. \n"
            "When damaged, it converts each of its spider counters into Lil Spoods.\nIf it has 4 or more.")
@@ -44,3 +53,37 @@ def test_a_line_join_or_split_is_one_changed_break():
     assert _changes(old, old.replace(" inflict", "\rinflict")) == [(" ", "\r")]
     assert ta.blocks(old, old.replace("\n", " "))[:-1] == [(0, 0, 6), (7, 7, 27)]
     assert ta.break_ops(old, old.replace("\n", " and ")) is None
+
+
+TEXTALIGN_JS = SITE_SRC / "site" / "assets" / "textalign.js"
+EDITS = json.loads((Path(__file__).resolve().parent / "fixtures" / "text_align_edits.json").read_text(encoding="utf-8"))["edits"]
+
+
+@pytest.mark.skipif(not TEXTALIGN_JS.is_file(), reason=f"no {TEXTALIGN_JS}")
+def test_the_mock_ups_port_lines_up_as_the_bake(tmp_path):
+    """The website mock-up's port (textalign.js) gives real card edits the bake's segments, parts (psd_edit
+    aligned_parts) and moves, its UTF-16 offsets aside (emoji)."""
+    (tmp_path / "edits.json").write_text(json.dumps(EDITS), encoding="utf-8")
+    script = tmp_path / "probe.mjs"
+    script.write_text(f"const T = await import({json.dumps(TEXTALIGN_JS.as_uri())});\n"
+                      f"const edits = JSON.parse((await import('fs')).readFileSync({json.dumps(str(tmp_path / 'edits.json'))}, 'utf8'));\n"
+                      "process.stdout.write(JSON.stringify(edits.map(e => [T.taSegments(e.old, e.new).map(s => s.slice(0, 5)), "
+                      "T.taParts(e.old, e.new), T.taMoves(e.old, e.new)])));\n", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    for e, got in zip(EDITS, json.loads(done.stdout), strict=True):
+        a, b = _utf16(e["old"]), _utf16(e["new"])
+        want = [[[tag, a[i1], a[i2], b[j1], b[j2]] for tag, i1, i2, j1, j2, _ in ta.segments(e["old"], e["new"])],
+                [[a[a0], a[a1], b[b0], b[b1], kept] for a0, a1, b0, b1, kept in aligned_parts(e["old"], e["new"])],
+                [[[a[s0], a[e0]], [b[t0], b[t1]], [[a[s0 + i] - a[s0], b[t0 + j] - b[t0], a[s0 + i + n] - a[s0 + i]] for i, j, n in kept]]
+                 for (s0, e0), (t0, t1), kept in ta.moves(e["old"], e["new"])]]
+        assert got == want, (e["card"], e["kind"])
+    assert sum(bool(ta.moves(e["old"], e["new"])) for e in EDITS) >= 5
+
+
+def _utf16(text: str) -> list:
+    """Per code point offset of text (and its end): the UTF-16 offset, as JS strings count."""
+    out = [0]
+    for c in text:
+        out.append(out[-1] + (2 if ord(c) > 0xFFFF else 1))
+    return out

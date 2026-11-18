@@ -913,6 +913,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   colour off its paragraph 553 -> 4 (rewrites), 520 -> 33 (a line added), 513 -> 28 (one deleted), 271 -> 0 (two
   swapped); the previews branch's 142 previews (91 bake): 86 the same, Pot Full of Spiders!'s 3 fixed, 2 differ in
   blanks only. Tests: `test_text_align.py`, `test_a_rewritten_paragraph_keeps_its_own_colour`.
+  The website's mock-up colours an edit by the same alignment (2026-11-17): TTSCardMaker `site/assets/textalign.js`
+  is its port, pinned to the Python on real census edits (`test_the_mock_ups_port_lines_up_as_the_bake`).
   Line joins and splits (2026-11-15): an edit whose only changes are blanks with a break lines up letter by letter, so
   both lines keep each letter's colour, font, underline and size, as Photoshop's edit does (20 joins: kept letters
   restyled on 17 -> 2, only status words' swatch and a fit). Tests: `test_a_line_join_or_split_is_one_changed_break`,
