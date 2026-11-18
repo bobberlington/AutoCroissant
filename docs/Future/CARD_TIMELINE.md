@@ -102,12 +102,17 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    card's own file of the same commit keeps its run; published marked, so the site's balance trend makes no point of
    it), and before the card folders it counts as a draft does
    (`oldgit_rows.side_file`: Tyler's 2019 Mao card, filed 2022-08-24 in Cards/Meme, before his own 2023-10-30 file).
-   The owner's Meme rows (11-17 ~18:10, `owner.json` `meme_rows` by the first repo's path, `Chain.meme_rows`): Tyler's
-   copy and Double Pain's (Items/Meme/3 Stars, the 2020-07-28 update-01-port picture) fold into the Discord version of
-   the same picture (one entry; `folded` keeps the copy as evidence); Mini Bee's Mini Bees and SOMETHING's Mr. Grabby
-   are each card's first entry with no date of their own (`undated: before`, `before`: the oldest dated picture's time,
-   shown "before <that day>", dating nothing); The Puppet's copy is no longer The Puppet's (its map key null): it stays
-   the Morgue joke card The Puppet (Dancing Doll)'s (its eye `first_files`). Alex YIIK's auto-mapped Meme file stays.
+   The owner's Meme rows (final rules 11-17 ~23:40 and ~23:55, `owner.json` `meme_rows` by the first repo's path,
+   `Chain.meme_rows`): Tyler's copy folds into his 2019-05-02 Discord picture (one entry; `folded` keeps the copy as
+   evidence) and Double Pain's (Items/Meme/3 Stars) into its 2020-08-13 #update-02-port alarm-clock picture, which the
+   owner keeps apart from the 2020-07-28 look (`owner.json` `apart`, `Chain.looks`: a look of its own, minor by the
+   11-09 fold rule). Mini Bee's Mini Bees and SOMETHING's Something ('Mr. Grabby') are the Morgue's only (map keys null,
+   the eye's `first_files` of the joke entries Mini Bees and Mr. Grabby), as The Puppet's copy is The Puppet (Dancing
+   Doll)'s. A `meme_rows` 'before' rule (an undated first entry, shown "before <the oldest dated picture's day>") is
+   kept in the code, unused. Two in-jokes are on both a live card and the Morgue (`owner.json` `morgue` entries keyed by
+   the picture with `in_joke`: `discord_morgue` gives them the id `<group id>-joke` and never takes the picture from the
+   card): Tyler (Mao), Tyler's 2019-05-02 picture, and The Panda Future (Meme), its 2021-04-29 #meme-cards picture.
+   Alex YIIK's auto-mapped Meme file stays.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
@@ -455,7 +460,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    can be pinned as the compare base (owner 11-17 (5): right-click, long-press or its pin button): the versions picked
    are then compared with it, side by side (the older left) with their changes (stars, stats, types, name, the
    ability's words), from what each has (a row's sure fields; this repo's versions: the card data, the text then, its
-   recorded changes rolled back); a field one side lacks is said so. Dates are Pacific days throughout.
+   recorded changes rolled back); a field one side lacks is said so. Its modes (owner 11-17 ~20:35, TC
+   `site/assets/compare.js`): 2-up, Swipe, Onion skin and Difference (CSS mix-blend-mode, no canvas reads, so the raw
+   pictures need no CORS), both pictures in one box size, the last mode kept. Dates are Pacific days throughout.
 
 ## Verification
 
