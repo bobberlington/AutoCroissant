@@ -460,7 +460,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page; one on the file's own day gives its
    source to the tooltip). The pictures load from raw.githubusercontent.com at the history checkout's commit
    (`hb` of each card's `versions/<id>.json`, the site's per-card Image versions file since OPTIMIZE-1117 (11-18):
-   one ~1 KB file fetched when the card opens, not the 2.6 MB all-cards `versions.json`; `history_host`: as the plates' older copies, D19; `HISTORY_URL` a local preview's server; a
+   one ~1 KB file fetched when the card opens, not the 2.6 MB all-cards `versions.json`; since round 2 it also holds the
+   card's own history.json texts and analytics.json Balance row, `card_sections`, so the dialog's History, Balance,
+   recorded changes and the pinned compare need neither all-cards file; `history_host`: as the plates' older copies, D19; `HISTORY_URL` a local preview's server; a
    folder that is no checkout: copied into dist as before); one that fails to load says "Picture missing". Any version
    can be pinned as the compare base (owner 11-17 (5): right-click, long-press or its pin button): the versions picked
    are then compared with it, side by side (the older left) with their changes (stars, stats, types, name, the
