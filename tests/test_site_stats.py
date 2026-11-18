@@ -97,6 +97,18 @@ out({{ before: names("Before 2020"), y2019: names("2019") }});""")
     assert out == {"before": ["Pep"], "y2019": ["Old"]}
 
 
+def test_distribution_counts_each_creature(tmp_path):
+    """A card with several creatures counts once at each of their values, as its def=10-10 link meets any creature
+    (Twin Emperors: DEF 4 and 10; HP 7 once)."""
+    out = node(tmp_path, """
+const twin = { ...C("Twin", "Mario", 3, [7, 4, 5, 6], "2020-05-01", "Ann"), creatures: [{ hp: 7, def: 4, atk: 5, spd: 6 }, { hp: 7, def: 10, atk: 4, spd: 4 }] };
+const dist = cards => rows(chart(render(cards, null).top, "dist")).map(r => r.map(Number));
+const a = dist(fixture()), b = dist([...fixture(), twin]);
+out(b.map((r, i) => [r[0], ...r.slice(1).map((v, j) => v - (a[i]?.[j + 1] || 0))]).filter(r => r.slice(1).some(Boolean)));
+""")
+    assert out == [[4, 0, 1, 1, 1], [5, 0, 0, 1, 0], [6, 0, 0, 0, 1], [7, 1, 0, 0, 0], [10, 0, 1, 0, 0]]
+
+
 def site_analytics():
     spec = importlib.util.spec_from_file_location("site_analytics", SITE / "build" / "analytics.py")
     an = importlib.util.module_from_spec(spec)
