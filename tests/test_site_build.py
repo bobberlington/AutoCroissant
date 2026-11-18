@@ -165,8 +165,8 @@ def test_cards_json_columns(bs):
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
     """Alpha's text started at c2 (the bot's carried start), though its PSD was last committed at c3: cards.json keeps
     ts (the last commit, "updated") and adds since; history.json holds the older text at c1. A variant picture's goes
-    back through its picture 1's. recent.json holds the earlier texts of the cards whose update changed the text (not
-    Alpha's)."""
+    back through its picture 1's. cards.json's recent (and recent.json, one release) holds the earlier texts of the cards
+    whose update changed the text (not Alpha's): Recently updated draws at once."""
     t1, t2, t3 = repo["t"]
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"])["Alpha"]
@@ -177,6 +177,7 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
     melon = _by_name(out["cards.json"])["Watermelon"]                   # Recently updated: only the texts that changed
     assert out["recent.json"] == {melon["id"]: "Heal 1.", melon2["id"]: "Heal 1."}
+    assert out["cards.json"]["recent"] == out["recent.json"]
 
 
 def test_a_merge_keeping_the_older_picture_stays_pinned(bs, tmp_path, monkeypatch):
