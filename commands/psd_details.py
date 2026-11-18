@@ -4,7 +4,8 @@ style, stat-row encoding, status-word layers, template deviations, the header's 
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
-6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9). One record
+6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
+lines, heads, lf and px without them: VERSION 10). One record
 per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
@@ -43,7 +44,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 9                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"
+VERSION = 10                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -196,10 +197,11 @@ def _fonts(texts: list, index: Optional[FontIndex]) -> dict:
     return out
 
 
-def _set(layer, font: Optional[str] = None) -> dict:
+def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> dict:
     """How a type layer is set, in canvas px (the mock-up's wrap): box text's "frame"; "px", the height most of its letters
-    outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the
-    font most of them are set in, when not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
+    outside the icon font and its header lines (head: their indexes; a typed line takes the body's look) are set at;
+    their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the font most of them are set in, when
+    not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
     not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set;
     "lead", the line pitch the bake sets a new line at (its runs' largest leading). {} when rotated."""
     from psd_tools.composite.text.layout import frame, leading
@@ -226,7 +228,7 @@ def _set(layer, font: Optional[str] = None) -> dict:
     for run in model.runs:
         s = run.style
         if not icon(s):
-            n = sum(not c.isspace() for c in model.text[run.start:run.end])
+            n = sum(not c.isspace() and i not in head for i, c in enumerate(model.text[run.start:run.end], run.start))
             letters[(s.size, s.vertical_scale, s.horizontal_scale, s.tracking)] += n
             faces[str(s.font)] += n
     if letters and letters.most_common(1)[0][1]:
@@ -338,7 +340,8 @@ def _text_fx(layer) -> Optional[list]:
 def _text(texts: list) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
     A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke); its
-    shadows and glows: "fx" (_text_fx)."""
+    shadows and glows: "fx" (_text_fx); its header lines' text, "heads" (psd_edit.heads: a line typed under one takes
+    the next line's look)."""
     out = []
     for layer in texts:
         try:
@@ -359,7 +362,11 @@ def _text(texts: list) -> list:
                     "font": font, "size": size, "color": colour, "visible": layer.is_visible(),
                     **({"colors": colours} if colours else {}), **({"runs": runs} if runs else {})})
         try:
-            out[-1].update(_set(layer, font))
+            lines, _, found = psd_edit.heads(layer)
+        except Exception:                       # the mock-up colours a typed line as Photoshop's caret
+            lines, found = [], {}
+        try:
+            out[-1].update(_set(layer, font, frozenset(i for k in found for i in range(*lines[k]))))
         except Exception:                       # engine data psd-tools can't read: the mock-up's own guess
             pass
         try:
@@ -374,6 +381,9 @@ def _text(texts: list) -> list:
             fx = None
         if fx:
             out[-1]["fx"] = fx
+        heads = [layer.text[slice(*lines[k])].replace("\ufeff", "").strip() for k in found]
+        if heads:
+            out[-1]["heads"] = heads
     return out
 
 
