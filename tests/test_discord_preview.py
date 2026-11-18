@@ -213,6 +213,12 @@ def test_a_first_psd_s_row_and_created():
                                           "C": pick("2023-11-07", "discord"), "D": pick("2020-09-08", "website")}})
     assert {k: (v["date"], v["source"], v["status"]) for k, v in got.items()} == {    # the page's picks: earlier only
         "A": ("2020-08-02", "discord", "owner"), "B": ("2020-07-22", "owner", "owner")}
+    day = lambda status, date, proposed, source="old repo": {"status": status, "date": date, "proposed": proposed,
+                                                             "file": {"date": "2023-09-25"}, "ours": {"source": source}}
+    got = dp.created_proposals({"cards": {"Pizza": day("same", "2023-09-25", False), "Tyler": day("pacific", "2023-09-24",
+                                                                                                   True, "discord"),
+                                          "Late": day("later", "2023-09-25", False)}})     # owner 11-17: Pacific days
+    assert got["Pizza"]["same"] and not got["Tyler"].get("same") and got["Tyler"]["status"] == "pacific" and "Late" not in got
 
 
 def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
