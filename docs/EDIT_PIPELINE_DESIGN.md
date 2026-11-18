@@ -468,7 +468,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    icon as the parser reads it ("[dark]" for "[dark:sticker]", "[fire]" for "[Fire]" or "★"), so `keep_tokens` spells
    an icon the edit kept as the layer does (review 2026-10-23: an ability bake on Palace of Shadow, Irithyll, Afraid,
    Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
-   plain, every gate passing). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
+   plain, every gate passing). Another variant typed there ("[dark:glow]") replaces the printed token whole
+   (`_variant_ops`; letter by letter it printed "[dark:glow:sticker]" and refused, r47). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
    title's own size and colour (`icon_style` of the title, else the run the engine gives it), under the same gates:
    glows bake since the fork's `cards-20261024b` (they refused `font` before), `unlettered_icons` does not run (the
    website shows a title's "[fire:]" as its letters, as the card does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly

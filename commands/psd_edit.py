@@ -1175,11 +1175,43 @@ def _opcodes(old: str, new: str) -> list:
     return [tuple(op) for op in ops if op[2] > op[1] or op[4] > op[3]]
 
 
+def _variant_ops(old: str, new: str, raw: str, at: dict, ops: list) -> list:
+    """
+    The edit's opcodes, those inside one [token] typed as another variant of it ("[dark]" -> "[dark:glow]") where raw
+    prints a variant the box shows plain ("[dark:sticker]") made one replace of the whole token: spliced letter by
+    letter it printed "[dark:glow:sticker]" (r47: 27 of 27 such edits refused). [(tag, i1, i2, j1, j2, whole)]: whole
+    the raw token's (start, end) for such a replace, else None.
+    """
+    def inside(spans, a, b):
+        return next((s for s in spans if s.start() <= a and b <= s.end() and (a < b or s.start() < a < s.end())), None)
+
+    def name(span):
+        return span.group(0)[1:-1].partition(":")[0].lower()
+    olds, news, raws = list(TOKEN.finditer(old)), list(TOKEN.finditer(new)), list(TOKEN.finditer(raw))
+    out, done = [], set()
+    for tag, i1, i2, j1, j2 in ops:
+        a = inside(olds, i1, i2) if tag != "equal" else None
+        if a and a.start() in done:
+            continue
+        b = inside(news, j1, j2) if a else None
+        w = None
+        if b and name(a) == name(b) and a.start() in at and a.end() - 1 in at:
+            w = next((s for s in raws if s.start() == at[a.start()] and s.end() == at[a.end() - 1] + 1), None)
+        va, vb, vw = (token_variant(s.group(0)) if s else None for s in (a, b, w))
+        if w and None not in (va, vb, vw) and va != vb and va != vw:
+            done.add(a.start())
+            out.append(("replace", a.start(), a.end(), b.start(), b.end(), w.span()))
+            continue
+        out.append((tag, i1, i2, j1, j2, None))
+    return out
+
+
 def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
     """
     A layer's text with the edit old -> new of what the parser read from it applied where it prints: each changed part
-    spliced over the characters of raw it replaces, an insertion after the character before it; what the edit keeps,
-    and the layer's own blank ends, indents and breaks between, stay as they are.
+    spliced over the characters of raw it replaces, an insertion after the character before it (a token typed as
+    another variant: the whole printed token, _variant_ops); what the edit keeps, and the layer's own blank ends,
+    indents and breaks between, stay as they are.
 
     Args:
         old: The text the parser read from raw (or a part of it)
@@ -1191,11 +1223,12 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
         The layer's new text (\\r breaks)
     """
     at, end = _align(old, raw), len(raw.rstrip(PAD))
-    for tag, i1, i2, j1, j2 in reversed(_opcodes(old, new)):
+    for tag, i1, i2, j1, j2, whole in reversed(_variant_ops(old, new, raw, at, _opcodes(old, new))):
         if tag == "equal":
             continue
-        mine = [at[i] for i in range(i1, i2) if i in at]
-        if mine:
+        if whole:
+            lo, hi = whole
+        elif mine := [at[i] for i in range(i1, i2) if i in at]:
             lo, hi = mine[0], mine[len(mine) - 1] + 1
         else:
             lo = next((at[i] + 1 for i in range(i1 - 1, -1, -1) if i in at), None)

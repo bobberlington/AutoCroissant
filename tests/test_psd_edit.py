@@ -2092,6 +2092,24 @@ def test_a_typed_variant_is_an_edit(clone, parser):
     assert pe._part_same("Burn [fire]", "Burn [fire:tint]", parser.icons)     # no layer text: as before
 
 
+def test_a_typed_variant_replaces_the_printed_one(clone, parser, chart, tmp_path):
+    """Afraid prints [dark:sticker], its box [dark]: typed [dark:glow] takes the sticker's place (letter by letter it
+    printed '[dark:glow:sticker]' and the read-back refused, r47); a case change keeps the printed variant."""
+    assert pe.project("affect [darkmatter].", "affect [darkmatter:glow].", "affect [darkmatter:sticker].") \
+        == "affect [darkmatter:glow]."
+    assert pe.project("affect [dark].", "affect [Dark].", "affect [dark:sticker].") == "affect [Dark:sticker]."
+    psd_path, png = _card(clone, AFRAID)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, AFRAID, psd)
+    box = pe.card_parts(psd, AFRAID, pe._card_name(parsed), parser)["ability"][0]
+    edit = {"field": "ability", "sha": box["sha"], "text": box["text"].replace("[dark]", "[dark:glow]")}
+    jobs = pe.classify(parsed, {"parts": {str(box["id"]): edit}}, psd, parser).jobs
+    baked = pe.apply_jobs(psd_path, png, AFRAID, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
+                          psd=psd)
+    layer = {layer.layer_id: layer for layer in PSDImage.open(baked.psd_path).descendants()}[box["id"]]
+    assert "[dark:glow]" in layer.text and "sticker" not in layer.text
+
+
 BENCH ="Field/1 Stars/Bench.psd"           # its title 'Bench', no effects, room for an icon after it
 NEO = "Auxiliary/Creatures/Mettaton_NEO.psd"   # its title under a gradient overlay
 
