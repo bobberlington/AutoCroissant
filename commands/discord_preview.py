@@ -15,7 +15,8 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
           <card id>/timeline.json  its entries oldest first: discord, text (owner Q4: data only) and old repo
                                  (the first repo's badged 'first repo', owner Q5); each picture's version names its webp
           <card id>/<picture>.webp one per version, at most WEBP_W wide (never a full-size copy)
-          _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card
+          _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card; an
+                                 in-joke's 'live': its live card's name (owner 11-17 ~23:50: the site links it)
         Only sure fields go in (value, method, confidence); review items, notes, posters, message ids and links never.
         A title snapped to an old PSD layer's casing takes today's name when the picture's own OCR spells it so
         (printed_name). Stop at git: a card's entries end at its first record in the card repo (--cards-repo, read
@@ -417,6 +418,8 @@ def morgue_out(entry: dict, files: dict, kind: str, facts: list = (), rows: list
            "entries": entries}
     if entry.get("kind"):
         out["kind_of"] = entry["kind"]             # joke | played
+    if entry.get("in_joke") and (entry.get("nearest") or {}).get("name"):
+        out["live"] = entry["nearest"]["name"]     # an in-joke on its live card too (owner 11-17 ~23:50): linked
     git = "old repo" if entry.get("old_repo") else "first repo" if entry.get("first_repo") else None
     if git:
         out["git_file"] = git                      # a file in an older repo: lost before this repo, not before git

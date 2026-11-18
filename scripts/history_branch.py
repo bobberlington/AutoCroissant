@@ -43,7 +43,7 @@ TOTAL_MAX = 700_000_000                                           # the site cop
                                                                   # site's (161 MB without it, 11-17): room to grow
 INDEX_KEYS = {"version", "generated", "about", "cards", "morgue", "mdw", "created"}
 TIMELINE_KEYS = {"card", "key", "name", "entries", "kind", "stop", "created", "git_first", "morgue", "first", "kind_of",
-                 "git_file"}
+                 "git_file", "live"}
 ENTRY_KEYS = {"id", "kind", "date", "day", "badge", "image", "w", "h", "fields", "changes", "minor", "author", "subject",
               "channel", "repo", "posts", "era", "git_look", "change", "file", "confirmed", "confirmed_by", "as",
               "meme_copy", "before"}                              # a new key: add it once it is known to hold no message text

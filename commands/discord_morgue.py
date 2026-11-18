@@ -17,7 +17,7 @@ build   Each lost card (derived/match/lost_groups.json) and each lost card of th
         it there) or rules it another picture (not_twin); else it goes to review (status twin), so no picture is both a
         live card's and the Morgue's, but for the owner's in-jokes (owner.json morgue, keyed by a picture, in_joke:
         11-17 ~23:55 Tyler's and The Panda Future's first pictures): their own entry (id: group id + '-joke'), the
-        picture never taken from its live card. The kin pass lists rows no entry holds that may be a lost card's (a none, art or
+        picture never taken from its live card, named as the card (slug '-morgue', 11-17 ~23:50) and linked to it. The kin pass lists rows no entry holds that may be a lost card's (a none, art or
         unsure row whose title fits a candidate's or idea's name better than any live card's; a none row that is a joke
         picture, or a played channel's with card evidence) until the eye adds each to an entry, makes an entry of it
         (eye.json keyed by its picture id) or rules it not a lost card's (not_kin). It also lists the rows that may be
@@ -611,7 +611,8 @@ def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optio
              "old_repo": {k: old.get(k) for k in ("id", "old_id", "paths", "first", "last", "deleted", "versions")}
              if old else None, "group": (x["group"] or {}).get("id") if x["group"] else None,
              "weak": True if e.get("weak") else None, "twins": x.get("twins"), "made": bool(x.get("made")) or None,
-             "why": why, "eye": {"checked": bool(e), "note": e.get("note")}, "owner": e.get("answer")}
+             "why": why, "eye": {"checked": bool(e), "note": e.get("note")}, "owner": e.get("answer"),
+             "in_joke": True if e.get("in_joke") else None}       # named as its card, linked to it (owner 11-17 ~23:50)
     if gid in dc.PHOTO_MORGUE:                   # owner Q6 (11-14 22:20): 'Before 2020', its photo never read
         entry["first"] = {"date": None, "channel": None, "thread": None, "source": dc.PHOTO_SOURCE,
                           "day": dc.BEFORE_DAY, "dated": entry["first"]}

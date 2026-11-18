@@ -271,7 +271,10 @@ def test_morgue_entries_show_their_old_and_first_repo_versions():
     assert [(e["id"], e.get("repo")) for e in out["entries"]] == [("P-1", None), ("O-d", "first"), ("O-c", None)]
     assert out["entries"][1]["badge"] == "first repo" and not keys(out["entries"]) & BAD_KEYS
     assert "types" not in out["entries"][2]["fields"]                          # an item's kind: never collected
-    assert "commit" not in keys(out["entries"]) and "path" not in keys(out["entries"])
+    assert "commit" not in keys(out["entries"]) and "path" not in keys(out["entries"]) and "live" not in out
+    joke = {"id": "LC-2-joke", "name": "Fang", "slug": "fang-morgue", "in_joke": True, "pictures": [],
+            "nearest": {"card": "fang", "name": "Fang", "by": "eye"}}    # owner 11-17 ~23:50: named as its card, linked
+    assert dp.morgue_out(joke, {}, "candidate")[0]["live"] == "Fang"
 
 
 def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):
