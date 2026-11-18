@@ -1766,9 +1766,10 @@ class Chain:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
             else:
                 e["changes"] = compare(before["fields"], e["fields"], kind)
+                labels = any(label_only(((v.get("fields") or {}).get("ability") or {}).get("value")) for v in (before, e))
                 if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change") and \
-                        e["changes"].get("ability_change") != "removed" and not (blank(before) or blank(e)):
-                    e["changes"]["ability_change"] = e["old_ability_change"]
+                        e["changes"].get("ability_change") != "removed" and not (blank(before) or blank(e) or labels):
+                    e["changes"]["ability_change"] = e["old_ability_change"]     # a label alone: the rule's
             if e["kind"] == "discord":
                 e["minor"], share = fold(self.inputs.root, before, e)
                 e.pop("share", None)
@@ -1994,6 +1995,8 @@ class Chain:
             out.update(status="new", date=ours["day"], proposed=True)
         elif file["date"] in (ours["day"], ours.get("pacific")):     # the file's UTC day, or its Pacific day
             out.update(status="same", date=file["date"], proposed=False)
+        elif key > file["date"] and self.accepted(cid, file["date"]):  # an answered hint's day (S10 wrote it)
+            out.update(status="same", date=file["date"], proposed=False, by=self.accepted(cid, file["date"]))
         elif key < file["date"]:
             out.update(status="earlier", date=ours["day"], proposed=True)
         else:
@@ -2052,6 +2055,40 @@ class Chain:
         self.pacific(out)
         return out
 
+    def accepted(self, cid: str, file_day: str) -> Optional[dict]:
+        """The answered hint whose day the file has (its UTC or Pacific day): a changelog line or first-repo push said
+        yes to on the card's hint item, a Morgue picture on a 'morgue hint'; shaped like owner.source, with its time
+        ('at'). None when no answer explains it."""
+        rulings, key = self.rulings or {}, self.inputs.cards[cid]["key"]
+        found = []
+        r = rulings.get(review_id("changelog earlier", cid)) or {}
+        if r.get("choice") == "yes" and r.get("value"):
+            for f in self.inputs.facts:
+                if f.get("card") == key and f.get("source") == "changelog" and f.get("confidence") == "sure" and \
+                        day(dm.epoch(f.get("date"))) == r["value"]:
+                    found.append({"day": r["value"], "source": "changelog", "from": "changelog line",
+                                  "at": f["date"], "fact": f["id"], "channel": f.get("channel"),
+                                  "ruled": review_id("changelog earlier", cid)})
+        r = rulings.get(review_id("first repo earlier", cid)) or {}
+        if r.get("choice") == "yes" and r.get("value"):
+            for push in self.inputs.first_repo:
+                if push.get("card") == key and day(dm.epoch(push.get("date"))) == r["value"]:
+                    found.append({"day": r["value"], "source": "first repo", "from": "first repo push",
+                                  "at": push["date"], "row": "Q-" + push["id"],
+                                  "ruled": review_id("first repo earlier", cid)})
+        for hid, h in sorted(rulings.items()):
+            item = h.get("item") or {}
+            if h.get("kind") == "morgue hint" and item.get("card") == cid and not item.get("meme") and \
+                    h.get("choice") == "yes" and (item.get("day") or str(item.get("date") or "")[:10]):
+                found.append({"day": item.get("day") or str(item["date"])[:10], "source": "discord",
+                              "from": "morgue picture", "entry": item.get("entry"), "at": item.get("date"),
+                              "ruled": hid})
+        hit = min((f for f in found if file_day in (f["day"], pacific_day(f.get("at")))),
+                  key=lambda f: dm.epoch(f.get("at")) or 0, default=None)
+        if hit:
+            self.used.add(hit["ruled"])
+        return hit
+
     def pacific(self, out: dict) -> None:
         """Created as a Pacific day (owner 11-17 ~18:10: the site's and the bot's clock). The day decided above (UTC:
         the one answers confirm, kept in utc) becomes its source's Pacific day when that source has a time (a picture, a
@@ -2062,6 +2099,8 @@ class Chain:
         if out["status"] == "owner":
             source = out["owner"]["source"]
             when = ours.get("date") if source.get("from") == "ours" else source.get("at")
+        elif out.get("by"):                        # the file's day an answered hint's: its time
+            when = out["by"].get("at")
         else:
             when = ours.get("date") if out["status"] in ("same", "earlier", "new") else None
         local = pacific_day(when) if when else None

@@ -889,12 +889,33 @@ def test_created_is_a_pacific_day_and_a_minion_label_is_no_ability():
     chain = dc.Chain(inputs([seen], created={"Bolt": {"date": "2019-05-03", "from": "hand"}}))
     found, _ = chain.discord_rows()
     assert chain.created("bolt", chain.card("bolt", found["bolt"], []), [seen])["date"] == "2019-05-03"   # hand
+    # the file's day an answered changelog line's (S10 wrote Panda's 2019-05-14): 'same' by that line, no 'created
+    # later' item asked again; its Pacific day once more (the line at 01:49 UTC is the 13th in Pacific)
+    line = 1557798557.0                                             # 2019-05-14T01:49:17Z
+    facts = [{"id": "f1", "card": "Bolt", "source": "changelog", "confidence": "sure", "date": iso(line),
+              "field": "hp", "by": -2, "unit": "bars", "channel": "general-discussion"}]
+    for file, status, date in (("2019-05-14", "pacific", "2019-05-13"), ("2019-05-13", "same", "2019-05-13")):
+        late = picture(1, T + 5 * DAY)
+        got = inputs([late], facts=facts, created={"Bolt": {"date": file, "from": "discord"}})
+        got.rulings = {dc.review_id("changelog earlier", "bolt"): {"choice": "yes", "value": "2019-05-14"}}
+        got.cards["bolt"]["fs"] = T + 400 * DAY
+        chain = dc.Chain(got)
+        found, _ = chain.discord_rows()
+        made = chain.created("bolt", chain.card("bolt", found["bolt"], []), [late])
+        assert (made["status"], made["date"], made["by"]["fact"]) == (status, date, "f1") and not any(
+            i["kind"] == "created later" for i in chain.review.values())
     label = lambda v: dc.sure(v, "psd")
     assert dc.compare({"ability": label("Non-Protective Minion")}, {"ability": label("")})["ability_change"] == "same"
     assert dc.compare({"ability": label("Protective minion.")}, {"ability": label("Bite 2.")})["ability_change"] == \
         "changed" and dc.label_only("Non protecting minion") and not dc.label_only("Protective minion. Summoned by X.")
     assert dc.compare({"ability": label("Protective minion. Summoned by Galacta Knight.")},
                       {"ability": label("")})["ability_change"] == "removed"     # real text beside the label
+    rows = [{"kind": "old repo", "fields": {"ability": dc.sure("Non-protective minion.", "triage")}},
+            {"kind": "old repo", "fields": {"ability": label("")}, "old_ability_change": "unknown"}]
+    chain = dc.Chain.__new__(dc.Chain)
+    chain.inputs, chain.tally = SimpleNamespace(root="/nonexistent"), Counter()
+    chain.diff(rows, "minion")
+    assert rows[1]["changes"]["ability_change"] == "same"          # the old repo's own read never overrides the rule
 
 
 def test_meme_copies_fold_or_come_first_undated_and_git_first_keeps_time_order():

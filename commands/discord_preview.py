@@ -278,7 +278,8 @@ def created_proposals(created: dict) -> dict:
         if c.get("status") not in ("earlier", "new", "owner", "pacific", "same") or not c.get("date"):
             continue
         was = (c.get("file") or {}).get("date")
-        ours = (c.get("owner") or {}).get("source") or {} if c["status"] == "owner" else c.get("ours") or {}
+        ours = (c.get("owner") or {}).get("source") or {} if c["status"] == "owner" else \
+            c.get("by") or c.get("ours") or {}                # by: the answered hint whose day the file has
         sort = c.get("sort") or c["date"]
         if ours.get("source") == "website" or was and sort > was or not c.get("proposed") and c["date"] != was:
             continue                               # the website's date kept, or a pick later than it
