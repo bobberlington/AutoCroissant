@@ -144,7 +144,8 @@ def test_stats_open_starts_its_data_and_draws_charts_near():
     """Stats' first open starts analytics.json beside the charts chunks (as a link to it does); its charts below the first
     screen are drawn once near (content-visibility) or two at a time while the page is idle, and every chart at once
     when Back/Forward or a reload restores a place, a redraw starts mid-page or a Balance/History link jumps (charts-all),
-    so the place lands where it was."""
+    so the place lands where it was. Balance and History below the first screen fill after it has painted, also when
+    analytics.json lands first."""
     app, css = (ASSETS / "app.js").read_text(encoding="utf-8"), (ASSETS / "style.css").read_text(encoding="utf-8")
     first = app[app.index("function renderStatsView(r) {"):app.index("whenLoaded(loadCharts()")]
     assert "if (!S.analytics) loadAnalytics().catch(() => {});" in first
@@ -154,3 +155,5 @@ def test_stats_open_starts_its_data_and_draws_charts_near():
     jump = app[app.index('const scroll = e.target.closest("[data-scroll]");'):]
     assert jump.index('if (scroll.closest(".stats-jump")) view.classList.add("charts-all");') < jump.index("el?.scrollIntoView(")
     assert "done = true; S.placing = false;" in app and 's.classList.add("drawn")' in app and "setTimeout(drawRest, 300)" in app
+    view = app[app.index("function renderStatsView(r) {"):app.index("// a turned phone (across 600 px)")]
+    assert "if (S.analytics) fillSoon();" in view and "loadAnalytics().then(() => fillSoon()," in view   # landed first: after the paint too
