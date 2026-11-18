@@ -810,21 +810,8 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     """§11 case 7 on A Snack tagged as §9 (the fixture script's tags, saved on a copy): the shared Ability writes all
     three PNGs; a 'Name #2' edit writes only A_Snack2.png, the others byte for byte; the pictures' entries lose their
     derived fields with the parts (but a website-only one), and are never baked on their own."""
-    import sys
     from psd_tools import PSDImage
-    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
-    from make_fixtures import CARDS
-    rel, _, tags = CARDS["a_snack_tagged"]
-    psd = PSDImage.open(str(clone / rel))
-    for layer in psd.descendants():
-        if layer.layer_id in tags:
-            layer.name = tags[layer.layer_id]
-    psd.save(str(tmp_path / "A_Snack.psd"))
-    pngs = [rel[:-4] + suffix + ".png" for suffix in ("", "2", "3")]
-    files = github.files_at(github.head)
-    files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
-                  **{png: (clone / png).read_bytes() for png in pngs}})
-    github.commit(files, "someone", "A Snack tagged")
+    rel, pngs = _tagged_snack(github, clone, tmp_path)
     fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8"))["cards"]
     ability = fixture["A Snack"]["parts"]["320"]
     for edit, changed in (({"A Snack": {"ability": ability["text"], "parts": {"320": ability}},
@@ -846,6 +833,45 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(github.files_at(github.head)[rel])).descendants()}
     assert new[1023].text.startswith("Second\rBreakfast") and new[1023].name == "Name #2"
     assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
+
+
+def _tagged_snack(github, clone, tmp_path) -> tuple:
+    """A Snack tagged as §9 (the fixture script's tags, saved on a copy) with its three PNGs: (PSD path, [PNGs])."""
+    import sys
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(tmp_path / "A_Snack.psd"))
+    pngs = [rel[:-4] + suffix + ".png" for suffix in ("", "2", "3")]
+    files = github.files_at(github.head)
+    files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
+                  **{png: (clone / png).read_bytes() for png in pngs}})
+    github.commit(files, "someone", "A Snack tagged")
+    return rel, pngs
+
+
+def test_a_picture_pages_colours_bake_as_that_picture(github, clone, tmp_path):
+    """A colour on A Snack2's page (edit.js leaves colours on the picture's entry) bakes as picture 2: on its own title
+    ('Name #2') only A_Snack2.png is written, on the shared Ability every picture's; baked, it leaves the entry."""
+    from psd_tools import PSDImage
+    rel, pngs = _tagged_snack(github, clone, tmp_path)
+    for field, changed in (("name", pngs[1:2]), ("ability", pngs)):
+        before = github.files_at(github.head)
+        before[cb.EDITS_PATH] = _edits({"A Snack2": {"colors": [{"field": field, "color": "#e8312f"}], "_by": "web", "_at": AT}})
+        github.commit(before, "web", "Website edit: A Snack2")
+        text, commits = cb.run()
+        assert len(commits) == 1, text
+        after = github.files_at(github.head)
+        assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
+        assert "A Snack2" not in _edits_at(github)["cards"] and [(e["card"], e["pngs"]) for e in _records(tmp_path)[1]["landed"]] \
+            == [("A Snack2", changed)], text
+    titles = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(after[rel])).descendants() if layer.layer_id in (327, 1023)}
+    assert [pe._hex(pe._char_styles(titles[k])[0][0]) == "#e8312f" for k in (327, 1023)] == [False, True]
 
 
 def _drawn_snack(github, clone, tmp_path, edit: dict, dup_edit: dict = {}) -> tuple:
@@ -928,6 +954,19 @@ def test_a_duplicates_name_bakes_into_its_picture_alone(github, clone, tmp_path)
     new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(after[rel])).descendants()}
     assert new[1023].text.startswith("Second") and new[1023].name == "Name #2"
     assert _verdict("Breakfast")["state"] == "baked"
+
+
+def test_a_duplicates_colour_bakes_in_every_picture_showing_it(github, clone, tmp_path):
+    """A drawn duplicate's colour (Breakfast's page) is found on its picture; on the shared Ability it writes every
+    picture showing it, as A Snack's own would (a preview keeps to its picture)."""
+    red = {"colors": [{"field": "ability", "color": "#e8312f"}], "_by": "web", "_at": AT}
+    rel, stem, dup = _drawn_snack(github, clone, tmp_path, {}, red)
+    before = github.files_at(github.head)
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    after = github.files_at(github.head)
+    assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, stem + ".png", dup, stem + "3.png"]), text
+    assert {k: v for k, v in _edits_at(github)["cards"]["Breakfast"].items() if not k.startswith("_")} == {"dup_of": "A Snack"}
 
 
 def test_a_drawn_duplicates_derived_name_goes_with_its_psds_part(github, clone, tmp_path):

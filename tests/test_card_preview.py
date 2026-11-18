@@ -303,7 +303,8 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability, parts or colors edit
     tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
     for card, fields in (("Mini Doomer", {"hp": 8}), (DOOMER.upper(), {"ability": "x"}), ("Mini Doomer", {"ability": None, "hp": 8}),
-                         ("A Snack2", {"parts": {"1": {}}}), ("A Snack2", {"stars": 3}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
+                         ("A Snack2", {"parts": {"1": {}}}), ("A Snack2", {"stars": 3}), ("A Snack2", {"colors": []}),
+                         (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8}),
                          ("Breakfast", {"name": "x"}), ("Breakfast", {"ability": "x", "hp": 3}),
                          ("Mini Doomer", {"colors": [{"field": "name", "color": "#ff2200"}]})):
         try:
@@ -314,7 +315,7 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     assert early.paths_of(tree, "Breakfast", {"name": "x"}, edits) == [cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, dup]
     assert early.paths_of(tree, "Mini Doomer", {"colors": [{"field": "name", "color": "#ff2200"}]})[-1] == pe.STATUS_CHART
     views = [cp.resolve(snapshot, "A Snack2", f).view for f in ({"stars": 3}, {"name": "x", "ability": "y"}, {"colors": []})]
-    assert views == [2, None, None]             # its derived text, its own colours: refused as before
+    assert views == [2, None, 2]                # its derived text: refused as before; its own colours: as picture 2
     blobless = tmp_path / "blobless"
     _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(blobless))
 
