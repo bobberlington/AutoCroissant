@@ -105,8 +105,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    The owner's Meme rows (final rules 11-17 ~23:40 and ~23:55, `owner.json` `meme_rows` by the first repo's path,
    `Chain.meme_rows`): Tyler's copy folds into his 2019-05-02 Discord picture (one entry; `folded` keeps the copy as
    evidence) and Double Pain's (Items/Meme/3 Stars) into its 2020-08-13 #update-02-port alarm-clock picture, which the
-   owner keeps apart from the 2020-07-28 look (`owner.json` `apart`, `Chain.looks`: a look of its own, minor by the
-   11-09 fold rule). Mini Bee's Mini Bees and SOMETHING's Something ('Mr. Grabby') are the Morgue's only (map keys null,
+   owner keeps apart from the 2020-07-28 look (`owner.json` `apart`, `Chain.looks`: a look of its own; `as`: the same
+   card as that look but for the picture, so a field its own read leaves unsure takes the look's, `apart_fields`; minor
+   by the 11-09 fold rule). Mini Bee's Mini Bees and SOMETHING's Something ('Mr. Grabby') are the Morgue's only (map keys null,
    the eye's `first_files` of the joke entries Mini Bees and Mr. Grabby), as The Puppet's copy is The Puppet (Dancing
    Doll)'s. A `meme_rows` 'before' rule (an undated first entry, shown "before <the oldest dated picture's day>") is
    kept in the code, unused. Two in-jokes are on both a live card and the Morgue (`owner.json` `morgue` entries keyed by
