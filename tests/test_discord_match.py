@@ -702,8 +702,12 @@ def make_archive(base: Path) -> Path:
     return root
 
 
-def test_score_build_and_rulings(tmp_path, capsys):
+def test_score_build_and_rulings(tmp_path, capsys, monkeypatch):
     repo, root = make_cards_repo(tmp_path), make_archive(tmp_path)
+    store = tmp_path / "firstrepo.git"                                   # a first-repo store of its own (empty)
+    git(tmp_path, "init", "-q", "--bare", str(store))
+    (store / "packed-refs").write_text("a" * 40 + " refs/first/main\n")
+    monkeypatch.setattr(dm, "FIRST_GIT", str(store))
     result = dm.score(str(root), str(repo), versions="all", ocr=False, workers=1, old_git="", log=lambda *a: None)
     cards = result["cards"]
     wolf = cards["alpha-wolf"]["discord"]

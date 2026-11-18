@@ -60,6 +60,7 @@ def _git_config():
 _git_config()
 environ.pop("GIT_NO_LAZY_FETCH", None)                    # fixture clones fetch their blobs; clone reads set it (no_lazy)
 environ["PSD_DIRTY_VERIFY"] = "1"                         # gate_dirty renders whole too: raises on any difference
+environ["TIMELINES_FIRST_GIT"] = "/dev/null/firstrepo.git"  # the machine's first-repo store never counts (a test gives its own)
 
 TC_PATHS = ("AC_SITE_SRC", "ESBUILD")                     # TTSCardMaker paths from the environment
 for _key in TC_PATHS:                                     # '~' expanded for build_site and subprocesses too
