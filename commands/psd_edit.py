@@ -111,6 +111,10 @@ SAME_RUN = 3                # edit_parts: characters an edit keeps this many in 
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
               "BaselineDirection", "Tsume", "StyleRunAlignment", "Language", "NoBreak")   # edit_styles copies these
+HEAD_KEYS = (("Font", "font_name"), ("FontSize", "font_size"), ("AutoLeading", "auto_leading"), ("Leading", "leading"),
+             ("HorizontalScale", "horizontal_scale"), ("VerticalScale", "vertical_scale"), ("Tracking", "tracking"),
+             ("BaselineShift", "baseline_shift"), ("FauxBold", "faux_bold"), ("FauxItalic", "faux_italic"))
+#   header_looks sets these as the letter shows them (its run may inherit them): (STYLE_KEYS key, typesetting name)
 PAREN = re_compile(r"\(([^()\r\n\x03]{1,20})\)")    # a timing tag or cost candidate: "(1CD)", "(2 points)"
 GLUED = re_compile(r"[\w.]")                          # a cost right after one is a multiplier: "2(x counters)" (the font's GLUED)
 ICON_FONT = "stoogedings-Regular"                   # the icon font's PostScript name (every card's FontSet entry)
@@ -2154,6 +2158,78 @@ def title_styles(layer, parts: list) -> list:
         i = next((i for i in reversed(clean) if i < a0), next((i for i in clean if i >= a1), None))
         if i is not None:
             out.append((b0, b1, fills[i], styles[i]))
+    return out
+
+
+def heads(layer, styled: Optional[tuple] = None) -> tuple:
+    """
+    A text layer's header lines: those whose letters (outside the icon font, no blanks) are all set in fonts that every
+    line holding one hands on to a next line with letters in none of them (an N.M.E item's 'Purchase Cost' line, Po's
+    stance names; a stray letter in another font, D15's, or a colour or size alone makes none: body fonts run on into
+    the next line or end the text). (lines [(start, end)] split at \\r and \\x03, letters [[index]] per line, {header
+    line: its next line with letters}); styled: its _char_styles.
+    """
+    old = layer.text
+    _, icons, styles, _ = styled or _char_styles(layer)
+    lines, s = [], 0
+    for i, c in enumerate(old + "\r"):
+        if c in "\r\x03":
+            lines.append((s, i))
+            s = i + 1
+    letters = [[i for i in range(a, b) if not icons[i] and old[i] not in " \t" and styles[i].get("Font")]
+               for a, b in lines]
+    fonts = [{styles[i]["Font"] for i in each} for each in letters]
+    after = [next((j for j in range(k + 1, len(lines)) if letters[j]), None) for k in range(len(lines))]
+    body = set()
+    for k, j in enumerate(after):
+        if j is None or fonts[k] & fonts[j]:
+            body |= fonts[k]
+    return lines, letters, {k: after[k] for k in range(len(lines)) if fonts[k] and not fonts[k] & body}
+
+
+def header_looks(layer, parts: list, new: str, chart: Optional[dict] = None) -> list:
+    """
+    Whole lines an ability edit adds directly under a header (heads) and above another line: the look of the next
+    line's first letter outside the icon font (no status word), its run's STYLE_KEYS with HEAD_KEYS as it shows them,
+    and its fill. The engine gives them the header's, as Photoshop's caret does: a line typed under an N.M.E item's
+    cost line printed as a second cost line (Electric Dart's on top of it, at the cost line's leading). Before set_text.
+
+    Returns:
+        [(new start, new end, STYLE_KEYS, RGB 0..1 or None)]
+    """
+    old, styled = layer.text, _char_styles(layer)
+    fills, _, styles, _ = styled
+    lines, letters, found = heads(layer, styled)
+    if not found:
+        return []
+    status = {i for s, e, _ in (status_spans(old, chart, icon_spans(layer)) if chart else []) for i in range(s, e)}
+    added = []                                  # insertions at one place joined (a break is a part of its own)
+    for a0, a1, b0, b1, kept in parts:
+        if kept or a1 > a0:
+            continue
+        if added and added[-1][0] == a0 and added[-1][2] == b0:
+            added[-1][2] = b1
+        else:
+            added.append([a0, b0, b1])
+    out = []
+    for a0, b0, b1 in added:
+        if not new[b0:b1].strip(" \t\r\x03"):
+            continue
+        if a0 < len(old) and old[a0] in "\r\x03" and new[b0] in "\r\x03":
+            end, lo, hi = a0, b0 + 1, b1 + 1   # "\rGain 1 SP." after the line: up to the kept break
+        elif a0 and old[a0 - 1] in "\r\x03" and new[b1 - 1] in "\r\x03":
+            end, lo, hi = a0 - 1, b0, b1        # "Gain 1 SP.\r" before the next line
+        else:
+            continue
+        j = found.get(next(k for k, (_, b) in enumerate(lines) if b == end))
+        if j is None:
+            continue
+        i = next((i for i in letters[j] if i not in status), letters[j][0])
+        run = next((run.style for p in layer.typesetting for run in p.runs if run.start <= i < run.end), None)
+        like = dict(styles[i])
+        for key, name in HEAD_KEYS if run is not None else ():
+            like.setdefault(key, getattr(run, name))
+        out.append((lo, hi, like, fills[i]))
     return out
 
 
@@ -5102,19 +5178,21 @@ def plain_typed(layer, which: Optional[str], old_text: str, text: str, fonts_dir
     text with each typed PLAIN_MARKS mark its font has no glyph for made plain, else kept (owner D13, 2026-11-15: no
     box). Its font: the engine's (set_text keep="runs": a replacement takes the first character it replaces, an
     insertion the run before it), the icon font's taking what edit_styles (which "ability") or title_styles ("name")
-    sets there, as set_text_layer does. Text with no typed mark is returned as it is.
+    sets there, a line typed under a header the next line's (header_looks), as set_text_layer does. Text with no typed
+    mark is returned as it is.
     """
     start, end = _edit_range(old_text, text, which == "ability" and bool(chart))
     if not any(c in PLAIN_MARKS for c in text[start:end]):
         return text
     parts, likes = edit_parts(old_text, text, start, end), []
     runs, fonts, out = _run_fonts(layer), font_map(fonts_dir), list(text)
+    heads = header_looks(layer, parts, text, chart) if which == "ability" else []
     for a0, a1, b0, b1, kept in parts:
         font = runs[min(a0 if a1 > a0 or a0 == 0 else a0 - 1, len(runs) - 1)]
         for i in range(b0, b1) if not kept else ():
             if text[i] not in PLAIN_MARKS:
                 continue
-            face = font
+            face = next((like["Font"] for lo, hi, like, _ in heads if lo <= i < hi), font)
             if face.lower().startswith(ICON_FONT_PREFIX):     # set in the letters' style after (the last one wins)
                 likes = likes or (edit_styles(layer, parts, chart, text_moves(old_text, text)) if which == "ability"
                                   else title_styles(layer, parts) if which == "name" else [])
@@ -5771,7 +5849,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     the notes (ink_beyond). The engine gives
     inserted text the style of the run before it, so an edit after a colored status word or a badge would take its
     color or icon font: an ability's changed parts take the fill of the text they replace (edit_styles; status words
-    give none), words set in the icon font outside what the font draws (icon_text) that text's whole style; every badge
+    give none), words set in the icon font outside what the font draws (icon_text) that text's whole style, whole lines
+    typed right under a header (heads: an N.M.E item's cost line, Po's stance names) the next line's look before the fit
+    (header_looks, r48: a second cost line, Electric Dart's on top of it); every badge
     or token the edit types is set in the icon font at the card's own badge or token style (icon_style; owner
     2026-10-23), on a card with none at the text's own style (ICON_FONT added, Edit.fonts), with ligatures on and a
     LAYERED one (:sticker, :no) at tracking 0 (tracking split its glyphs apart), the layer's own spellings
@@ -5878,6 +5958,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
     styles = edit_styles(layer, parts, chart, text_moves(old_text, text)) if which == "ability" else []
+    heads = header_looks(layer, parts, text, chart) if which == "ability" else []
     restyle = title_styles(layer, parts) if which == "name" else []
     changed = [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0]
     typed = [(a, b) for a, b in drawn if any(a < b1 and b0 < b for b0, b1 in changed)]     # badges and tokens it types
@@ -5932,6 +6013,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         for part_start, part_end, fill, like in restyle:
             for a, b in _stretches([i for i in range(part_start, part_end) if now[i] and i not in glyphs]):
                 layer.set_span_style(a, b, **like, **({} if fill is None else {"fill": fill}))
+    for a, b, like, fill in heads:      # a line typed under a header: the next line's look, before the fit
+        layer.set_span_style(a, b, fill=fill, **like)
     now = _char_styles(layer)[1]
     edited, sized = set(), set()    # an old badge or token edited in place: the new one holding most of its kept chars
     for a0, b0 in spans_before:     # (difflib may pair the ")" of "(1GCD)" with that of a "(2U)" typed after it)
@@ -12475,6 +12558,8 @@ __all__ = [
     'keep_breaks',
     'keep_ends',
     'title_styles',
+    'heads',
+    'header_looks',
     'kept_chars',
     'held_words',
     'kept_spans',
