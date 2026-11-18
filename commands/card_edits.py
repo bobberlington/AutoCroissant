@@ -332,7 +332,9 @@ def as_parsed(card: CardInfo) -> CardInfo:
 class CardDates:
     """
     TTSCardMaker's site/Card Creation Dates.json: when each card was made, the earlier of its first Discord post and
-    its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord"}}}; names match like
+    its first upload (Pacific day, the bot's TIMEZONE; owner 11-17). {"cards": {"Card Name": {"date": "YYYY-MM-DD",
+    "from": "discord"}}}; "before": 2020 too when a photo of the physical card shows it was made before that year
+    (Pep Drink, Wham Bam Bone; owner 11-14: shown "before 2020", the date its first dated appearance); names match like
     the authors file. Kept by hand ("from": "hand" for a new one). The website and /update_stats read it, each with its
     own first upload for the cards it misses (created()); it is no edit (never in Card Edits.json).
     """
@@ -357,7 +359,9 @@ class CardDates:
         dates = cls()
         for name, entry in (cards if isinstance(cards, dict) else {}).items():
             if cls.valid(entry):
-                dates.cards[CardAuthors.key(name)] = {"date": entry["date"], "from": entry["from"]}
+                before = entry.get("before")
+                dates.cards[CardAuthors.key(name)] = {"date": entry["date"], "from": entry["from"],
+                                                      **({"before": before} if type(before) is int else {})}
         return dates
 
     def created(self, name: str, upload: Optional[str] = None) -> Optional[dict]:
@@ -367,13 +371,13 @@ class CardDates:
 
         Args:
             name: Card name
-            upload: Its first upload (UTC day, YYYY-MM-DD), or None when unknown
+            upload: Its first upload (Pacific day, YYYY-MM-DD), or None when unknown
 
         Returns:
             {date, from}, or None (undated)
         """
         found = self.cards.get(CardAuthors.key(name))
-        if found and (found["from"] == "hand" or not upload or found["date"] <= upload):
+        if found and (found["from"] == "hand" or found.get("before") or not upload or found["date"] <= upload):
             return dict(found)
         return {"date": upload, "from": "git"} if upload else None
 

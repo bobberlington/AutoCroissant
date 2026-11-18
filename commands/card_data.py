@@ -32,7 +32,7 @@ from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC,
-                           STARS_DIR, TYPES_DIR)
+                           STARS_DIR, TIMEZONE, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, picture_only, straight, straighten_card
@@ -423,14 +423,14 @@ class CardBuild:
 
     def _first_upload(self, name: str, card: CardInfo) -> Optional[str]:
         """
-        The UTC day of the earliest version of the card the database holds: its first upload as far as the bot saw it
+        The Pacific day (TIMEZONE) of the earliest version of the card the database holds: its first upload as far as the bot saw it
         (the website's is its PNG's first commit; the dates file covers the cards from before the bot's history).
         None for no real date.
         """
         from commands.card_history import start
         versions = [*self.db.old_stats.get(name, ()), card]
         known = [at for at in (start(v)[0] for v in versions) if at]
-        return datetime.fromtimestamp(min(known), timezone.utc).date().isoformat() if known else None
+        return datetime.fromtimestamp(min(known), TIMEZONE).date().isoformat() if known else None
 
     def _apply_dates(self, dates: Optional[CardDates]) -> int:
         """Set every card's created from the dates file and its first upload (duplicates included). Returns how many

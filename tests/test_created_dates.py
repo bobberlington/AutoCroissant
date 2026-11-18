@@ -64,7 +64,8 @@ def test_the_websites_rule_with_the_first_upload():
 
 
 def test_first_upload_is_the_earliest_version_the_bot_holds():
-    """Its old_stats versions' starts and its own (a version record's from, else its timestamp), as a UTC day."""
+    """Its old_stats versions' starts and its own (a version record's from, else its timestamp), as a Pacific day (the
+    bot's TIMEZONE, owner 11-17): 2026-01-05 00:00 UTC is the evening of the 4th."""
     from datetime import datetime, timezone
     at = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
     old = [_card(timestamp=at(2025, 3, 1, 23, 30)), _card(timestamp=at(2025, 6, 1))]
@@ -72,7 +73,7 @@ def test_first_upload_is_the_earliest_version_the_bot_holds():
     card = _card(timestamp=at(2026, 1, 5))
     build = SimpleNamespace(db=SimpleNamespace(old_stats={"Foo Bar": old}))
     assert cd.CardBuild._first_upload(build, "Foo Bar", card) == "2024-12-31"
-    assert cd.CardBuild._first_upload(build, "Other", card) == "2026-01-05"
+    assert cd.CardBuild._first_upload(build, "Other", card) == "2026-01-04"
 
 
 def test_apply_dates_dates_a_card_the_file_misses(capsys):
@@ -83,9 +84,18 @@ def test_apply_dates_dates_a_card_the_file_misses(capsys):
     new.timestamp, old.timestamp = at(2026, 11, 1), at(2026, 1, 1)
     build.db = SimpleNamespace(stats={"New Card": new, "Old Card": old}, old_stats={})
     assert build._apply_dates(_dates({"Old Card": {"date": "2020-07-22", "from": "discord"}})) == 2
-    assert new.created == {"date": "2026-11-01", "from": "git"} and old.created == {"date": "2020-07-22", "from": "discord"}
+    assert new.created == {"date": "2026-10-31", "from": "git"} and old.created == {"date": "2020-07-22", "from": "discord"}
     assert "1 cards not in site/Card Creation Dates.json, dated by their first upload" in capsys.readouterr().out
     assert build._apply_dates(None) == 0 and new.created["from"] == "git"           # no file read: as they are
+
+
+def test_made_before_a_year():
+    """Pep Drink and Wham Bam Bone (owner 11-14): 'before': 2020 beside their first dated appearance; the entry is kept
+    over any first upload and the bot says "Created before 2020"."""
+    d = _dates({"Pep Drink": {"date": "2020-07-21", "from": "discord", "before": 2020},
+                "Odd": {"date": "2020-07-21", "from": "discord", "before": "2020"}})
+    assert d.created("Pep Drink", "2019-01-02") == {"date": "2020-07-21", "from": "discord", "before": 2020}
+    assert d.cards["odd"] == {"date": "2020-07-21", "from": "discord"}            # a year is a number
 
 
 def test_created_is_no_field():
@@ -155,6 +165,9 @@ def test_query_embed_says_created(monkeypatch):
     assert sent[0][1]["embed"].description == "mario · Paper Mario\nCreated 2023-10-13"
     qc.query_name(SimpleNamespace(), "Kirby")                   # series and created only: an embed too
     assert sent[1][1]["embed"].description == "kirby\nCreated 2020-07-22"
+    kirby.created["before"] = 2020                              # a physical card photo's (Pep Drink)
+    qc.query_name(SimpleNamespace(), "Kirby")
+    assert sent.pop()[1]["embed"].description == "kirby\nCreated before 2020"
     qc._post_card(SimpleNamespace(), "nodata.png")              # no data: the plain link
     assert "embed" not in sent[2][1] and sent[2][0].endswith("/Nodata.png")
 
