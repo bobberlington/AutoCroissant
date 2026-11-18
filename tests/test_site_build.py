@@ -225,7 +225,7 @@ def test_a_renamed_row_shows_its_old_name_and_when_the_card_was_made(bs):
 
 
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
-    """The editor (editing.js, with the sign-in: signin.js), Stats (charts.js), a card's Balance block (balance.js, no stats.js:
+    """The editor (editing.js), the sign-in form shown while it loads (signin.js, also in the editor's), Stats (charts.js), a card's Balance block (balance.js, no stats.js:
     the chart primitives are chartkit.js), People (profile.js), the font box (tokens.js), the
     rulebook (rulebook.js, its editor rulebook-edit.js), the Changes tabs (changelog.js), the published decks (decks.js) and the
     deck builder's picker (pick.js) are imported by app.js with import(): without
@@ -237,7 +237,7 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
     assets, page = tmp_path / "a" / "dist" / "assets", (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
-    lazy = ("editing.js", "charts.js", "balance.js", "profile.js", "tokens.js", "rulebook.js", "rulebook-edit.js", "changelog.js", "decks.js", "pick.js")
+    lazy = ("editing.js", "signin.js", "charts.js", "balance.js", "profile.js", "tokens.js", "rulebook.js", "rulebook-edit.js", "changelog.js", "decks.js", "pick.js")
     app = (assets / "app.js").read_text(encoding="utf-8")
     assert all(re.search(rf'import\("\./{re.escape(m)}\?v=\w+"\)', app) for m in lazy)
     assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance|decks|pick|signin|changelog)\.js', page)
@@ -272,6 +272,7 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
                          "profile.js", "rulebook.js", "rulebook-edit.js", "changelog.js", "decks.js", "pick.js", "signin.js"}
     src = lambda k: set().union(*(sources[f] for f in chunks[k]))
     assert {"edit.js", "mockup.js", "signin.js"} <= src("editing.js")
+    assert "signin.js" in src("signin.js") and not src("signin.js") & {"edit.js", "mockup.js", "preview.js", "inline.js", "tokens.js"}
     assert {"stats.js", "balance.js"} <= src("charts.js") and {"balance.js", "chartkit.js"} <= src("balance.js")
     assert "stats.js" not in src("balance.js") | src("profile.js") | src("editing.js")
 
