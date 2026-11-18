@@ -9,6 +9,7 @@ from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 import importlib.util
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -590,6 +591,41 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
             "fields": {"stars": {"value": 3, "method": "psd", "confidence": "sure"}}}
     assert len(bs.history_stats({"entries": [first, meme]}, "creature")["points"]) == 1   # a Meme copy: no point
     assert bs.HISTORY_FROM["first repo"] == "first repo" and bs.HISTORY_FROM["changelog"] == "changelog"
+    # owner 11-17 (3): a history branch checkout's pictures load from raw.githubusercontent.com at its commit (hb), none
+    # in dist; one its tree lacks loses its img (the page says the picture is missing); the Morgue's pic that URL too
+    if hasattr(bs, "history_host"):
+        hist = tmp_path / "history"
+        (hist / "alpha" / "O-1.webp").rename(tmp_path / "O-1.webp")          # committed without it
+        git = lambda *a: subprocess.run(["git", "-C", str(hist), *a], capture_output=True, text=True, check=True).stdout
+        git("init", "-q")
+        _commit(hist, "History", 1_790_000_000)
+        sha = git("rev-parse", "HEAD").strip()
+        (tmp_path / "O-1.webp").rename(hist / "alpha" / "O-1.webp")          # on disk: the tree decides, not the folder
+        branch = _build(bs, monkeypatch, repo, tmp_path / "h")
+        hb = f"https://raw.githubusercontent.com/{bs.CARD_REPO}/{sha}/"
+        rows = branch["versions.json"]["early"][alpha["id"]]
+        assert branch["versions.json"]["hb"] == hb and not (tmp_path / "h" / "dist" / "history").exists()
+        assert [r.get("img") for r in rows] == [None, "alpha/P-2.webp"]
+        joke = next(c for c in branch["cards.json"]["morgue"] if c["name"] == "Joke Card")
+        assert joke["pic"] == hb + "_morgue/joke-card/P-9.webp"
+        monkeypatch.setattr(bs, "HISTORY_URL", "http://127.0.0.1:8000/h")    # a local preview's server
+        assert bs.history_host(str(hist)) == ("http://127.0.0.1:8000/h/", None)
+        monkeypatch.setattr(bs, "HISTORY_URL", "")
+        shutil.rmtree(hist / ".git")
+        # an owner's undated Meme copy (11-17 ~18:10): no date of its own, before the oldest dated picture, listed oldest
+        before = {"id": "O-m", "kind": "old repo", "date": None, "before": "2021-03-04T05:06:07+00:00", "fields": {}}
+        got = bs.history_rows("alpha", {"entries": [before, *json.loads((hist / "alpha" / "timeline.json").read_text())["entries"]]})
+        assert (got[-1]["ts"], got[-1]["b"]) == (None, 1614834367) and "b" not in got[0]
+        # Created (owner 11-17 ~18:10): Pacific days; the timelines' label on the file's own day; made before a year
+        evening = 1556862973                                                  # 2019-05-03 05:56 UTC, the 2nd in Pacific
+        made = [{"key": "Up", "fs": evening}, {"key": "Pizza", "fs": 1700000000}, {"key": "Pep", "fs": 1600000000},
+                {"key": "Hand", "fs": evening}]
+        bs.apply_created(made, {"pizza": {"date": "2023-09-25", "from": "git"}, "hand": {"date": "2019-05-03", "from": "hand"},
+                                "pep": {"date": "2020-07-21", "from": "discord", "before": 2020}},
+                         {"pizza": {"date": "2023-09-25", "source": "old repo"}, "hand": {"date": "2019-05-02", "source": "discord"}})
+        assert [(e["created"], e["createdFrom"]) for e in made] == [("2019-05-02", "git"), ("2023-09-25", "old repo"),
+                                                                     ("2019-01-01", "photo"), ("2019-05-03", "hand")]
+        assert made[2]["createdBefore"] == 2020 and "createdWas" not in made[1]
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")
