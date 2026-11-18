@@ -4,8 +4,9 @@ import json
 import os
 import subprocess
 import types
-from io import BytesIO
+from io import BytesIO, StringIO
 
+import pytest
 from PIL import Image
 
 from commands import rulebook, rulebook_pages, tts_save
@@ -245,6 +246,27 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     head = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout
     assert (out / "inputs").read_text() == "\n".join((head.strip(), *rulebook_pages.INPUTS)) + "\n" and (out / "Rulebook.pdf").is_file()
     assert rulebook_pages.read_pages("", str(out))["key"] == "k1" and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0"
+
+
+def test_chrome_started_again_when_its_start_stalls(tmp_path, monkeypatch):
+    """11-12 da7523db: Chrome never answered Target.createTarget (60 s, 20 s more to close it; the PDF left undrawn). No
+    first answer in START_SECONDS: that Chrome killed (profile gone) and one more started (CALL_SECONDS); then it raises."""
+    seen = tmp_path / "seen"
+    answer = """printf '{"id":1,"result":{"targetId":"t2"}}\\000' >&4"""
+    for name, body in (("once", f'[ ! -e "{seen}" ] || {answer}\n: > "{seen}"\n'), ("never", "")):
+        (tmp_path / name).write_text(f"#!/bin/sh\n{body}exec sleep 30\n")
+        (tmp_path / name).chmod(0o755)
+    monkeypatch.setattr(rulebook_pages, "START_SECONDS", 0.3)
+    monkeypatch.setattr(rulebook_pages, "CALL_SECONDS", 1)
+    monkeypatch.setattr(rulebook_pages, "stderr", told := StringIO())
+    made = []
+    monkeypatch.setattr(rulebook_pages, "Chrome", lambda exe, real=rulebook_pages.Chrome: made.append(real(exe)) or made[-1])
+    chrome, target = rulebook_pages.start(str(tmp_path / "once"))
+    chrome.close(ask=False)
+    assert target == "t2" and len(made) == 2 and "Chrome started again" in told.getvalue()
+    with pytest.raises(TimeoutError):
+        rulebook_pages.start(str(tmp_path / "never"))
+    assert len(made) == 4 and all(c.proc.wait(timeout=5) is not None and not os.path.exists(c.profile) for c in made)
 
 
 def _card(guid, path, nick, deck_id):
