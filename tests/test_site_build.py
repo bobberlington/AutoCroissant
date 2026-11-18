@@ -686,7 +686,8 @@ def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
     """Image versions read one small file per card (data/versions/<id>.json, app.js loadVersions when the card opens): every
     card and Morgue entry with rows has one, and together they give versions.json's rows, minor, early, repo, visible and hb
     exactly (versions.json stays one release for tabs on the older app.js); one stamp for the folder (index.html's meta data,
-    app.js dataUrl)."""
+    app.js dataUrl). Each also holds the card's own history.json texts and analytics.json Balance row, their commit
+    indexes into its own lists (its dialog needs neither all-cards file)."""
     if not hasattr(bs, "version_files"):
         pytest.skip("a site before data/versions/")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
@@ -699,6 +700,23 @@ def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
         assert len(one["commits"]) == len({r[0] for r in one["cards"][cid]}) and set(one["cards"]) == {cid}
         assert all(one.get(k, {}).get(cid) == full.get(k, {}).get(cid) for k in ("minor", "early"))
         assert all(one.get(k) == full.get(k) for k in ("repo", "visible", "hb"))
+    hist, bal, texts = out["history.json"], out["analytics.json"], 0     # a card's own texts and Balance row (card_sections)
+    for cid, one in per.items():
+        if "texts" in one:
+            texts += 1
+            again = lambda v, shas: {**v, **{k: shas[v[k]] for k in ("c", "n") if k in v}}
+            assert [again(v, one["shas"]) for v in one["texts"]] == [again(v, hist["_shas"]) for v in hist[cid]]
+        else:
+            assert cid not in hist
+        if "bal" in one:
+            undo = lambda a, commits: [{**r, **({"c": commits[r["c"]]} if "c" in r else {})} for r in a.get("changes", [])]
+            mine, row = one["bal"]["card"], bal["cards"][cid]
+            assert undo(mine, one["bal"]["commits"]) == undo(row, bal["commits"]) and {**mine, "changes": 0} == {**row, "changes": 0}
+            co = row.get("cohort")
+            assert one["bal"]["cohorts"] == ({co: bal["cohorts"][co]} if co in bal["cohorts"] else {}) and one["bal"]["minCohort"] == bal.get("minCohort")
+        else:
+            assert cid not in bal["cards"]
+    assert texts and any("bal" in one for one in per.values())         # Alpha's older text, its Balance row
     meta = json.loads(html_unescape(re.search(r'<meta name="data" content="([^"]*)">', (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8"))[1]))
     assert re.fullmatch(r"[0-9a-f]{10}", meta["versions/"])
     app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
