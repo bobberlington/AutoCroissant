@@ -4,9 +4,9 @@ style, stat-row encoding, status-word layers, template deviations, the header's 
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
-6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8). One record per card PSD, keyed by its git blob
-sha, in the card data's db/psd_details.json (the Card sync Action's build); its "version" is the VERSION it was gathered
-under (an older one: the build reads that card again).
+6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9). One record
+per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
+"version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). text_of (the file's text), prune(cards, shas) to the tree. The build
@@ -43,7 +43,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 8                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"
+VERSION = 9                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -200,9 +200,9 @@ def _set(layer, font: Optional[str] = None) -> dict:
     """How a type layer is set, in canvas px (the mock-up's wrap): box text's "frame"; "px", the height most of its letters
     outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the
     font most of them are set in, when not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
-    not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set. {}
-    when rotated."""
-    from psd_tools.composite.text.layout import frame
+    not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set;
+    "lead", the line pitch the bake sets a new line at (its runs' largest leading). {} when rotated."""
+    from psd_tools.composite.text.layout import frame, leading
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
     xx, xy, yx, yy, tx, ty = model.transform
@@ -213,6 +213,9 @@ def _set(layer, font: Optional[str] = None) -> dict:
     ways = {p.justification for p in model.paragraphs if model.text[p.start:p.end].strip()}
     if ways in ({0}, {1}):
         out["just"] = ways.pop()                # left or right set (none: centred, justified or mixed)
+    lead = max((leading(run.style, model) for run in model.runs), default=0.0)
+    if lead > 0:
+        out["lead"] = round(lead * sy, 2)
     box = frame(model)
     if box is not None:
         left, top, width, height = box

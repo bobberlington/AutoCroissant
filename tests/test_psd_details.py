@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -83,8 +83,8 @@ def test_how_text_is_set(clone):
                      ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", 417)):
         layer = next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid)
         got[rel.rsplit("/", 1)[1]] = pd._set(layer, pd._style(layer)[0])
-    assert got["Wendy.psd"] == {"frame": [2, 1704, 1202, 2314], "px": 88.04, "hx": 2.336, "badges": [[1.0, 418], None]}
-    assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0,     # a 0.1 degree turn: still set
+    assert got["Wendy.psd"] == {"frame": [2, 1704, 1202, 2314], "px": 88.04, "hx": 2.336, "badges": [[1.0, 418], None], "lead": 89.0}
+    assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0, "lead": 80.64,     # a 0.1 degree turn: still set
                                "badges": [[0.814, 0], [0.814, 345], None, [0.814, 0]]}
     assert got["Chef_Saltbaker.psd"]["lf"] == "CupheadMemphis-Medium"                # first run MyriadPro-Regular
 
@@ -143,6 +143,7 @@ def test_text_layers_and_template(records):
     name = next(t for t in doomer["text"] if t["layer"] == doomer["template"]["name_layer"])
     assert ability["frame"] == [0, 1721, 1185, 2376] and ability["px"] == 150.0 and "frame" not in name   # 50 pt by 3; point text
     assert "just" not in name                                                          # centred
+    assert (name["lead"], ability["lead"]) == (146.0, 90.0)                            # VERSION 9: its Leading, not 1.22 em
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
