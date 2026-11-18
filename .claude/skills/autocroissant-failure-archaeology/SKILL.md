@@ -877,7 +877,9 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   several layers); `_part_same` keeps quotes and spaces. (c) `fit_below`: past the old text onto the design below
   (`ink_beyond`) or off the canvas, the Ability is scaled by 0.94 down to 40% (the preview's `fit`) until it is no lower
   than the old text; a tabbed layer or no fitting size: as before, told (r32: text off the card takes the largest
-  size on it no lower than the old text, unless `lift`, 11-08, keeps it on the card printing over no more). (d) `story_style_drift` compares kerning on
+  size on it no lower than the old text, unless `lift`, 11-08, keeps it on the card printing over no more; r49: a
+  stacked box tries each size with its blank rows above its line kept first (in its row), then risen; `lift` stops
+  2 px under the text above, a line that rises onto it moves back down, and `inks_over` counts text drawn above too). (d) `story_style_drift` compares kerning on
   characters that end a pair (Photoshop writes a paragraph's first character's TySh kerning off); 220 of 813 PSDs differ
   (196 the template's Health label, 42 Abilities, 10 titles), so the bake does not refuse it: `follow_kerning` sets the
   edited layer's TySh from its story, `whole_redraw` too, and the after-save gate refuses only new drift. Measured over
