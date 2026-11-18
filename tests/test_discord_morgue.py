@@ -197,10 +197,17 @@ def test_the_owner_s_entries_over_the_eye_s(tmp_path):
     book = eye.pop(dv.picture_id(sha(14)))
     (root / "derived/morgue/eye.json").write_text(json.dumps(eye))
     (root / "derived/review").mkdir(parents=True, exist_ok=True)
+    joke = {"status": "candidate", "kind": "joke", "name": "Fang (Mao)", "nearest": "fang", "in_joke": True,
+            "answer": "a2"}                       # owner 11-17 ~23:55: a live card's picture, on the Morgue too
     (root / "derived/review/owner.json").write_text(json.dumps({"morgue": {dv.picture_id(sha(14)): {
-        **book, "name": "Book Two", "answer": "a1"}}}))
+        **book, "name": "Book Two", "answer": "a1"}, dv.picture_id(sha(13)): joke}}))
     known = {"morgue": {}, "unfinished": {}, "renamed": {}, "looks": []}
     dmo._build(dmo.Paths(str(root)), known, log=lambda *a: None)
-    found = {e["id"]: e for e in json.loads((root / "derived/morgue/candidates.json").read_text())["candidates"]}
+    out = json.loads((root / "derived/morgue/candidates.json").read_text())
+    found = {e["id"]: e for e in out["candidates"]}
     entry = found[dv.group_id(sha(14))]
     assert (entry["name"], entry["owner"], entry["kind"]) == ("Book Two", "a1", "played")
+    joke = found[dv.group_id(sha(13)) + "-joke"]          # fang's draft stays fang's: never taken, no twin
+    assert (joke["name"], joke["slug"], joke["owner"], joke["kind"]) == ("Fang (Mao)", "fang-mao", "a2", "joke")
+    assert [p["id"] for p in joke["pictures"]] == [dv.picture_id(sha(13))] and "taken" not in joke["pictures"][0]
+    assert dv.picture_id(sha(13)) not in {t["picture"] for t in out["taken"]} and not joke.get("twins")

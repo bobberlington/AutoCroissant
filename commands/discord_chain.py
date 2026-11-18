@@ -1364,14 +1364,19 @@ class Chain:
     def looks(self, cid: str, rows: list) -> list:
         """Pictures grouped into looks, oldest first: one git look each; a draft into its
         nearest group (the hash to its first picture) near_look and without a conflict, whose every picture prints the
-        same words and class line (same_words) with no local edit (Chain.local_edit)."""
+        same words and class line (same_words) with no local edit (Chain.local_edit). A picture the owner keeps apart
+        (owner.json apart) starts a look of its own (Double Pain's 2020-08-13 clock, 11-17 ~23:40)."""
         groups = []
+        apart = (getattr(self.inputs, "owner", None) or {}).get("apart") or {}
         pictures = sorted((self.picture(cid, r) for r in rows),
                           key=lambda p: (p["when"] is not None, p["when"] or 0, p["row"]["id"]))
         for pic in pictures:
             row = pic["row"]
             key = ("git", row["version"].get("look")) if row["verdict"] == "version_sure" and not row.get("as") else None
-            if key:
+            if row["id"] in apart:
+                home = None
+                self.tally["owner: a picture kept apart, a look of its own"] += 1
+            elif key:
                 home = next((g for g in groups if g["key"] == key), None)
             else:
                 near = [g for g in groups if g["key"] is None and g.get("as") == row.get("as")

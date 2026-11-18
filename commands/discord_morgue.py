@@ -15,7 +15,9 @@ build   Each lost card (derived/match/lost_groups.json) and each lost card of th
         candidate or idea whose picture is the same picture as a row given to a live card or the unsure review (whole
         and art within TWIN bits) keeps that row only when the eye adds it (then listed in taken: the review page drops
         it there) or rules it another picture (not_twin); else it goes to review (status twin), so no picture is both a
-        live card's and the Morgue's. The kin pass lists rows no entry holds that may be a lost card's (a none, art or
+        live card's and the Morgue's, but for the owner's in-jokes (owner.json morgue, keyed by a picture, in_joke:
+        11-17 ~23:55 Tyler's and The Panda Future's first pictures): their own entry (id: group id + '-joke'), the
+        picture never taken from its live card. The kin pass lists rows no entry holds that may be a lost card's (a none, art or
         unsure row whose title fits a candidate's or idea's name better than any live card's; a none row that is a joke
         picture, or a played channel's with card evidence) until the eye adds each to an entry, makes an entry of it
         (eye.json keyed by its picture id) or rules it not a lost card's (not_kin). It also lists the rows that may be
@@ -67,6 +69,7 @@ LISTED = ("version_sure", "version_unsure", "draft", "unsure")     # rows a live
 KIN_NAME = dv.GROUP_TITLE                       # a row's title this near a candidate's or idea's name: kin (eye)
 KIN_VERDICTS = ("none", "art", "unsure")        # rows no live card holds for sure
 CANDIDATE, IDEA, TWIN_STATUS = "candidate", "idea", "twin"
+IN_JOKE = "-joke"                               # an in-joke entry's id: its picture's group id + this (owner 11-17)
 MDW = {"morgue": MORGUE_DIR, "unfinished": UNFINISHED_DIR}      # statuses of cards already in MDW: their folder
 TAKES = (CANDIDATE, IDEA, *MDW)                 # entries whose pictures leave a live card's or the unsure review
 NOT = {"morgue": "already in MDW/The Morgue", "unfinished": "in MDW/Unfinished (kept, not retired)",
@@ -405,7 +408,7 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         evidence = dv.card_evidence(image, row.get("size_class"), eras.get(row["sha256"])) or "by eye"
         by_name = [{"card": c, "name": (cards.get(c) or {}).get("name"), "ratio": round(r, 3)}
                    for c, (r, _) in names.fuzzy(title, 0.6, limit=3).items()] if title else []
-        gid = dv.group_id(row["sha256"], row.get("cell"))
+        gid = dv.group_id(row["sha256"], row.get("cell")) + (IN_JOKE if e.get("in_joke") else "")
         assert gid not in entries, f"{gid} made twice"
         entries[gid] = {"group": None, "eye": e, "status": e.get("status") or "review", "card": e.get("card"),
                         "pictures": [row["id"]], "old": None, "title": title,
@@ -457,7 +460,7 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
                     x["eye"] = {**x["eye"], "kind": x["eye"].get("kind") or "joke"}
     twins = twin_finder(rows)
     for x in entries.values():                  # twins of listed rows: taken by eye, else review
-        if x["status"] not in (CANDIDATE, IDEA):
+        if x["status"] not in (CANDIDATE, IDEA) or x["eye"].get("in_joke"):
             continue
         unlike = set(x["eye"].get("not_twin") or [])
         x["twins"] = sorted({t for p in x["pictures"] for t in twins(p)} - set(x["pictures"]) - unlike)
@@ -531,7 +534,7 @@ def created_hint(e: dict, rows: dict) -> dict:
 def describe(gid: str, x: dict, rows: dict, kinds: dict, live: dict, used: Optional[set]) -> dict:
     """One lost card's entry: name, kind, first date and channel, pictures, nearest live card, why."""
     g, e, old = x["group"] or x.get("made") or {}, x["eye"], x["old"]
-    pics = [picture_of(rows[p], x["status"] in TAKES) for p in x["pictures"] if p in rows]
+    pics = [picture_of(rows[p], x["status"] in TAKES and not e.get("in_joke")) for p in x["pictures"] if p in rows]
     posts = [p for pid in x["pictures"] if pid in rows for p in rows[pid].get("posts") or []]
     if old:
         pics.append({"id": old["id"], "date": utc(old["first"]["date"]), "commit": old["first"]["commit"],

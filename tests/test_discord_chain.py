@@ -949,3 +949,36 @@ def test_meme_copies_fold_or_come_first_undated_and_git_first_keeps_time_order()
     early = {"kind": "old repo", "date": iso(T + 2 * DAY), "fields": {}}
     assert dc.last_version([early, late], T + 5 * DAY) is early and dc.last_version([late], T + 5 * DAY) is None
     assert dc.last_version([early, late]) is late
+
+
+def test_an_owner_apart_picture_is_its_own_minor_version(tmp_path):
+    """Owner 11-17 ~23:40 (owner.json apart): a repost the chain would merge (Double Pain's 2020-08-13 clock) is a
+    look of its own, minor when settled and near the one before; the Meme copy folds into it."""
+    import numpy as np
+    from PIL import Image
+    (tmp_path / "attachments").mkdir()
+    base = np.random.RandomState(3).uniform(0, 255, (35, 25, 3)).repeat(16, 0).repeat(16, 1)
+    clock = base.copy()
+    clock[10:50, 10:50] = 0                                                             # a small icon added
+    for n, a in ((1, base), (2, clock)):
+        Image.fromarray(a.astype(np.uint8)).save(tmp_path / f"attachments/{n}.png")
+    truth = {f"d:{n:064d}": {"title": "Bolt", "stars": 3, "types": [], "ability": "Deal one damage."} for n in (1, 2)}
+    bars = {f"attachments/{n}.png": {"truth": {"stats": {"hp": 5, "def": 2, "atk": 3, "spd": 4}}} for n in (1, 2)}
+    meme = dict(old_row("Bolt", T + 60 * DAY, "m" * 40, 9), id="mmmm:Items/Meme/Bolt.png", path="Items/Meme/Bolt.png",
+                meme_copy=True, repo="first")
+    rows = lambda: [picture(1, T), picture(2, T + 16 * DAY)]
+    merged = dc.Chain(inputs(rows()))                                                   # no rule: one entry
+    found, _ = merged.discord_rows()
+    assert [[p["id"] for p in e["pictures"]] for e in merged.card("bolt", found["bolt"], [])["entries"]] == \
+        [["P-000000000001", "P-000000000002"]]
+    got = inputs(rows(), bars=bars, old_rows=[meme], root=tmp_path)
+    got.text_truth = truth
+    got.owner = {"apart": {"P-000000000002": {"answer": "a1"}},
+                 "meme_rows": {"Items/Meme/Bolt.png": {"card": "Bolt", "how": "fold", "into": "P-000000000002"}}}
+    chain = dc.Chain(got)
+    found, _ = chain.discord_rows()
+    first, clocked = chain.card("bolt", found["bolt"], [])["entries"]
+    assert (first["id"], clocked["id"], clocked["day"]) == ("D-P-000000000001", "D-P-000000000002", dc.day(T + 16 * DAY))
+    assert (first["minor"], clocked["minor"]) == (False, True) and clocked["share"] < 0.05
+    assert [f["id"] for f in clocked["folded"]] == ["O-mmmm:Items/Meme/Bolt.png"] and "folded" not in first
+    assert chain.tally["owner: a picture kept apart, a look of its own"] == 1
