@@ -30,6 +30,8 @@ CARDS = [
          ability="+1 ATK to every friendly minion."),
     dict(name="Enfeebled", type="debuff", ability="-1 ATK."),
     dict(name="Mom's Knife", type="item", series="The Binding of Isaac", ability="Throw it."),
+    dict(name="Twin Emperors", type="creature", hp=7, defense=4, atk=5, spd=6, stars=4, ability="Two emperors as one.",
+         creatures=[(7, 4, 5, 6), (7, 10, 4, 4)]),                # creature 1 is the card's stats
 ]
 ERROR = "error"                                          # the bot answers with an error
 
@@ -42,10 +44,10 @@ QUERIES = [                                              # query, the cards foun
     ('"damage"', {"Meta Knight", "Fire Bomb"}), ('"(2u)"', {"Bloon"}),
     ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning", "Power Ring", "Enfeebled",
                          "Mom's Knife"}),
-    ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
-    ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}),
-    ("hp>5", {"Meta Knight", "Mettaton EX"}), ("hp > 5", {"Meta Knight", "Mettaton EX"}),
-    ("total>=24", {"Meta Knight", "Mettaton EX"}), ("spd>=8", {"Meta Knight", "sans."}),
+    ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Twin Emperors"}),
+    ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX", "Twin Emperors"}),
+    ("hp>5", {"Meta Knight", "Mettaton EX", "Twin Emperors"}), ("hp > 5", {"Meta Knight", "Mettaton EX", "Twin Emperors"}),
+    ("total>=24", {"Meta Knight", "Mettaton EX", "Twin Emperors"}), ("spd>=8", {"Meta Knight", "sans."}),
     ("stars<=2", {"Fire Bomb", "Panda Shield", "Burning"}),
     ("fire", {"Fire Bomb", "Burning"}), ("dedede", {"King Dedede"}), ("mk", {"Meta Knight"}),
     ("sans.", {"sans."}), ("name~knight", {"Meta Knight"}), ("types~wind", {"Kirby"}),
@@ -57,7 +59,7 @@ QUERIES = [                                              # query, the cards foun
     ("!+1 atk to every friendly minon.", {c["name"] for c in CARDS}),     # inside !, | and &: exact text (search.js)
     ("fire | +1 atk to every friendly minon.", {"Fire Bomb", "Burning"}),
     ("+1 atk to every friendly minon. & type==item", set()),
-    ("die & series==kirby", {"Meta Knight"}), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight"}),
+    ("die & series==kirby", {"Meta Knight"}), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight", "Twin Emperors"}),
     ("!die", {c["name"] for c in CARDS} - {"Meta Knight"}),
     ("series==kirby & !hp>5", {"Kirby", "King Dedede"}), ("subtype==equip", {"Panda Shield"}),
     ("atack>3", ERROR), ("total~5", ERROR), ("hp>=x", ERROR), ("type>3", ERROR),
@@ -79,7 +81,8 @@ def repo():
                                   stars=c.get("stars"), series=c.get("series"), subseries=c.get("subseries"),
                                   subtype=c.get("subtype"),
                                   types=c.get("types", []), display_name=c["name"] if "file" in c else None,
-                                  stats=cm.CardStats(c.get("hp", -1), c.get("defense", -1), c.get("atk", -1), c.get("spd", -1)))
+                                  stats=cm.CardStats(c.get("hp", -1), c.get("defense", -1), c.get("atk", -1), c.get("spd", -1)),
+                                  creatures=[cm.CardStats(*x) for x in c["creatures"]] if "creatures" in c else None)
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(cm.stats_db, "stats", stats)
         repo = qc.CardRepository()
@@ -124,15 +127,32 @@ def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
             ("alias==galaxia knight", {"Meta Knight"})]
     for query, cards in rows:
         assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
-    shaped = [{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp")} for c in CARDS]
+    assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
+
+
+def test_any_creature_meets_a_stat(repo, tmp_path):
+    """A card with several creatures meets a stat condition when any one of its creatures does (total per creature),
+    on the bot and the website; ! on the whole card."""
+    rows = [("def>=10", {"Twin Emperors"}), ("total>=25", {"Meta Knight", "Twin Emperors"}),
+            ("spd<=4", {"King Dedede", "Bloon", "Twin Emperors"}), ("!def>=10", {c["name"] for c in CARDS} - {"Twin Emperors"})]
+    for query, cards in rows:
+        assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
+    assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
+
+
+def _website(tmp_path, queries) -> list:
+    """search.js on CARDS as cards.json has them: each query's card names."""
+    stats = lambda x: dict(zip(("hp", "def", "atk", "spd"), x))
+    shaped = [{**{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp", "atk", "spd", "stars")},
+               "def": c.get("defense"), "creatures": [stats(x) for x in c.get("creatures", ())]} for c in CARDS]
     script = tmp_path / "search.mjs"
     script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
 const cards = {json.dumps(shaped)};
-process.stdout.write(JSON.stringify({json.dumps([q for q, _ in rows])}.map(q => cards.filter(S.compile(q)).map(c => c.name))));""",
+process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => cards.filter(S.compile(q)).map(c => c.name))));""",
                       encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
-    assert [set(names) for names in json.loads(done.stdout)] == [cards for _, cards in rows]
+    return [set(names) for names in json.loads(done.stdout)]
 
 
 def test_space_finds_line_break(repo, monkeypatch):

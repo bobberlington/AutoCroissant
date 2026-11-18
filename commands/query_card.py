@@ -8,6 +8,7 @@ from discord.utils import escape_markdown
 from hashlib import sha256
 from io import BytesIO
 from json import dumps, loads
+from operator import eq, ge, gt, le, lt
 from os.path import basename, dirname, splitext
 from threading import Lock
 from requests import get
@@ -39,6 +40,7 @@ DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")
 FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~|=)\s*(.*)$")   # a condition: field, operator, value
 NOT_TERM = compile(r"(?:^|[&|])\s*!")                    # a term starting with ! (search.js NOT_TERM)
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
+STAT_TERMS = ("hp", "def", "atk", "spd", "total")         # per creature on a card with several
 URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
@@ -106,6 +108,12 @@ def _pairs(text: str) -> set:
     """search.js suggest()'s letter pairs: the text lowercased, a space at each end."""
     text = f" {text.lower()} "
     return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+def _creature_stat(creature: dict, column: str) -> Optional[int]:
+    """One creature's hp/def/atk/spd or total (search.js NUM): None when it has none."""
+    got = [v for k, v in creature.items() if (k == column or column == "total") and isinstance(v, int) and v >= 0]
+    return sum(got) if got else None
 
 
 class QueryError(ValueError):
@@ -420,9 +428,15 @@ class CardRepository:
             if operator == "~" or not value.lstrip("-").isdigit():
                 raise QueryError(f"{column} takes a number: {column}>5, {column}==3.")
             if col is not None:
-                col = to_numeric(col, errors="coerce")
                 number = int(value)
-                kept = {"<": col < number, "<=": col <= number, "==": col == number, ">=": col >= number, ">": col > number}[operator]
+                meets = {"<": lt, "<=": le, "==": eq, ">=": ge, ">": gt}[operator]
+                kept = meets(to_numeric(col, errors="coerce"), number)
+                if column in STAT_TERMS and "creatures" in self.cards_dff:   # several creatures: any one (search.js)
+                    each = self.cards_dff["creatures"]
+                    many = each.map(lambda cs: isinstance(cs, list) and len(cs) > 0).astype(bool)
+                    if many.any():
+                        kept[many] = each[many].map(lambda cs: any(
+                            (v := _creature_stat(x, column)) is not None and meets(v, number) for x in cs)).astype(bool)
         elif column == "created" and DATE_PATTERN.match(f"created{operator}{value}"):
             if col is not None:                          # at the precision given: created>=2025, created==2023-10
                 before = col.index.isin(list(self._before))  # "before 2020" (no day): only < or <= it meets (search.js)
