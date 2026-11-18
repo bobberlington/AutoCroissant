@@ -71,13 +71,13 @@ from json import dumps, loads
 from os import makedirs, remove
 from os.path import exists, join
 from random import Random
-from re import findall, fullmatch, search, sub
+from re import IGNORECASE, findall, fullmatch, search, sub
 from typing import Callable, Optional
 
 from commands import discord_match as dm
 from commands.changelog import text_key
 from commands.discord_verdicts import NUMBER, TAG, read_marks
-from global_config import CARD_BRANCH, DATA_BRANCH, LOCAL_DIR_LOC
+from global_config import CARD_BRANCH, DATA_BRANCH, LOCAL_DIR_LOC, TIMEZONE
 
 # ========================
 # Configuration
@@ -148,6 +148,8 @@ BEFORE_DAY, BEFORE_SORT = "Before 2020", "0000-00-00"         # owner Q6 (11-14 
 PHOTO_SOURCE = "physical card photo"                          # its source (the photos themselves are in no timeline)
 PHOTO_CREATED = {"pep-drink": "Pep Drink", "wham-bam-bone": "Wham Bam Bone"}   # the live cards dated so: only these
 PHOTO_MORGUE = {"LC-1c11be0504": "M'uru"}                     # the Morgue candidate dated so (discord_morgue)
+MINION_LABEL = r"\s*(non[\s-]*)?protect(ive|ing)\s+minion\s*\.?\s*"   # a minion box's label alone: no ability
+                                                              # (owner 11-17: the label became the type icon)
 ERA_RANK = {"A": 1, "B": 1, "C": 1, "A-item": 1, "B-item": 1, "C-item": 1, "D1": 2, "D2": 3, "D3": 3,
             "D-item": 3}                                      # template eras in time (A, B, C overlapped 2020-22)
 REPOST_DAYS = 60                                              # D1 after D2 this long after D2's first: a repost
@@ -210,6 +212,18 @@ def day(seconds: Optional[float]) -> Optional[str]:
     return None if seconds is None else datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%d")
 
 
+def pacific_day(when) -> Optional[str]:
+    """A time's day in Pacific time (the site's and the bot's TIMEZONE; owner 11-17 ~18:10: Created days are
+    Pacific). when: epoch seconds or an ISO time; None when it has none."""
+    seconds = dm.epoch(when)
+    return None if seconds is None else datetime.fromtimestamp(seconds, TIMEZONE).strftime("%Y-%m-%d")
+
+
+def label_only(text) -> bool:
+    """An ability that is only a minion's label ('Protective minion.', 'Non-protective minion'): no ability."""
+    return isinstance(text, str) and bool(fullmatch(MINION_LABEL, text, flags=IGNORECASE))
+
+
 def sure(value, method: str, conf=None, **extra) -> dict:
     out = {"value": value, "method": method, "confidence": "sure"}
     if conf is not None:
@@ -250,8 +264,8 @@ def ability_change(a: dict, b: dict) -> str:
     read by eye or a PSD's own layers)."""
     if not (is_sure(a) and is_sure(b)):
         return "unknown"
-    x, y = a["value"] or "", b["value"] or ""
-    if x == y:
+    x, y = ("" if label_only(v["value"]) else v["value"] or "" for v in (a, b))    # a label alone: no ability
+    if x == y or not (x.strip() or y.strip()):
         return "same"
     if not y.strip():                                   # card data's or OCR's '' can be a read failure (Shadow Queen)
         return "unknown" if b["method"] == "psd (card data)" or "ocr" in b["method"] else "removed"
@@ -1102,6 +1116,22 @@ def named_on_or_after(inputs) -> int:
     return n
 
 
+def last_version(entries: list, until=None) -> Optional[dict]:
+    """The version git_first is diffed against: the last Discord or old repo picture (no Meme copy) at or before
+    until (git_first's epoch; None: the last), so its change keeps time order (Shadow Queen's first card-data version,
+    11:49, came before its 11:57 Discord picture: no picture before it, no change)."""
+    return next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo") and not e.get("meme_copy")
+                 and (until is None or (dm.epoch(e.get("date")) or float("-inf")) <= until + 1)), None)
+
+
+def before_oldest(entries: list) -> None:
+    """An undated 'before' entry (an owner's Meme copy) is shown before the oldest dated picture: its time."""
+    dated = [dm.epoch(e["date"]) for e in entries if e["kind"] in ("discord", "old repo") and e.get("date")]
+    for e in entries:
+        if e.get("undated") == "before":
+            e["before"] = dm.iso(min(dated)) if dated else None
+
+
 def created_sort(date: Optional[str]) -> str:
     return BEFORE_SORT if date == BEFORE_DAY else date or "9999"
 
@@ -1507,6 +1537,35 @@ class Chain:
             out.append(entry)
         return out
 
+    def meme_rows(self, cid: str, entries: list) -> list:
+        """The owner's Meme folder copies (owner.json meme_rows by the first repo's path, 11-17 ~18:10): 'fold' joins a
+        copy to the Discord version of the same picture (into: one of its pictures; one entry: the copy's row goes,
+        folded on that entry keeps it as evidence); 'before' makes it the card's first entry with no date of its own
+        (undated, dating nothing; before: the oldest dated picture's time, 'before <that day>' on the site)."""
+        rules = (getattr(self.inputs, "owner", None) or {}).get("meme_rows") or {}
+        key, out = self.inputs.cards[cid]["key"], []
+        for e in entries:
+            rule = rules.get(e.get("path")) if e["kind"] == "old repo" and e.get("meme_copy") else None
+            if not rule or rule.get("card") != key:
+                out.append(e)
+                continue
+            if rule.get("how") == "fold":
+                into = next((d for d in entries if d["kind"] == "discord" and rule.get("into") in
+                             [p["id"] for p in d.get("pictures") or ()]), None)
+                if into is None:
+                    self.tally["owner: a Meme copy's fold, its picture not on the timeline (kept)"] += 1
+                    out.append(e)
+                    continue
+                into.setdefault("folded", []).append({k: e.get(k) for k in ("id", "repo", "path", "date")})
+                self.tally["owner: a Meme copy folded into its Discord version"] += 1
+                continue
+            if rule.get("how") == "before":
+                e.update(date=None, day=None, undated="before")
+                self.tally["owner: a Meme copy first, undated"] += 1
+            out.append(e)
+        before_oldest(out)
+        return out
+
     def text_entries(self, cid: str) -> list:
         """Sure changelog facts before the stop (owner Q4: data only, no text); chat and push lines are evidence."""
         card, out = self.inputs.cards[cid], []
@@ -1541,7 +1600,8 @@ class Chain:
         template eras, or APART_DAYS), or by a sure changelog fact giving its value since the run before. An
         unbacked run between two others (a blip), at an end beside a backed run, or last after an unbacked run (the
         change's new value, nothing after agrees) goes to review; again until none is left."""
-        versions = [e for e in entries if e["kind"] in ("discord", "old repo") and is_sure(e["fields"].get("stars"))]
+        versions = [e for e in entries if e["kind"] in ("discord", "old repo") and is_sure(e["fields"].get("stars"))
+                    and e.get("date")]                         # an undated Meme copy (owner 11-17): no run of its own
         facts = [e for e in entries if e["kind"] == "text" and e["change"].get("field") == "stars" and
                  "to" in e["change"]]
         out = set()
@@ -1832,7 +1892,8 @@ class Chain:
 
     def card(self, cid: str, rows: list, split: list) -> dict:
         card = self.inputs.cards[cid]
-        entries = self.discord_entries(cid, rows, split) + self.text_entries(cid) + self.old_entries(cid)
+        entries = self.meme_rows(cid, self.discord_entries(cid, rows, split) + self.text_entries(cid) +
+                                 self.old_entries(cid))
         entries.sort(key=lambda e: (e["date"] is not None, dm.epoch(e["date"]) or 0,
                                     {"discord": 1, "text": 2, "old repo": 3}[e["kind"]], e["id"]))
         weak = {r["id"]: r["no_created"] for r in rows if r.get("no_created")}
@@ -1862,8 +1923,7 @@ class Chain:
         data = self.inputs.first_data.get(card["key"])
         if stop and stop["source"] == "git" and data:      # the card repo's first version, for the last diff
             fields = data_fields(data)
-            last = next((e for e in reversed(entries) if e["kind"] in ("discord", "old repo")
-                         and not e.get("meme_copy")), None)
+            last = last_version(entries, data.get("timestamp"))
             changes = first_changes(last, fields, card.get("type"), self.inputs.versions.get(cid, []), stop,
                                     data.get("timestamp"))
             if changes.pop("same_title", None):
@@ -1888,7 +1948,7 @@ class Chain:
                 for pic in (p for p in e["pictures"] if p["id"] not in weak and p.get("date")):
                     found.append((dm.epoch(pic["date"]), "discord", {"picture": pic["id"], "channel": pic["channel"],
                                                                      "as": e.get("as")}))
-            elif e["kind"] == "old repo":           # a first-repo PSD: 'first repo' (psd), else 'old repo (PSD)'
+            elif e["kind"] == "old repo" and e.get("date"):    # a first-repo PSD 'first repo', else 'old repo (PSD)'
                 psd = e.get("psd_only") and e.get("badge") != "first repo"
                 found.append((dm.epoch(e["date"]), "old repo (PSD)" if psd else e.get("badge") or "old repo",
                               {"commit": e["commit"], "as": e.get("as"), "psd": True if e.get("psd_only") else None}))
@@ -1919,7 +1979,7 @@ class Chain:
             psd = "first repo" if card.get("fs_from") == "first git" else "old repo (PSD)"   # the first repo's: as psd_first
             found.append((card["fs"], psd if card.get("fs_psd") else FS_SOURCE.get(card.get("fs_from"), "git"), {}))
         when, source, detail = min(found, key=lambda f: (f[0], f[1]))
-        dated = {"date": dm.iso(when), "day": day(when), "source": source,
+        dated = {"date": dm.iso(when), "day": day(when), "pacific": pacific_day(when), "source": source,
                  **{k: v for k, v in detail.items() if v is not None}}
         photo = cid in PHOTO_CREATED              # the owner's ruling: no picture or entry of the photo is used
         ours = {"date": None, "day": BEFORE_DAY, "source": PHOTO_SOURCE, "owner": "Q6"} if photo else dated
@@ -1932,7 +1992,7 @@ class Chain:
             out.update(status="hand", date=file["date"], proposed=False)
         elif not file or not file.get("date"):
             out.update(status="new", date=ours["day"], proposed=True)
-        elif ours["day"] == file["date"]:
+        elif file["date"] in (ours["day"], ours.get("pacific")):     # the file's UTC day, or its Pacific day
             out.update(status="same", date=file["date"], proposed=False)
         elif key < file["date"]:
             out.update(status="earlier", date=ours["day"], proposed=True)
@@ -1972,7 +2032,7 @@ class Chain:
         if facts:
             fact = min(facts, key=lambda f: dm.epoch(f["date"]))
             if day(dm.epoch(fact["date"])) < before:
-                out["changelog_earlier"] = {"day": day(dm.epoch(fact["date"])), "fact": fact["id"],
+                out["changelog_earlier"] = {"day": day(dm.epoch(fact["date"])), "at": fact["date"], "fact": fact["id"],
                                             "channel": fact.get("channel"),
                                             "review": self.add_review("changelog earlier", cid, card=cid,
                                                                       fact=fact["id"], date=fact["date"],
@@ -1982,13 +2042,36 @@ class Chain:
         if pushes:
             push = min(pushes, key=lambda r: dm.epoch(r["date"]))
             if day(dm.epoch(push["date"])) < before:
-                out["first_repo_earlier"] = {"day": day(dm.epoch(push["date"])), "row": "Q-" + push["id"],
+                out["first_repo_earlier"] = {"day": day(dm.epoch(push["date"])), "at": push["date"],
+                                             "row": "Q-" + push["id"],
                                              "review": self.add_review("first repo earlier", cid, card=cid,
                                                                        row="Q-" + push["id"], date=push["date"],
                                                                        why="a first-repo push notice names it "
                                                                            "before its Created date")}
         self.owner_created(cid, out, pick, base)
+        self.pacific(out)
         return out
+
+    def pacific(self, out: dict) -> None:
+        """Created as a Pacific day (owner 11-17 ~18:10: the site's and the bot's clock). The day decided above (UTC:
+        the one answers confirm, kept in utc) becomes its source's Pacific day when that source has a time (a picture, a
+        commit, a changelog line, a push notice, a Morgue picture); the file's day, a typed or held one and 'Before
+        2020' stay. status 'pacific': the file's day was the source's UTC day, one day after its Pacific one (proposed;
+        once the file has it: 'same')."""
+        ours = out["ours"]
+        if out["status"] == "owner":
+            source = out["owner"]["source"]
+            when = ours.get("date") if source.get("from") == "ours" else source.get("at")
+        else:
+            when = ours.get("date") if out["status"] in ("same", "earlier", "new") else None
+        local = pacific_day(when) if when else None
+        if not local or day(dm.epoch(when)) != out["date"] or local == out["date"]:
+            return
+        file = (out.get("file") or {}).get("date")
+        out.update(utc=out["date"], date=local, sort=created_sort(local), proposed=local != file)
+        if out["status"] == "same":
+            out["status"] = "pacific"
+        self.tally["CREATED: a Pacific day (one day before the UTC day)"] += 1
 
     def owner_pick(self, out: dict) -> tuple:
         """(the owner's answer on the card's Created item, (the date it gives, its source)): ours or the file's while
@@ -2041,7 +2124,7 @@ class Chain:
                 self.used.add(hint["review"])
             if answer.get("choice") == "yes":
                 picks.append((hint["day"], {"day": hint["day"], "source": source, "from": what,
-                                            **{x: hint[x] for x in ("fact", "row", "channel") if hint.get(x)}}))
+                                            **{x: hint[x] for x in ("at", "fact", "row", "channel") if hint.get(x)}}))
         for hid, h in sorted(self.rulings.items()):
             item = h.get("item") or {}
             if h.get("kind") != "morgue hint" or item.get("card") != cid or item.get("meme"):
@@ -2057,6 +2140,7 @@ class Chain:
             if h.get("choice") == "yes":
                 picks.append((when, {"day": when, "source": "discord",
                                      "from": "morgue picture", "entry": item.get("entry"),
+                                     **({"at": item["date"]} if item.get("date") else {}),
                                      **{x: item[x] for x in ("picture", "channel") if item.get(x)}}))
         date, source = min(picks, key=lambda p: created_sort(p[0]))
         if r or date != out["date"]:

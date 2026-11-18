@@ -144,7 +144,7 @@ class Inputs:
         made = self.created.get((self.cards.get(cid) or {}).get("key")) or {}
         if not made or made.get("status") == "hand":
             return None
-        base = (made.get("owner") or {}).get("base")
+        base = (made.get("owner") or {}).get("base") or made.get("utc")     # utc: the day before its Pacific form
         return created_sort(base) if base else made.get("sort") or made.get("date")
 
     def cid(self, card: Optional[str]) -> Optional[str]:
@@ -544,6 +544,7 @@ def created_note(inputs: Inputs, cid: Optional[str], pid: Optional[str], date) -
     """Whether a dates-only picture sets its card's Created (it still dates the card, owner 11-16 23:15); why not."""
     made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
     used, ours = made.get("date"), made.get("ours") or {}
+    decided = made.get("utc") or used                 # the day decided (UTC) before its Pacific form (used)
     if not used:
         return ""
     whose = inputs.name(cid) + ("'" if inputs.name(cid).endswith("s") else "'s")     # its possessive
@@ -559,18 +560,20 @@ def created_note(inputs: Inputs, cid: Optional[str], pid: Optional[str], date) -
             "kind") == hint[0] and inputs.rulings[x].get("choice") == "yes"), None)
         kept = f"{who(inputs.rulings.get(hid) or {})} yes on {hint[1]} ({hid + ', ' if hid else ''}{by.get('day')})"
     if ours.get("picture") == pid:
-        if ours.get("day") == used:
+        if ours.get("day") == decided:
             how = {"same": "the website has that day too", "new": "proposed",
+                   "pacific": f"its Pacific day; the website's {(made.get('file') or {}).get('date')} is its UTC day: "
+                              "proposed",
                    "earlier": f"earlier than the website's {(made.get('file') or {}).get('date')}: proposed"}
             how = how.get(made.get("status"), "as answered")
             return f"Created: this picture sets {whose} Created, {used} ({how})."
         return f"Created: NOT set by this picture: it gives {ours.get('day')}, but {kept} " \
             f"{'sets it to' if hint else 'keeps'} {used}."
     mine = dc.day(dm.epoch(date)) if date else None
-    if mine and mine < created_sort(used):
+    if mine and mine < created_sort(decided):
         return f"Created: NOT set by this picture, though it is earlier ({mine}) than {whose} Created, {used}."
     src = f"{SOURCE_WORDS.get(ours.get('source'), ours.get('source'))} ({ours.get('day')})" \
-        if ours.get("day") == used else kept
+        if ours.get("day") == decided else kept
     return f"Created: not set by this picture: {whose} Created, {used}, comes from {src}."
 
 
@@ -825,7 +828,8 @@ def settled(inputs: Inputs, r: dict) -> Optional[str]:
         return ("the line is kept" if kept else "the line is left out") if kept == (c == "fact") else None
     if str(kind).startswith("created") and c in ("file", "ours", "date"):
         made = inputs.created.get((inputs.cards.get(cid) or {}).get("key")) or {}
-        return "the Created date in use is that day" if made.get("date") and made["date"] == r.get("value") else None
+        return "the Created date in use is that day" if made.get("date") and r.get("value") in (
+            made["date"], made.get("utc")) else None
     if kind in ("changelog earlier", "first repo earlier", "morgue hint") and c in ("yes", "no"):
         day, before = it.get("day") or str(it.get("date") or "")[:10], inputs.created_before(cid)
         return f"the Created date in use ({before}) is not later than this hint's {day}: no longer asked" \

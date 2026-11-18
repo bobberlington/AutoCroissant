@@ -419,7 +419,7 @@ def test_the_owner_s_answers():
     assert (made["status"], made["date"], made["owner"]["was"], made["owner"]["base"]) == (
         "owner", dc.day(T + 4 * DAY), "earlier", dc.day(T + 9 * DAY)) and made["proposed"]
     assert made["owner"]["source"] == {"day": dc.day(T + 4 * DAY), "source": "changelog", "from": "changelog line",
-                                       "fact": "f9", "channel": "update-01"}
+                                       "at": "2020-09-17T12:26:40+00:00", "fact": "f9", "channel": "update-01"}
     assert {rid("created earlier", "bolt"), rid("changelog earlier", "bolt"),
             rid("field", "bolt|D-P-000000000001|name")} <= chain.used and "oldrows-m1" not in chain.used
     # a 'later' card: a line after the website's date is no hint; answered 'ours', a line before ours is one
@@ -867,3 +867,60 @@ def test_a_settled_look_folds_only_near_the_picture_before(tmp_path):
     git = {"git": {"row": "c1:Creatures/Bolt.png"}}                                  # one git look: no picture read
     assert dc.fold(None, entry(7, "x.png", git), entry(8, "y.png", git)) == (True, 0.0)
     assert dc.fold(None, entry(7, "x.png"), entry(8, "y.png")) == (False, None)
+
+
+def test_created_is_a_pacific_day_and_a_minion_label_is_no_ability():
+    """Owner 11-17 ~18:10: Created is its source's Pacific day: an evening-Pacific post (05:56 UTC, Tyler's) gives the
+    day before its UTC day ('pacific', proposed; the UTC day decided kept), 'same' once the file has it; a hand entry,
+    the file's own day (later) and a pick with no time stay. Owner 11-17 (2): a minion box's label alone is no ability."""
+    evening = 1556862973.0                                         # 2019-05-03T05:56:13Z = 2019-05-02 22:56 PDT
+    assert (dc.day(evening), dc.pacific_day(evening), dc.pacific_day(iso(evening))) == ("2019-05-03", "2019-05-02",
+                                                                                          "2019-05-02")
+    assert dc.pacific_day(T) == dc.day(T)                            # 12:26 UTC: the same day
+    seen = picture(1, evening)
+    for file, status, date in ((None, "new", "2019-05-02"), ("2019-05-03", "pacific", "2019-05-02"),
+                               ("2019-05-02", "same", "2019-05-02"), ("2019-04-01", "later", "2019-04-01")):
+        chain = dc.Chain(inputs([seen], created={"Bolt": {"date": file, "from": "discord"}} if file else {}))
+        found, _ = chain.discord_rows()
+        made = chain.created("bolt", chain.card("bolt", found["bolt"], []), [seen])
+        assert (made["status"], made["date"], made["sort"], made["proposed"]) == (status, date, date,
+                                                                                  status in ("new", "pacific")), file
+        assert made.get("utc") == ("2019-05-03" if status in ("new", "pacific") else None)
+    chain = dc.Chain(inputs([seen], created={"Bolt": {"date": "2019-05-03", "from": "hand"}}))
+    found, _ = chain.discord_rows()
+    assert chain.created("bolt", chain.card("bolt", found["bolt"], []), [seen])["date"] == "2019-05-03"   # hand
+    label = lambda v: dc.sure(v, "psd")
+    assert dc.compare({"ability": label("Non-Protective Minion")}, {"ability": label("")})["ability_change"] == "same"
+    assert dc.compare({"ability": label("Protective minion.")}, {"ability": label("Bite 2.")})["ability_change"] == \
+        "changed" and dc.label_only("Non protecting minion") and not dc.label_only("Protective minion. Summoned by X.")
+    assert dc.compare({"ability": label("Protective minion. Summoned by Galacta Knight.")},
+                      {"ability": label("")})["ability_change"] == "removed"     # real text beside the label
+
+
+def test_meme_copies_fold_or_come_first_undated_and_git_first_keeps_time_order():
+    """Owner 11-17 ~18:10 (owner.json meme_rows): a Meme copy folds into the Discord version of the same picture (one
+    entry, kept as evidence) or is the first entry with no date of its own, before the oldest dated picture, dating
+    nothing. git_first is diffed against the last picture at or before its own date (Shadow Queen)."""
+    meme = lambda when, path: dict(old_row("Bolt", when, "m" * 40, 9), id=f"mmmm:{path}", path=path, meme_copy=True,
+                                   repo="first")
+    first, second = picture(1, T + 5 * DAY), picture(2, T + 40 * DAY, whole=FAR)
+    got = inputs([first, second], old_rows=[meme(T + 60 * DAY, "Cards/Meme/Bolt.png"),
+                                            meme(T + 61 * DAY, "Cards/Meme/Bolt2.png")],
+                 created={"Bolt": {"date": dc.day(T + 5 * DAY), "from": "discord"}})
+    got.owner = {"meme_rows": {"Cards/Meme/Bolt.png": {"card": "Bolt", "how": "fold", "into": second["id"]},
+                               "Cards/Meme/Bolt2.png": {"card": "Bolt", "how": "before"},
+                               "Cards/Meme/Pike.png": {"card": "Pike", "how": "before"}}}
+    chain = dc.Chain(got)
+    found, _ = chain.discord_rows()
+    t = chain.card("bolt", found["bolt"], [])
+    assert [e["id"] for e in t["entries"]] == ["O-mmmm:Cards/Meme/Bolt2.png", "D-" + first["id"], "D-" + second["id"]]
+    undated, _, folded = t["entries"]
+    assert (undated["date"], undated["day"], undated["before"]) == (None, None, iso(T + 5 * DAY)) and undated["changes"] == {}
+    assert folded["folded"] == [{"id": "O-mmmm:Cards/Meme/Bolt.png", "repo": "first", "path": "Cards/Meme/Bolt.png",
+                                 "date": iso(T + 60 * DAY)}]
+    made = chain.created("bolt", t, [first, second])                  # the undated copy dates nothing
+    assert (made["status"], made["ours"]["picture"]) == ("same", first["id"])
+    late = {"kind": "discord", "date": iso(T + 10 * DAY), "fields": {}}
+    early = {"kind": "old repo", "date": iso(T + 2 * DAY), "fields": {}}
+    assert dc.last_version([early, late], T + 5 * DAY) is early and dc.last_version([late], T + 5 * DAY) is None
+    assert dc.last_version([early, late]) is late

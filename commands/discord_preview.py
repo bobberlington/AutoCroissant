@@ -38,7 +38,7 @@ from hashlib import sha1
 from io import BytesIO
 from json import loads
 from os import environ, listdir, makedirs, remove, replace, rmdir, walk
-from os.path import basename, exists, expanduser, getsize, isdir, join, splitext
+from os.path import basename, dirname, exists, expanduser, getsize, isdir, join, splitext
 from re import sub
 from subprocess import PIPE, Popen
 from typing import Optional
@@ -67,7 +67,7 @@ TEXT_READS = ("derived", "readers", "text", "reads.jsonl")   # the title reads' 
 OLD_MAP = ("derived", "oldgit", "map.json")                  # old cards -> today's (an MDW card's first old record)
 OLD_ROWS = ("derived", "oldrows")             # archived.jsonl (MDW Morgue cards' rows), review.jsonl (lost, morgue)
 OLD_VERSIONS = ("derived", "oldgit", "versions.jsonl")       # a first-repo file's versions (Morgue picture rows)
-AUTHORS = join(expanduser("~"), "Documents/Tools/wt/scratch/s1110/timelines/authors.json")   # old commits' authors
+AUTHORS = join(dirname(__file__), "timeline_authors.json")    # old commits' authors (owner 11-12, 11-15)
 MDW_FOLDER = "MDW/The Morgue/"
 BEFORE_GIT = ("discord", "text")                             # dated entries that must come before the card's first git record
 MORGUE_FOLDER = "_morgue"                  # card ids never start with _ (build_site's history.json _shas)
@@ -148,6 +148,8 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
                    minor=bool(e.get("minor")))
         if e.get("meme_copy"):
             out["meme_copy"] = True         # the owner's Meme folder copy: a row, no point of its own
+        if e.get("undated") == "before":
+            out["before"] = e.get("before")     # the owner's undated Meme copy: before this time (no date of its own)
         if kind == "discord":
             out["posts"] = len(e.get("pictures") or ())
             if (e.get("look") or {}).get("git"):
@@ -208,6 +210,11 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
                     ch.pop(key, None)
                 if field == "ability" and ch.get("ability_change") in ("changed", "same", "formatting", "removed"):
                     ch["ability_change"] = "unknown"
+    pics = [{**e, "kind": e["kind"], "undated": "before" if "before" in e else None} for e in pictures]
+    dc.before_oldest(pics)                  # what is published: an eye's drop can take the oldest dated picture
+    for e, p in zip(pictures, pics):
+        if "before" in e:
+            e["before"] = p["before"]
     stop = t.get("stop") or {}
     out = {"card": t["card"], "key": t["key"], "name": t["name"], "kind": t.get("kind"),
            "stop": {"day": stop.get("day"), "source": stop.get("source")} if stop else None, "entries": entries}
@@ -255,27 +262,31 @@ def leave_out(t: dict, ids, versions: list = (), root: Optional[str] = None) -> 
             redo = False
         before = e
     if redo and t.get("git_first"):
-        t["git_first"]["changes"] = git_first_changes(t, before, versions)
+        t["git_first"]["changes"] = git_first_changes(t, dc.last_version(kept, dm.epoch(t["git_first"].get("date"))),
+                                                      versions)
     t["entries"] = kept
     return gone
 
 
 def created_proposals(created: dict) -> dict:
-    """{card key: {date, sort, source, status, was}}: the chain's earlier or new Created dates, and the review page's
-    picks (status 'owner': its source, 'owner' for a typed date) when earlier than the website's (never later; hand
-    entries are the chain's 'hand' status, never proposed)."""
+    """{card key: {date, sort, source, status, was}}: the chain's Created dates the website can take: earlier or new
+    ones, the Pacific days of its UTC ones (status 'pacific', owner 11-17), the review page's picks (status 'owner': its
+    source, 'owner' for a typed date), never later than the website's (hand entries are the chain's 'hand' status, never
+    here); same: the website's own day, its source saying where it came from (the site's Created tooltip)."""
     out = {}
     for key, c in sorted((created.get("cards") or {}).items()):
-        if not c.get("proposed") or c.get("status") not in ("earlier", "new", "owner"):
+        if c.get("status") not in ("earlier", "new", "owner", "pacific", "same") or not c.get("date"):
             continue
         was = (c.get("file") or {}).get("date")
         ours = (c.get("owner") or {}).get("source") or {} if c["status"] == "owner" else c.get("ours") or {}
-        if c["status"] == "owner" and (ours.get("source") == "website" or was and (c.get("sort") or c["date"]) >= was):
+        sort = c.get("sort") or c["date"]
+        if ours.get("source") == "website" or was and sort > was or not c.get("proposed") and c["date"] != was:
             continue                               # the website's date kept, or a pick later than it
         source = ours.get("source")
-        out[key] = {"date": c["date"], "sort": c.get("sort") or c["date"],
-                    "source": "old repo" if source == "old repo (PSD)" else source,
-                    "status": c["status"], "was": (c.get("file") or {}).get("date")}
+        out[key] = {"date": c["date"], "sort": sort, "source": "old repo" if source == "old repo (PSD)" else source,
+                    "status": c["status"], "was": was}
+        if c["date"] == was:
+            out[key]["same"] = True                # no proposal: where the website's day came from
         if source == "old repo (PSD)" or ours.get("psd"):
             out[key]["psd"] = True                 # a PSD (old or first repo), added before any PNG of the card
         if ours.get("as"):
@@ -513,14 +524,16 @@ def stop_at_git(t: dict, pngs: list, psds: list, data: Optional[dict], versions:
                      "path": first[2]}
         out = {"stop": t["stop"]["day"], "was": stop.get("day"), "dropped": dropped}
         if t.get("git_first") and dropped:
-            last = next((e for e in reversed(t["entries"]) if e["kind"] in ("discord", "old repo")
-                         and not e.get("meme_copy")), None)
+            last = dc.last_version(t["entries"], dm.epoch(t["git_first"].get("date")))
             t["git_first"]["changes"] = git_first_changes(t, last, versions)
     gf = t.get("git_first")
     if gf and (t.get("stop") or {}).get("source") == "git" and data:
         at = min((r[0] for r in psds if r[3] == data.get("blob_sha")), default=None)
         if at:
+            was = dc.last_version(t["entries"], dm.epoch(gf.get("date")))
             gf["date"] = dm.iso(at)
+            if gf.get("changes") is not None and dc.last_version(t["entries"], at) is not was:   # time order
+                gf["changes"] = git_first_changes(t, dc.last_version(t["entries"], at), versions)
         gf["approx"] = not at or at > psds[-1][0] + 1
         out = {**(out or {}), "approx": gf["approx"]}
     return out
@@ -809,7 +822,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
     dm.write_json(join(out_dir, "index.json"), index)
     total = sum(getsize(join(d, f)) for d, _, fs in walk(out_dir) for f in fs)
     log(f"build: {len(index['cards'])} cards, entries {dict(counts)}; Morgue {len(index['morgue'])} candidates, "
-        f"{len(index['mdw'])} MDW cards; Created proposals {len(index['created'])}; pictures {len(sizes)} "
+        f"{len(index['mdw'])} MDW cards; Created proposals {sum(not c.get('same') for c in index['created'].values())} "
+        f"(+{sum(bool(c.get('same')) for c in index['created'].values())} the website's own day); pictures {len(sizes)} "
         f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); {total / 1e6:.1f} MB")
     for path, err in failed[:20]:
         log(f"build: failed {path[len(out_dir) + 1:]}: {err}")

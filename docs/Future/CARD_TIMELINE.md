@@ -1,7 +1,8 @@
 # Card timelines from Discord
 
 **Status:** stage 3 done, S10 publish (2026-11-17: the owner's last answers applied, the tools read only the first
-repo's store, the eras readers in `scripts/era_readers.py`): mined, old repo indexed, matcher run over every
+repo's store, the eras readers in `scripts/era_readers.py`), S10B (11-17 evening: Pacific Created, the Meme rows, the
+minion label rule, history pictures from the branch, compare two versions; authors in `commands/timeline_authors.json`): mined, old repo indexed, matcher run over every
 post, fields read, chains and Created built, review page built; a local preview built (`discord_preview`, the
 website's `HISTORY_DIR`).
 
@@ -52,7 +53,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    `scripts/oldgit_index.py` indexes its main history before the old repo's as one history (its rows: repo 'first';
    'Initial No PSD's' of 2023-04-02 has the tree before it as its parent; the side branch the_restoration_project,
    2020 port looks re-committed in 2022, is left out), its creatures under `Cards/`; a first-repo card joins the old
-   card its last file name became (the folder decides between two of one name); authors by authors.json, else by a
+   card its last file name became (the folder decides between two of one name); authors by commands/timeline_authors.json, else by a
    shared commit e-mail. Its card PSDs are fetched too (11-15, one batched read-only fetch: 1,133 blobs): its rows
    read their fields from the PSD of the same commit (else the nearest) checked against the PNG, as the old repo's
    do, a disagreement to review (stars a PSD of another look draws stay in review even when the folder agrees: the
@@ -101,6 +102,12 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    card's own file of the same commit keeps its run; published marked, so the site's balance trend makes no point of
    it), and before the card folders it counts as a draft does
    (`oldgit_rows.side_file`: Tyler's 2019 Mao card, filed 2022-08-24 in Cards/Meme, before his own 2023-10-30 file).
+   The owner's Meme rows (11-17 ~18:10, `owner.json` `meme_rows` by the first repo's path, `Chain.meme_rows`): Tyler's
+   copy and Double Pain's (Items/Meme/3 Stars, the 2020-07-28 update-01-port picture) fold into the Discord version of
+   the same picture (one entry; `folded` keeps the copy as evidence); Mini Bee's Mini Bees and SOMETHING's Mr. Grabby
+   are each card's first entry with no date of their own (`undated: before`, `before`: the oldest dated picture's time,
+   shown "before <that day>", dating nothing); The Puppet's copy is no longer The Puppet's (its map key null): it stays
+   the Morgue joke card The Puppet (Dancing Doll)'s (its eye `first_files`). Alex YIIK's auto-mapped Meme file stays.
    Its card files of no live card (and its `MDW/` files) are evidence that a Morgue candidate of that name was played
    (`lost.json` `first_repo`, never a candidate of their own; second-picture files like `Grapes2` join their card, never
    one in a Meme folder: a joke on it; a Meme folder's file joins a file of its name only in its own top folder: Alex
@@ -327,7 +334,20 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    row, `psd_only`, and its stop: Tainted Lazarus 2023-09-10; pictures the owner kept weak, `no_created`, enter but
    date nothing; a picture that is no card on its own dates it too) against `site/Card Creation Dates.json`: same,
    earlier (proposed), later (review only, never moved later), new, hand (untouched); named-only pictures, changelog
-   lines and first-repo push notices before it are review only. `discord_chain checks` draws random cards' whole timelines for the by-eye
+   lines and first-repo push notices before it are review only. **Pacific days** (owner 11-17 ~18:10, the site's and
+   the bot's clock): the day is decided in UTC (what the answers confirm, kept as `utc`), then a source with a time (a
+   picture, a commit, a changelog line, a push notice, a Morgue picture) gives its Pacific day (`Chain.pacific`): the
+   file's UTC day of that source becomes status `pacific` (proposed, one day earlier; ~320 cards), and once the file
+   has the Pacific day it is `same` again; the file's own day, a typed or held one and "Before 2020" stay, hand is never
+   touched. The preview's `created` lists them, and the cards whose day the file already has (`same`: their source
+   names where it came from, the site's Created tooltip: Pizza's old repo). The land writes the Pacific days into the
+   file ("before": 2020 beside Pep Drink's and Wham Bam Bone's first dated appearance; the bot says "Created before
+   2020"). **A minion's label alone** ('Protective minion.', 'Non-protective minion', owner 11-17 (2): the label became
+   the type icon) is no ability (`label_only`, here and in `oldgit_rows.ability_change`): a box that held only it
+   before a blank one is no ability change; real text beside the label (Chomp, Mini Drill, Galacta Warrior) is still
+   'removed'. **git_first** is diffed against the last picture at or before its own date (`last_version`): Shadow
+   Queen's first card-data version (11:49) came before its 11:57 Discord picture, so no change is back-dated against
+   a later picture; the site's trend sorts its points by time. `discord_chain checks` draws random cards' whole timelines for the by-eye
    check. **Only a card on its own is shown** (owner 11-16 23:10/23:15): a picture the eye finds is no card on its own
    (a cut-off piece, a screenshot of several cards, of a browser or Photoshop window: `derived/match/eye.json`
    `dates_only`, picture id -> why) enters no timeline and asks nothing, but still counts for dates (Created); a
@@ -416,7 +436,8 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    links/mentions/snowflakes in the JSON and the file names, the left-out channels' pictures, webps at most 720 px with
    no metadata, sizes: at most 700 MB, as Pages' 1 GB is the whole site's) and prints
    what it would push; `--push` sends `refs/heads/history` only, never forced. TTSCardMaker's site.yml clones that
-   branch alone, depth 1, as `HISTORY_DIR` (no branch or a failed clone: the site builds without it).
+   branch alone, depth 1, blobless and sparse (its JSON only; the whole branch if that fails) as `HISTORY_DIR` (no
+   branch or a failed clone: the site builds without it); its pictures are not in the Pages artifact (owner 11-17 (3)).
 7. **Website** (TTSCardMaker `site/build/build_site.py` `HISTORY_DIR`; unset, the site builds as before): Image versions
    lists the versions before the repo after its own (old repo: date, mapped author, commit subject, badge "old repo",
    the first repo's "first repo"; Discord: date and channel), each compared with the current card
@@ -427,7 +448,14 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    first posts as Pacific days; a played one with a file in an older repo, `git_file`, "lost before this repo", not
    "before git"), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
-   photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page).
+   photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page; one on the file's own day gives its
+   source to the tooltip). The pictures load from raw.githubusercontent.com at the history checkout's commit
+   (`versions.json` `hb`, `history_host`: as the plates' older copies, D19; `HISTORY_URL` a local preview's server; a
+   folder that is no checkout: copied into dist as before); one that fails to load says "Picture missing". Any version
+   can be pinned as the compare base (owner 11-17 (5): right-click, long-press or its pin button): the versions picked
+   are then compared with it, side by side (the older left) with their changes (stars, stats, types, name, the
+   ability's words), from what each has (a row's sure fields; this repo's versions: the card data, the text then, its
+   recorded changes rolled back); a field one side lacks is said so. Dates are Pacific days throughout.
 
 ## Verification
 

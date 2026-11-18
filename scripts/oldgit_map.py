@@ -22,7 +22,7 @@ from os.path import basename, dirname, join, splitext
 from oldgit_index import (FG, OG, OUT, STORE, TC_INIT, TENV, TG, alnum, ext_of, folder_stem, git, is_mdw, log,
                           ls_tree, read_jsonl, stem_key, today_cards, write_json)
 
-REPORT = os.path.expanduser("~/Documents/Tools/wt/scratch/s1110/timelines/oldgit.txt")
+REPORT = join(OUT, "report.txt")   # the map's report, beside its outputs
 CARD_EXTS = ("*.png", "*.PNG", "*.psd", "*.PSD")
 ABILITY_KINDS = ("creature", "minion", "item", "aux item", "field")
 MORGUE = "MDW/The Morgue/"   # retired cards (build_site MORGUE): status morgue, key = file name

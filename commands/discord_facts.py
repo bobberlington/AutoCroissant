@@ -45,7 +45,7 @@ from itertools import chain
 from datetime import datetime, timezone
 from hashlib import sha1
 from json import dumps, loads
-from os.path import basename, exists, expanduser, join, splitext
+from os.path import basename, dirname, exists, expanduser, join, splitext
 from random import Random
 from re import IGNORECASE, compile as re_compile, escape, finditer, fullmatch, match, sub
 from typing import Callable, Iterable, Optional
@@ -68,7 +68,7 @@ SKIP_BRANCHES = {"meme"}                           # the first repo's meme branc
 CHAT_RELEVANCE = 0.1                               # other channels: the catalogue's card relevance at least this
 CHAT_SKIP_KINDS = {"meme/joke", "bot", "update"}   # morgue channels never date a live card (owner Q1)
 CHAT_LINES = 12                                    # longer chat messages are game reports and idea lists
-AUTHORS = "~/Documents/Tools/wt/scratch/s1110/timelines/authors.json"
+AUTHORS = join(dirname(__file__), "timeline_authors.json")   # old commits' authors (owner 11-12, 11-15)
 MORE_AUTHORS = {"Croissant2": "Croissant"}         # owner 10-30: the GitHub account Croissant2 is Croissant
 DICT = "/usr/share/dict/words"
 STAT = {"hp": "hp", "health": "hp", "def": "def", "defense": "def", "defence": "def", "atk": "atk",

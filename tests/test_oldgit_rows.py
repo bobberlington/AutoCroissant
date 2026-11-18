@@ -237,6 +237,8 @@ def test_a_look_folds_only_when_every_field_is_sure_and_the_same(rows):
     assert rows.ability_change(*pair(base, reworded)) == "unknown"
     assert rows.ability_change(*pair(base, reworded, ("a", "a"))) == "same"
     assert rows.ability_change(*pair(base, {**base, "ability": sure("")})) == "removed"      # a blank box (owner 11-17)
+    label = {**base, "ability": sure("Non Protecting Minion")}               # a minion's label alone: no ability
+    assert rows.ability_change(*pair(label, {**base, "ability": sure("")})) == "same"
     assert not rows.settled(base, {**base, "ability": sure(None)})
     assert not rows.settled(base, {"name": sure("Kit")})
     two = lambda top: {"value": None, "confidence": "review", "creatures": {

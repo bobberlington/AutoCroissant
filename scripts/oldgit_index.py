@@ -46,7 +46,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from io import BytesIO
-from os.path import basename, dirname, exists, expanduser, join, splitext
+from os.path import abspath, basename, dirname, exists, expanduser, join, splitext
 
 HOME = expanduser("~")
 HERE = dirname(os.path.abspath(__file__))
@@ -65,7 +65,7 @@ UPLOADS = frozenset((                               # '1'..'8': a43fa582's tree 
     "fbbf72d77f6d13ff93d09c6da2313fe9d0ca07bf", "e63c5231ac66cf97b563274030e168a123bae43d"))
 TC = join(HOME, "Desktop/TTSCardMaker")
 OUT = join(expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discord-archive"), "derived", "oldgit")
-AUTHORS = join(HOME, "Documents/Tools/wt/scratch/s1110/timelines/authors.json")
+AUTHORS = join(dirname(dirname(abspath(__file__))), "commands", "timeline_authors.json")   # owner 11-12, 11-15
 TC_INIT = "36d62e5336de5134f1471bb18bcca3c74cae0ef3"    # the current repo's last 'init' (2023-11-05 23:15:22 -08:00)
 CUT = "2023-11-06T07:15:30Z"
 CARD_DIRS = ("Creatures", "Auxillary", "Auxiliary", "Items", "Field", "N.M.E", "Cards")   # Cards: the first repo's
