@@ -96,3 +96,11 @@ process.stdout.write(JSON.stringify({{ two: html(null), swipe: html("swipe"), on
     assert "touch-action: pan-y" in css and "getImageData" not in compare.read_text(encoding="utf-8")
     assert app.count("compareView(cmpMode ?? pref(MODE_KEY)") == 2 and app.count("nowPair(") == 2 and "ver-pair" not in app
     assert "box.dataset.mode = cmpMode = mode" in app and "localStorage.setItem(MODE_KEY, mode)" in app
+
+
+def test_compare_texts_load_with_the_versions_list():
+    """history.json (the compare's "Text then" and changes list) starts once a card's Image versions list is drawn, not on
+    the first pick."""
+    app = (ASSETS / "app.js").read_text(encoding="utf-8")
+    fill = app[app.index("const fillVersions = () => {"):app.index("const heavyPaths = ")]
+    assert fill.index("versionsHtml(c, versionsOpen(c.id))") < fill.index("if (c.hv && !c.history) loadHistory().catch(() => {});")

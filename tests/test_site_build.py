@@ -137,7 +137,14 @@ def _build(bs, monkeypatch, repo, out, data_dir=None):
     monkeypatch.setattr(sys, "argv", ["build_site.py"])
     bs.main()
     data = out / "dist" / "data"
-    return {p.name: json.loads(p.read_text(encoding="utf-8")) for p in data.glob("*.json")}
+    got = {p.name: json.loads(p.read_text(encoding="utf-8")) for p in data.glob("*.json")}
+    got["versions/"] = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in (data / "versions").glob("*.json")}
+    return got
+
+
+def _versions(out, cid: str) -> dict:
+    """A card's data/versions/<id>.json (app.js loadVersions): {repo, visible, hb?, commits, cards, minor?, early?}."""
+    return out["versions/"][cid]
 
 
 def _by_name(data: dict) -> dict:
@@ -564,7 +571,7 @@ def _timelines(root):
 
 def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     """The card timelines before the card repo (HISTORY_DIR, AutoCroissant discord_preview's layout): Image versions rows
-    after the repo's (versions.json early) with their webps, none at or after the card's first version here, the Morgue's
+    after the repo's (data/versions/<id>.json early) with their webps, none at or after the card's first version here, the Morgue's
     entries from Discord (never cards[], never on a renamed card's old page), an MDW Morgue card's pictures after its
     PNG's current version (none after its first record here), a physical card photo's Created ("Before 2020", owner Q6:
     a live card's and M'uru's; no paper rows) and their changes under Recorded changes (a type fact's "remove" as a
@@ -576,14 +583,14 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     palace_commit, _ = _commit(repo["root"], "Palace picture", 1_780_000_000 + 3 * DAY)
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     alpha = _by_name(out["cards.json"])["Alpha"]
-    rows = out["versions.json"]["early"][alpha["id"]]
+    rows = _versions(out, alpha["id"])["early"][alpha["id"]]
     # after the repo's rows, newest first; the stale paper row left out; no review field, no link
     assert [r["k"] for r in rows] == ["old repo", "discord"] and not any("label" in r or "cov" in r for r in rows)
     assert rows[0]["a"] == "Maker" and rows[0]["s"] == "Alpha art" and rows[1]["ch"] == "new-cards"
     assert rows[0]["fl"] == "alpha draft" and "fl" not in rows[1]                  # a renamed or MDW file's name
     assert rows[1]["f"] == {"stats": {"hp": 3, "def": 2, "atk": 5, "spd": 1}}
     assert all((tmp_path / "a" / "dist" / r["img"]).is_file() for r in rows)
-    assert alpha["ive"] == 2 and alpha["iv"] == len(out["versions.json"]["cards"][alpha["id"]])
+    assert alpha["ive"] == 2 and alpha["iv"] == len(_versions(out, alpha["id"])["cards"][alpha["id"]])
     # Created: a physical card photo's "Before 2020" sorts first; the file's date is kept as createdWas
     assert (alpha["created"], alpha["createdFrom"], alpha["createdBefore"]) == ("2019-01-01", "photo", 2020)
     assert "paper card" not in bs.HISTORY_FROM and "paper" not in bs.HISTORY_ROWS
@@ -604,11 +611,12 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
            "first": {"date": "2023-10-29T17:04:44+00:00", "day": "2023-10-29", "channel": None, "source": "old repo"}}
     eld = bs.history_morgue({"morgue": [("_morgue/joke-card", eld)]}, bs.slugify)[0][0]
     assert eld["firstOld"] and eld["inGit"] and "firstCh" not in eld and "firstOld" not in joke[0]   # first seen in the old repo
-    assert "Joke Card" not in _by_name(out["cards.json"]) and out["versions.json"]["early"][joke[0]["id"]]
+    assert "Joke Card" not in _by_name(out["cards.json"]) and _versions(out, joke[0]["id"])["early"][joke[0]["id"]]
     # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
     palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")
-    assert [out["versions.json"]["commits"][r[0]][0] for r in out["versions.json"]["cards"][palace["id"]]] == [palace_commit]
-    early = out["versions.json"]["early"][palace["id"]]                              # its first repo row stays
+    mine = _versions(out, palace["id"])
+    assert [mine["commits"][r[0]][0] for r in mine["cards"][palace["id"]]] == [palace_commit]
+    early = mine["early"][palace["id"]]                                             # its first repo row stays
     assert [r["img"] for r in early] == ["history/_morgue/white-palace/P-7.webp", "history/_morgue/white-palace/O-p1.webp"]
     assert (early[1]["r"], early[1]["a"], early[1]["f"]) == ("first", "Croissant", {"name": "White Palace"})
     assert (palace["iv"], palace["ive"]) == (1, 2)
@@ -642,8 +650,8 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
         (tmp_path / "O-1.webp").rename(hist / "alpha" / "O-1.webp")          # on disk: the tree decides, not the folder
         branch = _build(bs, monkeypatch, repo, tmp_path / "h")
         hb = f"https://raw.githubusercontent.com/{bs.CARD_REPO}/{sha}/"
-        rows = branch["versions.json"]["early"][alpha["id"]]
-        assert branch["versions.json"]["hb"] == hb and not (tmp_path / "h" / "dist" / "history").exists()
+        rows = _versions(branch, alpha["id"])["early"][alpha["id"]]
+        assert _versions(branch, alpha["id"])["hb"] == hb and not (tmp_path / "h" / "dist" / "history").exists()
         assert [r.get("img") for r in rows] == [None, "alpha/P-2.webp"]
         joke = next(c for c in branch["cards.json"]["morgue"] if c["name"] == "Joke Card")
         assert joke["pic"] == hb + "_morgue/joke-card/P-9.webp"
@@ -668,6 +676,29 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # without the timelines: none of it
     monkeypatch.setattr(bs, "HISTORY_DIR", "")
     plain = _build(bs, monkeypatch, repo, tmp_path / "b")
-    assert "early" not in plain["versions.json"] and "ive" not in _by_name(plain["cards.json"])["Alpha"]
+    assert not any("early" in v for v in plain["versions/"].values()) and "ive" not in _by_name(plain["cards.json"])["Alpha"]
     assert all(not c.get("lost") and "iv" not in c for c in plain["cards.json"]["morgue"])
-    assert not set(plain["versions.json"]["cards"]) & {c["id"] for c in plain["cards.json"]["morgue"]}
+    assert not set(plain["versions/"]) & {c["id"] for c in plain["cards.json"]["morgue"]}
+
+
+def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
+    """Image versions read one small file per card (data/versions/<id>.json, app.js loadVersions when the card opens): every
+    card and Morgue entry with rows has one, and together they give versions.json's rows, minor, early, repo, visible and hb
+    exactly (versions.json stays one release for tabs on the older app.js); one stamp for the folder (index.html's meta data,
+    app.js dataUrl)."""
+    if not hasattr(bs, "version_files"):
+        pytest.skip("a site before data/versions/")
+    monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    full, per = out["versions.json"], out["versions/"]
+    cards = cm.site_cards(out["cards.json"]) + out["cards.json"]["morgue"]
+    assert set(per) == set(full["cards"]) | set(full["early"]) == {c["id"] for c in cards if c.get("iv") or c.get("ive")}
+    for cid, one in per.items():
+        assert [[one["commits"][r[0]], *r[1:]] for r in one["cards"][cid]] == [[full["commits"][r[0]], *r[1:]] for r in full["cards"].get(cid, [])]
+        assert len(one["commits"]) == len({r[0] for r in one["cards"][cid]}) and set(one["cards"]) == {cid}
+        assert all(one.get(k, {}).get(cid) == full.get(k, {}).get(cid) for k in ("minor", "early"))
+        assert all(one.get(k) == full.get(k) for k in ("repo", "visible", "hb"))
+    meta = json.loads(html_unescape(re.search(r'<meta name="data" content="([^"]*)">', (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8"))[1]))
+    assert re.fullmatch(r"[0-9a-f]{10}", meta["versions/"])
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    assert 'getJson(`versions/${encodeURIComponent(c.id)}.json`)' in app and "(details|versions)\\/" in app and 'getJson("versions.json")' not in app
