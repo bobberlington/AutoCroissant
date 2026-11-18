@@ -248,6 +248,48 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     assert rulebook_pages.read_pages("", str(out))["key"] == "k1" and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0"
 
 
+def test_the_push_build_decides_only(tmp_path, monkeypatch, capsys):
+    """--local (Card sync, the push's Pages build on localhost before it deploys): the same look, never the website's;
+    its pages the PDF's: key and pre written as the website's look would; a page changed, not settled or not drawn:
+    nothing written, exit 4 (Card sync looks at the website then)."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _commit(tmp_path, "2026-11-18T16:00:00+00:00", {"site/rulebook/01-a.md": b"# A\n"})
+    folder = tmp_path / "TTS" / "Rulebook"
+    folder.mkdir(parents=True)
+    shots = [({"name": "Cover", "num": ""}, _png("white"))]
+    rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
+    before = (folder / "pages.json").read_text(encoding="utf-8")
+    asked, settled = [], {"ok": True}
+    seen = dict(_seen(), rules=json.dumps({"chapters": [{"file": "01-a.md", "source": "# A\n"}]}).encode())
+    monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: asked.append(site) or seen)
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: settled["ok"])
+    monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
+    drawn = {"png": _png("white"), "printed": 0, "fail": False}
+
+    def draw(site, exe, key_of, known, fonts):
+        asked.append(site)
+        if drawn["fail"]:
+            raise RuntimeError("Chrome quit")
+        return ({"01-a.md": "# A\n"}, [(dict(shots[0][0]), drawn["png"])],
+                rulebook_pages.Printer(lambda: drawn.__setitem__("printed", drawn["printed"] + 1) or b"%PDF2", lambda: None), "k1", "pg", {})
+    monkeypatch.setattr(rulebook_pages, "draw", draw)
+    local = "http://127.0.0.1:8137"
+    run = lambda: (rulebook_pages.main([str(tmp_path), "--local", local, "--out", str(tmp_path / "out")]), capsys.readouterr().out)
+    code, out = run()
+    assert code == 0 and "key k1 kept; the push's build" in out and set(asked) == {local}
+    listing = rulebook_pages.read_pages("", str(tmp_path / "out"))
+    assert listing["key"] == "k1" and listing["pre"] == rulebook_pages.pre_key(seen, rulebook_pages._trees(str(tmp_path)), [])
+    assert (tmp_path / "out" / "Rulebook.pdf").read_bytes() == b"%PDF" and drawn["printed"] == 0
+    for case in ("changed", "unsettled", "failed"):
+        drawn.update(png=_png("green") if case == "changed" else _png("white"), fail=case == "failed")
+        settled["ok"] = case != "unsettled"
+        n = len(asked)
+        code, out = run()
+        assert code == 4 and (tmp_path / "out" / "pages.json").read_text(encoding="utf-8") == before, (case, out)
+        assert drawn["printed"] == 0 and len(asked) - n == (1 if case == "unsettled" else 2), case
+    assert set(asked) == {local}
+
+
 def test_chrome_started_again_when_its_start_stalls(tmp_path, monkeypatch):
     """11-12 da7523db: Chrome never answered Target.createTarget (60 s, 20 s more to close it; the PDF left undrawn). No
     first answer in START_SECONDS: that Chrome killed (profile gone) and one more started (CALL_SECONDS); then it raises."""
