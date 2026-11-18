@@ -181,6 +181,7 @@ class CardRepository:
         self.cards_dff: DataFrame = DataFrame()
         self.pictures_dff: DataFrame = DataFrame()       # second pictures (duplicate_of): found by their own names
         self._was: dict = {}                             # card name -> the names renamed into it (website's was)
+        self._before: dict = {}                          # card name -> Created "before" year (Pep Drink: 2020)
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
@@ -423,9 +424,13 @@ class CardRepository:
                 kept = {"<": col < number, "<=": col <= number, "==": col == number, ">=": col >= number, ">": col > number}[operator]
         elif column == "created" and DATE_PATTERN.match(f"created{operator}{value}"):
             if col is not None:                          # at the precision given: created>=2025, created==2023-10
-                day = col.where(col.notna(), "").astype(str).str[:len(value)]
+                before = col.index.isin(list(self._before))  # "before 2020" (no day): only < or <= it meets (search.js)
+                last = Series({k: f"{y - 1}-12-31" for k, y in self._before.items()}, dtype=object).reindex(col.index)
+                day = col.where(~before, last).where(col.notna(), "").astype(str).str[:len(value)]
                 kept = col.notna() & {"<": day < value, "<=": day <= value, "==": day == value, ">=": day >= value,
                                       ">": day > value}[operator]
+                if operator not in ("<", "<="):
+                    kept &= ~before
         elif operator in ("==", "~"):
             if not value:                                # else '' finds every card with the field (website: none)
                 hint = VALUE_HINTS.get(column)
@@ -902,6 +907,8 @@ class CardRepository:
             if "duplicate_of" in cards_df:              # same card as its original: a picture, by its own names
                 pictures = cards_df[cards_df["duplicate_of"].notna()]
                 cards_df = cards_df[cards_df["duplicate_of"].isna()]
+            self._before = {n: c.created["before"] for n, c in stats_db.stats.items()
+                            if (getattr(c, "created", None) or {}).get("before")}
             try:
                 self._was = renamed_into(stats_db.old_stats, stats_db.stats)
             except RuntimeError:                        # /update_stats writing meanwhile

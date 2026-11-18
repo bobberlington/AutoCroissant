@@ -148,6 +148,11 @@ def test_created_queries_at_the_precision_given(repo):
     assert q("created==2023-10") == ["Mid"] and q("created==2023-10-13") == ["Mid"] and q("created<=2023-10-12") == ["Old"]
     assert q("CREATED>=2019 & created<2024") == ["Mid", "Old"] and q("created~2025-05") == ["New"]
     assert q("created==2024") == []
+    pep = _dated("Pep", "2020-07-21")
+    pep.created["before"] = 2020                                  # "before 2020": only < or <= it surely meets
+    r = repo({"Old": _dated("Old", "2019-02-13"), "Pep": pep})
+    assert q("created<2020") == ["Old", "Pep"] and q("created<=2019-12") == ["Old", "Pep"] and q("created<2019-06") == ["Old"]
+    assert q("created>=2020") == [] and q("created==2020-07") == [] and q("created==2019") == ["Old"]
 
 
 def test_query_embed_says_created(monkeypatch):
