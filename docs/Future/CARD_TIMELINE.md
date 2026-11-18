@@ -459,7 +459,8 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
    photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page; one on the file's own day gives its
    source to the tooltip). The pictures load from raw.githubusercontent.com at the history checkout's commit
-   (`versions.json` `hb`, `history_host`: as the plates' older copies, D19; `HISTORY_URL` a local preview's server; a
+   (`hb` of each card's `versions/<id>.json`, the site's per-card Image versions file since OPTIMIZE-1117 (11-18):
+   one ~1 KB file fetched when the card opens, not the 2.6 MB all-cards `versions.json`; `history_host`: as the plates' older copies, D19; `HISTORY_URL` a local preview's server; a
    folder that is no checkout: copied into dist as before); one that fails to load says "Picture missing". Any version
    can be pinned as the compare base (owner 11-17 (5): right-click, long-press or its pin button): the versions picked
    are then compared with it, side by side (the older left) with their changes (stars, stats, types, name, the
