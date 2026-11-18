@@ -202,14 +202,18 @@ def test_rulebook_lines(monkeypatch):
     utils.dispatch_queue.clear()
     assert len(sent) == 1 and "links" in sent[0]
     assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook chapters:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")
-    repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD).", "It's \u201cfree\u201d."]},
-                                  index=["A", "B", "C"])
+    repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD).", "It's \u201cfree\u201d.",
+                                               'A "sneak attack".']}, index=["A", "B", "C", "D"])
     assert [n for n, _ in qc.rulebook_lines(repo.rulebook_search_engine("ring"), "ring")] == ["B", "A"]   # word starts first
-    for text in ("it\u2019s", "\u201cfree\u201d"):                 # a curly apostrophe found; curly quotes as printed
+    for text in ("it\u2019s", "\u201cfree\u201d", '"free"', "\u201csneak attack\u201d"):   # either quotes find both
         qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
     sent = [kw["content"] for _, kw in utils.dispatch_queue]
     assert sent == ["'it's' is on 1 line of 1 rulebook chapter:\n\n**C**\n- **It's** \u201cfree\u201d.",
-                    "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]
+                    "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**.",
+                    "'\"free\"' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**.",
+                    "'\u201csneak attack\u201d' is on 1 line of 1 rulebook chapter:\n\n**D**\n- A **\"sneak attack\"**."]
+    line = "y " * 50 + "[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]: end."
+    assert qc._cut(line, "turn") == "\u2026[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]\u2026"
 
 
 def test_website_rulebook_search_takes_curly_quotes(tmp_path):

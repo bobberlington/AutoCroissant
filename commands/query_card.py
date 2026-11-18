@@ -27,7 +27,7 @@ from commands.card_models import picture_only, site_cards, stats_db, straight
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
-from commands.type_emojis import render_type_tokens
+from commands.type_emojis import TOKEN_PATTERN, render_type_tokens
 from commands.utils import BREAK_LEN, queue_file as _queue_file, queue_message as _queue_message
 
 # ========================
@@ -55,6 +55,7 @@ MAX_CONTENT = 2000                                       # Discord's message len
 URL_MAX = 512                                            # Discord's longest link-button url (else no message)
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
+BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
@@ -683,7 +684,7 @@ class CardRepository:
         Search rulebook entries for matching text.
 
         Args:
-            search_text: Text to search for (case-insensitive)
+            search_text: Text to search for (case-insensitive; a straight or curly " finds either)
 
         Returns:
             DataFrame of matching rulebook entries
@@ -691,11 +692,11 @@ class CardRepository:
         pages, bans = self.rulebook_dff, ban_list_text(self.banlist)
         if bans:                                                   # the ban list: one more section
             pages = concat([pages, DataFrame({"ability": [bans]}, index=[BAN_LIST])])
-        words = search_text.split()
+        words = search_text.translate(BOOK_QUOTES).split()
         if not words:
             return pages
         pattern = r"\s+".join(escape(w) for w in words)           # any spaces or line breaks between the words
-        return pages[pages["ability"].str.contains(pattern, na=False, case=False)]
+        return pages[pages["ability"].str.translate(BOOK_QUOTES).str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json (EDITS_PATH)."""
@@ -1612,11 +1613,11 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
         [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
         most lines, then by name, the ban list last; a match across a line break: that passage
     """
-    found, low = [], text.lower()
-    start = compile(r"(?<![a-z])" + escape(low), IGNORECASE)   # no letter just before: "ring", not "during"
+    found, low = [], text.translate(BOOK_QUOTES).lower()      # either quotes find both
+    start = compile(r"(?<![a-z])" + _book_pattern(text), IGNORECASE)   # no letter just before: "ring", not "during"
     for name, ability in pages["ability"].items():
         lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
-        lines = [line for line in lines if low in line.lower()]
+        lines = [line for line in lines if low in line.translate(BOOK_QUOTES).lower()]
         if not lines:                                # the text runs over a line break
             lines = [" ".join(str(ability).split())]
         found.append((name, [_cut(line, low) for line in lines]))
@@ -1626,18 +1627,29 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
 
 
 def _cut(line: str, low: str) -> str:
-    """line, or SNIPPET characters of it around the first match."""
+    """line, or SNIPPET characters of it around the first match (low: folded), a [token] at an edge kept whole."""
     if len(line) <= SNIPPET:
         return line
-    at = max(line.lower().find(low), 0)
+    at = max(line.translate(BOOK_QUOTES).lower().find(low), 0)
     start = max(0, min(at - SNIPPET // 3, len(line) - SNIPPET))
-    return ("…" if start else "") + line[start:start + SNIPPET].strip() + ("…" if start + SNIPPET < len(line) else "")
+    end = start + SNIPPET
+    for token in TOKEN_PATTERN.finditer(line):            # an icon cut in two: its emoji lost
+        if token.start() < start < token.end():
+            start = token.start()
+        if token.start() < end < token.end():
+            end = token.end()
+    return ("…" if start else "") + line[start:end].strip() + ("…" if end < len(line) else "")
+
+
+def _book_pattern(text: str) -> str:
+    """text as a regex, its " (straight or curly) finding either printed quote."""
+    return "".join('["\u201c\u201d]' if ch == '"' else escape(ch) for ch in text.translate(BOOK_QUOTES))
 
 
 def _bold(line: str, text: str) -> str:
     """The searched text in bold where it stands as written (escaped markdown or an emoji can hide it), never inside
     an emoji's <:name:id> (minion in <:defensive_minion:id>)."""
-    found = compile(escape(text), IGNORECASE)
+    found = compile(_book_pattern(text), IGNORECASE)
     parts = EMOJI.split(line)
     return "".join(p if i % 2 else found.sub(lambda m: f"**{m.group(0)}**", p) for i, p in enumerate(parts))
 
