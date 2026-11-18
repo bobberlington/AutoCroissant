@@ -61,8 +61,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (925 on 11-10, about 1.5 minutes at `-n 6`; they read old card blobs from the clone, skipping when missing: the fresh clone has them). Never
-  with `GIT_NO_LAZY_FETCH=1` exported (10 tests' own fixture repos then fail; conftest sets it for the clone). Targeted
+  -n auto -q -p no:cacheprovider tests` (925 on 11-10, about 1.5 minutes at `-n 6`; they read old card blobs from the clone, skipping when missing: the fresh clone has them). Targeted
   files unless a full run is needed.
 - Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at
   most 6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools

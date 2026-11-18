@@ -58,6 +58,7 @@ def _git_config():
 
 
 _git_config()
+environ.pop("GIT_NO_LAZY_FETCH", None)                    # fixture clones fetch their blobs; clone reads set it (no_lazy)
 environ["PSD_DIRTY_VERIFY"] = "1"                         # gate_dirty renders whole too: raises on any difference
 
 TC_PATHS = ("AC_SITE_SRC", "ESBUILD")                     # TTSCardMaker paths from the environment
