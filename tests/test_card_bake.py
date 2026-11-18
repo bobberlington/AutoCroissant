@@ -1118,3 +1118,14 @@ def test_a_path_only_rename_moves_the_files_keyed_by_path():
     card = SimpleNamespace(rename=True, relocated=relocated, renames={f"{old}.psd": "Keelhaul_Key.psd"}, dropped=[])
     side = cb._rename_share(card, cb.Share(card, {}, {}, lambda text: None)).side
     assert set(side) == {cb.RULES_PATH} and json.loads(side[cb.RULES_PATH](decks)) == json.loads(sides[cb.RULES_PATH])
+
+
+def test_a_placed_titles_file_is_read_once_a_run():
+    """vocabulary()'s linked: each placed title's file fetched once by sha (Gust of Wind's Name PSBs: 7 REST reads -> 2)."""
+    path, data = "MDW/Linked/Gust_of_Wind - Name #1.psb", b"8BPS psb"
+    snapshot = cb.Snapshot("", "", {}, {path: ("100644", _sha(data))})
+    reads = []
+    snapshot.fetch = lambda sha, path="": reads.append(sha) or data
+    parser = cb.vocabulary(snapshot)
+    assert [parser.linked(path) for _ in range(3)] == [data] * 3 and reads == [_sha(data)]
+    assert parser.linked("MDW/Linked/gone.psb") is None and len(reads) == 1
