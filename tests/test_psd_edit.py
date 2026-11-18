@@ -2464,6 +2464,29 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path, monkey
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(text)
 
 
+APEX = ("3a94159a6452730130e192b2415fdeb9f041c24e", "563614a35f44b8ad1c05cda2ff88beb77fa0ff77")   # since 11-09: stacked
+
+
+def test_a_stacked_box_stays_in_its_row(clone, parser, chart, tmp_path):
+    """r49: each of Apex Predator's Ability lines is its own full-frame layer, blank rows above its line. Its last line
+    with words added printed over the line above, untold: fit_below scaled the blank rows too (the line rose) and lift
+    moved it up onto that text. It is set smaller in its own row, on no other text's ink, untold."""
+    rel, paths = "Creatures/R.E.P.O/2 Stars/Apex_Predator.psd", (tmp_path / "Apex_Predator.psd", tmp_path / "Apex_Predator.png")
+    for path, blob in zip(paths, APEX):
+        path.write_bytes(card_blob(clone, blob))
+    old = PSDImage.open(str(paths[0]))
+    box = pe.card_parts(old, rel, card_name(rel), parser)["ability"][-1]
+    text = box["text"].rstrip(".") + " and gain 1 SP."
+    jobs = {"parts": {str(box["id"]): {"field": "ability", "text": text, "sha": box["sha"]}}}
+    _, baked = _bake(clone, parser, rel, jobs, tmp_path, chart, tuple(map(str, paths)))
+    new = PSDImage.open(baked.psd_path)
+    layer = pe.lyid_index(new)[box["id"]]
+    ink = lambda layer: pe._on_canvas(layer, (new.height, new.width))[..., 3] > 127
+    others = [ink(other) for other in new.descendants() if other.kind == "type" and other.is_visible() and other is not layer]
+    assert pe.size_runs(layer)[-1][2]["FontSize"] < pe.size_runs(pe.lyid_index(old)[box["id"]])[-1][2]["FontSize"]
+    assert not any((ink(layer) & other).any() for other in others) and not [n for e in baked.edits for n in e.notes]
+
+
 def test_a_line_below_its_box_grows_the_box(clone, parser, chart, tmp_path, monkeypatch):
     """r22: a status added to Keelhaul Key's Ability lays its last line below the box; the PNG shows it, Photoshop hides
     it when it lays the text out again. The box grows down to hold it (hold_lines), through every gate, pixels kept
