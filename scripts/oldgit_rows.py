@@ -1229,12 +1229,14 @@ def ability_change(prev: dict, row: dict) -> str:
         return "same"                                          # one picture prints one card
     if any(f.get("value") is None or f.get("confidence") != "sure" for f in (a, b)):
         return "unknown"
-    from commands.discord_chain import label_only                 # a minion's label alone: no ability (owner 11-17)
-    x, y = ("" if label_only(f["value"]) else f["value"] for f in (a, b))
+    from commands.discord_chain import label_blank                # a minion's label and a blank box (owner 11-17)
+    x, y = a["value"], b["value"]
+    if label_blank(x, y):
+        return "same"
     if x.strip() and not y.strip():
         return "removed"
     from commands.changelog import formatting_only
-    return "same" if x == y or not (x.strip() or y.strip()) else "formatting" if formatting_only(x, y) else "changed"
+    return "same" if x == y else "formatting" if formatting_only(x, y) else "changed"
 
 
 def before_folders(versions: list) -> list:

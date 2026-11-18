@@ -219,9 +219,21 @@ def pacific_day(when) -> Optional[str]:
     return None if seconds is None else datetime.fromtimestamp(seconds, TIMEZONE).strftime("%Y-%m-%d")
 
 
+def label_kind(text) -> Optional[str]:
+    """'non' or 'protective' for an ability that is only a minion's label ('Non-protective minion'), else None."""
+    found = fullmatch(MINION_LABEL, text, flags=IGNORECASE) if isinstance(text, str) else None
+    return ("non" if found.group(1) else "protective") if found else None
+
+
 def label_only(text) -> bool:
-    """An ability that is only a minion's label ('Protective minion.', 'Non-protective minion'): no ability."""
-    return isinstance(text, str) and bool(fullmatch(MINION_LABEL, text, flags=IGNORECASE))
+    return label_kind(text) is not None
+
+
+def label_blank(x, y) -> bool:
+    """A minion's label beside a blank box, or the same label again: no ability either side (owner 11-17). A label
+    to the other label (Whelp) or to real text stays as it was."""
+    kinds = {label_kind(t) for t in (x, y) if (t or "").strip()}
+    return len(kinds) == 1 and None not in kinds
 
 
 def sure(value, method: str, conf=None, **extra) -> dict:
@@ -264,8 +276,8 @@ def ability_change(a: dict, b: dict) -> str:
     read by eye or a PSD's own layers)."""
     if not (is_sure(a) and is_sure(b)):
         return "unknown"
-    x, y = ("" if label_only(v["value"]) else v["value"] or "" for v in (a, b))    # a label alone: no ability
-    if x == y or not (x.strip() or y.strip()):
+    x, y = (v["value"] or "" for v in (a, b))
+    if x == y or not (x.strip() or y.strip()) or label_blank(x, y):
         return "same"
     if not y.strip():                                   # card data's or OCR's '' can be a read failure (Shadow Queen)
         return "unknown" if b["method"] == "psd (card data)" or "ocr" in b["method"] else "removed"
@@ -1766,7 +1778,7 @@ class Chain:
                 e["changes"] = {"ability_change": "first"} if e["fields"].get("ability") else {}
             else:
                 e["changes"] = compare(before["fields"], e["fields"], kind)
-                labels = any(label_only(((v.get("fields") or {}).get("ability") or {}).get("value")) for v in (before, e))
+                labels = label_blank(*(((v.get("fields") or {}).get("ability") or {}).get("value") for v in (before, e)))
                 if e["kind"] == "old repo" and before["kind"] == "old repo" and e.get("old_ability_change") and \
                         e["changes"].get("ability_change") != "removed" and not (blank(before) or blank(e) or labels):
                     e["changes"]["ability_change"] = e["old_ability_change"]     # a label alone: the rule's

@@ -910,6 +910,10 @@ def test_created_is_a_pacific_day_and_a_minion_label_is_no_ability():
         "changed" and dc.label_only("Non protecting minion") and not dc.label_only("Protective minion. Summoned by X.")
     assert dc.compare({"ability": label("Protective minion. Summoned by Galacta Knight.")},
                       {"ability": label("")})["ability_change"] == "removed"     # real text beside the label
+    change = lambda x, y: dc.compare({"ability": label(x)}, {"ability": label(y)})["ability_change"]
+    assert change("Non-Protective minion.", "Non-Protective Minion") == "same"
+    assert change("Protective minion.", "Non-protective minion.") == "changed"        # Whelp's switch stays
+    assert change("Probes do not protect the summoner.", "Non-protective minion.") == "changed"   # not asked
     rows = [{"kind": "old repo", "fields": {"ability": dc.sure("Non-protective minion.", "triage")}},
             {"kind": "old repo", "fields": {"ability": label("")}, "old_ability_change": "unknown"}]
     chain = dc.Chain.__new__(dc.Chain)

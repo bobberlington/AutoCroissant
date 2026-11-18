@@ -343,9 +343,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    names where it came from, the site's Created tooltip: Pizza's old repo). The land writes the Pacific days into the
    file ("before": 2020 beside Pep Drink's and Wham Bam Bone's first dated appearance; the bot says "Created before
    2020"). **A minion's label alone** ('Protective minion.', 'Non-protective minion', owner 11-17 (2): the label became
-   the type icon) is no ability (`label_only`, here and in `oldgit_rows.ability_change`): a box that held only it
-   before a blank one is no ability change; real text beside the label (Chomp, Mini Drill, Galacta Warrior) is still
-   'removed'. **git_first** is diffed against the last picture at or before its own date (`last_version`): Shadow
+   the type icon) beside a blank box, or the same label again, is no ability change (`label_blank`, here and in
+   `oldgit_rows.ability_change`); a label to the other label (Whelp's 2021 switch) or to or from real text reads as
+   before, and real text beside the label (Chomp, Mini Drill, Galacta Warrior) is still 'removed'. **git_first** is diffed against the last picture at or before its own date (`last_version`): Shadow
    Queen's first card-data version (11:49) came before its 11:57 Discord picture, so no change is back-dated against
    a later picture; the site's trend sorts its points by time. `discord_chain checks` draws random cards' whole timelines for the by-eye
    check. **Only a card on its own is shown** (owner 11-16 23:10/23:15): a picture the eye finds is no card on its own
