@@ -109,12 +109,12 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
 
 def test_the_editor_takes_the_lanes_hand_over(tmp_path):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
-    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), rings the lane's doorbell
-    (its ref at the commit of press 1's result: the lane's RUNG) and shows the lane's card-preview-<request> 2 s after
-    the press, then deletes the ref; one toast each; a 422 with a lane dispatches again without it (its ref deleted), and
-    no lane is named after that."""
+    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), then rings the lane's
+    doorbell (a commit status at press 1's result's commit: the lane's CONTEXT and RUNG) and shows the lane's
+    card-preview-<request> 2 s after the press; one toast each; a 422 with a lane dispatches again without it, and no
+    lane is named after that; a blob not posted rings nothing."""
     import base64
-    from commands.card_preview_lane import RUNG, press_blob
+    from commands.card_preview_lane import CONTEXT, RUNG, press_blob
     out = node(tmp_path, """let T = 1e12; const q = []; Date.now = () => T;
 globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
@@ -129,12 +129,12 @@ let refuse = false, failBlob = false;
 const github = async (path, o = {}) => {
   if (path.endsWith("/git/blobs")) { blobs.push(o.body); if (failBlob) { const e = new Error("GitHub 403"); e.status = 403; throw e; }
     const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") }; }
-  if (path.includes("/git/refs")) { refs.push([T - 1e12, o.method, path.split("/git/refs")[1] || o.body.ref, o.body?.sha]); return null; }
+  if (path.includes("/statuses/")) { refs.push([T - 1e12, o.method, path.split("/statuses/")[1], o.body]); return null; }
   if (o.method === "POST") { sent.push({ ...o.body.inputs }); if (refuse && o.body.inputs.lane) { const e = new Error("GitHub 422"); e.status = 422; throw e; } return null; }
   if (path.includes("/contents/")) { const e = new Error("404"); e.status = 404; throw e; }
   if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + sent[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(1e12).toISOString() }] };
   const z = path.split("/zip/")[1];
-  if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {}, base: { commit: "c".repeat(40) } }));
+  if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {}, base: { commit: (z === sent[0].request ? "c" : "d").repeat(40) } }));   // the lane followed
   const name = path.split("name=")[1], own = name === "card-preview" ? sent[0].request : name.slice(13);
   listed.push([T - 1e12, name]);
   return { artifacts: path.includes("/runs/101/") && (name === "card-preview" || own === sent[1].request) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
@@ -146,17 +146,19 @@ const second = T;
 await pv.start(card("c1"), { hp: 7 }); await run(T + 20000);
 refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"), { hp: 5 });
 refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
-out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
+out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, head: pv.entries("c1")[0].fromHead, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
   named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null) });""")
     sent = out["sent"]
     data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
     assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
     assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
     assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [2000]     # the lane's, 2 s on
-    rung = RUNG.fullmatch(out["refs"][0][2])
-    assert rung and rung.groups() == ("101", sent[1]["request"], sha) and out["refs"][0][1:] == ["POST", rung.group(0), "c" * 40]
-    assert out["refs"][1] == [out["second"] + 2000, "DELETE", rung.group(0)[4:], None]     # once its hand-over is in
-    assert [r[1] for r in out["refs"][2:]] == ["POST", "DELETE", "POST", "DELETE"]          # the 422's press; the blob's
+    assert out["head"] == "c" * 40                                  # still rung where the lane lists, not where it baked
+    at, method, commit, body = out["refs"][0]
+    rung = RUNG.fullmatch(body["description"])
+    assert rung and rung.groups() == ("101", sent[1]["request"], sha) and (method, commit) == ("POST", "c" * 40)
+    assert body["context"] == CONTEXT and body["state"] == "success" and at == out["second"] and len(body["description"]) <= 140
+    assert len(out["refs"]) == 1                                    # none for the 422's press (its lane gone first), the blob's
     assert out["toasts"].count("Preview ready: Mini Doomer") == 2
     assert "lane" in sent[2] and "lane" not in sent[3] and "lane" not in sent[4]      # the 422's retry, then none named
     assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again
@@ -164,10 +166,9 @@ out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map
 
 @pytest.mark.skipif(not has(PREVIEW_JS, "laneNext"), reason="no next cards in this preview.js")
 def test_the_lane_reads_the_next_card(tmp_path):
-    """A PSD-kind change on another card while a lane is up rings it as the lane's next card (its PSD blob at the
-    lane's commit: card_preview_lane.NEXT), once per card and lane, none for a card the lane baked; its press deletes
-    the ref."""
-    from commands.card_preview_lane import NEXT
+    """A PSD-kind change on another card while a lane is up rings it as the lane's next card (a status at the lane's
+    commit: card_preview_lane.NEXT), once per card and lane, none for a card the lane baked; its press rings as ever."""
+    from commands.card_preview_lane import NEXT, RUNG
     out = node(tmp_path, """let T = 1e12; Date.now = () => T; globalThis.setTimeout = () => 0; globalThis.clearTimeout = () => {};
 const was = { card: "c0", request: "ed-00000001", at: T - 60000, hash: "h", state: "baked", base: { blob: "aaaaaaaa" }, from: 101, fromAt: T - 50000, fromHead: "c".repeat(40) };
 const mem = new Map([[p.KEY, JSON.stringify({ c0: [was] })]]);
@@ -175,7 +176,7 @@ globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) =>
 globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible" };
 const { createHash } = await import("node:crypto"), refs = [];
 const github = async (path, o = {}) => {
-  if (path.includes("/git/refs")) refs.push([o.method, path.split("/git/refs")[1] || o.body.ref, o.body?.sha ?? null]);
+  if (path.includes("/statuses/")) refs.push([o.method, o.body.description, path.split("/statuses/")[1]]);
   if (!path.endsWith("/git/blobs")) return null;
   const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") };
 };
@@ -187,8 +188,7 @@ for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
 out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
     refs = out["refs"]
     assert NEXT.fullmatch(refs[0][1]).groups() == ("101", "bbbbbbbb") and refs[0][::2] == ["POST", "c" * 40]
-    assert out["lane"] == 101 and [r[0] for r in refs] == ["POST", "POST", "DELETE"]   # the press's doorbell between
-    assert refs[2] == ["DELETE", refs[0][1][4:], None]
+    assert out["lane"] == 101 and len(refs) == 2 and RUNG.fullmatch(refs[1][1]) and refs[1][2] == "c" * 40   # the press's doorbell
 
 
 def test_tokens_wrap_and_fit(tmp_path):

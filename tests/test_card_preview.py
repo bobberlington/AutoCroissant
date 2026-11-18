@@ -761,21 +761,23 @@ def test_a_lanes_title_and_what_it_takes(monkeypatch):
 
 
 def test_the_lanes_doorbell(tmp_path, monkeypatch):
-    """A press rung at the lane's doorbell (refs/preview-lane/<run>/<request>-<blob>) is taken before its run is listed
-    (a request rung twice is none), its run counts as served once listed, and a newer run it doesn't take ends the lane
-    as ever; a rung press's take checks the card repo's main in place of the run's commit and bakes with no run (on a
-    newer main: there, once moved() follows it)."""
+    """A press its editor rang at the lane's doorbell (a commit status at the lane's first commit: '<run> <request>
+    <blob>') is taken before its run is listed (a request rung with two blobs, another editor's, another context's or
+    another lane's is none), its run counts as served once listed, and a newer run it doesn't take ends the lane as
+    ever; a rung press's take checks the card repo's main in place of the run's commit and bakes with no run (on a newer
+    main: there, once moved() follows it)."""
     import base64
     import commands.card_preview_lane as lane_mod
     from time import time
     data, sha = lane_mod.press_blob(REQUEST, "Mini Doomer", '{"hp": 7}')
-    bell = lambda request, blob, run=100: {"ref": f"refs/preview-lane/{run}/{request}-{blob}"}
-    refs = [bell(REQUEST, sha), bell("rung-twice-1", "b" * 40), bell("rung-twice-1", "c" * 40), bell("other-lane-1", sha, 1001),
-            {"ref": "refs/preview-lane/100/next/abcdef12"}]
+    bell = lambda text, who="ed", context=lane_mod.CONTEXT: {"context": context, "creator": {"login": who}, "description": text}
+    statuses = [bell("100 next abcdef12"), bell(f"100 {REQUEST} {sha}"), bell(f"100 rung-twice-1 {'b' * 40}"),
+                bell(f"100 rung-twice-1 {'c' * 40}"), bell(f"1001 other-lane-1 {sha}"), bell(f"100 other-editor {sha}", "eve"),
+                bell(f"100 other-context {sha}", context="ci"), bell(f"100 next {'d' * 8}", "eve")]
     runs, took, main, asked = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}, []
 
     def get(path, conditional=False):
-        body = (refs if f"/matching-refs/{lane_mod.BELL}/100/" in path
+        body = (statuses if path == "/repos/o/r/commits/h/statuses?per_page=100"
                 else {"workflow_runs": runs} if path.endswith(f"/runs?event=workflow_dispatch&actor=ed&per_page={lane_mod.LISTED}")
                 else {"sha": sha, "size": len(data), "encoding": "base64", "content": base64.b64encode(data).decode()}
                 if path.endswith(sha) else {"object": {"sha": main[path.split("/repos/")[1].split("/git/")[0]]}})
@@ -844,14 +846,16 @@ def test_the_lane_follows_main(tmp_path, monkeypatch):
     monkeypatch.setattr(lane_mod, "follow", lambda clone, head, new: follows.append((head, new)) or "")
     monkeypatch.setattr(lane_mod, "_say", lambda text: None)
     monkeypatch.setattr(lane_mod, "POLL", 0.01)
-    api = SimpleNamespace(left=None, get=lambda path, conditional=False: (
+    paths = []
+    api = SimpleNamespace(left=None, get=lambda path, conditional=False: paths.append(path) or (
         200, None, json.dumps({"workflow_runs": runs} if "/runs?" in path else []).encode()))
     assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head=a, clone=str(lane)) == "a newer press named no lane"
     assert follows == [(a, b)] and took == [b]
+    assert {p for p in paths if "/statuses" in p} == {f"/repos/o/r/commits/{a}/statuses?per_page=100"}    # its doorbell stays
 
 
 def test_the_lanes_next_cards(tmp_path, monkeypatch):
-    """A card rung as next (refs/preview-lane/<run>/next/<PSD blob>; no press) is read in the background, once and
+    """A card rung as next (a status '<run> next <PSD blob>'; no press) is read in the background, once and
     not while a press is taken: its PSD, PNG and the status chart into the clone; a press whose read is still going
     joins it (each blob read once)."""
     import commands.card_preview_lane as lane_mod
@@ -878,12 +882,12 @@ def test_the_lanes_next_cards(tmp_path, monkeypatch):
         return data[served[-1]]
     monkeypatch.setattr(early, "_get", get)
     monkeypatch.setattr(lane_mod, "_say", lambda text: None)
-    body = json.dumps([{"ref": f"refs/preview-lane/100/next/{shas[psd][:8]}"}, {"ref": "refs/preview-lane/101/next/abcdef12"},
-                       {"ref": f"refs/preview-lane/100/{REQUEST}-{'a' * 40}"}]).encode()
-    assert lane_mod.hints_of(body, 100) == [shas[psd][:8]] and lane_mod.rung(body, 100) == [(REQUEST, 100, "a" * 40)]
+    body = json.dumps([{"context": lane_mod.CONTEXT, "creator": {"login": "ed"}, "description": text} for text in (
+        f"100 {REQUEST} {'a' * 40}", "101 next abcdef12", f"100 next {shas[psd][:8]}")]).encode()
+    assert lane_mod.hints_of(body, 100, "ed") == [shas[psd][:8]] and lane_mod.rung(body, 100, "ed") == [(REQUEST, 100, "a" * 40)]
     hints = lane_mod.Warm(str(clone), "o/r", head)
     hints.idle.clear()                          # a press being taken
-    hints.ask(lane_mod.hints_of(body, 100) * 2)
+    hints.ask(lane_mod.hints_of(body, 100, "ed") * 2)
     sleep(0.3)
     assert served == []
     hints.idle.set()
