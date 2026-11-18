@@ -84,6 +84,19 @@ out({ wide: widths(render(cards, A)), narrow: widths(render(cards, A, "", { narr
     assert out == {"wide": [320, 560, 1000], "narrow": [320, 340, 360]}
 
 
+def test_before_2020_column_opens_its_cards(tmp_path):
+    """Cards created per year: the 'Before 2020' column (a physical card photo's Created) opens only its cards, not
+    2019's (search.js reads its link)."""
+    out = node(tmp_path, f"""const {{ compile }} = await import({json.dumps((ASSETS / "search.js").as_uri())});
+const cards = [...fixture(), C("Pep", "Mario", 1, [1, 1, 1, 1], "2019-01-01", "Ann", {{ createdBefore: 2020 }}),
+  C("Old", "Mario", 1, [1, 1, 1, 1], "2019-05-02", "Ann")];
+const html = chart(render(cards, null).history, "hist-created");
+const q = {{}}; for (const m of html.matchAll(/href="([^"]+)" aria-label="([^"]+): show these cards"/g)) q[m[2]] = new URLSearchParams(m[1].replace(/&amp;/g, "&").split("?")[1]).get("q");
+const names = k => cards.filter(compile(q[k])).map(c => c.name);
+out({{ before: names("Before 2020"), y2019: names("2019") }});""")
+    assert out == {"before": ["Pep"], "y2019": ["Old"]}
+
+
 def site_analytics():
     spec = importlib.util.spec_from_file_location("site_analytics", SITE / "build" / "analytics.py")
     an = importlib.util.module_from_spec(spec)
