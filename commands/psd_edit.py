@@ -6986,15 +6986,31 @@ def _filtered(leaf) -> bool:
     return placed is not None and b"filterFX" in placed.data
 
 
+BLURS = {b"MtnB", b"GsnB"}                      # Motion and Gaussian Blur
+
+
+def _blurred_link(leaf) -> bool:
+    """A linked smart object whose smart filters on are all blurs (BLURS: drawn the same anywhere). Photoshop keeps no
+    FEid item for one (Gust of Wind's stars)."""
+    so = leaf.smart_object
+    if so.kind != "external":
+        return False
+    ids = [getattr(item.get(b"Fltr"), "classID", None) for item in so.filters.get(b"filterFXList") or []
+           if bool(getattr(item.get(b"enab"), "value", True))]
+    return all((one.encode() if isinstance(one, str) else one) in BLURS for one in ids)
+
+
 def _shiftable(layer) -> Optional[str]:
     """Why a layer (a group: everything in it) cannot be moved; None when it can. A smart-filtered layer moves when its
-    FEid item is found by its placed ID (the fork's filter_item; S1), as Photoshop moves one (_shift_filters)."""
+    FEid item is found by its placed ID (the fork's filter_item; S1), or with none when a blurred link (_blurred_link),
+    as Photoshop moves one (_shift_filters)."""
     for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
         if leaf.is_group():
             continue
         if leaf.kind in ("type", "shape") or leaf.has_vector_mask() or Tag.VECTOR_ORIGINATION_DATA in leaf.tagged_blocks:
             return f"{leaf.name!r} is {'text' if leaf.kind == 'type' else 'a vector shape'}"
-        if _filtered(leaf) and not (leaf.kind == "smartobject" and leaf.smart_object.filter_item is not None):
+        if _filtered(leaf) and not (leaf.kind == "smartobject" and (leaf.smart_object.filter_item is not None
+                                                                     or _blurred_link(leaf))):
             return f"{leaf.name!r} has smart filters"
     return None
 
@@ -7009,7 +7025,8 @@ def _shift_filters(leaf, dx: int, dy: int) -> None:
         return
     so = leaf.smart_object
     item = so.filter_item
-    if item is None:                            # _shiftable refuses such a layer
+    if item is None:                            # a blurred link (_shiftable): redrawn at the new place
+        so.filters[b"validAtPosition"] = Bool(False)
         return
     top, left, bottom, right = item.rectangle
     item.rectangle = (top + dy, left + dx, bottom + dy, right + dx)
