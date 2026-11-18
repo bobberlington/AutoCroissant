@@ -47,3 +47,39 @@ def test_a_minion_label_beside_a_blank_is_no_ability_change(tmp_path):
     same = node(tmp_path, f"process.stdout.write(JSON.stringify({json.dumps(pairs)}.map(([x, y]) => h.sameAbility(x, y))));")
     assert same == [x == y or label_blank(x, y) for x, y in pairs]
     assert same == [True] * 5 + [False] * 4 + [True, True, False]
+
+
+def test_compare_modes_like_github_s_image_diff(tmp_path):
+    """Owner 11-17 ~20:35 (compare.js): a pinned base and a picked version in 2-up (the default), Swipe (a slider with
+    its aria values, keys and pointer place), Onion skin (an opacity range) or Difference (CSS mix-blend-mode, no canvas
+    reads); both fit the box of the taller one; each picture's size only when they differ; the last mode kept."""
+    compare = ASSETS / "compare.js"
+    out = node(tmp_path, f"""const m = await import({json.dumps(compare.as_uri())});
+const a = {{ pic: '<img src="a.webp">', cap: "May 2, 2019", when: "May 2, 2019", base: true }};
+const b = {{ pic: '<img src="b.webp">', cap: "Oct 29, 2023", when: "Oct 29, 2023" }};
+const html = mode => m.compareView(mode, a, b, m.boxRatio([[588, 1172], [400, 612]]), {{ swipe: 30, onion: 70 }});
+process.stdout.write(JSON.stringify({{ two: html(null), swipe: html("swipe"), onion: html("onion"), diff: html("diff"),
+  modes: [m.modeOf("bad"), m.modeOf("diff")], ratio: [m.boxRatio([null, [400, 612]]), m.boxRatio([null, null])],
+  keys: [m.slideKey(50, "ArrowLeft"), m.slideKey(50, "ArrowUp", true), m.slideKey(98, "ArrowRight"), m.slideKey(50, "Home"),
+         m.slideKey(50, "End"), m.slideKey(50, "PageDown"), m.slideKey(50, "a")],
+  at: [m.pctAt(150, 100, 200), m.pctAt(0, 100, 200), m.pctAt(400, 100, 200)],
+  sizes: [m.sizesText([588, 1172], [400, 612]), m.sizesText([400, 612], [400, 612])], aria: m.swipeAria(40, "x", "y") }}));""")
+    two, swipe = out["two"], out["swipe"]
+    assert 'data-mode="2up"' in two and two.count('aria-pressed="true"') == 1 and 'data-mode="2up" aria-pressed="true"' in two
+    assert 'role="group" aria-label="Compare view"' in two and [l for l in ("2-up", "Swipe", "Onion skin", "Difference") if f">{l}<" in two] == ["2-up", "Swipe", "Onion skin", "Difference"]
+    assert "--ar:588 / 1172" in two and "--x:30%" in two and "--op:0.7" in two
+    slider = swipe[swipe.index('role="slider"') - 30:]
+    assert 'tabindex="0"' in slider and 'aria-valuemin="0" aria-valuemax="100" aria-valuenow="30"' in slider
+    assert 'aria-valuetext="30%: the May 2, 2019 version left, the Oct 29, 2023 version right"' in slider
+    assert 'tabindex="-1"' in two[two.index('role="slider"') - 30:] and '" hidden><span class="ver-grip"' in two
+    assert 'type="range" class="ver-onion" min="0" max="100" step="1" value="70"' in out["onion"]
+    assert 'aria-label="Opacity of the picked Oct 29, 2023 version over the base May 2, 2019 version"' in out["onion"]
+    assert 'ver-pic ver-a ver-is-base' in out["diff"] and 'ver-pic ver-b ver-is-pick' in out["diff"]
+    assert out["modes"] == ["2up", "diff"] and out["ratio"] == ["400 / 612", "2 / 3"]
+    assert out["keys"] == [45, 51, 100, 0, 100, 25, None] and out["at"] == [25, 0, 100]
+    assert out["sizes"] == [["588 × 1172 px", "400 × 612 px"], None]
+    assert out["aria"] == {"aria-valuenow": "40", "aria-valuetext": "40%: the x version left, the y version right"}
+    css, app = (ASSETS / "style.css").read_text(encoding="utf-8"), (ASSETS / "app.js").read_text(encoding="utf-8")
+    assert '.ver-cmp[data-mode="diff"] .ver-is-pick { mix-blend-mode: difference; }' in css
+    assert "touch-action: pan-y" in css and "getImageData" not in compare.read_text(encoding="utf-8")
+    assert "compareView(pref(MODE_KEY)" in app and "localStorage.setItem(MODE_KEY, mode)" in app
