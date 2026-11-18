@@ -54,6 +54,7 @@ PDF_SCALE = 3.0                              # its size when made (a 1080x1920 p
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
 SKIP_PARTS = ("MDW", "Markers")                                             # build_site.SKIP_PARTS
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
+CREATURES = "Creatures/"                    # ... and the creatures a minions rule includes (minion-sized decks)
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
 GLOBAL_LUA = "TTS/Global.lua"               # the save's global script (resizeTargets' rows are the updater's)
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
@@ -804,8 +805,23 @@ def _global_script(save: dict, repo: _Repo, report: _Report) -> None:
         report.script.append(f"`{GLOBAL_LUA}` written into the save")
 
 
-def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
-    """The global script's resizeTargets table lists the large creatures by their Nicknames in the save."""
+def _minion_creatures(rules: dict, pngs: list) -> set:
+    """Creature images a minions rule includes (Stubborn Queen): played from minion-sized decks, resized like
+    Auxiliary/Creatures."""
+    found = set()
+    for entry in rules.get("decks", {}).values():
+        rule = entry.get("rule") if isinstance(entry, dict) else None
+        if isinstance(rule, dict) and rule.get("kind") == "minions":
+            try:
+                found |= {p for p in _rule_cards(rule, pngs) if p.startswith(CREATURES)}
+            except (AttributeError, TypeError):             # a malformed rule: _sync_decks reports it
+                pass
+    return found
+
+
+def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report, rules) -> None:
+    """The global script's resizeTargets table lists the large creatures by their Nicknames in the save (decks.json
+    unread: rows are only added, so a minions deck's creature keeps its row)."""
     lua = save.get("LuaScript") or ""
     m = LUA_TABLE.search(lua)
     if not m:
@@ -817,13 +833,17 @@ def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> 
         report.errors.append("LuaScript: resizeTargets has rows the updater doesn't understand; table left alone.")
         return
     old = {key.replace('\\"', '"').replace("\\\\", "\\"): value for _, key, value in rows}
+    minion = _minion_creatures(rules, repo.pngs) if rules is not None else set()
+    large = lambda path: path.startswith(LARGE_CARDS) or path in minion
     nicks: dict = {}                                        # large card path -> its Nicknames in the save
     for card, _ in _walk(save.get("ObjectStates")):
         path = _face_path(card) if card.get("Name") in CARD_NAMES else None
-        if path and path.startswith(LARGE_CARDS) and card.get("Nickname"):
+        if path and large(path) and card.get("Nickname"):
             nicks.setdefault(path, set()).add(card["Nickname"])
     wanted = {n for ns in nicks.values() for n in ns}        # cards in the save, even when their image is gone
-    wanted |= {names.of(p) for p in repo.pngs if p.startswith(LARGE_CARDS) and p not in nicks}
+    wanted |= {names.of(p) for p in repo.pngs if large(p) and p not in nicks}
+    if rules is None:
+        wanted |= set(old)
     wanted = sorted(wanted, key=lambda k: (k.lower(), k))
     if not wanted:
         return
@@ -985,7 +1005,7 @@ def _update(save_path: str, names_from: str = "") -> tuple:
             _sync_decks(save, rules, repo, names, report)
         _fix_cards(save, repo, names, report)
         _global_script(save, repo, report)
-        _resize_targets(save, repo, names, report)
+        _resize_targets(save, repo, names, report, rules)
         _rulebook(save, repo, report)
 
     out = _dump(save).encode("utf-8")

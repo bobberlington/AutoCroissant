@@ -471,3 +471,26 @@ def test_global_script_from_its_file(tmp_path):
     broken = tts._Report()
     tts._global_script(save, repo, broken)
     assert "resizeTargets" in save["LuaScript"] and broken.errors
+
+
+def test_resize_targets_list_minion_creatures(repo):
+    """resizeTargets: Auxiliary/Creatures and the creatures a minions rule includes (Stubborn Queen comes out of the
+    Minions decks at creature size); other creatures stay off; decks.json unread: rows are only added."""
+    aux, queen, king = "Auxiliary/Creatures/M.png", "Creatures/Other/2 Stars/Q.png", "Creatures/Other/2 Stars/K.png"
+    for p in (aux, queen, king):
+        repo.tree[p] = "b" + p
+    repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
+    minions = {"kind": "minions", "folders": ["Auxiliary/Creatures/*.png"], "include": [queen], "count": 1}
+    rules = {"decks": {"aaaaaa": {"rule": minions}, "bbbbbb": {"rule": "oops"},
+                       "cccccc": {"rule": {"kind": "creatures", "folders": ["Creatures/Other/2 Stars/*.png"]}}}}
+    lua = 'local resizeTargets = {\n    ["M"] = true,\n}\n'
+    save = {"ObjectStates": [_deck("aaaaaa", [_card("000001", aux, 100), _card("000002", queen, 200)])], "LuaScript": lua}
+    tts._resize_targets(save, repo, Names(), report := tts._Report(), None)
+    assert save["LuaScript"] == lua and not report.lua_added
+    tts._resize_targets(save, repo, Names(), report, rules)
+    assert save["LuaScript"] == 'local resizeTargets = {\n    ["M"] = true,\n    ["Q"] = true,\n}\n'
+    assert report.lua_added == ["Q"] and not report.lua_removed
+    repo.tree["Auxiliary/Creatures/N.png"] = "bN"
+    repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
+    tts._resize_targets(save, repo, Names(), report := tts._Report(), None)
+    assert report.lua_added == ["Name of N"] and not report.lua_removed and '["Q"]' in save["LuaScript"]
