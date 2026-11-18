@@ -1874,6 +1874,21 @@ class Chain:
                         self.tally[f"owner: {e['kind']} field {key} given"] += 1
                         break
 
+    def apart_fields(self, entries: list) -> None:
+        """An owner's apart picture with 'as' (the look it was kept apart from: the same card but for the picture,
+        owner 11-17 ~23:40, Double Pain's clock): a field it doesn't read for sure takes that look's sure one."""
+        apart = (getattr(self.inputs, "owner", None) or {}).get("apart") or {}
+        holder = {p["id"]: e for e in entries if e["kind"] == "discord" for p in e.get("pictures") or ()}
+        for e in entries:
+            rule = apart.get(((e.get("pictures") or [{}])[0]).get("id")) if e["kind"] == "discord" else None
+            like = holder.get((rule or {}).get("as"))
+            if not like or like is e:
+                continue
+            for key, field in like["fields"].items():
+                if is_sure(field) and not is_sure(e["fields"].get(key)):
+                    e["fields"][key] = sure(field["value"], f"owner (as {rule['as']})")
+                    self.tally[f"owner: an apart picture's {key} as its look's"] += 1
+
     def keep_transcription(self, cid: str, e: dict, key: str, field: dict) -> None:
         """A text a reader made sure as one of the card's known texts ('ocr+known') keeps the answer given on its
         item before (the entry's own, or its git row's) when that answer has the same words (text_key): the answer
@@ -1923,6 +1938,7 @@ class Chain:
         self.star_guard(entries)
         self.star_fact_guard(entries)
         self.owner_fields(cid, entries)                  # a star the guards took to review, answered
+        self.apart_fields(entries)
         self.no_kinds(cid, entries)                      # an answer's types lose an item's kinds too
         entries = self.check_facts(cid, entries)
         self.diff(entries, card.get("type"))
