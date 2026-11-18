@@ -143,10 +143,14 @@ def test_stat_mistake_put_back_within_a_day():
 def test_stats_open_starts_its_data_and_draws_charts_near():
     """Stats' first open starts analytics.json beside the charts chunks (as a link to it does); its charts below the first
     screen are drawn once near (content-visibility) or two at a time while the page is idle, and every chart at once
-    when Back/Forward or a reload restores a place (charts-all), so the place lands where it was."""
+    when Back/Forward or a reload restores a place, a redraw starts mid-page or a Balance/History link jumps (charts-all),
+    so the place lands where it was."""
     app, css = (ASSETS / "app.js").read_text(encoding="utf-8"), (ASSETS / "style.css").read_text(encoding="utf-8")
     first = app[app.index("function renderStatsView(r) {"):app.index("whenLoaded(loadCharts()")]
     assert "if (!S.analytics) loadAnalytics().catch(() => {});" in first
     assert "#view:not(.charts-all) .charts > section.chart:not(.drawn) { content-visibility: auto; contain-intrinsic-size: auto 420px; }" in css
-    assert 'view.classList.toggle("charts-all", S.restoring || !!S.placing);' in app and "S.placing = !!at && !at.m;" in app
+    assert 'view.classList.toggle("charts-all", !top || !!S.placing);' in app and "S.placing = !!at && !at.m;" in app
+    assert "const top = scrollY === 0 && !S.restoring," in app                     # !top: Back/Forward too
+    jump = app[app.index('const scroll = e.target.closest("[data-scroll]");'):]
+    assert jump.index('if (scroll.closest(".stats-jump")) view.classList.add("charts-all");') < jump.index("el?.scrollIntoView(")
     assert "done = true; S.placing = false;" in app and 's.classList.add("drawn")' in app and "setTimeout(drawRest, 300)" in app
