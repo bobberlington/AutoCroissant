@@ -381,3 +381,15 @@ def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     x, y, w, h = node(tmp_path, f"""const d = new Uint8ClampedArray((await import("node:fs")).readFileSync({json.dumps(str(tmp_path / "light.raw"))}));
 out(m.fitPart(80, 96, m.opaquePart(d, 80, 96), {json.dumps(box)}).slice(0, 4));""")
     assert max(abs(p - q) for p, q in zip((x, y, x + w, y + h), (quad[0], quad[1], quad[4], quad[5]))) <= 1
+
+
+@pytest.mark.skipif(not has(MOCKUP_JS, "export const capBox"), reason="no capBox in this mockup.js")
+def test_an_icons_erase_box_stays_near_the_icon(tmp_path):
+    """A record's star or type box past half the icon (Holo Defense API, Ice Dragon: the whole card) is erased only
+    that far; a real glow box is kept as it is."""
+    out = node(tmp_path, """
+const star = (core, box) => ({ core, box }), at = { 1: [[1120, 60]] };
+const stars = { units: [star([1063, 9, 1178, 111], [1063, 8, 1187, 120]), star([949, 9, 1064, 111], [12, -98, 1214, 2388])], at };
+const types = { row: [{ name: "defensive_minion", core: [-5, 20, 153, 130], box: [-5, 20, 153, 130] }, { name: "ice", core: [168, 8, 289, 143], box: [26, -2, 1228, 2400] }] };
+out([m.starPlan(stars, 2, 1).erase, m.starPlan(stars, 2, 0).erase, m.typePlan(types, ["defensive_minion"]).erase]);""")
+    assert out == [[[891.5, -48.5, 1121.5, 168.5]], [[1063, 8, 1187, 120], [891.5, -48.5, 1121.5, 168.5]], [[100.5, -2, 356.5, 210.5]]]
