@@ -748,6 +748,8 @@ class PSDParser:
         else:
             card.ability = ""                   # no Ability printed (none, hidden or empty)
         self._process_stats(card, stat_trackers)
+        if card.creatures and abilities:
+            card.types += self._other_types(card.types, type_bboxes, abilities)
         stats = card.stats
         if card.card_type in STAT_KINDS and (stats.hp, stats.defense, stats.attack, stats.speed) == (-1, -1, -1, -1):
             kind = "creature" if card.card_type == "creatures" else card.card_type
@@ -1623,6 +1625,17 @@ class PSDParser:
             return bboxes
         return [(name, bbox) for name, bbox in bboxes
                 if any(box.y - ICON_SPAN_PAD <= bbox.y <= box.bottom + ICON_SPAN_PAD for box in boxes)]
+
+    @staticmethod
+    def _other_types(types: list, bboxes: list[tuple[str, BoundingBox]], abilities: list) -> list[str]:
+        """A card of several creatures: the type icons in no Ability layer's span (_in_span), the other creatures'
+        header icons (Tainted Lazarus's Dead form's undead), each once and not in types already."""
+        kept = {id(bbox) for _, bbox in PSDParser._in_span(bboxes, [bbox for _, bbox in abilities])}
+        out = []
+        for name, bbox in PSDParser._sort_by_position(bboxes):
+            if id(bbox) not in kept and name not in types and name not in out:
+                out.append(name)
+        return out
 
     def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]]) -> str:
         if not ability or not type_bboxes:

@@ -106,6 +106,16 @@ def test_leftover_icon_only_in_ability_span():
     assert p._process_abilities(texts, [("undead", BoundingBox(900, 1300))], 1200) == "Attacks inflict 1T Afraid. [undead]"
 
 
+def test_other_creatures_header_icon_is_a_type():
+    """A card of several creatures: an icon in no Ability layer's span is another creature's header icon, one of the
+    card's types (Tainted Lazarus's Dead form's undead), once, after creature 1's."""
+    from commands.psd_parser import BoundingBox, PSDParser
+    texts = [("Attacks inflict 1T Afraid.\n", BoundingBox(12, 1255, 1382))]
+    icons = [("undead", BoundingBox(1006, 2242)), ("fire", BoundingBox(900, 1300)), ("undead", BoundingBox(10, 2242))]
+    assert PSDParser._other_types(["light"], icons, texts) == ["undead"]
+    assert PSDParser._other_types(["undead"], icons, texts) == []
+
+
 def test_lowercase_part_continues_the_line():
     """Parts laying one text out line by line (Apex Predator, 11-09): a lowercase start continues the line before it,
     each part without its padding. With none, the old join (Miracle Matter's lines of blanks go: padding)."""

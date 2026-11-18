@@ -342,6 +342,9 @@ Algorithm:
    autocroissant-failure-archaeology). Keep it in mind if `TYPE_REGION_RATIO` ever changes.
    Then icons more than `ICON_SPAN_PAD` (80 px) above or below every Ability layer's box are dropped
    (`_in_span`, 2026-11-09: Tainted Lazarus's creature 2 header icon no longer ends its ability as `[undead]`).
+   On a card of several creatures those dropped icons are the other creatures' header icons: each joins
+   `card.types` after creature 1's, once (`_other_types`, 2026-11-17: Tainted Lazarus reads `[light, undead]`);
+   the bake and the mock-up keep them out of the header row (`psd_edit.other_types`, header.types.fixed).
 3. Split the ability into lines (each rstripped of `' \n` then `\n` re-appended). For each line,
    in order, while unconsumed types remain: find all `\s{3,}` gaps; replace gap i with
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
