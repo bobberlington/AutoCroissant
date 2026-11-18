@@ -12,23 +12,27 @@ A press names the lane in its run's title (card-preview.yml's run-name, from the
     Card preview <request> lane <run id>-<blob>
 
 blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each):
-GitHub cuts run titles at 512 characters, so the press itself never rides in one. The website also rings the lane's
-doorbell beside them, a ref outside refs/heads and refs/tags (no push event, no workflow), at the lane's commit:
+GitHub cuts run titles at 512 characters, so the press itself never rides in one. Once that blob is posted, the
+website also rings the lane's doorbell: a commit status at the lane's commit (this run's GITHUB_SHA; no push, no
+workflow, no Discord post), context CONTEXT, its description:
 
-    refs/preview-lane/<run id>/<request>-<blob>
+    <run id> <request> <blob>
 
-listed in about a second where a new run takes 2-6 s to show (rung). The lane takes a rung press at once (its blob, the card repo's main read in place of the run's commit) and a run only when
-its title names this run and its editor is this run's; each only when its blob hashes to its sha and names its request,
-and the bot's main and the data's records are still the ones this process read. A press on a newer commit of the card
-repo is taken there (follow: its trees fetched into the clone) when KEPT is the same there; from then on it is the
-lane's commit. A rung press's run, listed later, is served; any other newer run of its editor ends the lane (that run,
-not served, starts the next one). A run whose press its named lane served starts none.
+listed in about a second where a new run takes 2-6 s to show (rung). The lane lists its commit's statuses (one
+conditional GET; a 304 isn't counted) and takes a press rung by its editor (the status's creator) at once (its blob,
+the card repo's main read in place of the run's commit), and a run only when its title names this run and its editor
+is this run's; each only when its blob hashes to its sha and names its request, and the bot's main and the data's
+records are still the ones this process read. A press on a newer commit of the card repo is taken there (follow: its
+trees fetched into the clone) when KEPT is the same there; from then on it is the lane's commit (its doorbell stays at
+its first). A rung press's run, listed later, is served; any other newer run of its editor ends the lane (that run, not
+served, starts the next one). A run whose press its named lane served starts none. Statuses can't be deleted: none
+needs a clean-up (the lane's run id in each, so a later lane on that commit reads none of them).
 
-The website also rings a card its editor starts editing (its PSD blob's first 8-40 hex digits, a ref at the lane's
-commit too), so the lane reads that PSD, its PNG and the status chart into its clone before the press comes (warm: one
-background thread, one card at a time, never while a press is being taken; a press joins a read still going):
+The website also rings a card its editor starts editing (its PSD blob's first 8-40 hex digits, a status there too),
+so the lane reads that PSD, its PNG and the status chart into its clone before the press comes (warm: one background
+thread, one card at a time, never while a press is being taken; a press joins a read still going):
 
-    refs/preview-lane/<run id>/next/<PSD blob>
+    <run id> next <PSD blob>
 """
 from base64 import b64decode
 from binascii import Error as Base64Error
@@ -69,10 +73,10 @@ MAX_BLOB = 1 << 16                              # bytes of a press's blob (an ed
 WORKFLOW = "card-preview.yml"
 RECORDS_ENV = "CARD_RECORDS_DIR"                # psd_edit.RECORDS_DIR: the data's records the first press read
 TITLE = re_compile(r"Card preview ([A-Za-z0-9-]{8,64}) lane (\d{1,20})-([0-9a-f]{40})")
-BELL = "preview-lane"                           # the doorbell's refs: refs/preview-lane/<run id>/<request>-<blob>
-RUNG = re_compile(r"refs/preview-lane/(\d{1,20})/([A-Za-z0-9-]{8,64})-([0-9a-f]{40})")
+CONTEXT = "preview lane"                        # the doorbell's commit statuses (the website's)
+RUNG = re_compile(r"(\d{1,20}) ([A-Za-z0-9-]{8,64}) ([0-9a-f]{40})")         # <run id> <request> <blob>
 NAMED = re_compile(r"(\d{1,20})-[0-9a-f]{40}")  # inputs.lane
-NEXT = re_compile(r"refs/preview-lane/(\d{1,20})/next/([0-9a-f]{8,40})")     # a card its editor started editing
+NEXT = re_compile(r"(\d{1,20}) next ([0-9a-f]{8,40})")                       # a card its editor started editing
 MAX_NEXT = 20                                   # such cards a lane reads at most
 KEPT = ("MDW/Fonts", ".github/workflows/card-preview.yml", ".github/actions")    # the same at a commit the lane follows
 SHA = re_compile(r"[0-9a-f]{40}")
@@ -101,23 +105,26 @@ def press_of(title: str) -> Optional[Press]:
     return Press(match.group(1), int(match.group(2)), match.group(3)) if match else None
 
 
-def rung(body: bytes, me: int) -> list:
-    """The presses rung at lane me's doorbell (a matching-refs listing), by name; a request rung twice is none (a ref
-    doesn't say who made it: its run's title still can)."""
+def _rang(body: bytes, me: int, actor: str, pattern) -> list:
+    """pattern's matches among the statuses (a commit's statuses list) actor rang at lane me's doorbell."""
     try:
-        found = [m for m in (RUNG.fullmatch(r.get("ref", "")) for r in loads(body)) if m and int(m.group(1)) == me]
+        found = [pattern.fullmatch(s.get("description") or "") for s in loads(body)
+                 if s.get("context") == CONTEXT and (s.get("creator") or {}).get("login") == actor]
     except (ValueError, TypeError, AttributeError):
         return []
-    twice = {r for r in (m.group(2) for m in found) if sum(m.group(2) == r for m in found) > 1}
-    return sorted(Press(m.group(2), me, m.group(3)) for m in found if m.group(2) not in twice)
+    return [m for m in found if m and int(m.group(1)) == me]
 
 
-def hints_of(body: bytes, me: int) -> list:
-    """The PSD blobs rung as next at lane me's doorbell (a matching-refs listing)."""
-    try:
-        return [m.group(2) for m in (NEXT.fullmatch(r.get("ref", "")) for r in loads(body)) if m and int(m.group(1)) == me]
-    except (ValueError, TypeError, AttributeError):
-        return []
+def rung(body: bytes, me: int, actor: str) -> list:
+    """The presses actor rang at lane me's doorbell, by request; a request rung with two blobs is none."""
+    found = {(m.group(2), m.group(3)) for m in _rang(body, me, actor, RUNG)}
+    twice = {r for r, _ in found if sum(r == q for q, _ in found) > 1}
+    return sorted(Press(r, me, b) for r, b in found if r not in twice)
+
+
+def hints_of(body: bytes, me: int, actor: str) -> list:
+    """The PSD blobs actor rang as next at lane me's doorbell, oldest first."""
+    return list(dict.fromkeys(m.group(2) for m in _rang(body, me, actor, NEXT)))[::-1]
 
 
 def read_press(api: _Api, repository: str, press: Press) -> tuple:
@@ -348,8 +355,7 @@ def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: 
         _say(f"{press.request} ({clean(card, 80)}): {result.get('state')} in {now - seen:.2f} s (blob {blob - seen:.2f} s, "
              f"reads {read - blob:.2f} s, "
              f"bake {now - read:.2f} s)" + (f"; seen {time() - (now - seen) - made:.1f} s after its run was made (to the "
-                                            "second)" if made
-                                            else "; rung" if run is None else ""))
+                                            "second)" if made else "; rung" if run is None else ""))
         return ""
     finally:
         with open(out + ".code.tmp", "w", encoding="utf-8") as fh:     # the hand-over: done (none when skipped)
@@ -361,11 +367,12 @@ def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: 
 
 
 def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
-    """The lane's loop: its doorbell and its editor's runs listed every POLL s (conditional GETs), each card rung as next
-    read in the background (Warm), each press rung taken (take), then each newer run taken (at its commit: follow), served
-    (rung before) or the lane's end (fits). Returns why it ended (press: take's keywords)."""
+    """The lane's loop: its doorbell (its first commit's statuses) and its editor's runs listed every POLL s
+    (conditional GETs), each card rung as next read in the background (Warm), each press rung taken (take), then each
+    newer run taken (at its commit: follow), served (rung before) or the lane's end (fits). Returns why it ended
+    (press: take's keywords)."""
     runs = f"/repos/{press['repository']}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&actor={quote(actor)}&per_page={LISTED}"
-    bells = f"/repos/{press['repository']}/git/matching-refs/{BELL}/{me}/"
+    bells = f"/repos/{press['repository']}/commits/{press['head']}/statuses?per_page=100"     # the website's laneHead
     last, failing, seen, listed, rang, taken = monotonic(), None, set(), [], [], set()
     hints = Warm(press.get("clone", ""), press["repository"], press["head"])
 
@@ -383,8 +390,8 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
             return "the job's end is near"
         try:
             status, _, body = api.get(bells, conditional=True)
-            rang = rung(body, me) if status == 200 else rang
-            hints.ask(hints_of(body, me) if status == 200 else [])
+            rang = rung(body, me, actor) if status == 200 else rang
+            hints.ask(hints_of(body, me, actor) if status == 200 else [])
         except (OSError, HTTPException, ValueError):
             pass                                # the runs list still brings it
         pressed, run = next((p for p in rang if p.request not in taken), None), None
@@ -401,8 +408,7 @@ def listen(api: _Api, me: int, actor: str, *, until: float, **press) -> str:
                     return f"the runs list failed for {FAILING} s ({status})"
             if status == 200:
                 listed = loads(body).get("workflow_runs", [])
-            newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen),
-                           key=lambda r: int(r["id"]))
+            newer = sorted((r for r in listed if int(r.get("id") or 0) > me and r["id"] not in seen), key=lambda r: int(r["id"]))
             if not newer:
                 sleep(POLL_SLOW if api.left is not None and api.left < LOW else POLL)
                 continue
