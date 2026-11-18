@@ -52,13 +52,19 @@ def test_a_minion_label_beside_a_blank_is_no_ability_change(tmp_path):
 def test_compare_modes_like_github_s_image_diff(tmp_path):
     """Owner 11-17 ~20:35 (compare.js): a pinned base and a picked version in 2-up (the default), Swipe (a slider with
     its aria values, keys and pointer place), Onion skin (an opacity range) or Difference (CSS mix-blend-mode, no canvas
-    reads); both fit the box of the taller one; each picture's size only when they differ; the last mode kept."""
+    reads); both fit the box of the taller one; each picture's own size only when both are known and differ; the last
+    mode kept (on this page too). ~23:50 (1): an old version beside today's card (no pin) has the modes too, the old one
+    picked over the current; a side with no picture stays 2-up with a note."""
     compare = ASSETS / "compare.js"
     out = node(tmp_path, f"""const m = await import({json.dumps(compare.as_uri())});
 const a = {{ pic: '<img src="a.webp">', cap: "May 2, 2019", when: "May 2, 2019", base: true }};
 const b = {{ pic: '<img src="b.webp">', cap: "Oct 29, 2023", when: "Oct 29, 2023" }};
 const html = mode => m.compareView(mode, a, b, m.boxRatio([[588, 1172], [400, 612]]), {{ swipe: 30, onion: 70 }});
+const old = {{ pic: '<img src="o.webp">', cap: "Jul 28, 2020", when: "Jul 28, 2020", own: [400, 612] }};
+const cur = {{ pic: '<img src="c.avif">', cap: "Current", when: "current" }};
 process.stdout.write(JSON.stringify({{ two: html(null), swipe: html("swipe"), onion: html("onion"), diff: html("diff"),
+  now: m.compareView("onion", old, cur, "2 / 3"), sized: m.compareView("2up", old, {{ ...old, own: [399, 611] }}, "2 / 3"),
+  lack: m.compareView("diff", old, {{ ...cur, pic: '<div class="empty">No picture</div>', none: true }}, "2 / 3"),
   modes: [m.modeOf("bad"), m.modeOf("diff")], ratio: [m.boxRatio([null, [400, 612]]), m.boxRatio([null, null])],
   keys: [m.slideKey(50, "ArrowLeft"), m.slideKey(50, "ArrowUp", true), m.slideKey(98, "ArrowRight"), m.slideKey(50, "Home"),
          m.slideKey(50, "End"), m.slideKey(50, "PageDown"), m.slideKey(50, "a")],
@@ -79,7 +85,14 @@ process.stdout.write(JSON.stringify({{ two: html(null), swipe: html("swipe"), on
     assert out["keys"] == [45, 51, 100, 0, 100, 25, None] and out["at"] == [25, 0, 100]
     assert out["sizes"] == [["588 × 1172 px", "400 × 612 px"], None]
     assert out["aria"] == {"aria-valuenow": "40", "aria-valuetext": "40%: the x version left, the y version right"}
+    now = out["now"]                                     # no pin: the old version picked over today's card
+    assert 'ver-pic ver-a ver-is-pick' in now and 'ver-pic ver-b ver-is-base' in now and 'class="ver-cmp" data-mode="onion"' in now
+    assert 'aria-label="Opacity of the picked Jul 28, 2020 version over the current version"' in now
+    assert '<span class="ver-size"></span>' in now and "400 × 612 px</span>" in out["sized"] and "399 × 611 px</span>" in out["sized"]
+    assert 'class="ver-cmp ver-lack" data-mode="diff"' in out["lack"]
     css, app = (ASSETS / "style.css").read_text(encoding="utf-8"), (ASSETS / "app.js").read_text(encoding="utf-8")
-    assert '.ver-cmp[data-mode="diff"] .ver-is-pick { mix-blend-mode: difference; }' in css
+    assert '.ver-cmp[data-mode="diff"]:not(.ver-lack) .ver-is-pick { mix-blend-mode: difference; }' in css
+    assert ".ver-lack:not([data-mode=\"2up\"]) .ver-lack-note { display: inline;" in css
     assert "touch-action: pan-y" in css and "getImageData" not in compare.read_text(encoding="utf-8")
-    assert "compareView(pref(MODE_KEY)" in app and "localStorage.setItem(MODE_KEY, mode)" in app
+    assert app.count("compareView(cmpMode ?? pref(MODE_KEY)") == 2 and app.count("nowPair(") == 2 and "ver-pair" not in app
+    assert "box.dataset.mode = cmpMode = mode" in app and "localStorage.setItem(MODE_KEY, mode)" in app

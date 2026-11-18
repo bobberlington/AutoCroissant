@@ -537,7 +537,7 @@ def _timelines(root):
          "w": 40, "h": 80, "fields": {}, "changes": {}}],
         "git_first": {"date": "2023-06-01T00:00:00+00:00", "approx": True,
                       "changes": {"stats": [{"hp": 3, "def": 2, "atk": 4, "spd": 1}, {"hp": 3, "def": 2, "atk": 3, "spd": 1}], "bal": "nerf"}}}
-    joke = {"card": "joke-card", "key": "Joke Card", "name": "Joke Card", "kind_of": "joke",
+    joke = {"card": "joke-card", "key": "Joke Card", "name": "Joke Card", "kind_of": "joke", "live": "alpha",
             "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
@@ -595,6 +595,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     assert (muru["created"], muru["createdFrom"], muru["createdBefore"], muru["lost"]) == ("2019-01-01", "photo", 2020,
                                                                                           "played") and "first" not in muru
     assert muru["inGit"] and "inGit" not in joke[0]                                  # its first repo file: lost before this repo
+    assert joke[0]["live"] == alpha["id"] and "live" not in muru and not any("_live" in c for c in out["cards.json"]["morgue"])   # an in-joke's live card
     assert "M'uru" not in _by_name(out["cards.json"])
     taken = bs.history_morgue({"morgue": [("_morgue/joke-card", json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()))]},
                               bs.slugify, {"joke-card"})[0]
