@@ -1350,23 +1350,7 @@ fetches its trees (`--depth 1 --filter=blob:none`, 0.4-1.2 s from a Mac) and fol
 cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Replayed (`s1110/r44-3/`, a
 real lane in a shallow GitHub clone across TTSCardMaker d0f0eae3 -> 2d3bab82 -> e897b00c): 4 presses, two on cards
 those pushes changed (Marilyn, Astr Meiana), all byte-identical to cold runs at their commits. Any other
-newer run of its editor ends it, and that run is the next lane. Check suites (2026-11-17, actbake r45; no ref, no
-website change): GitHub's runs lists show a new run 2-6 s after it is made (the D22 land probe's lane saw press 2 4.9 s
-after its run's `created_at`), but a run's check suite is listed on its commit well before (14 runs on public
-repos' pushes: a median 0.65 s after `created_at`, against 4.38 s). The lane lists the card repo's main's
-(`commits/heads/main/check-suites?app_id=15368`, conditional, past 100 also the last page; the preview job's
-`checks: read`), reads the new suites' runs with one GraphQL `nodes` query (`workflowRun`'s id,
-title, event, time and file, `creator`, `commit`) into the runs list's shape and filters (`card-preview.yml`,
-`workflow_dispatch`, its editor: `Suites`, `suite_run`), and lists the runs list only when they brought nothing new; a
-refused listing or query (or 3 failures) leaves the runs list alone, said in lane.log. On TTSCardMaker d0c9830f
-they gave the D22 probe's two presses with the runs list's titles, commits, times and editor. Live (`Suites` with a
-real token, filters off, polled as listen does; 6 new runs on 3 vscode/llvm pushes): returned 0.80-2.48 s after
-`created_at` (0.80 and 1.75 s when already polling), the runs list 4.33-6.08 s. Replayed
-(`s1110/actbake-r45-0/`, the lane's own listen/take against a stand-in GitHub with those suite lags, GraphQL 0.41 s,
-no ref, 11 presses, twice): taken a median 3.0 s after the press instead of 4.9-5.3 s, its hand-over written at
-4.3-4.4 s instead of 6.3-6.5 s (a median 2.1-2.3 s off, 22 of 22 faster); with the suites refused, as before. The
-land's dry dispatch shows it with the job's token (`by its check suite` in lane.log, else `check suites off`). A
-taken press gets its out dir in `$RUNNER_TEMP/lane/`,
+newer run of its editor ends it, and that run is the next lane. A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
 press's own run). Every press is still dispatched, baked cold and published as ever. A run whose named lane handed its
