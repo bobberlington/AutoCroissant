@@ -40,12 +40,13 @@ def test_the_version_job_deploys_what_the_build_uploads():
 
 
 class _Run:
-    """A stand-in run: its jobs and artifacts as of `at` seconds in (ETags, 304s), the reads counted."""
+    """A stand-in run: its jobs and artifacts `at` s after its first read (ETags, 304s), the reads counted."""
 
     def __init__(self, timeline):
-        self.timeline, self.start, self.reads = timeline, time.monotonic(), []
+        self.timeline, self.start, self.reads = timeline, None, []
 
     def state(self):
+        self.start = self.start or time.monotonic()        # python's start isn't timed
         at = time.monotonic() - self.start
         return [s for t, s in self.timeline if t <= at][-1]
 
@@ -85,7 +86,7 @@ def _wait(tmp_path, timeline, *args, attempt="1"):
     try:
         began = time.monotonic()
         done = run_process([sys.executable, "-S", str(WAIT), *args], env=env, capture_output=True, text=True, timeout=30)
-        return done, time.monotonic() - began, out.read_text(), run.reads
+        return done, time.monotonic() - (run.start or began), out.read_text(), run.reads
     finally:
         server.shutdown()
 
