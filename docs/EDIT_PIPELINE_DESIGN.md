@@ -1350,19 +1350,26 @@ fetches its trees (`--depth 1 --filter=blob:none`, 0.4-1.2 s from a Mac) and fol
 cold on a push since the lane's commit (site, the TTS save, 4 cards), none with new fonts. Replayed (`s1110/r44-3/`, a
 real lane in a shallow GitHub clone across TTSCardMaker d0f0eae3 -> 2d3bab82 -> e897b00c): 4 presses, two on cards
 those pushes changed (Marilyn, Astr Meiana; one rung), all byte-identical to cold runs at their commits. Any other
-newer run of its editor ends it, and that run is the next lane. The doorbell (2026-11-16, actbake r41): GitHub's runs
-lists show a new run 2-6 s after it is made (the D22 land probe's lane saw press 2 4.9 s after its run's `created_at`,
-after a fresh runner had already started that press's cold job), so beside the blob and the dispatch the website
-creates `refs/preview-lane/<lane run>/<request>-<blob sha>` at the lane's commit, a ref outside refs/heads and
-refs/tags (no workflow starts on it). The lane lists `git/matching-refs/preview-lane/<its run id>/` beside its runs
-(conditional, a 304 isn't counted) and takes a rung press at once (`rung`), with the same blob, records and bot's-main
-checks plus a read of the card repo's main in place of the run's `head_sha`; a request rung twice is none
-(a ref doesn't say who made it; its run's title does). That press's run, listed later, is served (no end, no lane of
-its own). The website deletes the ref once the lane's hand-over is in; the press's publish job deletes it too. The
-runs list stays the way in for a press the website couldn't ring. Replayed (`s1110/actbake-r41-0/`: the lane's own
-listen/take against a stand-in GitHub with those lags, 11 presses, a 0.5 s ref post): taken a median 0.92 s after the
-press instead of 5.06 s, its hand-over written at 2.34 s instead of 6.31 s; with no ref, 5.23 s (the runs list's). The
-land measures it on the runners (`tools/lane_probe_bell.py` there). A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
+newer run of its editor ends it, and that run is the next lane. The doorbell (2026-11-16, actbake r41; commit statuses since 2026-11-18, r50): GitHub's runs
+lists show a new run 2-6 s after it is made (the 4 real lane presses: 2.9, 3.7, 4.9 and 8.5 s after `created_at`), so
+once the blob is posted the website creates a commit status at the lane's commit (the lane run's `GITHUB_SHA`: the
+website's `laneHead`, kept across the lane's follows), state success, context `preview lane`, description
+`<lane run> <request> <blob sha>`. A status is no push (no workflow runs on `status`; the repo's only hook takes
+pushes) and can't be deleted, so nothing cleans up; each names its lane, so a later lane on that commit reads none.
+The lane lists `commits/<its first commit>/statuses?per_page=100` beside its runs (conditional: a weak ETag, a 304
+isn't counted; the preview job's `statuses: read`) and takes a press its editor rang (the status's `creator`) at once
+(`rung`), with the same blob, records and bot's-main checks plus a read of the card repo's main in place of the run's
+`head_sha`; a request rung with two blobs is none. That press's run, listed later, is served (no end, no lane of its
+own). The runs list stays the way in for a press the website couldn't ring (a token without Commit statuses: write,
+or past GitHub's 1000 statuses per commit and context). The earlier ref doorbell (`refs/preview-lane/...`) was held for
+a webhook proof and the check suites (r45) were reverted: a new run's suite names no request for its first seconds.
+New statuses on a public repo were listed at most 1.38-2.18 s after `created_at` (3 seen through 1.4-3 s GraphQL
+reads); a conditional statuses read answers 304 in 0.34-0.39 s and leaves the rate limit. Replayed
+(`s1110/actbake-r50-1/`: the lane's own listen/take against a stand-in GitHub, the 4 real lane presses' runs-list lags
+twice, the blob and then the status posted 0.4 s each): main's lane took a press a median 5.11 s after it and its
+hand-over was on screen at 7.3 s; rung, 2.06 s and 4.3 s at a 1 s status lag, 3.07 s and 5.3 s at those upper bounds
+(16 of 16 sooner; the 8.5 s press from 11.3 s to 3.8-5.3 s). The land measures the lag on the card repo.
+A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the
 press's own run; none for a rung press). Every press is still dispatched, baked cold and published as ever. A run
