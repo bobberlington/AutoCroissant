@@ -990,6 +990,26 @@ def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
         [pe._item_bytes(item) for item in pe._filter_block(old)]
 
 
+def test_blurred_linked_stars_move_and_copy(clone, parser, tmp_path):
+    """Gust of Wind's linked stars carry a Motion Blur and no FEid item (Croissant's 11-11 push): 2 -> 3 copies one,
+    marked not valid at its new place (Photoshop's export of such a bake matches it, 11-18); another filter stays put."""
+    rel = "Items/Support/2 Stars/Gust_of_Wind.psd"
+    (tmp_path / "old").mkdir()
+    paths = [tmp_path / "old" / f"Gust_of_Wind.{ext}" for ext in ("psd", "png")]
+    for path in paths:
+        path.write_bytes(at_rev(clone, "aa8a491f", rel[:-3] + path.suffix[1:]))
+    parsed = pe.parse_card(parser, str(paths[0]), rel)
+    (tmp_path / "new").mkdir()
+    baked = pe.apply_jobs(*map(str, paths), rel.replace("2 Stars", "3 Stars"), {"stars": 3}, parsed, parser,
+                          str(tmp_path / "new"), str(tmp_path / "no-fonts"))
+    assert baked.reparse["card"]["stars"] == 3
+    stars = [layer for layer in PSDImage.open(baked.psd_path).descendants() if layer.parent.name == "Stars"]
+    assert sorted(layer.smart_object.filters[b"validAtPosition"].value for layer in stars) == [False, True, True]
+    star = stars[0]
+    star.smart_object.filters[b"filterFXList"][0][b"Fltr"].classID = b"PrsW"
+    assert pe._shiftable(star) == "'star' has smart filters"
+
+
 def _touching(plan) -> list:
     """The row's icons whose inks touch once the plan's moves are in (a moved or shown one of each pair)."""
     shifts = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
