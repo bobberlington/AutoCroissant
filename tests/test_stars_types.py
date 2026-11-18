@@ -1255,3 +1255,19 @@ def test_a_memo_clears_fast_from_photoshops_padding():
             pe.set_icon_memo(psd, field, None)
         assert process_time() - start < 0.1
         assert psd.image_resources.get_data(Resource.XMP_METADATA) == padded
+
+
+def test_other_creatures_icon_stays_off_the_header(clone, parser):
+    """Tainted Lazarus reads [light, undead], its undead its Dead form's: the bake and the mock-up's record keep it out
+    of the header row (adding fire makes one icon), taking it off is refused."""
+    import commands.psd_details as pd
+    rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
+    path = str(clone / rel)
+    parsed = pe.parse_card(parser, path, rel)
+    assert parsed["card"]["types"] == ["light", "undead"]
+    plan = _plan(parser, path, rel, "types", ["light", "undead", "fire"])
+    assert plan.new == ["light", "fire"] and [stem for stem, _, _ in plan.icons] == ["fire"] and not plan.hide
+    with pytest.raises(pe.Refused, match="'undead' is another creature's icon"):
+        _plan(parser, path, rel, "types", ["light"])
+    header = pd._type_header(PSDImage.open(path), "Tainted_Lazarus", parser.all_types, rel, parsed["info"])
+    assert [row["name"] for row in header["row"]] == ["light"] and [name for name, _ in header["fixed"]] == ["undead"]

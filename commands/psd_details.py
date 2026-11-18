@@ -35,7 +35,7 @@ from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, lo
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _memo_holds,
     _merge_twins, _moved_box, _outside_units, _reading, _star_layouts, _star_units, _texts, _undo, canonical_type,
-    icon_memo, layer_parents, offline_parser, plan_stars, type_row,
+    icon_memo, layer_parents, offline_parser, other_types, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -621,16 +621,20 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
             "at": at, "refused": refused, **({"scale": scale} if scale else {})}
 
 
-def _type_header(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dict]:
+def _type_header(psd: PSDImage, name: str, vocab, rel: str = "", card=None) -> Optional[dict]:
     """
     The header type icons as plan_types reads them (a title's tokens are the name's): the row ({name, core, box}, slot
-    order), each longer row's spots past it ({count: boxes}), icons the bake can't take off ([name, why]) and a token
-    row's refusal. None without icons. rel: the card's repo path (the spot record's cores).
+    order), each longer row's spots past it ({count: boxes}), icons the bake can't take off ([name, why]; the other
+    creatures' too: other_types of the parsed card) and a token row's refusal. None without icons. rel: the card's
+    repo path (the spot record's cores).
     """
-    images, tokens = type_row(psd, _icon_parser(vocab), name)
+    parser = _icon_parser(vocab)
+    images, tokens = type_row(psd, parser, name)
     if not images and not tokens:
         return None
-    units, names, fixed = [], {}, []
+    units, names = [], {}
+    fixed = [[one, f"{one!r} is another creature's icon"]
+             for one in other_types(parser, {"types": card.types, "creatures": card.creatures}, images)] if card else []
     for name, layer in images:
         why = _icon_reason(layer)
         if why:
@@ -678,12 +682,13 @@ def _types_back(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dict
                       "core": _ints(_moved_box(_icon_core(layer, rel), *moved.get(id(layer), (0, 0))))} for layer in draw]}
 
 
-def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None) -> dict:
+def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None, card=None) -> dict:
     """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's; a
-    types memo's way back (types_back)."""
+    types memo's way back (types_back). card: the parsed card (the other creatures' icons)."""
     back = _guard(_types_back, psd, name, vocab, rel)
     return {"stars": _guard(_star_header, psd, rel, vocab, parser),
-            "types": _guard(_type_header, psd, name, vocab, rel), **({"types_back": back} if back is not None else {})}
+            "types": _guard(_type_header, psd, name, vocab, rel, card),
+            **({"types_back": back} if back is not None else {})}
 
 
 def _tree(group, depth: int = 0) -> list:
@@ -764,7 +769,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["fx"] = _guard(_fx, layers)
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"])
-    record["header"] = _guard(_header, psd, rel, name, vocab, parser)
+    record["header"] = _guard(_header, psd, rel, name, vocab, parser, card)
     record["tree"] = _guard(_tree, psd)
     record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), card, templates)
     return record

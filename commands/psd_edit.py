@@ -8751,6 +8751,16 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
     return images, tokens
 
 
+def other_types(parser: Optional[PSDParser], card: dict, images: list) -> list:
+    """The types a card of several creatures reads from its other creatures' icons (PSDParser._other_types: Tainted
+    Lazarus's undead), canonical: its types past type_row's images. No header's: the bake never adds or takes them
+    off."""
+    if len(card.get("creatures") or []) < 2:
+        return []
+    return list((Counter(canonical_type(parser, t) for t in card.get("types") or [])
+                 - Counter(name for name, _ in images)).elements())
+
+
 def _icon_reason(layer) -> Optional[str]:
     """Why a header type layer is no icon the bake moves or hides (a group, text); None. A frame is in no row
     (type_row)."""
@@ -8951,10 +8961,11 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     made one's ink needs types_dir). Back to the card maker's icons (in any order) while the PSD's types memo holds
     (_memo_holds, as the stars'): the bake's own hides and moves undone, its made icons deleted (D14, _undo).
     Spots past the last icon carry the row on at its spacing, or go under a lone icon (Item_Template's column), or wrap
-    clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). Refused per
-    field: a token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up
-    with, a type with no Types/ icon, a layer that cannot move, or an icon that would run off the canvas, onto the text
-    or stars, or over another icon, where an added one stepped down fits nowhere (_lowered; owner 11-08, told).
+    clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). The other
+    creatures' icons (other_types) are no header's: they stay. Refused per field: a token row ([fire] in header text), a
+    removed type drawn as a frame or group, no icon to line a new one up with, a type with no Types/ icon, a layer that
+    cannot move, or an icon that would run off the canvas, onto the text or stars, or over another icon, where an added
+    one stepped down fits nowhere (_lowered; owner 11-08, told), another creature's icon taken off.
 
     Args:
         psd: The open card (not changed)
@@ -8981,6 +8992,12 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     images, tokens = type_row(psd, parser, _card_name(parsed))
     if tokens:
         refuse(f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop")
+    others = other_types(parser, parsed["card"], images)
+    for name in others:
+        if name not in want:
+            refuse(f"{name!r} is another creature's icon, not an icon to take off")
+        want.remove(name)
+    value = want if others else value
     memo = _memo_holds(psd, "types", [name for name, _ in images], parser)
     if memo is not None and same_types(parser, want, memo["count"]):    # back to the maker's icons: the bake's undone
         return _undo(psd, memo, "types", "the card maker's own icons")
@@ -12717,6 +12734,7 @@ __all__ = [
     'text_kwargs',
     'set_text_layer',
     'one_colour',
+    'other_types',
     'alternate_spans',
     'set_alternates',
     'stylistic_alternates',
