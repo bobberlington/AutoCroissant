@@ -69,10 +69,20 @@ def get_card_aliases(name: Optional[str] = None) -> dict[str, list[str]] | list[
     return card_to_aliases
 
 
+def _shown(card: CardInfo) -> dict:
+    """to_dict() as the bot shows it (/query as_of, the exports): a Created made before a year says 'before <year>'
+    (Pep Drink, Wham Bam Bone), as the embed and the site; to_dict itself keeps the date (the bake gates compare it)."""
+    shown = card.to_dict()
+    before = (getattr(card, "created", None) or {}).get("before")
+    if before and "created" in shown:
+        shown["created"] = f"before {before}"
+    return shown
+
+
 def _format_metadata(card: CardInfo, name: str) -> str:
     """A stored version's fields one per line: aliases first, COLUMN_ORDER, then any other keys. A field its reading could
     not know (card_history.unknown) says unknown, but a stored ability text (the website's history lists it)."""
-    metadata = card.to_dict()
+    metadata = _shown(card)
     aliases = get_card_aliases(name)
     if aliases:
         metadata['aliases'] = ', '.join(aliases)
@@ -127,7 +137,7 @@ def export_stats_to_file(interaction: Interaction,
         only_ability: Export only ability text
         as_csv: Export as CSV (otherwise text file)
     """
-    filtered_stats = {name: card.to_dict() for name, card in stats_db.stats.items()}
+    filtered_stats = {name: _shown(card) for name, card in stats_db.stats.items()}
 
     # Get all card aliases using helper function
     card_to_aliases = get_card_aliases()
@@ -189,7 +199,7 @@ def export_stats_to_file(interaction: Interaction,
                 if card.ability:
                     f.write(f"{card.ability}\n")
             else:
-                for key, metric in card.to_dict().items():
+                for key, metric in _shown(card).items():
                     if key == "creatures":              # each hp/def/atk/spd
                         metric = [f"{c.hp}/{c.defense}/{c.attack}/{c.speed}" for c in card.creatures]
                     f.write((' '.join(map(str, metric)) if isinstance(metric, list) else str(metric)) + '\n')

@@ -182,21 +182,26 @@ def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     carry it (CSV: a created column). The text exports keep non-ASCII and write creatures as hp/def/atk/spd."""
     import csv
     import commands.psd_analyzer as pa
-    goombella, kirby = _dated("Goombella", "2023-10-13"), _dated("Kirby", None)
+    goombella, kirby, pep = _dated("Goombella", "2023-10-13"), _dated("Kirby", None), _dated("Pep Drink", "2020-07-21")
+    pep.created["before"] = 2020                                # owner 11-14: "before 2020", as the embed says
     twins = _card("Twins", creatures=[cm.CardStats(7, 4, 5, 6), cm.CardStats(7, 10, 4, 4)])
     twins.ability = "Uses: ∞"
     monkeypatch.setattr(pa, "get_card_aliases", lambda name=None: [] if name else {})
     lines = pa._format_metadata(goombella, "Goombella").split("\n")
     assert lines[lines.index("created: 2023-10-13") - 1].startswith("timestamp: ")
+    assert "created: before 2020" in pa._format_metadata(pep, "Pep Drink").split("\n")
+    assert pep.to_dict()["created"] == "2020-07-21"             # the gates' to_dict keeps the date
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(pa, "queue_file", lambda inter, f: None)
-    monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby, "Twins": twins})
+    monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby, "Twins": twins, "Pep Drink": pep})
     pa.export_stats_to_file(SimpleNamespace(), as_csv=True)
     rows = {r[""]: r for r in csv.DictReader(open("stats.csv", encoding="utf-8"))}
     assert rows["Goombella"]["created"] == "2023-10-13" and rows["Kirby"]["created"] == ""
+    assert rows["Pep Drink"]["created"] == "before 2020"
     pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
     text = open("stats.txt", encoding="utf-8").read()
     assert "\n2023-10-13\n" in text and "\nUses: ∞\n7/4/5/6 7/10/4/4\n" in text
+    assert "\nbefore 2020\n" in text and "2020-07-21" not in text
     monkeypatch.setattr(pa.stats_db, "rulebook", [{"num": 2, "title": "Setting Up", "text": "★★★ Deck\nfrom −9 up"}])
     pa.export_rulebook_to_file(SimpleNamespace())
     assert "2. Setting Up\n★★★ Deck\nfrom −9 up\n" in open("rules.txt", encoding="utf-8").read()
