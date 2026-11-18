@@ -97,7 +97,12 @@ const out = {{
     T.anchorInks([c]);
     return {{ drawn: M.colourize(M.tokenize(now, {{}}), now, null, "ability", null, M.baseInk(c, "ability", now)).flat(2).filter(p => p.color).map(p => [p.text, p.color]),
       part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP."), moved: M.baseInk(c, "ability", "Gain 2 HP.\\nInflict Burning now."),
-      status: M.baseInk(c, "ability", "Inflict Scorching now.\\nGain 2 HP.", null, ["Burning"]) }};
+      status: M.baseInk(c, "ability", "Inflict Scorching now.\\nGain 2 HP.", null, ["Burning"]),
+      head: (() => {{   // a line typed under a header line: the next line's colour (psd_edit header_looks)
+        const h = {{ ability: "Purchase Cost: 4 Points\\nForcibly move.", ink: {{ ability: [[24, 38, "#ac43dc"]] }} }}, now = "Purchase Cost: 4 Points\\nGain 1 SP.\\nForcibly move.";
+        T.anchorInks([h]);
+        return [M.baseInk(h, "ability", now, null, null, ["Purchase Cost: 4 Points"]), M.baseInk(h, "ability", now)];
+      }})() }};
   }})(),
   chart: (() => {{   // capitalised status words in the chart's, over all
     const t = "Inflict Burning. burning foes.";
@@ -137,6 +142,8 @@ process.stdout.write(JSON.stringify(out));
     assert ink["drawn"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#ffffff"}] and ink["at"] == "#ff7a1a"
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
     # as the bake: "3" takes the "2"'s colour (bakeInk); a moved line keeps its own; a status word is never a source
+    head = out["mock"].pop("head")     # under the cost line: the next line's purple, else the caret's (none)
+    assert [any(r["start"] <= 24 and r["end"] >= 34 and r["color"] == "#ac43dc" for r in runs or []) for runs in head] == [True, False]
     assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["3", "#00ff00"], ["HP", "#00ff00"]],
                            "part": [{"start": 5, "end": 9, "color": "#00ff00"}],
                            "moved": [{"start": 5, "end": 9, "color": "#00ff00"}, {"start": 19, "end": 26, "color": "#ff7a1a"}],

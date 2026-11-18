@@ -2041,6 +2041,32 @@ def test_a_line_join_or_split_keeps_every_letters_look(clone, parser, chart, how
     assert [before[i] for i in kept] == [after[i] for i in kept]
 
 
+DART = "N.M.E/Electric_Dart.psd"   # 'Purchase Cost' line in its own font, 26.7 pt leading at 168.8 pt text
+
+
+def test_a_line_typed_under_a_header_takes_the_next_lines_look(clone, parser, chart):
+    """A line typed right under Electric Dart's cost line (a header: heads) takes the next line's look, font, size,
+    leading and fill, not the cost line's (r48: it printed on top of it); one typed at the end keeps the caret's."""
+    def look(layer, i):
+        s = next(run.style for p in layer.typesetting for run in p.runs if run.start <= i < run.end)
+        return s.font_name, s.font_size, s.leading, s.auto_leading, s.fill_color
+
+    for where in ("under", "end"):
+        psd = PSDImage.open(_card(clone, DART)[0])
+        layer = pe.ability_layer(psd)
+        old = layer.text
+        lines, _, found = pe.heads(layer)
+        assert [old[slice(*lines[k])] for k in found] == ["Purchase Cost: 5 Points"]
+        reading = pe.normalize_ability(old)
+        at = reading.index("\n") if where == "under" else len(reading)
+        pe.set_text_layer(psd, "ability", reading[:at] + "\nGain 1 SP." + reading[at:], str(clone / pe.FONTS_DIR), chart,
+                          parser=parser)
+        new = layer.text
+        typed, body = look(layer, new.index("Gain 1 SP.")), look(layer, new.index("Deal"))
+        above = look(layer, len(new[:new.index("Gain 1 SP.")].rstrip(" \r\x03")) - 1)
+        assert typed == (body if where == "under" else above) and typed[0] != "EBGaramond-Regular"
+
+
 def test_icon_text_follows_the_fonts_spellings(parser):
     """What the stoogedings font draws (its GSUB): timing tags of badge_tags() and costs of cost_tags() in any case (not
     a cost glued to a number, "2(x counters)", nor one past the font's numbers), tokens the vocabulary knows with a
