@@ -38,6 +38,7 @@ from re import DOTALL, compile as regex
 from select import select
 from shutil import copyfile, rmtree, which
 from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired, run as run_process
+from sys import stderr
 from tempfile import mkdtemp
 from time import monotonic, sleep, time
 from typing import Optional
@@ -112,6 +113,7 @@ PLAIN_JS = r"""Promise.all([...new Set([...document.styleSheets].flatMap(s => { 
 SITE_POLL = 20                                 # seconds between looks at the website (and draws after an old CDN copy)
 SITE_POLL_FIRST, SITE_FAST = 2, 120            # a wait's first SITE_FAST s: build.txt read every SITE_POLL_FIRST s
 CALL_SECONDS = 60                              # one DevTools call
+START_SECONDS = 15                             # Chrome's first answer (healthy: under 0.5 s); else started once more
 # the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
 # (held: no Chrome; --full looks and warns on a miss)
 PAGE_STAMP = regex(r'<meta name="page" content="([^"]*)"')   # build_site: index.html's stamp (build.txt's 2nd line)
@@ -168,13 +170,15 @@ class Chrome:
                     raise RuntimeError(f"{method}: {reply['error'].get('message')}")
                 return reply.get("result") or {}
 
-    def close(self) -> None:
+    def close(self, ask: bool = True) -> None:
+        """Chrome ended (asked first when ask, else killed), its pipes closed, its profile removed."""
         try:
-            self.call("Browser.close", seconds=10)
+            if ask:
+                self.call("Browser.close", seconds=10)
         except (OSError, RuntimeError, TimeoutError):
             pass
         try:
-            self.proc.wait(timeout=10)
+            self.proc.wait(timeout=10 if ask else 0)
         except TimeoutExpired:
             self.proc.kill()
         for fd in (self._send, self._recv):
@@ -183,6 +187,21 @@ class Chrome:
             except OSError:
                 pass
         rmtree(self.profile, ignore_errors=True)
+
+
+def start(exe: str) -> tuple:
+    """A Chrome and its new tab's target id; one that stalls, quits or errs at its first answer is killed and started
+    once more."""
+    for again in (False, True):
+        chrome = Chrome(exe)
+        try:
+            return chrome, chrome.call("Target.createTarget", {"url": "about:blank"},
+                                       seconds=CALL_SECONDS if again else START_SECONDS)["targetId"]
+        except (OSError, RuntimeError, TimeoutError) as e:
+            chrome.close(ask=False)
+            if again:
+                raise
+            print(f"Rulebook PDF: {e}: Chrome started again.", file=stderr)
 
 
 def find_chrome() -> Optional[str]:
@@ -217,9 +236,8 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
         the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it in any case), the key,
         the page's stamp, PLAIN_JS's {url: blob id})
     """
-    chrome = Chrome(exe)
+    chrome, target = start(exe)
     try:
-        target = chrome.call("Target.createTarget", {"url": "about:blank"})["targetId"]
         session = chrome.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
 
         def run(expression: str):
