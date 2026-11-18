@@ -2289,7 +2289,8 @@ def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
 
 
 def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
-             template: Optional[tuple] = None, chart: Optional[dict] = None, caps=..., marks: bool = False) -> Classification:
+             template: Optional[tuple] = None, chart: Optional[dict] = None, caps=..., marks: bool = False,
+             color_view: Optional[int] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is website only; on a layer-comp bar, up to its top comp (comp_top). `creatures` bakes on a bar per creature (_classify_creatures). Stars and types are jobs when the card's
@@ -2304,6 +2305,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         template: template_icon() of the card's template: where a card with no type icon takes its first one
         caps: stat_caps(psd) when the caller has read it (bar_changes: once for all its values); ... reads it here
         marks: PLAIN_MARKS compare as plain (gate_idempotence: the bake may have set them so)
+        color_view: The picture whose page the entry is: its colours are found there (color_layers)
 
     Returns:
         Classification
@@ -2383,11 +2385,12 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
     if edits.get("colors"):
-        _classify_colors(out, parsed, edits, psd, chart)
+        _classify_colors(out, parsed, edits, psd, chart, color_view)
     return out
 
 
-def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage], chart=None) -> None:
+def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage], chart=None,
+                     view: Optional[int] = None) -> None:
     """
     classify()'s `colors` (plan_colors): the colours to bake are the job, each refused one a refusal of the field (its
     reason; the card's other fields and colours still bake); with none to bake, the field is redundant when one was.
@@ -2399,7 +2402,7 @@ def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Option
     parted = {job.get("field") for job in (out.jobs.get("parts") or {}).values() if isinstance(job, dict)}
     retyped = {f: edits.get(f) or "" for f in COLOR_FIELDS if f in out.jobs or f in parted}
     boxes = {key: job.get("text") or "" for key, job in (out.jobs.get("parts") or {}).items() if isinstance(job, dict)}
-    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped, chart, boxes)
+    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped, chart, boxes, view)
     if any(how == "baked" for _, how in out.colors):    # the redundant ones too: they paint in the colours' order
         out.jobs["colors"] = [one for one, how in out.colors if how in ("baked", "redundant")]
     elif any(how == "redundant" for _, how in out.colors):
@@ -6057,11 +6060,11 @@ def color_order(value: list) -> list:
     return sorted(value, key=lambda one: bool(one.get("phrase")))
 
 
-def color_layers(psd: PSDImage, field: str, card: str) -> list:
+def color_layers(psd: PSDImage, field: str, card: str, view: Optional[int] = None) -> list:
     """The text layers printing a field, in reading order: the title's parts (one split over layers too), the Ability's;
-    as picture 1 shows them (the entry's picture: every picture's bake recolours the same layers)."""
+    as the entry's picture shows them (view: a picture page's; else picture 1), every picture's bake recolouring them."""
     texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    with variant_view(psd, 1 if len(variants_of(psd)) > 1 else None):
+    with variant_view(psd, view or (1 if len(variants_of(psd)) > 1 else None)):
         if field == "name":
             return PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
         return PSDParser.ability_parts(texts)
@@ -6225,7 +6228,7 @@ def _status_kept(layer, field: str, chart: Optional[dict]) -> set:
 
 
 def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None, chart: Optional[dict] = None,
-                boxes: Optional[dict] = None) -> list:
+                boxes: Optional[dict] = None, view: Optional[int] = None) -> list:
     """
     classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
     Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
@@ -6253,7 +6256,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
                 else f"{words!r} is not in the new {what}"
             into = []
             if out[k] == "baked":               # the rule below, on the layers it lands in
-                layers = color_layers(psd, field, card)
+                layers = color_layers(psd, field, card, view)
                 new = {id(layer): (boxes or {}).get(str(layer.layer_id), retyped[field] if len(layers) == 1 else layer.text)
                        for layer in layers}
                 into = [layer for layer in layers if not phrase or _matches(new[id(layer)] or "", words)[0]]
@@ -6266,7 +6269,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
             elif into:
                 lit |= full
             continue
-        spans, why = color_spans(color_layers(psd, field, card), one)
+        spans, why = color_spans(color_layers(psd, field, card, view), one)
         if field == "name" and (why or not spans) and title_in_picture(psd, card):
             why = PICTURE_TITLE                  # the website's alone, as a name edit there (owner 2026-10-26)
         cut = [name for layer, a, b in spans for s, e, name in _fx_words(psd, layer) if s < b and a < e] \
@@ -6337,13 +6340,14 @@ def recolour(layer, paint: dict, fonts) -> None:
     layer._psd.mark_updated()
 
 
-def color_views(psd: PSDImage, value: list, card: str, numbers: list) -> set:
-    """The pictures a `colors` job shows in: those showing a layer it recolours."""
-    layers = [layer for one in value for layer, _, _ in color_spans(color_layers(psd, one["field"], card), one)[0]]
+def color_views(psd: PSDImage, value: list, card: str, numbers: list, view: Optional[int] = None) -> set:
+    """The pictures a `colors` job shows in: those showing a layer it recolours (color_layers' view)."""
+    layers = [layer for one in value for layer, _, _ in color_spans(color_layers(psd, one["field"], card, view), one)[0]]
     return {n for n in numbers if any(shown_in(layer, n) for layer in layers)}
 
 
-def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart: Optional[dict] = None) -> Edit:
+def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart: Optional[dict] = None,
+               view: Optional[int] = None) -> Edit:
     """
     Recolour what a `colors` job names, found again on the card as its earlier edits left it (color_spans): each colour's
     letters take it in the runs (set_span_style splits them, the Txt2 story with them; whole fields first, then
@@ -6358,7 +6362,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     """
     jobs, notes, hidden = {}, [], []
     for one in color_order(value):
-        spans, why = color_spans(color_layers(psd, one["field"], card), one)
+        spans, why = color_spans(color_layers(psd, one["field"], card, view), one)
         if why:
             raise Refused("unsupported-card", f"colors: {color_text(one)}: {why}", "colors")
         for layer, a, b in spans:
@@ -11277,7 +11281,7 @@ def _fx_cover(layer, fx, geometry: dict, ink: np.ndarray) -> tuple:
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
                      icc: bool = True, texts: Optional[dict] = None, parser: Optional[PSDParser] = None,
-                     chart: Optional[dict] = None, kept: Optional[dict] = None) -> dict:
+                     chart: Optional[dict] = None, kept: Optional[dict] = None, color_view: Optional[int] = None) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it is not broken against the merged PNG
     (PARITY_FLOOR; a miss of the bar is told: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -11292,11 +11296,12 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         texts: {field: render_region() text}; "preview" for a field not in it
         parser: offline_parser(), to read a types edit back (classify)
         kept: gate_dirty's keep: psd drawn once over its box, as it was (its pass resumed), each "preview" region cut
+        color_view: classify()'s
 
     Returns:
         {field: region measurement}
     """
-    again = classify(new_parsed, jobs, psd, parser, chart=chart, marks=True)
+    again = classify(new_parsed, jobs, psd, parser, chart=chart, marks=True, color_view=color_view)
     left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
     if left:
         raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(PARTIAL_FIELDS) else None)
@@ -11429,20 +11434,21 @@ def save_png(image: Image.Image, path: str, like: Image.Image, level: Optional[i
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
                psd: Optional[PSDImage] = None, view: Optional[int] = None, template: Optional[tuple] = None,
-               ability_from: Optional[tuple] = None, title_anchor: int = 0, ability_fit: float = 1.0) -> Baked:
+               ability_from: Optional[tuple] = None, title_anchor: int = 0, ability_fit: float = 1.0,
+               color_view: Optional[int] = None) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant_view(): its edits, renders, merge
     onto that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its
     own eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
     a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
     title_anchor: set_text_layer's anchor for a name job or the one title box of a parts job. ability_fit: its fit for
-    an ability job or the one ability box of a parts job.
+    an ability job or the one ability box of a parts job. color_view: set_colors' (a picture page's colours).
     """
     hold = ExitStack()
     try:
         with _files_seen(parser) as files:
             return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
-                               view, hold, template, ability_from, title_anchor, files, ability_fit)
+                               view, hold, template, ability_from, title_anchor, files, ability_fit, color_view)
     finally:
         hold.close()
 
@@ -11465,7 +11471,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 psd: Optional[PSDImage] = None, view: Optional[int] = None, hold: ExitStack = None,
                 template: Optional[tuple] = None,
                 ability_from: Optional[tuple] = None, title_anchor: int = 0, files: Optional[dict] = None,
-                ability_fit: float = 1.0) -> Baked:
+                ability_fit: float = 1.0, color_view: Optional[int] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save (stripped: save_psd) and run every gate.
 
@@ -11570,7 +11576,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), parser, old,
                                ability_from, rel, title_anchor, ability_fit)
         elif name == "colors":                  # last: on the text the edits above set
-            edits.append(set_colors(new, value, fonts_dir, _card_name(parsed), chart))
+            edits.append(set_colors(new, value, fonts_dir, _card_name(parsed), chart, color_view))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     for edit in edits:
@@ -11673,7 +11679,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     with cache:     # its keys hash the saved records: a layer the save changed is rendered again
         rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc,
-                                    {field: m["text"] for field, m in parity.items()}, parser, chart, kept)
+                                    {field: m["text"] for field, m in parity.items()}, parser, chart, kept, color_view)
     timings["idempotence"] = perf_counter() - start
     if saving is not None:
         saving.result()

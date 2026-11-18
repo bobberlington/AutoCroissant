@@ -29,7 +29,6 @@ from io import BytesIO
 from json import dumps, loads
 from os import _exit, environ, makedirs, pathsep, remove, replace
 from os.path import abspath, basename, exists, expanduser, isfile, join
-from re import fullmatch
 from shutil import move, rmtree
 from sys import argv, stderr, stdout
 from tempfile import mkdtemp
@@ -42,7 +41,7 @@ from requests import RequestException
 
 import commands.card_bake as card_bake
 import commands.psd_edit as psd_edit
-from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, vocabulary
+from commands.card_bake import Card, Snapshot, Transient, local_snapshot, picture_of, psd_fields, vocabulary
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, SMALL, blank, clean, stamp
@@ -61,7 +60,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/ability_place.py", "commands/ability_index.json",    # a "+ability" (card_bake imports it)
                 "commands/card_preview_lane.py")                                # --lane (owner D22)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
-PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures")   # a picture's page files these under its PSD's entry (edit.js routeOps)
+PICTURE_FIELDS = ("parts", "stars", "types", "hp", "def", "atk", "spd", "creatures", "colors")   # bake as the picture (edit.js routeOps files all but colors under its PSD's entry)
 SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
 SMALL_AS = ("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None,
                      "tile_rows": 3, "tile_cols": 2})   # 8x4 tiles; codec noise still spreads: the Diff keeps to the region
@@ -174,16 +173,6 @@ def blobs_of(snapshot: Snapshot, card: Card) -> list:
         return [ICON_MANIFEST_PATH]
     chart = psd_edit.STATUS_CHART if {"ability", "parts", "colors"} & set(card.fields) else ""
     return [ICON_MANIFEST_PATH, card.rel, snapshot.png_for(card.rel)[0], card.dup, chart]
-
-
-def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
-    """(PSD path, picture n) of a numbered PNG keyed so (A_Snack2.png -> A_Snack.psd, 2), else None."""
-    original = snapshot.duplicate_of(key)
-    for path in snapshot.tree if original else ():
-        number = fullmatch(r"(.+?)(\d+)", path[:len(path) - 4]) if path.lower().endswith(".png") else None
-        if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() == original.lower():
-            return original, int(number.group(2))
-    return None
 
 
 def _marks(env: str) -> list:

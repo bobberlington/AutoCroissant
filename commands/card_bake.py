@@ -148,6 +148,7 @@ class Card:
     part_drop: list = field(default_factory=list)   # part keys the commit takes out of the entry
     pictures: dict = field(default_factory=dict)    # a PSD with variant tags: picture n -> its PNG repo path (§9)
     view: Optional[int] = None                  # bake this picture only (a preview of a variant's page)
+    every: bool = False                         # a picture page's colours (select): every picture showing them too
     dup: str = ""                               # a picture-only duplicate's PNG: its entry's name bakes there (dup_view)
     views: dict = field(default_factory=dict)   # picture n -> its Baked (the saved picture's is `baked`)
     moves: dict = field(default_factory=dict)   # a stars edit's move into its "N Stars" folder: old path -> new path
@@ -665,7 +666,8 @@ def types_icons(snapshot: Snapshot, work: str, parser, names: list, printed: Opt
 def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> list:
     """
     The cards the run looks at: every entry with a PSD-kind field not website only (one card with --card). A
-    picture-only duplicate's entry with a name alone (no `_rename`) takes its PSD (dup_view: Gust of Trees, 11-13).
+    picture-only duplicate's entry with a name alone (no `_rename`) takes its PSD (dup_view: Gust of Trees, 11-13);
+    a picture page's colours alone (A Snack2's, Stubborn Queen's) take it as that picture (Card.every).
 
     Args:
         edits: The parsed edits file
@@ -682,23 +684,28 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
         wanted = psd_fields(fields, edits.site(key))
         if not wanted:
             continue
-        rel = snapshot.psds.get(key, "")
+        rel, view, page = snapshot.psds.get(key, ""), None, ""
         if not rel and derived_picture(edits, snapshot, key, wanted):
             continue                            # its PSD's entry holds the parts: this picture's name and ability follow
+        if not rel and set(wanted) == {"colors"} and not edits.renames(key):
+            rel, view = picture_of(snapshot, key) or ("", None)     # a numbered picture's page: as that picture
+            page = next((p for p in snapshot.png_for(rel)[1] if CardAuthors.key(card_name(p)) == key), "") if rel else ""
+            rel, view = (rel, view) if page else ("", None)
         rel, dup = (rel, "") if rel else dup_entry(snapshot, key, wanted, edits.renames(key), edits.cards)
-        name = card_name(dup or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
+        name = card_name(dup or page or rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
         cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                           listed=list(fields["creatures"]) if isinstance(fields.get("creatures"), list) else [],
-                          by=edits.meta.get(key, {}).get("_by"), dup=dup))
+                          by=edits.meta.get(key, {}).get("_by"), dup=dup, view=view,
+                          every=bool(dup or page) and "colors" in wanted))
         cards[len(cards) - 1].rename = edits.renames(key)
     return cards
 
 
 def dup_entry(snapshot: Snapshot, key: str, wanted: dict, renames: bool = False, cards: Optional[dict] = None,
               alone: bool = True) -> tuple:
-    """(its PSD, its PNG) for a picture-only duplicate's entry with a name alone, no `_rename` (dup_view bakes it; select),
-    else ("", ""); alone False: with any fields (card_preview.resolve: the website sends its PSD entry's too)."""
-    if (alone and set(wanted) != {"name"}) or not wanted or renames:
+    """(its PSD, its PNG) for a picture-only duplicate's entry with a name or colours alone, no `_rename` (dup_view bakes
+    it; select), else ("", ""); alone False: with any fields (card_preview.resolve: the website sends its PSD entry's too)."""
+    if (alone and not set(wanted) <= {"name", "colors"}) or not wanted or renames:
         return "", ""
     return next(((psd, png) for psd, pngs in snapshot.dup_pictures(cards).items() for png in pngs
                  if CardAuthors.key(card_name(png)) == key), ("", ""))
@@ -706,9 +713,11 @@ def dup_entry(snapshot: Snapshot, key: str, wanted: dict, renames: bool = False,
 
 def derived_picture(edits: CardEdits, snapshot: Snapshot, key: str, wanted: dict) -> bool:
     """A numbered PNG's or drawn duplicate's entry (A Snack2, Stubborn Queen) holding only the derived name or ability of
-    its PSD's part edits (PARTS_EDITOR.md §3 Variants): the PSD's bake drops them with the parts; never baked on their own."""
+    its PSD's part edits (PARTS_EDITOR.md §3 Variants), and any colours: the PSD's bake drops them with the parts; never
+    baked on their own (the colours bake once they are gone)."""
     original = snapshot.duplicate_of(key) or snapshot.drawn_of(key, edits.cards)
-    return bool(original) and set(wanted) <= {"name", "ability"} \
+    rest = set(wanted) - {"colors"}
+    return bool(original) and bool(rest) and rest <= {"name", "ability"} \
         and bool((edits.cards.get(CardAuthors.key(card_name(original))) or {}).get("parts"))
 
 
@@ -1036,6 +1045,16 @@ def pictures_of(psd, card: Card, duplicates: list, dups=()) -> dict:
     return {1: card.png, **{n: found[n] for n in numbers if n != 1}}
 
 
+def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
+    """(PSD path, picture n) of a numbered PNG keyed so (A_Snack2.png -> A_Snack.psd, 2), else None."""
+    original = snapshot.duplicate_of(key)
+    for path in snapshot.tree if original else ():
+        number = fullmatch(r"(.+?)(\d+)", path[:len(path) - 4]) if path.lower().endswith(".png") else None
+        if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() == original.lower():
+            return original, int(number.group(2))
+    return None
+
+
 def dup_view(psd, card: Card) -> int:
     """The picture a duplicate's entry bakes (select()): its PSD's one tagged '<entry name> #N', whose PNG is the
     duplicate's (Gust of Trees #2: Gust_of_Trees.png, owner 11-13); else Refused("unsupported-card")."""
@@ -1050,12 +1069,14 @@ def dup_view(psd, card: Card) -> int:
 def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None, psd=None,
            titles: Optional[dict] = None) -> list:
     """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; colours, those showing
-    their layers; the name, those printing picture 1's title (titles: {n: printed name}); any other field, every one."""
-    every, out = set(numbers), set()
+    their layers (as card.view shows them); the name, those printing picture 1's title (titles: {n: printed name}); any
+    other field, every one. card.view: that picture only, but colours' pictures with card.every."""
+    every, out, shown = set(numbers), set(), set()
     found = psd_edit.record_parts(record)
     for name, value in (card.jobs if jobs is None else jobs).items():
         if name == "colors" and psd is not None:
-            out |= psd_edit.color_views(psd, value, card.name, numbers)
+            shown = psd_edit.color_views(psd, value, card_name(card.rel), numbers, card.view)
+            out |= shown
             continue
         if name == "name" and titles:           # a picture with its own title (Stubborn Queen's) keeps it
             mine = name_key(titles.get(card.view if card.dup else 1) or "")     # a duplicate's entry: its picture's
@@ -1074,7 +1095,7 @@ def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None,
                 if f["id"] == int(key) or int(key) in f.get("of", ()):
                     out |= set(f["variants"]) if f.get("variants") else every
     if card.view is not None:
-        out &= {card.view}
+        out &= {card.view} | (shown if card.every else set())
     return sorted(out)
 
 
@@ -1117,7 +1138,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
                                     parses[n], parser, out, fonts_dir, colors, types_dir=types_dir, psd=psd, view=n,
                                     template=template, ability_from=ability_from, title_anchor=card.title_anchor,
-                                    ability_fit=card.ability_fit)
+                                    ability_fit=card.ability_fit, color_view=card.view)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -1365,7 +1386,8 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str, chart=
     snapshot.fetch(card.psd_sha, old_psd)
     psd = PSDImage.open(old_psd)                # one open for the parse and classify
     parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-    classified = psd_edit.classify(parsed, card.fields, psd, parser, chart=chart() if chart and "colors" in card.fields else None)
+    classified = psd_edit.classify(parsed, card.fields, psd, parser, chart=chart() if chart and "colors" in card.fields else None,
+                                   color_view=card.view)
     if classified.jobs or classified.refusals or not classified.redundant:
         return False
     card.redundant = list(classified.redundant)
@@ -1482,7 +1504,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
             template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
             classified = psd_edit.classify(parsed, card.fields, psd, parser, template,
-                                           chart() if "colors" in card.fields else None)   # status words keep its colours
+                                           chart() if "colors" in card.fields else None,   # status words keep its colours
+                                           color_view=card.view)
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
         card.site = dict(classified.site)       # the picture's title, a stat past its rows: website only (owner 10-26)
         card.parts = classified.parts
