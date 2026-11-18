@@ -230,6 +230,19 @@ out([widths, fit([62, 112]), fit([67, 107])]);""")
     assert out == [[5.8, 10.8, 14.8, 11], [5, 29, -25, 50, False], [5, 34, -20, 40, True]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function firstBase"), reason="no firstBase in this mockup.js")
+def test_a_no_layout_ability_starts_on_its_own_first_baseline(tmp_path):
+    """An Ability whose plate has no layout, retyped with the same words: line 1 on the record's first baseline, its ink
+    top plus the line's tallest piece (capitals, a badge's pill, an icon's glyph); scaled from the frame's top if shrunk."""
+    out = node(tmp_path, """
+const ctx = { font: "", measureText(t) { const z = parseFloat(this.font); return { actualBoundingBoxAscent: (/[A-Z]/.test(t) ? 0.5 : 0.36) * z, actualBoundingBoxDescent: 0 }; } };
+const icons = { wide: { file: "w.webp", a: 2 } }, measure = (t, z) => [...t].length * z * 0.5;
+const at = (old, o = {}) => m.firstBase(ctx, m.layout(m.tokenize(old, icons), 400, 40, measure)[0], { top: 100, s0: 40, z: 40, frame: null, fam: "x", ...o });
+out([at("After attacking, destroy this creature."), at("heal 2 now"), at("(1CD) heal 2"), at("[wide] heal"), at(""),
+  at("After attacking.", { z: 30, frame: [0, 80, 400, 300] })].map(v => v && Math.round(v * 10) / 10));""")
+    assert out == [120, 114.4, 123.5, 126.8, None, 110]
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
