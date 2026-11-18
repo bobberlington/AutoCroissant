@@ -2464,19 +2464,24 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path, monkey
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(text)
 
 
-APEX = ("3a94159a6452730130e192b2415fdeb9f041c24e", "563614a35f44b8ad1c05cda2ff88beb77fa0ff77")   # since 11-09: stacked
+STACKED = (("Creatures/R.E.P.O/2 Stars/Apex_Predator.psd", "3a94159a6452730130e192b2415fdeb9f041c24e",   # since 11-09
+            "563614a35f44b8ad1c05cda2ff88beb77fa0ff77", -1,
+            "being in the same slot for the purposes of slot & lane targeting and gain 1 SP."),
+           ("Creatures/Other/3 Stars/Empress_Bulblax.psd", "c3e4df565b0fe3511498ac1e16c15c5f4a90e1be",
+            "01bcce7218a10fa408554216a943025c149daebc", 1, "Whenever any slot ends its turn, Attacks inflict 1 Blazing."))
 
 
-def test_a_stacked_box_stays_in_its_row(clone, parser, chart, tmp_path):
-    """r49: each of Apex Predator's Ability lines is its own full-frame layer, blank rows above its line. Its last line
-    with words added printed over the line above, untold: fit_below scaled the blank rows too (the line rose) and lift
-    moved it up onto that text. It is set smaller in its own row, on no other text's ink, untold."""
-    rel, paths = "Creatures/R.E.P.O/2 Stars/Apex_Predator.psd", (tmp_path / "Apex_Predator.psd", tmp_path / "Apex_Predator.png")
-    for path, blob in zip(paths, APEX):
+@pytest.mark.parametrize("rel, psd_blob, png_blob, at, text", STACKED, ids=["apex", "empress"])
+def test_a_stacked_box_stays_in_its_row(clone, parser, chart, tmp_path, rel, psd_blob, png_blob, at, text):
+    """r49: each of Apex Predator's and Empress Bulblax's Ability lines is its own full-frame layer, blank rows above
+    its line. Words added to a lower line printed over the line above, untold: fit_below scaled the blank rows too (the
+    line rose) and lift moved it up onto that text. It is set smaller in its own row, on no other text's ink, untold;
+    Empress' added status rises onto the line above as it shrinks and moves back down, its FX layer on its own box."""
+    paths = (tmp_path / "card.psd", tmp_path / "card.png")
+    for path, blob in zip(paths, (psd_blob, png_blob)):
         path.write_bytes(card_blob(clone, blob))
     old = PSDImage.open(str(paths[0]))
-    box = pe.card_parts(old, rel, card_name(rel), parser)["ability"][-1]
-    text = box["text"].rstrip(".") + " and gain 1 SP."
+    box = pe.card_parts(old, rel, card_name(rel), parser)["ability"][at]
     jobs = {"parts": {str(box["id"]): {"field": "ability", "text": text, "sha": box["sha"]}}}
     _, baked = _bake(clone, parser, rel, jobs, tmp_path, chart, tuple(map(str, paths)))
     new = PSDImage.open(baked.psd_path)
