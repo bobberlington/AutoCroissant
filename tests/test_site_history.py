@@ -33,3 +33,17 @@ process.stdout.write(JSON.stringify([h.date({IMAGE_AT}), pt, h.month(1793509200)
     assert out[0] == out[1] and "21" in out[0]
     assert "Oct" in out[2]                                              # 2026-10-31 22:00 PT: still October
 
+
+
+def test_a_minion_label_beside_a_blank_is_no_ability_change(tmp_path):
+    """Owner 11-17 (2): a box that only said 'Protective minion.' / 'Non-protective minion.' before a blank one is no
+    ability change on the card page's compare too (history.js sameAbility), as the timelines say (discord_chain
+    label_blank); a label to the other label (Whelp) or real text beside the label (Galacta Warrior) stays a change."""
+    from commands.discord_chain import label_blank
+    pairs = [("Non-Protective minion.", ""), ("Non-Protective Minion", "Non-Protective minion."), ("", "Protective minion."),
+             (" protecting minion ", ""), ("Non protective minion", ""), ("Protective minion.", "Non-protective minion."),
+             ("Protective minion. Summoned by Galacta Knight.", ""), ("Protective minion.", "Chomp Chomp"),
+             ("Chomp Chomp", ""), ("Same text.", "Same text."), ("", ""), ("A minion.", "")]
+    same = node(tmp_path, f"process.stdout.write(JSON.stringify({json.dumps(pairs)}.map(([x, y]) => h.sameAbility(x, y))));")
+    assert same == [x == y or label_blank(x, y) for x, y in pairs]
+    assert same == [True] * 5 + [False] * 4 + [True, True, False]
