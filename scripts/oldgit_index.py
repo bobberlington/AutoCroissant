@@ -63,7 +63,7 @@ UPLOADS = frozenset((                               # '1'..'8': a43fa582's tree 
     "35750bbc76496b19ea5af84189bd85f1b13b6f8e", "1295bbf82a16b8adcf5fac846af13524f1939b8d",
     "da9fc176c31ce9ac172a387ac8fa8cb50957cb52", "bad43704fa849eb0bbb5f7b643f3fec16f8bdc9f",
     "fbbf72d77f6d13ff93d09c6da2313fe9d0ca07bf", "e63c5231ac66cf97b563274030e168a123bae43d"))
-TC = join(HOME, "Desktop/TTSCardMaker")
+TC = expanduser(os.environ.get("AUTOCROISSANT_LOCAL_DIR") or join(HOME, "Desktop/TTSCardMaker"))   # the card repo (global_config)
 OUT = join(expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discord-archive"), "derived", "oldgit")
 AUTHORS = join(dirname(dirname(abspath(__file__))), "commands", "timeline_authors.json")   # owner 11-12, 11-15
 TC_INIT = "36d62e5336de5134f1471bb18bcca3c74cae0ef3"    # the current repo's last 'init' (2023-11-05 23:15:22 -08:00)

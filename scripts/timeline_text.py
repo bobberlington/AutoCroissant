@@ -50,7 +50,7 @@ ROOT = expanduser(os.environ.get("DISCORD_ARCHIVE") or "~/Documents/Tools/discor
 OUT = join(ROOT, "derived/readers/text")
 from commands.discord_match import FIRST_GIT, first_store  # noqa: E402  (the one store path)
 OLD_GIT = expanduser(FIRST_GIT)                  # both old repos' objects (read only; first_store() before a read)
-TC = join(HOME, "Desktop/TTSCardMaker")
+TC = expanduser(os.environ.get("AUTOCROISSANT_LOCAL_DIR") or join(HOME, "Desktop/TTSCardMaker"))   # the card repo (global_config)
 OLD_ICONS = ("86cd22b2d86586d51464d7cfe4e59ca3dc0fca46", "268c2b12")   # the old repo's first and last Types/ trees
 CARD_CLASSES = ("ps1200", "gen400", "gen350", "shot", "cardshape")      # the catalogue's card-shaped pictures
 CELL_SURE = ("version_sure", "version_unsure", "draft")                 # sheet cells read: the card sure
