@@ -759,6 +759,57 @@ def test_a_lanes_title_and_what_it_takes(monkeypatch):
         "a newer press by another editor"]
 
 
+def test_the_lane_finds_presses_by_their_check_suites(monkeypatch):
+    """A press's run is taken from its check suite on main (one GraphQL query for the new suites, another workflow's,
+    another editor's and older runs left) before the runs list has it; a busy main's newest suites are on its last
+    page; a FORBIDDEN query turns the suites off and the runs list brings the press."""
+    import commands.card_preview_lane as lane_mod
+    from time import time
+
+    def node(suite, run, path="card-preview.yml", who="ed", request=REQUEST):
+        return {"databaseId": suite, "status": "QUEUED", "creator": {"login": who}, "commit": {"oid": "h"},
+                "workflowRun": {"databaseId": run, "displayTitle": f"Card preview {request} lane 100-{'e' * 40}",
+                                "event": "workflow_dispatch", "createdAt": "2026-11-17T00:00:00Z",
+                                "file": {"path": f".github/workflows/{path}"}}}
+    nodes = {"S1": node(1, 99), "S2": node(2, 101, path="card-checks.yml"), "S3": node(3, 102, who="other"),
+             "S4": node(4, 103), "S5": node(5, 104), "old": node(0, 50)}
+    nodes["S5"]["workflowRun"]["displayTitle"] = "Card preview another-press-1"
+    pages = {1: ["S1", "S2", "S3"] + ["old"] * 97, 2: ["S4"]}
+    runs, took, queries, forbid = [], [], [], []
+
+    def get(path, conditional=False):
+        if "/commits/heads/main/check-suites?" in path:
+            page = pages[int(path.split("&page=")[1]) if "&page=" in path else 1]
+            return 200, None, json.dumps({"total_count": len(pages[1]) + len(pages[2]),
+                                          "check_suites": [{"node_id": n} for n in page]}).encode()
+        return 200, None, json.dumps({"workflow_runs": runs} if "/runs?" in path else []).encode()
+
+    def post(path, data):
+        ids = data["variables"]["ids"]
+        queries.append([i for i in ids if i != "old"])
+        refused = {"data": {"nodes": [None] * len(ids)}, "errors": [{"type": "FORBIDDEN", "message": "Not accessible"}]}
+        return 200, None, json.dumps(refused if forbid else {"data": {"nodes": [nodes.get(i) for i in ids]}}).encode()
+
+    def take(api, press, run, **kw):
+        took.append((press.request, run["id"], run.get("suite")))
+        pages[2].append("S5")                   # the editor's next press, named no lane
+        runs[:] = [{"id": 104, "display_title": "Card preview another-press-1"}]
+        return ""
+    monkeypatch.setattr(lane_mod, "take", take)
+    monkeypatch.setattr(lane_mod, "_say", lambda text: None)
+    monkeypatch.setattr(lane_mod, "POLL", 0.01)
+    api = SimpleNamespace(left=None, get=get, post=post)
+    assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "a newer press named no lane"
+    assert took == [(REQUEST, 103, 4)] and queries == [["S1", "S2", "S3", "S4"], ["S5"]]
+    took.clear()
+    queries.clear()
+    forbid.append(1)
+    runs[:] = [{"id": 103, "status": "queued", "triggering_actor": {"login": "ed"}, "head_sha": "h",
+                "display_title": nodes["S4"]["workflowRun"]["displayTitle"]}]
+    assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "a newer press named no lane"
+    assert took == [(REQUEST, 103, None)] and len(queries) == 1
+
+
 def test_the_lane_follows_main(tmp_path, monkeypatch):
     """follow() fetches a newer commit's trees into the lane's shallow blobless clone and takes it when KEPT is the same
     there, not when its fonts moved or it can't be fetched; listen() takes a run on a newer commit there, the lane's
