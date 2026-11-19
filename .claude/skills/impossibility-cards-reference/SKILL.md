@@ -724,7 +724,8 @@ a plain key before its folder-prefixed twins), then difflib `get_close_matches` 
 `DEFAULT_MATCH_RATIO` in query_card.py; `/set_ratio`, which set it until the next restart, was deleted 2026-11-12 — see
 autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so; a
 renamed card's old name finds its card of today, as /query (2026-11-19; it answered the old name's archive after
-the rename).
+the rename). A day before a live card's oldest stored version posts its picture of that day from the card repo with
+its Card page ("no stored card data is that old"), else the sentence with its Created date and Card page (2026-11-19).
 A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
 link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
 After the chapter, a series' or subseries' name as a search term takes it (`series_names`: no leading The or closing

@@ -1355,10 +1355,7 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     extra += [f"Artwork source{f' #{i}' if len(arts) > 1 else ''}: {art_text(source)}" for i, source in enumerate(arts, 1)]
     if card:                                            # every card with data: an embed
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
-        created = getattr(card, "created", None)
-        if created:
-            extra.append(f"Created before {created['before']}" if created.get("before")      # a physical card photo's
-                         else f"Created {created['date']}")
+        extra.append(_created(card))
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)
         embed.set_image(url=url)
@@ -1370,6 +1367,14 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     options = card_repo.other_cards(closest) if others else None
     if options:
         queue_message(interaction, "Ambiguous name found. If this wasn't the card you wanted, try:\n" + "\n".join(options))
+
+
+def _created(card) -> str:
+    """'Created <date>' ('Created before 2020': a physical card photo's), or "" when the card has none."""
+    created = getattr(card, "created", None) if card else None
+    if not created:
+        return ""
+    return f"Created before {created['before']}" if created.get("before") else f"Created {created['date']}"
 
 
 # ========================
@@ -1530,7 +1535,8 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     if guess:
         print(f"Search guess: /query {query!r} as_of -> {shown}")
     current = stats_db.stats.get(name)
-    if current is not None and picture_only(current):
+    copy = current is not None and picture_only(current)
+    if copy:
         # a copy: its original's history (a variant picture: its own, below; a marked PSD: its own)
         label = f"**{shown}** (same card as {title(current.duplicate_of)})"
         name = current.duplicate_of
@@ -1552,9 +1558,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         label = f"{label} (same card as {title(picture1)})"
     head = f"{label} as of {day.isoformat()} (end of day, {TIMEZONE.key}): "
     if index is None:
-        first = versions[0]
-        queue_message(interaction, f"{head}no stored version is that old; the oldest is from {_day(_since(first))}"
-                                   f"{_approx(first)}.")
+        _before_versions(interaction, head, key, versions[0], end, own=not copy and not theirs)
         return
     card = versions[index]
     which = f"version {index + 1} of {len(versions)}"
@@ -1580,13 +1584,51 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         return
     page = card_repo.site_url(key) if key else None      # an older version: its stored data, its image of that day
     links = [("Card page", page)] if page else []
-    png = splitext(card.path or "")[0] + ".png"
-    known = card_repo.git_files.get(basename(png).lower(), "")
-    png = known if known.lower() == png.lower() else png     # a PNG named in another letter case (Grand_Doomer.png)
+    png = _pngs_beside(card.path)[-1]
     found = commit_before(card_repo.repository, png, end) if card.path else None
     if found is not None:
         links.append((f"Image ({_day(found[1])})", raw_url_at(card_repo.repository, png, found[0])))
     queue_message(interaction, f"{line}\n```{_format_metadata(card, name)}```", links=links or None)
+
+
+def _pngs_beside(psd: Optional[str]) -> list:
+    """The PNG beside a version's PSD as spelled there, then as the registry spells it when only the letter case
+    differs (Grand_Doomer.png beside grand_doomer.psd; a case-only rename since)."""
+    png = splitext(psd or "")[0] + ".png"
+    known = card_repo.git_files.get(basename(png).lower(), "")
+    return list(dict.fromkeys([png] + ([known] if known.lower() == png.lower() else [])))
+
+
+def _before_versions(interaction: Interaction, head: str, key: Optional[str], first, end: float, own: bool) -> None:
+    """
+    as_of before the oldest stored version: the card's picture that day from the card repo (its PNG today, else one
+    beside its oldest version: a renamed file) with its Card page, else the sentence, its Created date and the Card page.
+    Archived cards (no key): the sentence alone.
+
+    Args:
+        interaction: Discord interaction
+        head: The reply's start ("**name** as of <day> (end of day, <zone>): ")
+        key: The card's registry file name, or None
+        first: Its oldest stored version
+        end: The as_of moment
+        own: Whether the versions are the card's own (not a copy's original's, nor a variant's picture 1's)
+    """
+    oldest = f"the oldest is from {_day(_since(first))}{_approx(first)}"
+    if key is None:
+        queue_message(interaction, f"{head}no stored version is that old; {oldest}.")
+        return
+    pngs = [card_repo.git_files.get(key)] + (_pngs_beside(first.path) if own and first.path else [])
+    pngs = list(dict.fromkeys(p for p in pngs if p))
+    for png in pngs:
+        found = commit_before(card_repo.repository, png, end)
+        if found is not None:                            # that day's PNG, never today's: the data is not that old
+            queue_message(interaction, f"{head}no stored card data is that old; {oldest}. "
+                                       f"Its picture that day (from {_day(found[1])}):")
+            _post_card(interaction, key, raw_url_at(card_repo.repository, png, found[0]))
+            return
+    created, page = _created(_stats_card(key)), card_repo.site_url(key)   # its page lists its pictures
+    queue_message(interaction, f"{head}no stored version is that old; {oldest}." + (f" {created}." if created else ""),
+                  links=[("Card page", page)] if page else None)
 
 
 def _image_at(png: Optional[str], end: float, read: float) -> tuple:

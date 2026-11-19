@@ -300,3 +300,32 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     subprocess.run(["git", "-C", str(tmp_path / "history.git"), "fetch", "-q", str(work), "+main:main"], check=True)
     assert rh.commit_before(qc.card_repo.repository, f"{BETHANY}.png", _at(2026, 10, 23))[0] == second
 
+
+
+def test_a_day_before_its_versions_posts_that_days_picture(db, tmp_path, monkeypatch):
+    """Halo's PNG was in the repo before its oldest stored version: that day's PNG (pinned) and its Card page, not just
+    'no stored version' (11-19); after a case-only rename (11-11's name batch), the PNG beside its oldest version."""
+    first, _ = _png_clone(tmp_path, monkeypatch, f"{BETHANY}.png", [_at(2025, 12, 1, 12), _at(2026, 10, 22, 7)])
+    sent = _ask("Tainted Bethany", "2025-12-15")
+    assert sent[0]["content"] == (f"**Tainted Bethany** as of 2025-12-15 {HEAD}no stored card data is that old; the oldest "
+                                  "is from 2026-01-30 (date approximate). Its picture that day (from 2025-12-01):")
+    png = BETHANY.replace(" ", "%20") + ".png"
+    assert sent[1]["embed"].image.url == f"https://raw.githubusercontent.com/{qc.card_repo.repository}/{first}/{png}"
+    assert sent[1]["links"] == [("Card page", f"{SITE_URL}/c/tainted-bethany/")]
+    monkeypatch.setitem(qc.card_repo.git_files, "tainted_bethany.png", f"{BETHANY.lower()}.png")
+    assert _texts("Tainted Bethany", "2025-12-15")[1] == sent[1]["embed"].image.url
+
+
+def test_a_day_before_any_picture_keeps_the_sentence_with_its_page(db, tmp_path, monkeypatch):
+    """Before its first PNG commit (or with no history clone): the sentence, its Created date and the Card page; an
+    archived card keeps the sentence alone."""
+    cm.stats_db.stats["Tainted Bethany"].created = {"date": "2019-05-13"}
+    text = (f"**Tainted Bethany** as of 2025-06-01 {HEAD}no stored version is that old; the oldest is from 2026-01-30 "
+            "(date approximate). Created 2019-05-13.")
+    page = [("Card page", f"{SITE_URL}/c/tainted-bethany/")]
+    assert [(s["content"], s["links"]) for s in _ask("Tainted Bethany", "2025-06-01")] == [(text, page)]
+    _png_clone(tmp_path, monkeypatch, f"{BETHANY}.png", [_at(2025, 12, 1, 12)])
+    assert [(s["content"], s["links"]) for s in _ask("Tainted Bethany", "2025-06-01")] == [(text, page)]
+    assert [(s["content"], s.get("links")) for s in _ask("ZOEY!!!!!", "2025-06-01")] == [
+        (f"**ZOEY!!!!!** as of 2025-06-01 {HEAD}no stored version is that old; the oldest is from 2026-01-30 "
+         "(date approximate).", None)]
