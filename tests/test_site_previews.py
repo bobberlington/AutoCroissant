@@ -460,6 +460,18 @@ out([jobs([30, 2210, 1170, 2388]), jobs(false), jobs(undefined)]);""")
     assert out == [[["+ability", [30, 2210, 1170, 2388]]], [], [["+ability", [405, 1778, 793, 1856]]]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function stackRows"), reason="no stacked rows in this mockup.js")
+def test_a_stacked_box_knows_its_rows(tmp_path):
+    """A stacked Ability box (bake fit_below stacked) is checked against its sibling rows (one layer path), grown by
+    their Stroke and shadows; a lone layer or another creature's (Tainted Lazarus) has none."""
+    out = node(tmp_path, """
+const part = (id, layer, box) => ({ id, layer, box });
+const rec = { parts: { title: [], ability: [part(1, "Text/Ability", [100, 100, 500, 140]), part(2, "Text/Ability", [100, 190, 500, 230]), part(3, "Laz/Ability", [0, 0, 50, 50])] },
+  text: [{ id: 1, stroke: [0, 0, 0, 2], fx: [{ k: "shadow", dx: 3, dy: 8 }] }] };
+out([m.stackRows(rec, 2, 0.5), m.stackRows(rec, 3, 0.5), m.stackRows({ parts: { ability: [part(1, "Text/Ability", [0, 0, 9, 9])] } }, 1, 1)]);""")
+    assert out == [{"own": [50, 95, 250, 115], "others": [[49, 49, 251.5, 74]]}, None, None]
+
+
 def test_plates_port_of_the_rows(tmp_path):
     """card_plates.mock_misses at the mock-up's own thresholds misses what draw() misses (a bar on the template's row, one
     at its label, art, a drawn bar showing another value), and with its margin at least that."""
