@@ -163,14 +163,21 @@ def test_stats_after_a_card_has_its_data_ahead():
     """A card dialog reads its Balance from its own file, so Stats opened next would load analytics.json itself: once the
     card's Balance comes near, analytics.json is fetched at low priority after the dialog's on-screen pictures are in and
     the page is idle (never with Save-Data). Another card or page opening first cancels it; Stats (any real use) takes
-    it over instead."""
+    it over instead. A version picked or pinned in the dialog while it is in flight cancels it too, and it starts again
+    once the compare's pictures are in (they come from another host: priority alone can't keep them first)."""
     app = (ASSETS / "app.js").read_text(encoding="utf-8")
     load = app[app.index("const loadAnalytics = (low = false) => {"):app.index("function analyticsSoon(id) {")]
     assert "if (!low) ahead = null;" in load and 'low ? { priority: "low", signal: ahead.signal } : undefined' in load
     assert "if (analyticsP === p) analyticsP = null;" in load                        # a cancelled one never clears a newer
     soon = app[app.index("function analyticsSoon(id) {"):app.index("const aheadDrop = () =>")]
     assert "navigator.connection?.saveData" in soon and "{ root: modal }" in soon and "!e.target.complete" in soon
+    assert 'e.target.closest("#ver-compare")' in soon                              # a compare's pictures, on screen or not
     assert soon.index("if (wait.length)") < soon.index("requestIdleCallback") < soon.index("loadAnalytics(true)")
+    assert "() => tick(true)" in soon and soon.index("if (!idle)") < soon.index("loadAnalytics(true)")   # looked again once idle
+    assert 'if (e?.name !== "AbortError") soon = false;' in soon                     # a cancel's re-arm stays armed
+    hold = app[app.index("const aheadHold = id =>"):]
+    assert hold.index("ahead && soonFor === id") < hold.index("aheadDrop(); analyticsSoon(id);")
+    assert "function showVersion(c, i) { drawVersion(c, i); aheadHold(c.id); }" in app
     assert 'nearby.on(["#card-balance", "#card-changes"], () => analyticsSoon(c.id));' in app
     route = app[app.index("function route(e) {"):app.index("function renderView(r, hash) {")]
     assert route.index("if (r.arg !== soonFor) aheadDrop();") < route.index("openCard(r.arg")
