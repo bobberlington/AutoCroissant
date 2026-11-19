@@ -679,9 +679,10 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
     and authors events, edit batches); each tab loads only its own (since 2026-11-11; before, all three were in
     changelog.json, 3.3 MB). Since 2026-11-13 a push's minor events are a stub in changelog.json (`minor_split`: seq,
     at, build, push, counts by kind) and load from `data/changelog-minor.json` when a "minor changes" fold first opens.
-  - `data/rules.json`, `data/history.json`, `data/versions.json` (loaded only when the rulebook or a card needs them;
-    the Recently updated tab loads only `data/recent.json`, its rows' earlier texts, build_site `recent_texts`). `versions.json` holds a commits table plus per-card `[[commit index, path then if
-    different], …]`, newest first; ~27 KB gzipped, 3,211 versions of 725 cards from 356 commits since 2023-11-05.
+  - `data/rules.json`, `data/history.json`, `data/versions/<id>.json` (loaded only when the rulebook or a card needs
+    them; the Recently updated tab's earlier texts come in `cards.json` `recent`, build_site `recent_texts`).
+    `versions/<id>.json` holds that card's commits table plus `[[commit index, path then if different], …]`, newest
+    first (build_site `version_files`; the all-cards `versions.json` and `recent.json` were dropped 2026-11-19).
 - **Pages:** `index.html` (`<base href="./">`), `404.html` (`<base href="<SITE_URL or ''>/">`), and one share page
   per card at `c/<slug>/` with OG tags. Kind labels use the game's words; tokens are flattened, `:tint` / `:sticker`
   included.
