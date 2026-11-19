@@ -15,7 +15,7 @@ from psd_tools import PSDImage
 
 from commands import psd_parts
 from commands.psd_parser import layer_tag, shown_in, title_text, variant_view, variants_of
-from conftest import card_blob
+from conftest import CARDS_REV, card_blob
 from golden_cards import psd_parser  # noqa: F401 (fixture)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "parts"
@@ -47,7 +47,8 @@ def test_card_parts_equal_the_fixtures(clone, psd_parser, fixture):
     want, psd = _fixture_psd(clone, fixture)
     rel, name, tags = CARDS[fixture]
     card = psd_parser.parse(psd, rel, variant=1 if tags else None)
-    got = psd_parts.card_parts(psd, rel, name, psd_parser, card=card, templates=psd_parts.Templates.from_dir(str(clone)))
+    templates = psd_parts.Templates.from_blobs(lambda path: card_blob(clone, f"{CARDS_REV}:{path}"))   # the pin's
+    got = psd_parts.card_parts(psd, rel, name, psd_parser, card=card, templates=templates)
     assert got == want["parts"]
     shown = [p for p in got["title"] if p["variants"] is None or 1 in p["variants"]]
     if shown:
