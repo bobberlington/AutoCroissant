@@ -23,6 +23,7 @@ from multiprocessing import get_context
 from os import environ, fdopen, remove
 from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
 from pickle import dumps as pickle_dumps, loads as pickle_loads
+from re import fullmatch
 from subprocess import CalledProcessError, run
 from tempfile import mkstemp
 from threading import Lock, active_count, local
@@ -203,6 +204,9 @@ class CardBuild:
             return True                           # an older parser's card is read again once (no history: same blob)
         if getattr(card, "blob_sha", None) != sha:
             return True
+        folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
+        if any(f"{folder}{stem}{n}.png" in self.shas for n in _no_png(card)):
+            return True                           # a picture's PNG came: read again, it becomes its card
         record = self.details.get(sha)
         if not isinstance(record, dict):
             return False
@@ -658,7 +662,8 @@ class CardBuild:
         (the card, its variants or None); a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture:
         variant 1 is the card, variants 2..N wait in variant_cards once kept (named after their PNG: "A Snack2"). A
         picture a picture-only duplicate's PNG is (picture_numbers: Gust_of_Trees.png) is that variant, named after its
-        PNG (owner 11-13: a full picture N). A picture without its PNG in the tree is a problem on its card.
+        PNG (owner 11-13: a full picture N). A picture without its PNG in the tree is a problem on card 1, no card
+        (11-11's made-up 'Gust of Wind2'); its PNG's push reads the PSD again (_psd_changed).
         """
         pictures = variants_of(psd)
         if len(pictures) < 2:
@@ -670,15 +675,15 @@ class CardBuild:
                  if png in dups} if dups else {}
         card = self.parser.parse(psd, path, existing, variant=1)
         cards = [card]
-        for n in pictures[1:]:
-            own = card_name(drawn[n]) if n in drawn else f"{name}{n}"
-            variant = self.parser.parse(psd, path, self.db.stats.get(own) or existing, variant=n)
-            variant.name, variant.variant, variant.variant_of = own, n, name
-            cards.append(variant)
-        card.variant, card.variants = 1, [c.name for c in cards[1:]]
-        for n, each in zip(pictures, cards):
+        for n in pictures:
             if self.shas and drawn.get(n, f"{folder}{stem}{'' if n == 1 else n}.png") not in self.shas:
-                each.problems.append(f"VARIANT {n} HAS NO PNG")
+                card.problems.append(f"VARIANT {n} HAS NO PNG")
+            elif n > 1:
+                own = card_name(drawn[n]) if n in drawn else f"{name}{n}"
+                variant = self.parser.parse(psd, path, self.db.stats.get(own) or existing, variant=n)
+                variant.name, variant.variant, variant.variant_of = own, n, name
+                cards.append(variant)
+        card.variant, card.variants = 1, [c.name for c in cards[1:]]
         return (card, cards[1:])
 
     def _file_bytes(self, path: str) -> Optional[bytes]:
@@ -1153,6 +1158,14 @@ def _tagged(tree) -> bool:
             if (tags and max(tags) > 1) or (len(node) > 3 and _tagged(node[3])):
                 return True
     return False
+
+
+def _no_png(card: CardInfo) -> list:
+    """The pictures past 1 that card 1's last read found no PNG for ('VARIANT 2 HAS NO PNG'; parsed_values: one an
+    edit hid)."""
+    said = (getattr(card, "parsed_values", None) or {}).get("problems", getattr(card, "problems", None))
+    found = (fullmatch(r"VARIANT (\d+) HAS NO PNG", str(p)) for p in said or ())
+    return [int(m.group(1)) for m in found if m and int(m.group(1)) > 1]
 
 
 def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict:
