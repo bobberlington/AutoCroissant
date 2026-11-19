@@ -705,10 +705,14 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
   (not TTS/Global.*, the save) stops at its first step (Early build) once Card sync's early build for it is found in
   30 s: that one builds the push's site code with the new data (since 2026-11-12). Since 2026-11-17 a push's own run
   that is that early build also builds the guards' follow-up: after its deploy, when the push's guards land fixes and
-  started a Card sync, its Follow-up build waits (90 s at most) for a `Card data` commit on a main holding the landing,
-  then builds and deploys again (versions 3 and 4); the follow-up's data job dispatches no build of its own meanwhile.
-- **Checkout:** `actions/checkout@v7`, depth 1 + `filter: blob:none`, a non-cone sparse checkout of `/site/` (which
-  holds the four hand-kept website files since 2026-10-20), the font manifest and `.github/actions/history/`. Main's
+  started a Card sync, its Follow-up build waits for a `Card data` commit on a main holding the landing (since
+  2026-11-18 till 90 s after it saw the guards' check job past Landed, 6 minutes at most: a big landing takes ~1 s per
+  10 MB), then builds and deploys again (versions 3 and 4); the follow-up's data job dispatches no build of its own
+  while 10 s or more of that window is left (card-sync.yml's Site build reads Landed's time).
+- **Checkout:** `actions/checkout@v7`, depth 1 + `filter: blob:none` (a run without `after`, a dispatch or the
+  schedule: main's head when the job starts, not its dispatch's commit, since 2026-11-18), a non-cone sparse checkout
+  of `/site/` (which holds the four hand-kept website files since 2026-10-20), the font manifest and
+  `.github/actions/history/`. Main's
   every commit and tree (no contents, ~2.6 MB) come into a bare `history.git` beside it and join it in the background
   (History start, History join: `join.sh`); History wait (that action, Card data's too) races a fetch still out by
   then (0.4-33 s on the runner) with the newest cached copy `main-history-<UTC date>` (Card data saves one a day),
