@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 from psd_tools import PSDImage
-from psd_tools.api.layers import PixelLayer
+from psd_tools.api.layers import Group, PixelLayer
 from psd_tools.constants import BlendMode
 
 import commands.psd_edit as pe
@@ -67,10 +67,11 @@ def _types_dir(tmp_path) -> str:
 
 
 def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),), name="Fixture",
-             row="Types") -> tuple:
+             row="Types", wide=0) -> tuple:
     """
     A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones) and a Types group
-    of icons ((name, top-left[, size]); row "Stars": in the Stars group, as Mangle's).
+    of icons ((name, top-left[, size]); row "Stars": in the Stars group, as Mangle's). wide: each shown star a group with
+    a texture clipped onto it, this many px past the star on every side (Shield of Ogmur's).
 
     Returns:
         (PSD path, PNG path): the PNG is the PSD's own render (the official export)
@@ -83,7 +84,15 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire",
     psd.append(PixelLayer.fromarray(art, psd, name="Art"))
     group = psd.create_group(name="Stars")
     for x, y in stars:
-        group.append(PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x))
+        star = PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x)
+        if wide:
+            unit = Group.new(group, name="Star")
+            unit.append(star)
+            unit.append(PixelLayer.fromarray(np.full((100 + 2 * wide, 100 + 2 * wide, 4), (200, 60, 200, 255), np.uint8),
+                                             psd, name="Texture", top=y - wide, left=x - wide))
+            unit[1].clipping = True
+        else:
+            group.append(star)
     for x, y in hidden:
         layer = PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x)
         group.append(layer)
@@ -318,6 +327,16 @@ def test_stars_refuse_per_field(parser, tmp_path):
     low = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Low")      # a star below the middle: no count reads
     with pytest.raises(pe.Refused, match="draws 1 more below its middle"):      # it, so no layout redraws it (refused)
         _plan(parser, low[0], REL, "stars", 2)
+
+
+def test_stars_a_texture_clipped_onto_each_counts_inside_it(parser, tmp_path):
+    """Shield of Ogmur's stars each clip a texture past the card's edge: it shows only inside its star, so the column
+    carries on (was: a third beside it, a fourth refused as off the canvas)."""
+    paths = _fixture(tmp_path, stars=((1090, 20), (1090, 130)), wide=30)
+    plan = _plan(parser, paths[0], REL, "stars", 3)
+    assert plan.how == "a line" and [(dx, dy) for _, dx, dy, _ in plan.copies] == [(0, 110)]
+    _, baked = _bake(parser, paths, {"stars": 4}, tmp_path)
+    assert baked.reparse["card"]["stars"] == 4
 
 
 def test_gate_size_floor(tmp_path):
@@ -555,7 +574,8 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     moved star under a shadow is copied on top instead (Flower of Decay); with no room on the banner the stars sit on,
     every star shrinks until the new one fits there (Thunder Thighs; owner 11-10, option B); the website's header lays
     out the stars outside the group as the bake does (Massive Moss Charger), whose fifth steps down clear of the moss
-    (owner 11-08); Tyler's six, laid out again off the canvas, step down together."""
+    (owner 11-08); Tyler's six, laid out again, fit at the top (its bows are clipped onto the stars), and step down
+    together once the bows show past them."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         psd, parsed = _open(parser, clone, rel, tmp_path)
@@ -581,9 +601,11 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     assert parser._count_stars(psd) == 4 and len(header["units"]) == 4 and len(header["at"]["5"]) == 5   # the two
     #   outside are stars of the column
     assert "5" not in header["refused"] and header["at"]["5"][4][1] == 1054      # 539 px under its spot, past the moss
-    tyler = "Creatures/Other/5 Stars/Tyler.psd"             # its six laid out again run off the top: all go down
-    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser).notes == [
-        "stars: the stars placed 20 px lower to fit: check it"]
+    psd, parsed = _open(parser, clone, "Creatures/Other/5 Stars/Tyler.psd", tmp_path)
+    assert pe.plan_stars(psd, parsed, 6, parser).notes == []
+    for bow in (layer for layer in psd.descendants() if layer.name == "Bow"):
+        bow.clipping = False                                # unclipped, the bows run off the top: all go down
+    assert pe.plan_stars(psd, parsed, 6, parser).notes == ["stars: the stars placed 20 px lower to fit: check it"]
 
 
 def test_star_beside_an_empty_stars_group_and_an_aux_items_icon(clone, parser, tmp_path):
