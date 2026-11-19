@@ -2403,10 +2403,11 @@ def summary(data: dict, errors: list) -> dict:
 def pictures_kept(data: dict) -> bool:
     """Whether every write keeps each card picture's pixels and path, so Card sync's push lane saves the TTS save before
     the landing (card-guards.yml's "Pictures kept"): lossless recompressions, PSD writes (the conversions after Decided
-    too), fonts, MDW/Linked and Types files; never a PNG made or re-exported, a rename, another file added or deleted."""
+    too), fonts, MDW/Linked files (the save links none); never a PNG made or re-exported, a rename, another file added
+    or deleted (a Types icon the save shows)."""
     entries = [*data["cards"], *(data.get(key) or {} for key in ("linked", "fonts"))]
     return not data.get("renames") and all(
-        w["kind"] in KEPT_KINDS or w["kind"] in ("file", "delete") and w["path"].startswith((LINKED_DIR, f"{TYPES_DIR}/"))
+        w["kind"] in KEPT_KINDS or w["kind"] in ("file", "delete") and w["path"].startswith(LINKED_DIR)
         for entry in entries for w in entry.get("writes", []))
 
 

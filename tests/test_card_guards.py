@@ -1887,7 +1887,7 @@ def test_workflow_lints(clone):
 
 def test_kept_only_when_every_picture_stays(tmp_path):
     """summary's kept (Card sync's push lane saves before the landing): recompressions, PSD writes and linked files
-    keep every card picture; a PNG made, a rename or a card file deleted do not."""
+    keep every card picture; a PNG made, a rename, a card file deleted or a Types icon put back do not."""
     entry = _entry("A", convert=["normalise"])
     _write(tmp_path, entry, "X/A.png", "recompress", b"small", "recompressed losslessly (the same pixels)")
     _write(tmp_path, entry, "X/A.psd", "psd", b"fixed", "pictures linked")
@@ -1895,7 +1895,7 @@ def test_kept_only_when_every_picture_stays(tmp_path):
     data = {"after": "f" * 40, "cards": [entry], "linked": {"writes": [{"path": "MDW/Linked/C.png", "kind": "delete"}]}}
     assert cg.summary(data, [])["kept"] is True
     assert cg.summary({**data, "renames": {"X/A?.png": "X/A.png"}}, [])["kept"] is False
-    for path, kind in (("X/A.png", "png"), ("X/A2.png", "delete")):
+    for path, kind in (("X/A.png", "png"), ("X/A2.png", "delete"), ("Types/fire.png", "file")):
         other = _entry("A", writes=[*entry["writes"], {"path": path, "kind": kind}])
         assert cg.summary({**data, "cards": [other]}, [])["kept"] is False
 

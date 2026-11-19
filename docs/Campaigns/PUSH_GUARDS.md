@@ -540,7 +540,7 @@ not land.**
   job itself is done, since 2026-11-07; since 2026-11-12 that job alone by conditional reads 1 s apart, a 304 free), and Follow up starts Card sync once Land is done,
   landed, landed nothing or broke (`always()`), tried 3 times, so one main commit pins the fixed PNG. When every write
   keeps each card picture (summary.json's `kept`, check step "Pictures kept" before `Decided`: lossless recompressions,
-  PSD writes and the conversions, MDW/Linked and Types files, fonts; no PNG made, no rename), that push's lane still
+  PSD writes and the conversions, MDW/Linked files, fonts; no PNG made, no rename, no Types file), that push's lane still
   saves the TTS save at `Decided`, alone (no bake, rulebook PDF or redraw), and the guards' run re-pins after Landed
   (2026-11-19: the save about 18 s sooner, 17 of 25 guarded pushes 11-11..11-18). Card sync's
   schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
