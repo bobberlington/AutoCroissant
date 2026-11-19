@@ -222,6 +222,19 @@ out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+")), show(m
     assert out[5] == "The ability's font has no '+': the bake prints a box there. The title's font has no '.': the bake leaves a gap there."
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "MGP_FONT"), reason="no Myriad Pro fallback in this mockup.js")
+def test_typed_letters_the_font_lacks_fall_back_to_myriad_pro(tmp_path):
+    """r51: with Myriad Pro (mgp: its lacks), a typed letter the font lacks stays for the family's Myriad fallback, as
+    the bake sets it (psd_edit.missing_glyphs); a D13 mark plain first, the plain one in Myriad too; a box only for what
+    Myriad lacks too."""
+    out = node(tmp_path, """
+const D = String.fromCharCode(0x2014);
+const show = r => [[...r.text].map(c => (c.charCodeAt(0) >= 0xfdd0 ? `<${m.glyphRuns(c)[0]}>` : c)).join(""), r.boxes];
+out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+", "")), show(m.glyphPlan("Heal 1/2 " + D, "Heal", "/-" + D, "")),
+  show(m.glyphPlan("Heal 2~", "Heal", "~", "~"))]);""")
+    assert out == [["(WOF) +1 Heal (+1 DEF).", ""], ["Heal 1/2 <->", ""], ["Heal 2<1>", "~"]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function lineSplices"), reason="no lineSplices in this mockup.js")
 def test_words_changed_on_several_lines_splice_each_line(tmp_path):
     """geoPlan on the card's own lines: changes on two lines or in two paragraphs give one splice per line (a paragraph's

@@ -1559,6 +1559,21 @@ def test_a_typed_dash_its_font_lacks_bakes_plain(clone, parser, chart, tmp_path)
     assert not any("glyph" in note for edit in baked.edits for note in edit.notes)
 
 
+def test_a_typed_letter_its_font_lacks_bakes_in_myriad_pro(clone, parser, chart, tmp_path):
+    """r51: Photoshop 2023 sets a typed character its font has no glyph for in Myriad Pro, that character alone, not a
+    box. Chef Saltbaker's Cuphead Memphis has no '+': typed, it bakes in a MyriadPro-Regular run of its own through
+    every gate, no font note, and reads back."""
+    rel = "Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd"
+    old = pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]
+    new = old.replace("items.", "items. Gain +1 ATK.", 1)
+    _, baked = _bake(clone, parser, rel, {"ability": new}, tmp_path, chart)
+    assert baked.reparse["card"]["ability"] == new
+    assert not any(note.startswith("font") for edit in baked.edits for note in edit.notes)
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    at, runs = layer.text.index("+1 ATK"), pe._run_fonts(layer)
+    assert runs[at] == pe.MGP_FONT and runs[at - 1] == runs[at + 1] == "CupheadMemphis-Medium"
+
+
 def test_a_plain_line_edit_draws_its_lines_only(clone, parser, chart, tmp_path, monkeypatch):
     """A plain Ability spliced in place on a card with no stored image (since the big pass): its region and the
     untouched gate's box are its changed glyphs' (Edit.lines) plus the effects' reach, the whole renders agreeing
