@@ -25,6 +25,7 @@ from os.path import basename, exists, expanduser, join, splitext
 from re import DOTALL, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
 from subprocess import CalledProcessError
+from types import SimpleNamespace
 from typing import Optional
 from urllib.parse import quote, unquote
 
@@ -438,6 +439,17 @@ class _Names:
     def of(self, path: str) -> str:
         """known(), else the file stem (a card the data doesn't list)."""
         return self.known(path) or self._stem(path)
+
+
+def names_changed(old_stats: str, new_stats: str, checkout: str) -> list:
+    """Card images whose Nickname new_stats changes from old_stats (as _Names, at the checkout's HEAD): card-sync.yml
+    makes the save again on a newer data commit when any. A stats file not read raises ValueError."""
+    tree = _ls_tree(checkout, "HEAD")
+    repo, errors = SimpleNamespace(checkout=checkout, tree=tree, by_lower={p.lower(): p for p in tree}), []
+    old, new = _Names(repo, errors, old_stats), _Names(repo, errors, new_stats)
+    if errors:
+        raise ValueError(" ".join(errors))
+    return sorted(p for p in set(old.site) | set(new.site) if old.known(p) != new.known(p))
 
 
 class _Report:
@@ -1072,5 +1084,6 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'update_save',
+    'names_changed',
     'main',
 ]
