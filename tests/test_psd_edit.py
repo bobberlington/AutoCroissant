@@ -2649,6 +2649,22 @@ def test_gate_fx_refuses_an_own_style_layer_over_a_new_colour(clone, chart):
         pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[], several=False)], str(clone / pe.FONTS_DIR), chart, old)
 
 
+def test_an_ability_edit_cuts_an_own_colour_fx_layer_in_it(clone, chart):
+    """Palace of Shadow as 1dceda4f left it ('+2 DEF' in the body's grey under its blue stroke-only FX layer): a word
+    typed before it cuts the layer again in its own blue (own_paint), not the grey under it; gate_fx passes it."""
+    fonts, path = str(clone / pe.FONTS_DIR), _card(clone, PALACE)[0]
+    old, psd = PSDImage.open(path), PSDImage.open(path)
+    for doc in (old, psd):
+        layer = pe.ability_layer(doc)
+        start = layer.text.index("+2 DEF")
+        layer.set_span_style(start, start + 6, fill=(0.33333, 0.35294, 0.41176))
+    edit = pe.set_text_layer(psd, "ability", layer.text.replace(": +2", ": gain +2"), fonts, chart)
+    fx, = pe.fx_layers(psd, pe.ability_layer(psd))
+    ink = fx.numpy("color")[fx.numpy("shape")[..., 0] > 0]
+    assert edit.painted == {fx.name: (6, 0, 255)} and np.unique(np.rint(ink * 255), axis=0).tolist() == [[6, 0, 255]]
+    assert pe.gate_fx(psd, [edit], fonts, chart, old) == []
+
+
 def test_the_bakes_vocabulary_knows_only_the_fonts_icons():
     """A Types/ icon the font was not rebuilt with ("newtype": in Types/, not in the manifest) is no icon to the bake:
     set in the icon font, its [token] would print the font's letters and read back as the token (review 2026-10-23). It

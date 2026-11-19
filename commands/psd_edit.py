@@ -338,6 +338,7 @@ class Edit:
     notes: list = field(default_factory=list)   # for the report: FX layers deleted, renamed or cut again; ink_beyond's
     held: list = field(default_factory=list)    # (FX layer name, [(start, end)]): a "styled" or "own" layer's kept words,
     #   which it still covers (gate_fx)
+    painted: dict = field(default_factory=dict)  # FX layer name -> the 8-bit RGB of its own its cut took (FxPlan.paint)
     story: Optional[int] = None  # the text layer's TextIndex before the edit: the Txt2 story it may change
     fonts: list = field(default_factory=list)   # faces it added to the document's FontSets (ICON_FONT on a plain card)
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
@@ -2623,6 +2624,7 @@ class FxPlan:
     own_style: bool = False  # its style is no chart status's for its words ("own", "styled"; a "status" layer's of L7)
     edges: dict = field(default_factory=dict)   # "styled", "own": per old range, whether a word ends at its start, end
     mixed: bool = False     # "styled", "own": its letters (status words apart) in more than one colour
+    paint: Optional[np.ndarray] = None  # "styled", "own": its pixels' own colour (own_paint), which its cut takes
 
 
 def fx_name(base: str, status: str) -> str:
@@ -2777,6 +2779,21 @@ def restyle_fx(fx, status) -> Optional[dict]:
     return {bytes(key): block.tobytes() for key, block in status.blocks.items()}
 
 
+def own_paint(fx, fills: list) -> Optional[np.ndarray]:
+    """An FX layer's colour of its own: the one colour of every pixel it inks (straight RGB floats) when no fill of its
+    words has it (Palace of Shadow's blue "+2 DEF" over grey words: a cut from the text would turn it grey); else None."""
+    color, shape = fx.numpy("color"), fx.numpy("shape")
+    if color is None or shape is None:
+        return None
+    one = np.unique(color[shape[..., 0] > 0], axis=0)
+    if len(one) != 1:
+        return None
+    byte = tuple(np.rint(one[0] * 255).astype(int).tolist())
+    if any(tuple(int(round(float(v) * 255)) for v in fill[-3:]) == byte for fill in fills):
+        return None
+    return one[0]
+
+
 def plan_fx(base, old_fx: list, chart: dict) -> list:
     """The FxPlans of a text layer's FX layers, before its text changes (fx_kind() of each is not "")."""
     fills, text = _char_styles(base)[0], base.text
@@ -2784,18 +2801,19 @@ def plan_fx(base, old_fx: list, chart: dict) -> list:
     out = []
     for fx in old_fx:
         kind, phrases = fx_kind(fx, base, chart), fx_phrases(base, fx)
-        fill, edges, mixed = None, {}, False
+        fill, edges, mixed, paint = None, {}, False, None
         if kind in ANCHORED:
             drawn = [i for a, b in phrase_ranges(text, phrases) for i in range(a, b) if fills[i] is not None]
             seen = [i for i in drawn if text[i] not in " \t\r\x03"] or drawn
             fill = fills[seen[0]] if seen else None
             edges = {(a, b): _edges(text, a, b) for a, b in phrase_ranges(text, phrases)}
             mixed = len({fills[i] for i in seen if i not in words and text[i] not in " \t\r\x03"}) > 1
+            paint = own_paint(fx, [fills[i] for i in seen])
         found = [(phrase, phrase_ranges(text, [phrase])) for phrase in phrases]
         status = collapse(_numbered(phrases[0])[0]).lower() if kind == "status" else ""
         own = kind in ANCHORED or (kind == "status" and _style_key(fx.tagged_blocks) != _style_key(chart[status].blocks))
         out.append(FxPlan(fx, phrases, kind, fill, tuple(fx.bbox), phrase_ranges(text, phrases), found, status, own,
-                          edges, mixed))
+                          edges, mixed, paint))
     return out
 
 
@@ -3096,7 +3114,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     Effect Layers.jsx's Update all after an ability edit: each FX layer cut again in place from the new raster under its
     phrases' key (follow_fx: phrase_ranges over the new text, so a phrase that occurs more often is cut on every
     occurrence; a "styled" or "own" layer's stays on its words, a "status" layer's on its status's own words), its record kept
-    (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change. A layer whose words were not redrawn keeps its record whole
+    (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change (in its own colour when
+    they had one: own_paint). A layer whose words were not redrawn keeps its record whole
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
     clean) or covers less than FX_COVER of their ink (_fx_cover: its words re-laid in Photoshop since it was cut,
     Marx's Glued; cut again). A phrase that left the text leaves the name (the parser flags a name the text lacks; a
@@ -3166,6 +3185,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
                 _, got, want = _fx_cover(layer, fx, geometry, ink)
                 if got >= FX_COVER * want:
                     continue                    # else on its words' old pixels (Marx's Glued): cut again, silently
+        if plan.paint is not None:              # its own colour, not its words' (own_paint)
+            cut[0][..., :3][cut[0][..., 3] > 0] = plan.paint
         engine[6](fx, cut[0], cut[1])
         fx._invalidate_bbox()
         if name != old:
@@ -6231,6 +6252,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
+                painted={fx.name: tuple(np.rint(plan.paint * 255).astype(int).tolist()) for fx, _ in rebuilt
+                         for plan in plans if plan.layer is fx and plan.paint is not None},
                 restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
                 whole=spliced is None or bool(spliced.fallback), lifted=up,
@@ -11403,8 +11426,8 @@ def gate_fx(psd: PSDImage, edits: list, fonts_dir: str, chart: Optional[dict] = 
     (any alpha) inside the boxes of its phrases' glyphs (phrase_ranges over the new text) padded by FX_BOX_PAD; it
     covers FX_COVER of the Ability's ink in its words' boxes (the icon font's glyphs left out) that no other glyph's
     box reaches; one the edit cut (rebuilt
-    or made) holds the Ability's own pixels byte for byte; and a "styled" layer's name still reaches the words of it the
-    edit kept (Edit.held: Goofy's "1#1" on the "1" of "3T1"); with the chart, every styled status word has its FX layer
+    or made) holds the Ability's own pixels byte for byte (its own colour over their alpha: Edit.painted); and a
+    "styled" layer's name still reaches the words of it the edit kept (Edit.held: Goofy's "1#1" on the "1" of "3T1"); with the chart, every styled status word has its FX layer
     (gate_status_words) and, given the old card, a "styled" or "own" layer covers no letter in a colour its words lacked
     (gate_fx_colours); under a tinted Ability no more icon-font glyphs in its look's colours than before
     (bare_icons: Blood Bomb's [machine] was so already; review 2026-10-23); the icon font draws no more letters
@@ -11502,7 +11525,10 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts, layer=None) -> None:
             raise Refused("reparse", f"{fx.name!r} covers {got} of its words' {want} px")
         if fx.name in cut:
             held = ours[..., 3] > 0
-            if not np.array_equal(ours[held], base[held]):
+            pixels = base[held]
+            if fx.name in edit.painted:         # its own colour over the Ability's alpha
+                pixels[:, :3] = edit.painted[fx.name]
+            if not np.array_equal(ours[held], pixels):
                 raise Refused("reparse", f"{fx.name!r} is not the Ability's own pixels")
 
 
