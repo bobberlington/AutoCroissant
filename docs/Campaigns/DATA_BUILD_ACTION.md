@@ -70,7 +70,9 @@ in the Quiet window job. The guards' Follow up then starts Card sync (`bake=pend
 nothing or broke, so its one main lane bakes, saves and pins the fixed PNG on the first try: one main commit, one data
 job and one site deploy fewer per guarded push. The schedule's and chained runs' timer skips their main lane while any
 guards run with fixes is unfinished (two hours back), so neither doubles it. A guards run that never started Card sync
-(Follow up failed, cancelled) lets the push's main lane go; runs that cannot be read count as none.
+(Follow up failed, cancelled) lets the push's main lane go; runs that cannot be read count as none. Since 2026-11-19
+a push whose guards' fixes keep every card picture (their check job's "Pictures kept") keeps its lane to the TTS save
+alone at their Decided; the guards' run bakes and re-pins after the landing.
 
 **Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").**
 card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
