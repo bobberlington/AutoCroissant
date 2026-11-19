@@ -318,6 +318,23 @@ out([ps.map(p => p.vary || (p.no ? "no" : "")), ps[1].vfile, widths, fit(text, [
                    [54, 0, 40], [76, 22, 47]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "back[v.at(j)]"), reason="no variant runs in this mockup.js's tintOld")
+def test_a_colour_over_a_variant_ability_tints_in_place(tmp_path):
+    """Afraid's record spells [dark:sticker], the website [dark]: a colour on its Ability tints the letters in place, each
+    letter's old fill read from the record's runs at its own index (after the icon too), not a retyped Ability."""
+    out = node(tmp_path, """
+const rec = "Can't affect [dark:sticker] creatures.", old = "Can't affect [dark] creatures.", W = 10 * rec.length + 20, H = 30;
+const layer = { text: rec, color: "#ffffff", colors: ["#ffffff", "#2050ff"], runs: [[0, 27, 0], [27, rec.length, 1]] };
+const fill = j => (j < 27 ? [255, 255, 255] : [32, 80, 255]), data = new Uint8ClampedArray(W * H * 4);
+const glyphs = [...rec].map((ch, j) => [j, 10 + j * 10, 11 + j * 10, 19 + j * 10]);
+for (const [j, , a, b] of glyphs) if (rec[j] !== " ") for (let y = 5; y < 25; y++) for (let x = a; x < b; x++) data.set([...fill(j), 255], (y * W + x) * 4);
+const plate = { crops: [{ id: 1, box: [0, 0, W, H], text: rec, lines: [[0, rec.length, 20, 10, W - 10, 5, 25, 0]], glyphs }] };
+const plan = phrase => m.tintPlan(data, W, plate, [1], 1, old, layer, [{ field: "ability", phrase, color: "#ff2020" }], "ability");
+const own = (p, w) => p && [...w].map((_, k) => p.own(old.indexOf(w) + k).join(","));
+out([own(plan("Can't"), "Can't"), own(plan("creatures"), "creatures")]);""")
+    assert out == [["255,255,255"] * 5, ["32,80,255"] * 9]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function firstBase"), reason="no firstBase in this mockup.js")
 def test_a_no_layout_ability_starts_on_its_own_first_baseline(tmp_path):
     """An Ability whose plate has no layout, retyped with the same words: line 1 on the record's first baseline, its ink
