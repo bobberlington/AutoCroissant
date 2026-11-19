@@ -373,6 +373,24 @@ def test_split_title_part_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(crowned) == "its Gradient Overlay"
 
 
+def test_phrase_icon_finds_its_variant(clone):
+    """Afraid prints [dark:sticker], the website shows [dark]: a colour over it plans as baked, the icon keeping its
+    look; FX phrases stay exact."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"
+    psd_path, _ = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    one = {"field": "ability", "phrase": "Can't affect [dark]", "color": "#ff2200"}
+    got = pe.classify(pe.parse_card(parser, psd_path, rel, psd), {"colors": [one]}, psd, parser)
+    assert got.jobs == {"colors": [one]} and not got.refusals
+    layer = pe.ability_layer(psd)
+    [(_, a, b)] = pe.color_spans([layer], one)[0]
+    assert layer.text[a:b] == "Can't affect [dark:sticker]" and pe.phrase_ranges(layer.text, ["[dark]"]) == []
+    assert not any(layer.text[i] == "[" for i in pe._painted(layer, a, b, []))
+
+
 def test_clipped_title_layer_hidden(clone, tmp_path):
     """Cake Mix's cake clipped onto its title: a phrase alone refused with the reason; a whole title's colour hides the
     cake and bakes, its phrase after it too."""
