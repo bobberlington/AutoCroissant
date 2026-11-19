@@ -228,7 +228,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
     assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 7, "normalise": 4,
-                       "errors": 0, "card_errors": 0} and summary["told"] >= 1     # 4 merged images stripped later (Q2)
+                       "errors": 0, "card_errors": 0, "kept": False} and summary["told"] >= 1   # 4 merged images stripped later (Q2)
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
@@ -1883,6 +1883,21 @@ def test_workflow_lints(clone):
     """actionlint accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
     done = subprocess.run(["actionlint", "-shellcheck=", str(_workflow(clone))], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_kept_only_when_every_picture_stays(tmp_path):
+    """summary's kept (Card sync's push lane saves before the landing): recompressions, PSD writes and linked files
+    keep every card picture; a PNG made, a rename or a card file deleted do not."""
+    entry = _entry("A", convert=["normalise"])
+    _write(tmp_path, entry, "X/A.png", "recompress", b"small", "recompressed losslessly (the same pixels)")
+    _write(tmp_path, entry, "X/A.psd", "psd", b"fixed", "pictures linked")
+    _write(tmp_path, entry, "MDW/Linked/A - B.png", "file", b"art", "linked file added")
+    data = {"after": "f" * 40, "cards": [entry], "linked": {"writes": [{"path": "MDW/Linked/C.png", "kind": "delete"}]}}
+    assert cg.summary(data, [])["kept"] is True
+    assert cg.summary({**data, "renames": {"X/A?.png": "X/A.png"}}, [])["kept"] is False
+    for path, kind in (("X/A.png", "png"), ("X/A2.png", "delete")):
+        other = _entry("A", writes=[*entry["writes"], {"path": path, "kind": kind}])
+        assert cg.summary({**data, "cards": [other]}, [])["kept"] is False
 
 
 def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):

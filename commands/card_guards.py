@@ -154,6 +154,7 @@ CONVERTS = ("now", "later", "off")              # check's --convert: in the chec
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
 LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
 LINKED_DIR = "MDW/Linked/"
+KEPT_KINDS = ("recompress", "psd", "font")      # writes that leave every card picture as pushed (summary's kept)
 ART_ROOTS = ("MDW/Templates/", "MDW/Unfinished/", "MDW/Assets/", "MDW/Croissant's Special Folder/")   # with the cards:
                                                 # the PSDs whose shown pictures make a card's hidden copy go (clean)
 ART_READS = 3                                   # those PSDs read a card at most (clean's Hidden.elsewhere)
@@ -2395,7 +2396,18 @@ def summary(data: dict, errors: list) -> dict:
             "comment": sum(1 for c in cards if _for_comment(c)),
             "writes": sum(len(c["writes"]) for c in cards) + pending
             + sum(len((data.get(key) or {}).get("writes", [])) for key in ("linked", "fonts")) + len(data.get("renames") or {}),
-            "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
+            "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"]),
+            "kept": pictures_kept(data)}
+
+
+def pictures_kept(data: dict) -> bool:
+    """Whether every write keeps each card picture's pixels and path, so Card sync's push lane saves the TTS save before
+    the landing (card-guards.yml's "Pictures kept"): lossless recompressions, PSD writes (the conversions after Decided
+    too), fonts, MDW/Linked and Types files; never a PNG made or re-exported, a rename, another file added or deleted."""
+    entries = [*data["cards"], *(data.get(key) or {} for key in ("linked", "fonts"))]
+    return not data.get("renames") and all(
+        w["kind"] in KEPT_KINDS or w["kind"] in ("file", "delete") and w["path"].startswith((LINKED_DIR, f"{TYPES_DIR}/"))
+        for entry in entries for w in entry.get("writes", []))
 
 
 # ========================
@@ -2890,6 +2902,7 @@ __all__ = [
     'main',
     'markdown',
     'message',
+    'pictures_kept',
     'plan',
     'plan_jobs',
     'push_range',
