@@ -6,7 +6,7 @@ history clone and pushed: over SSH with the service's agent, else (an Action) ov
 
     commit_files(repository, head, base_tree, modes, {path: bytes}, message) -> sha, or None when the branch moved
     local_commit(clone, head, {path: bytes}, message) -> sha: the same objects in a local clone, nothing pushed
-    has_blobs([sha]) -> whether the history clone holds them all (git_commit's delta push: card_guards' land)
+    has_blobs([sha]) -> whether the history clone holds them all (card_guards' land: then by git)
     checkout_head(clone) -> the commit its HEAD is at ("" when unborn)
 
 A rate-limited 403 is this run's, not the token's: it raises Transient. No Discord or
@@ -16,7 +16,6 @@ from base64 import b64encode
 from os import environ
 from os.path import expanduser, isdir
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
-from sys import stderr
 from typing import Optional
 
 from requests import RequestException, request
@@ -178,13 +177,12 @@ def git_env() -> dict:
     return batch_env(expanduser(HISTORY_CLONE), **GIT_IDENTITY)
 
 
-def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict, bases: Optional[list] = None) -> str:
+def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:
     """
     Write a tree: `tree` (None for a new folder) with changes applied, folder by folder.
 
     Args:
         changes: {entry name: blob sha, None to delete it, or {nested changes} for a folder}
-        bases: Filled with the blobs the changes replace
 
     Returns:
         The new tree's sha (--missing: siblings' blobs aren't in the blobless clone); None when nothing is left in it
@@ -199,7 +197,7 @@ def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict, bases: O
     for name, change in changes.items():
         old = entries.get(name)
         if isinstance(change, dict):
-            sub = git_tree(clone, old[2] if old and old[1] == "tree" else None, change, env, bases)
+            sub = git_tree(clone, old[2] if old and old[1] == "tree" else None, change, env)
             if sub is None:                     # a folder emptied by deletions goes (git keeps no empty trees)
                 entries.pop(name, None)
             else:
@@ -207,8 +205,6 @@ def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict, bases: O
         elif change is None:                    # a deleted file (a card moved to another folder)
             entries.pop(name, None)
         else:
-            if bases is not None and old and old[1] == "blob" and old[2] != change:
-                bases.append(old[2])
             entries[name] = (old[0] if old and old[1] == "blob" else "100644", "blob", change)
     if not entries and tree is not None:
         return None
@@ -242,27 +238,18 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
         raise Transient(f"the history clone mirrors {CARD_REPO}, not {repository}")
     refresh()                                   # the clone exists and knows head
     clone, env = expanduser(HISTORY_CLONE), git_env()
-    bases: list = []
-    commit = _write_commit(clone, head, files, message, env, "the history clone", {**env, **RAW_LOOSE}, bases)
+    commit = _write_commit(clone, head, files, message, env, "the history clone", {**env, **RAW_LOOSE})
     url, auth = push_target(repository)
-    zlib = ["-c", "pack.compression=1"]                                    # the loose blobs are raw: zlib 1, once
-    plain = ["-c", "pack.window=0", *zlib, "push", "--porcelain", "--no-thin"]   # no delta search: it would want the old blobs
-    # the old blobs here (the guards' pushed blobs): delta search sends only what changed; one gone after all: plain
-    for args in ([[*zlib, "push", "--porcelain"], plain] if has_blobs(bases, clone, env) else [plain]):
-        try:
-            push = run_process(["git", "-C", clone, *args, url, f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True,
-                               timeout=GIT_TIMEOUT, env={**env, **auth} if args is plain else {**env, **NO_LAZY, **auth})
-        except (TimeoutExpired, OSError) as error:
-            raise Transient(f"git push failed: {error}") from error
-        if not push.returncode:
-            break
+    try:                                        # no delta search: GitHub would rebuild each delta'd PSD (11dd8d06: 46 s); zlib 1
+        push = run_process(["git", "-C", clone, "-c", "pack.window=0", "-c", "pack.compression=1", "push", "--porcelain", "--no-thin",
+                            url, f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env={**env, **auth})
+    except (TimeoutExpired, OSError) as error:
+        raise Transient(f"git push failed: {error}") from error
+    if push.returncode:
         out = push.stdout.decode("utf-8", "replace")
         if any(line.startswith("!") and "[rejected]" in line for line in out.splitlines()):
             return None
         err = [line for line in (push.stderr.decode("utf-8", "replace") or out).splitlines() if line.strip()]
-        if args is not plain:
-            print(f"git delta push failed, again without: {' / '.join(err[max(0, len(err) - 3):])}", file=stderr)
-            continue
         raise Transient(f"git push failed: {' / '.join(err[max(0, len(err) - 3):])}"
                         + ("" if environ.get("SSH_AUTH_SOCK") or auth else " (no SSH_AUTH_SOCK: no SSH agent)"))
     refresh()
@@ -284,9 +271,9 @@ def has_blobs(shas: list, clone: str = "", env: Optional[dict] = None) -> bool:
 
 
 def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, where: str,
-                  blob_env: Optional[dict] = None, bases: Optional[list] = None) -> str:
+                  blob_env: Optional[dict] = None) -> str:
     """The files' blobs (hash-object with blob_env, else env), the tree on head's and the commit on head, written into
-    clone (bases: git_tree's); raises Transient."""
+    clone; raises Transient."""
     try:
         changes: dict = {}
         for path, data in files.items():
@@ -296,7 +283,7 @@ def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, w
                 node = node.setdefault(folder, {})
             node[name] = None if data is None else \
                 git(clone, "hash-object", "-w", "--stdin", stdin=data, env=blob_env or env).decode().strip()
-        tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env, bases)
+        tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
         return git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
     except CalledProcessError as error:
         raise Transient(f"git {error.cmd[3]} in {where} failed: "

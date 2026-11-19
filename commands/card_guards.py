@@ -159,7 +159,7 @@ ART_ROOTS = ("MDW/Templates/", "MDW/Unfinished/", "MDW/Assets/", "MDW/Croissant'
 ART_READS = 3                                   # those PSDs read a card at most (clean's Hidden.elsewhere)
 GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
 GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST);
-                                                # or the history clone holds the old blobs (a delta push: any size)
+                                                # or the history clone holds the old blobs (it's up: a push at any size)
 _worker: dict = {}
 _early: dict = {}                               # pushed PNG blob sha -> its recompression's Future (_overlap)
 _waiting: list = []                             # _recompress's entries left to _collect
