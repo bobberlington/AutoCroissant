@@ -428,7 +428,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    candidate answered 'no' off it, an idea or the rest answered 'yes' on it; an entry's changelog marks, data only; its
    old and first repo versions as 'old repo'/'first repo' entries: an MDW Morgue card's rows by its name, a lost
    old-repo card's rows, the first repo's files linked by name or by eye, `derived/morgue/eye.json` `first_files`:
-   Wickerbottom's Book1..5; a picture row when the file has no rows: date, mapped author, subject). Stop at git holds here too: a card's entries end at its
+   Wickerbottom's Book1..5; a picture row when the file has no rows: date, mapped author, subject; a candidate's list
+   copy of its shown picture, `<webp stem>-list.avif`, 360 px AVIF as the grid's tiles, named in its timeline's `list`,
+   for the Morgue list, 11-19; `discord_preview lists` makes them alone). Stop at git holds here too: a card's entries end at its
    first record in the card repo with its PNG's moves followed as the website follows them (a move that redrew the
    card, Elemental World's 4 -> 3 Stars), and its last diff (`git_first`) is dated when its card-data version was
    committed, approximate when the card had versions before that one (no rename when the last look is that first
@@ -443,7 +445,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    folder (an orphan root first, then on the branch's head, fetched alone and shallow into its own bare repo
    `~/Documents/Tools/history.git`; trailer `Card-sweep: history`), refuses a folder failing a check (layout, JSON keys,
    links/mentions/snowflakes in the JSON and the file names, the left-out channels' pictures, webps at most 720 px with
-   no metadata, sizes: at most 700 MB, as Pages' 1 GB is the whole site's) and prints
+   no metadata, a Morgue timeline's one list copy at most 360 px, sizes: at most 700 MB, as Pages' 1 GB is the whole site's) and prints
    what it would push; `--push` sends `refs/heads/history` only, never forced. TTSCardMaker's site.yml clones that
    branch alone, depth 1, blobless and sparse (its JSON only; the whole branch if that fails) as `HISTORY_DIR` (no
    branch or a failed clone: the site builds without it); its pictures are not in the Pages artifact (owner 11-17 (3)).
@@ -455,7 +457,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
    joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
    first posts as Pacific days; a played one with a file in an older repo, `git_file`, "lost before this repo", not
-   "before git"), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
+   "before git"; its tiles, table rows and tips show its list copy, `lpic`, the dialog and compare its webp), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
    photo's, counts in a "Before 2020" year of its own; M'uru's on its Morgue page; one on the file's own day gives its
    source to the tooltip). The pictures load from raw.githubusercontent.com at the history checkout's commit

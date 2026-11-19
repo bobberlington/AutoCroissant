@@ -3,8 +3,8 @@ the wrong kind or one the eye dropped; a title snapped to an old casing as the p
 note or review keys; one webp per version at most WEBP_W wide (a sheet's cell cut out, an old-repo blob read from its git
 dir); the Morgue's candidates (M'uru's first 'Before 2020', owner Q6) and MDW cards; Created proposals only when
 earlier or new (the physical card photo's 'Before 2020'); the eye's leave_out (no version of the card: the next one
-diffed again, no Created from it). Stop at git: a card moved and redrawn in one commit starts
-at its first file."""
+diffed again, no Created from it); each Morgue candidate's list copy (360 px AVIF of its shown picture, named in its
+timeline). Stop at git: a card moved and redrawn in one commit starts at its first file."""
 import json
 import subprocess
 from os import environ
@@ -119,10 +119,18 @@ def test_build(tmp_path):
     assert muru["git_file"] == "first repo" and "git_file" not in json.loads((out / "_morgue" / "joke" / "timeline.json").read_text())
     mdw = json.loads((out / index["mdw"][0]["dir"] / "timeline.json").read_text())
     assert mdw["entries"][0]["date"] is None and "printed" not in mdw["entries"][0]
-    # a rebuild keeps the webps, and drops one no entry names any more
+    for slug in ("joke", "m-uru"):                                  # the Morgue list's copies; none for an MDW card
+        t = json.loads((out / "_morgue" / slug / "timeline.json").read_text())
+        assert t["list"] == "P-m" + dp.LIST_SUFFIX
+        with Image.open(out / "_morgue" / slug / t["list"]) as im:
+            assert (im.format, im.size) == ("AVIF", (dp.LIST_W, 2 * dp.LIST_W))
+    assert "list" not in mdw and not list((out / index["mdw"][0]["dir"]).glob("*" + dp.LIST_SUFFIX))
+    # a rebuild keeps the webps, and drops one no entry names any more (a list copy too)
     (out / "bolt" / "stale.webp").write_bytes(b"x")
+    (out / "_morgue" / "joke" / ("P-old" + dp.LIST_SUFFIX)).write_bytes(b"x")
     dp.build(str(root), str(git), workers=1, cards_repo=None)
     assert not (out / "bolt" / "stale.webp").exists() and (out / "bolt" / "P-a.webp").exists()
+    assert sorted(f.name for f in (out / "_morgue" / "joke").iterdir()) == ["P-m-list.avif", "P-m.webp", "timeline.json"]
     # the eye leaves out the picture Created came from: no proposal from it
     eye["leave_out"]["bolt|D-P-a"] = "not this card"
     (root / "derived" / "preview" / "eye.json").write_text(json.dumps(eye))
@@ -350,3 +358,14 @@ def test_a_meme_copy_is_marked_and_never_diffed_with():
     t["entries"] = [{**x, "blob": x["id"] * 4} for x in t["entries"]]
     got = dp.timeline_out({"card": "c", "key": "c", "name": "C", **t}, None, {"O-1": {"stats"}})[0]["entries"]
     assert [x["changes"] for x in got] == [{}, {}, {}]                  # O-2's stat change against O-1 gone too
+
+
+def test_a_morgue_entry_s_list_copy_is_of_its_newest_picture():
+    """build_site history_morgue's pic: the newest picture by the second (the later entry at the same second), undated
+    ones last."""
+    e = lambda i, date, image=True: {"id": i, "kind": "discord", "date": date, **({"image": f"{i}.webp"} if image else {})}
+    t = {"entries": [e("a", None), e("b", "2020-01-02T00:00:00+00:00"), e("c", "2020-01-02T00:00:00.500+00:00"),
+                     e("d", "2021-01-01T00:00:00+00:00", False), {"id": "F", "kind": "text", "date": "2022-01-01"}]}
+    assert dp.shown_picture(t) == "c.webp"
+    assert dp.shown_picture({"entries": [e("a", None), e("x", None)]}) == "x.webp"
+    assert dp.shown_picture({"entries": t["entries"][3:]}) is None

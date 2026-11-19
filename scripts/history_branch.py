@@ -38,12 +38,13 @@ REMOTE = f"git@github.com:{CARD_REPO}.git"
 AUTHOR = "MichaelJSr"
 MORGUE = "_morgue"
 WEBP_W = 720                                                      # discord_preview.WEBP_W
+LIST_W, LIST_SUFFIX = 360, "-list.avif"                           # discord_preview's: a Morgue entry's list copy
 FILE_MAX = 50_000_000                                             # GitHub warns past 50 MB a file
 TOTAL_MAX = 700_000_000                                           # the site copies every webp; Pages' 1 GB is the whole
                                                                   # site's (161 MB without it, 11-17): room to grow
 INDEX_KEYS = {"version", "generated", "about", "cards", "morgue", "mdw", "created"}
 TIMELINE_KEYS = {"card", "key", "name", "entries", "kind", "stop", "created", "git_first", "morgue", "first", "kind_of",
-                 "git_file", "live"}
+                 "git_file", "live", "list"}
 ENTRY_KEYS = {"id", "kind", "date", "day", "badge", "image", "w", "h", "fields", "changes", "minor", "author", "subject",
               "channel", "repo", "posts", "era", "git_look", "change", "file", "confirmed", "confirmed_by", "as",
               "meme_copy", "before"}                              # a new key: add it once it is known to hold no message text
@@ -84,14 +85,15 @@ def keys_of(obj) -> set:
     return {k for v in obj for k in keys_of(v)} if isinstance(obj, list) else set()
 
 
-def webp_problem(path: str) -> Optional[str]:
+def webp_problem(path: str, fmt: str = "WEBP", width: int = WEBP_W) -> Optional[str]:
+    """A picture's problem (a list copy: fmt AVIF, LIST_W), None when it has none."""
     from PIL import Image
     try:
         with Image.open(path) as im:
-            if im.format != "WEBP":
-                return f"not a webp ({im.format})"
-            if im.width > WEBP_W:
-                return f"{im.width} px wide (at most {WEBP_W})"
+            if im.format != fmt:
+                return f"not a {fmt.lower()} ({im.format})"
+            if im.width > width:
+                return f"{im.width} px wide (at most {width})"
             extra = [k for k in ("exif", "xmp") if im.info.get(k)]
             if extra or getattr(im, "n_frames", 1) != 1:
                 return f"metadata {', '.join(extra) or 'frames'}"
@@ -125,9 +127,11 @@ def check(folder: str, photos: set) -> tuple:
             counts["bytes"] += size
             sizes.append((size, relpath(path, folder)))
             ok = (name == "index.json" if depth == 0 else
-                  False if rel == MORGUE else name == "timeline.json" or name.endswith(".webp"))
+                  False if rel == MORGUE else name == "timeline.json" or name.endswith(".webp")
+                  or name.endswith(LIST_SUFFIX) and rel.startswith(MORGUE + "/"))
             if not ok:
-                problems.append(f"{relpath(path, folder)}: not the history's (index.json, timeline.json, webps only)")
+                problems.append(f"{relpath(path, folder)}: not the history's (index.json, timeline.json, webps, "
+                                "a Morgue entry's list copy only)")
             if size > FILE_MAX:
                 problems.append(f"{relpath(path, folder)}: {size / 1e6:.1f} MB")
             if any(k in name for k in photos):
@@ -187,6 +191,7 @@ def check(folder: str, photos: set) -> tuple:
         if set(t) - TIMELINE_KEYS:
             problems.append(f"{d}/timeline.json: keys {', '.join(sorted(set(t) - TIMELINE_KEYS))}")
         pictures = {f for f in listdir(join(folder, d)) if f.endswith(".webp")}
+        copies = {f for f in listdir(join(folder, d)) if f.endswith(LIST_SUFFIX)}
         used = set()
         for e in t["entries"]:
             if not isinstance(e, dict) or set(e) - ENTRY_KEYS:
@@ -201,6 +206,15 @@ def check(folder: str, photos: set) -> tuple:
         for f in sorted(pictures):
             counts["webps"] += 1
             why = webp_problem(join(folder, d, f))
+            if why:
+                problems.append(f"{d}/{f}: {why}")
+        mine = t.get("list")                  # the list copy of one of its pictures
+        if mine is not None and not (isinstance(mine, str) and mine in copies and d.startswith(MORGUE + "/")
+                                     and mine[:-len(LIST_SUFFIX)] + ".webp" in used):
+            problems.append(f"{d}/timeline.json: list {str(mine)[:40]}: no list copy of a picture it shows")
+        for f in sorted(copies):
+            counts["lists"] = counts.get("lists", 0) + 1
+            why = "no timeline names it" if f != mine else webp_problem(join(folder, d, f), "AVIF", LIST_W)
             if why:
                 problems.append(f"{d}/{f}: {why}")
     counts["largest"] = sorted(sizes, reverse=True)[:3]
@@ -259,7 +273,8 @@ def make_commit(store: str, folder: str, parent: str, counts: dict) -> tuple:
         raise Refused(f"the tree holds {files} files, the folder {counts['files']}")
     if parent and git(store, "rev-parse", f"{parent}^{{tree}}").strip() == tree:
         return "", tree
-    message = f"History: {counts['cards']} cards, {counts['webps']} pictures\n\n{SWEEP_TRAILER}: history\n"
+    lists = f", {counts['lists']} list copies" if counts.get("lists") else ""
+    message = f"History: {counts['cards']} cards, {counts['webps']} pictures{lists}\n\n{SWEEP_TRAILER}: history\n"
     who = {"GIT_AUTHOR_NAME": AUTHOR, "GIT_COMMITTER_NAME": AUTHOR}
     commit = git(store, "commit-tree", tree, *(["-p", parent] if parent else []), env=who, data=message.encode()).strip()
     return commit, tree
@@ -288,15 +303,15 @@ def main(argv: Optional[list] = None) -> int:
     folder = join(root, *FOLDER)
     problems, counts = check(folder, left_out_ids(root))
     log(f"{folder}: {counts['cards']} cards, {counts['morgue']} Morgue folders, {counts['timelines']} timelines, "
-        f"{counts['webps']} webps, {counts['files']} files, {counts['bytes'] / 1e6:.1f} MB (at most "
-        f"{TOTAL_MAX / 1e6:.0f}); largest "
+        f"{counts['webps']} webps, {counts.get('lists', 0)} list copies, {counts['files']} files, "
+        f"{counts['bytes'] / 1e6:.1f} MB (at most {TOTAL_MAX / 1e6:.0f}); largest "
         + ", ".join(f"{n} {s / 1e6:.2f} MB" for s, n in counts.get("largest", [])))
     if problems:
         for p in problems[:30]:
             log(f"  {p}")
         log(f"refused: {len(problems)} problems{' (first 30 shown)' if len(problems) > 30 else ''}")
         return 1
-    log("checks: layout, JSON keys, links/mentions/snowflakes, left-out pictures, webps, sizes: ok")
+    log("checks: layout, JSON keys, links/mentions/snowflakes, left-out pictures, webps, list copies, sizes: ok")
     try:
         open_store(store)
         parent = remote_head(store, args.remote)

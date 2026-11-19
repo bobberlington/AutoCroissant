@@ -1,7 +1,7 @@
 """scripts/history_branch.py (by hand): one commit of the preview's history folder for the history branch, an orphan
 root first and on top of the branch's head after (fetched alone, shallow, into its own store), only that ref pushed and
 never forced; a folder failing a check (review files, message keys, links, snowflakes, left-out pictures, wide or
-orphan webps) is refused with nothing pushed."""
+orphan webps, a list copy no Morgue timeline names or too wide) is refused with nothing pushed."""
 import importlib.util
 import json
 import shutil
@@ -39,7 +39,11 @@ def archive(tmp_path, hb) -> Path:
         entry = {"id": "D-P-111111111111", "kind": "discord", "date": "2020-07-24T19:31:07+00:00", "day": "2020-07-24",
                  "badge": "Discord", "channel": "ideas", "image": "P-111111111111.webp", "w": 100, "h": 140,
                  "fields": {"name": {"value": name}}, "changes": {}}
-        (folder / sub / "timeline.json").write_text(json.dumps({"card": sub, "key": name, "name": name, "entries": [entry]}))
+        t = {"card": sub, "key": name, "name": name, "entries": [entry]}
+        if sub.startswith("_morgue"):                                  # its list copy (discord_preview list_copies)
+            Image.new("RGB", (50, 70), (200, 30, 30)).save(folder / sub / f"P-111111111111{hb.LIST_SUFFIX}", "AVIF")
+            t["list"] = f"P-111111111111{hb.LIST_SUFFIX}"
+        (folder / sub / "timeline.json").write_text(json.dumps(t))
     index = {"version": 1, "cards": {"a-card": {"key": "A Card", "dir": "a-card"}}, "morgue": [{"dir": "_morgue/lost"}],
              "mdw": [], "created": {}}
     (folder / "index.json").write_text(json.dumps(index))
@@ -63,7 +67,8 @@ def test_one_commit_an_orphan_first_then_on_the_branch_head(tmp_path, hb, monkey
     assert git(remote, "log", "-1", "--format=%P|%an|%B", first).strip().endswith("Card-sweep: history")
     assert git(remote, "log", "-1", "--format=%P|%an", first).strip() == "|MichaelJSr"
     assert sorted(git(remote, "ls-tree", "-r", "--name-only", first).split()) == [
-        "_morgue/lost/P-111111111111.webp", "_morgue/lost/timeline.json", "a-card/P-111111111111.webp",
+        "_morgue/lost/P-111111111111-list.avif", "_morgue/lost/P-111111111111.webp", "_morgue/lost/timeline.json",
+        "a-card/P-111111111111.webp",
         "a-card/timeline.json", "index.json"]
     assert hb.main([*run, "--store", str(tmp_path / "s1"), "--push"]) == 0
     assert "unchanged" in capsys.readouterr().out
@@ -78,7 +83,7 @@ def test_one_commit_an_orphan_first_then_on_the_branch_head(tmp_path, hb, monkey
 
 
 @pytest.mark.parametrize("bad", ["review", "message", "link", "snowflake", "glued", "name", "photo", "wide", "orphan",
-                                 "hidden", "key"])
+                                 "hidden", "key", "list-wide", "list-orphan", "list-card"])
 def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
     root = archive(tmp_path, hb)
     folder = root.joinpath(*hb.FOLDER)
@@ -108,6 +113,13 @@ def test_a_folder_failing_a_check_is_refused(tmp_path, hb, bad):
         (folder / "a-card" / ".DS_Store").write_bytes(b"x")
     elif bad == "key":
         entry["text"] = "a message"
+    elif bad == "list-wide":
+        Image.new("RGB", (hb.LIST_W + 1, 10)).save(folder / "_morgue" / "lost" / f"P-111111111111{hb.LIST_SUFFIX}", "AVIF")
+    elif bad == "list-orphan":
+        Image.new("RGB", (10, 10)).save(folder / "_morgue" / "lost" / f"P-222222222222{hb.LIST_SUFFIX}", "AVIF")
+    elif bad == "list-card":                                            # list copies are the Morgue list's only
+        Image.new("RGB", (10, 10)).save(folder / "a-card" / f"P-111111111111{hb.LIST_SUFFIX}", "AVIF")
+        t["list"] = f"P-111111111111{hb.LIST_SUFFIX}"
     timeline.write_text(json.dumps(t))
     problems, _ = hb.check(str(folder), hb.left_out_ids(str(root)))
     assert problems

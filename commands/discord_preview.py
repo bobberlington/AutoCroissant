@@ -6,6 +6,7 @@ CLI):
 
     python -m commands.discord_preview build [--root <dir>] [--old-git <dir>] [--cards-repo <dir>] [--workers <n>] [--force]
     python -m commands.discord_preview check [--root <dir>] [--workers <n>] [--redo]
+    python -m commands.discord_preview lists [--root <dir>] [--workers <n>] [--force]
 
 build   From the chain (derived/chain/timelines, created.json) and the Morgue candidates (derived/morgue/
         candidates.json, with the review page's answers: derived/review/rulings.json):
@@ -17,6 +18,8 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
           <card id>/<picture>.webp one per version, at most WEBP_W wide (never a full-size copy)
           _morgue/<slug>/        the same for each Morgue candidate (owner Q1, Q2) and each MDW Morgue card; an
                                  in-joke's 'live': its live card's name (owner 11-17 ~23:50: the site links it)
+          _morgue/<slug>/<picture>-list.avif  a Morgue candidate's list copy of its shown picture (LIST_W, the grid's
+                                 360 px AVIF), named in its timeline's 'list' (the website's Morgue list tiles)
         Only sure fields go in (value, method, confidence); review items, notes, posters, message ids and links never.
         A title snapped to an old PSD layer's casing takes today's name when the picture's own OCR spells it so
         (printed_name). Stop at git: a card's entries end at its first record in the card repo (--cards-repo, read
@@ -27,6 +30,7 @@ build   From the chain (derived/chain/timelines, created.json) and the Morgue ca
         that are no version of the card, e.g. AI restyles) are left out, the next version diffed again (leave_out).
         Old-repo versions come from the old .git (read only, cat-file). Webps already there are kept (--force: made
         again); webps and timelines no entry names any more are deleted.
+lists   The Morgue entries' list copies alone (made where missing, --force: all), in a folder build made.
 check   Every published version's fields read again from its webp (title OCR and its nearest name, the stars, the
         bars, the ability's words, the types' icons) against its timeline.json -> derived/preview/check.jsonl and
         check.txt. A field the readers can't read again is counted apart from a disagreement.
@@ -76,6 +80,9 @@ PICTURE_KINDS = ("discord", "old repo")
 BADGE = {"discord": "Discord", "old repo": "old repo", "first repo": "first repo",
          "text": "changelog"}                       # first repo: an old repo row's (repo 'first')
 WEBP_W, WEBP_Q = 720, 80                   # the website's card view width; quality
+LIST_W, LIST_Q = 360, 52                   # a Morgue entry's list copy: the grid's 360 px AVIF (build_site IMAGE_SIZES)
+LIST_AVIF = {"subsampling": "4:4:4", "speed": 4, "max_threads": 1}   # build_site AVIF, AVIF_SPEED[360]
+LIST_SUFFIX = "-list.avif"                 # beside its webp: <webp stem>-list.avif
 MAX_PIXELS = 40_000_000                    # a picture past this is shrunk on open (phone photos)
 KINDS_OF = {"name": str, "stars": int, "types": list, "stats": dict, "ability": str}   # another kind: left out
 CHANGE_KEYS = ("name", "stars", "types", "stats", "bal", "buffs", "nerfs", "ability_change", "unknown")
@@ -652,6 +659,75 @@ def picture_size(path: str) -> tuple:
         return im.size
 
 
+def shown_picture(t: dict) -> Optional[str]:
+    """A Morgue timeline's shown picture (build_site history_morgue's pic): its newest version's webp by the second,
+    undated ones last, the later entry first at the same time."""
+    best = None
+    for i, e in enumerate(t.get("entries") or ()):
+        if e.get("kind") in PICTURE_KINDS and e.get("image"):
+            when = dm.epoch(e.get("date"))
+            key = (float("-inf") if when is None else int(when), i)
+            if best is None or key > best[0]:
+                best = (key, e["image"])
+    return best[1] if best else None
+
+
+def make_list_copy(job: tuple) -> tuple:
+    """(path, error): a webp's list copy, at most LIST_W wide (the grid's thumbnail), no metadata."""
+    from PIL import Image
+    src, path = job
+    try:
+        with Image.open(src) as im:
+            im = im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB")
+        im.thumbnail((LIST_W, LIST_W * 3), Image.LANCZOS)
+        im.info = {}
+        im.save(path + ".tmp", "AVIF", quality=LIST_Q, icc_profile=None, **LIST_AVIF)
+        replace(path + ".tmp", path)
+        return path, None
+    except Exception as e:                       # no copy: the website shows the webp
+        return path, f"{type(e).__name__}: {str(e)[:160]}"
+
+
+def list_copies(out_dir: str, folders, workers: int = 3, force: bool = False) -> Counter:
+    """Each Morgue entry's list copy (the website's Morgue list tiles): beside its shown picture, named in its
+    timeline's 'list'; other list copies in those folders deleted."""
+    counts, todo, plan = Counter(), [], {}
+    for folder in folders:
+        path = join(out_dir, folder, "timeline.json")
+        t = dm.read_json(path)
+        if not t:
+            continue
+        shown = shown_picture(t)
+        name = splitext(shown)[0] + LIST_SUFFIX if shown and exists(join(out_dir, folder, shown)) else None
+        plan[folder] = (path, t, name)
+        if name and (force or not exists(join(out_dir, folder, name))):
+            todo.append((join(out_dir, folder, shown), join(out_dir, folder, name)))
+    failed = set()
+    if todo:
+        with ProcessPoolExecutor(max(1, min(workers, len(todo)))) as pool:
+            for path, err in pool.map(make_list_copy, todo):
+                if err:
+                    failed.add(path)
+                    log(f"lists: failed {path[len(out_dir) + 1:]}: {err}")
+    for folder, (path, t, name) in plan.items():
+        if name and join(out_dir, folder, name) in failed:
+            name = None
+        for f in listdir(join(out_dir, folder)):
+            if f.endswith(LIST_SUFFIX) and f != name:
+                remove(join(out_dir, folder, f))
+                counts["deleted"] += 1
+        if t.get("list") != name:
+            if name:
+                t["list"] = name
+            else:
+                t.pop("list", None)
+            dm.write_json(path, t)
+            counts["timelines"] += 1
+        counts["copies"] += bool(name)
+    counts["made"], counts["failed"] = len(todo) - len(failed), len(failed)
+    return counts
+
+
 # ========================
 # build
 # ========================
@@ -793,12 +869,13 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
                     failed.append((path, err))
                 if i % 250 == 0:
                     log(f"build: {i}/{len(todo)} pictures")
-    gone = 0
+    gone, listed = 0, {row["dir"] for row in index["morgue"]}      # listed: the folders with a list copy
     for folder in [d for d in listdir(out_dir) if isdir(join(out_dir, d))]:
         for sub_dir in ([join(folder, s) for s in listdir(join(out_dir, folder)) if isdir(join(out_dir, folder, s))]
                         if folder == MORGUE_FOLDER else [folder]):
             for f in listdir(join(out_dir, sub_dir)):
-                if f.endswith(".webp") and f not in want.get(sub_dir, ()):
+                if (f.endswith(".webp") and f not in want.get(sub_dir, ())
+                        or f.endswith(LIST_SUFFIX) and sub_dir not in listed):
                     remove(join(out_dir, sub_dir, f))
                     gone += 1
             if sub_dir not in want and exists(join(out_dir, sub_dir, "timeline.json")):
@@ -823,12 +900,14 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
                     e["image"] = None
                     missing += 1
         dm.write_json(path, t)
+    lists = list_copies(out_dir, sorted(listed), workers, force)
     dm.write_json(join(out_dir, "index.json"), index)
     total = sum(getsize(join(d, f)) for d, _, fs in walk(out_dir) for f in fs)
     log(f"build: {len(index['cards'])} cards, entries {dict(counts)}; Morgue {len(index['morgue'])} candidates, "
         f"{len(index['mdw'])} MDW cards; Created proposals {sum(not c.get('same') for c in index['created'].values())} "
         f"(+{sum(bool(c.get('same')) for c in index['created'].values())} the website's own day); pictures {len(sizes)} "
-        f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); {total / 1e6:.1f} MB")
+        f"({len(failed)} failed, {missing} versions without one, {gone} old webps deleted); Morgue list copies "
+        f"{lists['copies']} ({lists['made']} made, {lists['failed']} failed); {total / 1e6:.1f} MB")
     for path, err in failed[:20]:
         log(f"build: failed {path[len(out_dir) + 1:]}: {err}")
     log(f"build: the eye's leave_out: {sum(left.values())} entries left out "
@@ -845,7 +924,7 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
 
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.discord_preview", description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("build", "check"))
+    parser.add_argument("command", choices=("build", "check", "lists"))
     parser.add_argument("--root", default=environ.get("DISCORD_ARCHIVE", dm.DEFAULT_ROOT))
     parser.add_argument("--old-git", default=dm.old_store())
     parser.add_argument("--cards-repo", default=LOCAL_DIR_LOC, help="build: the card repo clone (its history, read only)")
@@ -855,6 +934,12 @@ def main(argv: Optional[list] = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "build":
         build(args.root, args.old_git, args.workers, args.force, args.cards_repo)
+    elif args.command == "lists":
+        out_dir = join(dm.check_root(args.root), *OUT)
+        index = dm.read_json(join(out_dir, "index.json"), {}) or {}
+        counts = list_copies(out_dir, sorted(row["dir"] for row in index.get("morgue") or ()), args.workers, args.force)
+        log(f"lists: {counts['copies']} Morgue list copies ({counts['made']} made, {counts['failed']} failed, "
+            f"{counts['deleted']} deleted), {counts['timelines']} timelines written")
     else:
         from commands.discord_preview_check import check
         check(args.root, args.workers, args.redo)
