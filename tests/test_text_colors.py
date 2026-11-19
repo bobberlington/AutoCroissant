@@ -396,6 +396,26 @@ def test_clipped_title_layer_hidden(clone, tmp_path):
     assert {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
 
 
+def test_group_clipped_title_hidden(clone, tmp_path):
+    """Yin Yarn's texture clipped onto its 'Text' group over the title alone: a phrase refused with the reason (the
+    record's part says it); a whole title's colour hides it and shows, the group's adjustments kept."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Kirby/5 Stars/Yin_Yarn.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    assert pe.card_parts(psd, rel, "Yin Yarn", parser)["title"][0]["clip"] == "Layer 3"
+    word = {"field": "name", "phrase": "Yin", "color": "#ff2200"}
+    assert "its clipped layer 'Layer 3' paints over" in pe.classify(parsed, {"colors": [word]}, psd, parser).refusals[0].why
+    baked = pe.apply_jobs(psd_path, png, rel, {"colors": [{"field": "name", "color": "#ff2200"}]}, parsed, parser, str(tmp_path),
+                          str(clone / pe.FONTS_DIR), psd=psd)
+    group = next(layer for layer in PSDImage.open(baked.psd_path) if layer.name == "Text")
+    assert [one.visible for one in pe._clip_chain(group)] == [False, True, True]       # Layer 3, Color Balance 1, Exposure 2
+    assert baked.changed_pixels > 10000
+
+
 def test_ability_overlay_goes_off(clone, tmp_path):
     """Cat's phrase under its lone Color Overlay: the overlay off, the rest in its colour; Mini Doomer's whole Ability
     turns its Gradient off, its one-colour badges coloured too; a phrase under that Gradient stays refused."""
@@ -425,7 +445,8 @@ def test_ability_overlay_goes_off(clone, tmp_path):
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color
-    Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text."""
+    Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text.
+    A phrase under a layer clipped onto the title (Cake Mix) or onto its group over it (Yin Yarn): refused, not a whole one."""
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
@@ -437,7 +458,9 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
              "Auxiliary/Minions/Mini_Doomer.psd": [[stats], [ability, stats], ([stats], {"ability": now, "parts": {"2068": {"text": now}}})],
              "Auxiliary/Minions/Cat.psd": [[{**ability, "phrase": "attack"}]],
              "Creatures/Kirby/5 Stars/Crowned_Magolor.psd": [[{**name, "phrase": "Magolor"}], [{**name, "phrase": "Crown"}],
-                                                             [{**name, "phrase": "Magolor"}, {**name, "phrase": "Mag"}]]}
+                                                             [{**name, "phrase": "Magolor"}, {**name, "phrase": "Mag"}]],
+             "Items/Heal/2 Stars/Cake_Mix.psd": [[{**name, "phrase": "Mix"}]],
+             "Creatures/Kirby/5 Stars/Yin_Yarn.psd": [[{**name, "phrase": "Yin"}], [name, {**name, "phrase": "Yin"}]]}
     jobs, want = [], []
     for rel, sets in cases.items():
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
@@ -451,4 +474,4 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
 process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0], (got, want)
+    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], (got, want)
