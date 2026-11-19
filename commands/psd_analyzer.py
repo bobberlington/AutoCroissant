@@ -31,6 +31,8 @@ COLUMN_ORDER = [
     'types', 'path', 'timestamp', 'created', 'author', 'stars',
     'problem', 'series', 'subseries', 'subtype'
 ]
+CSV_COLUMNS = ['title', *COLUMN_ORDER]                     # the CSV: the printed title, each creature's stats
+CSV_COLUMNS.insert(CSV_COLUMNS.index('spd') + 1, 'creatures')
 BEFORE_PARSER_2 = "read before parser 2, 2026-10-21"     # card_history.unknown: its types
 
 
@@ -77,6 +79,11 @@ def _shown(card: CardInfo) -> dict:
     if before and "created" in shown:
         shown["created"] = f"before {before}"
     return shown
+
+
+def _creatures(card: CardInfo) -> list[str]:
+    """Each creature's hp/def/atk/spd (multi-creature cards)."""
+    return [f"{c.hp}/{c.defense}/{c.attack}/{c.speed}" for c in card.creatures or ()]
 
 
 def _format_metadata(card: CardInfo, name: str) -> str:
@@ -150,11 +157,18 @@ def export_stats_to_file(interaction: Interaction,
             filtered_stats[name]['aliases'] = ''
 
     if as_csv:
+        for name, row in filtered_stats.items():          # plain text: a title, every creature, lists joined
+            card = stats_db.stats[name]
+            row['title'] = card.display_name or name
+            row['creatures'] = '; '.join(_creatures(card))
+            for key, value in row.items():
+                if isinstance(value, list):
+                    row[key] = ', '.join(map(str, value))
         df = pd.DataFrame.from_dict(filtered_stats).transpose()
         df_filtered = df[df["ability"].notna()].copy()
 
         # Reorder columns (only include columns that exist)
-        existing_columns = [col for col in COLUMN_ORDER if col in df_filtered.columns]
+        existing_columns = [col for col in CSV_COLUMNS if col in df_filtered.columns]
         df_filtered = df_filtered[existing_columns]
 
         # Sort alphabetically by path
@@ -164,7 +178,7 @@ def export_stats_to_file(interaction: Interaction,
         )
 
         filename = f"{EXPORTED_STATS_NAME}.csv"
-        df_filtered.to_csv(filename)
+        df_filtered.to_csv(filename, index_label='name')
 
         with open(filename, 'rb') as f:
             queue_file(interaction, File(f, filename))
@@ -200,8 +214,8 @@ def export_stats_to_file(interaction: Interaction,
                     f.write(f"{card.ability}\n")
             else:
                 for key, metric in _shown(card).items():
-                    if key == "creatures":              # each hp/def/atk/spd
-                        metric = [f"{c.hp}/{c.defense}/{c.attack}/{c.speed}" for c in card.creatures]
+                    if key == "creatures":
+                        metric = _creatures(card)
                     f.write((' '.join(map(str, metric)) if isinstance(metric, list) else str(metric)) + '\n')
             f.write('\n')
 

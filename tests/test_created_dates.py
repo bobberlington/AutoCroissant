@@ -179,12 +179,13 @@ def test_query_embed_says_created(monkeypatch):
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     """to_dict's created: the metadata view (/query as_of) lists it after timestamp, both exports
-    carry it (CSV: a created column). The text exports keep non-ASCII and write creatures as hp/def/atk/spd."""
+    carry it (CSV: a created column). The exports keep non-ASCII and write creatures as hp/def/atk/spd."""
     import csv
     import commands.psd_analyzer as pa
     goombella, kirby, pep = _dated("Goombella", "2023-10-13"), _dated("Kirby", None), _dated("Pep Drink", "2020-07-21")
     pep.created["before"] = 2020                                # owner 11-14: "before 2020", as the embed says
-    twins = _card("Twins", creatures=[cm.CardStats(7, 4, 5, 6), cm.CardStats(7, 10, 4, 4)])
+    twins = _card("Twins", creatures=[cm.CardStats(7, 4, 5, 6), cm.CardStats(7, 10, 4, 4)], types=["light", "undead"],
+                  display_name="Twin Emperors")
     twins.ability = "Uses: ∞"
     monkeypatch.setattr(pa, "get_card_aliases", lambda name=None: [] if name else {})
     lines = pa._format_metadata(goombella, "Goombella").split("\n")
@@ -195,12 +196,15 @@ def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     monkeypatch.setattr(pa, "queue_file", lambda inter, f: None)
     monkeypatch.setattr(pa.stats_db, "stats", {"Goombella": goombella, "Kirby": kirby, "Twins": twins, "Pep Drink": pep})
     pa.export_stats_to_file(SimpleNamespace(), as_csv=True)
-    rows = {r[""]: r for r in csv.DictReader(open("stats.csv", encoding="utf-8"))}
+    rows = {r["name"]: r for r in csv.DictReader(open("stats.csv", encoding="utf-8"))}
     assert rows["Goombella"]["created"] == "2023-10-13" and rows["Kirby"]["created"] == ""
+    assert (rows["Twins"]["title"], rows["Twins"]["creatures"], rows["Twins"]["types"]) == \
+        ("Twin Emperors", "7/4/5/6; 7/10/4/4", "light, undead")       # the title, every creature, plain types
+    assert (rows["Kirby"]["title"], rows["Kirby"]["creatures"]) == ("Kirby", "")
     assert rows["Pep Drink"]["created"] == "before 2020"
     pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
     text = open("stats.txt", encoding="utf-8").read()
-    assert "\n2023-10-13\n" in text and "\nUses: ∞\n7/4/5/6 7/10/4/4\n" in text
+    assert "\n2023-10-13\n" in text and "\nUses: ∞\n" in text and "\n7/4/5/6 7/10/4/4\n" in text
     assert "\nbefore 2020\n" in text and "2020-07-21" not in text
     monkeypatch.setattr(pa.stats_db, "rulebook", [{"num": 2, "title": "Setting Up", "text": "★★★ Deck\nfrom −9 up"}])
     pa.export_rulebook_to_file(SimpleNamespace())
