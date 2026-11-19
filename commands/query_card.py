@@ -1070,6 +1070,13 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
         queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {SITE_URL}/#/rules/{chapter['id']}")
         return
+    series = None if card else _series(query)          # a series' name: its cards, not a guess or a star icon
+    if series:
+        print(f"Search series: /query {query!r}")
+        label = "Its" if series[1] == 1 else "Their"
+        text = " ".join(typed(query, quotes=True).split())
+        queue_message(interaction, series[0], links=[(f"{label} cards on the website", search_link("cards", text))])
+        return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
         queue_message(interaction, "No card found!")
@@ -1122,6 +1129,29 @@ def _chapter(query: str) -> Optional[dict]:
     text = squeeze(query)
     found = (c for c in stats_db.rulebook if text in (squeeze(c["title"]), squeeze(chapter_label(c))))
     return next(found, None) if text else None
+
+
+def _series(query: str) -> Optional[tuple]:
+    """('**Hollow Knight** is a series: 68 cards', 1 name) when query names a series or subseries as a search term does
+    (series_names), with the cards that term finds by it; None otherwise."""
+    df, term = card_repo.cards_dff, squash(query)
+    if not term or "series" not in df:
+        return None
+    subs = df["subseries"] if "subseries" in df else [None] * len(df)
+    known = {n: series_names(n) for n in {*df["series"], *subs} if isinstance(n, str)}
+    hit = lambda name: term in known.get(name, ())
+    cards = [(s, u) for s, u in zip(df["series"], subs) if hit(s) or hit(u)]
+    if not cards:
+        return None
+    top = sorted({s for s, _ in cards if hit(s)})
+    names = top or sorted({u for _, u in cards if hit(u)})
+    names = [n for n in names if squash(n) == term][:1] or names     # the name typed, else each it is part of
+    parents = {s for s, u in cards if u in names and isinstance(s, str)}
+    kind = "series" if top else "subseries" + (f" of {escape_markdown(*parents)}" if len(parents) == 1 else "")
+    bold = [f"**{escape_markdown(n)}**" for n in names]
+    said = " and ".join([", ".join(bold[:-1]), bold[-1]] if len(bold) > 1 else bold)
+    n = len(cards)
+    return (f"{said} {'is a' if len(names) == 1 else 'are'} {kind}: {n} card{'s' * (n != 1)}", len(names))
 
 
 def _label(key: str) -> str:
