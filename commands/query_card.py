@@ -782,11 +782,7 @@ class CardRepository:
             return
         renamed = {}
         for name, record in archived.items():
-            target, seen, tag = name, set(), {}
-            while target not in cards and target in archived and target not in seen:
-                seen.add(target)
-                tag = getattr(archived[target], "archived", None) or {}
-                target = tag.get("renamed_to") or ""
+            target, tag = rename_end(name, archived, cards)
             if target in cards:
                 key, now = self._key_of(target), getattr(cards[target], "display_name", None) or target
             else:                                                # Pandiety: MDW/Unfinished/6 Stars/Pandeity.png
@@ -1254,6 +1250,16 @@ def renamed_into(old_stats: dict, stats: dict) -> dict:
     return into
 
 
+def rename_end(name: str, archived: dict, cards: dict) -> tuple:
+    """(where name's renamed_to chain over archived ends: a card of today, else the name it stops at; its last tag)."""
+    target, seen, tag = name, set(), {}
+    while target not in cards and target in archived and target not in seen:
+        seen.add(target)
+        tag = getattr(archived[target], "archived", None) or {}
+        target = tag.get("renamed_to") or ""
+    return target, tag
+
+
 def history_of(name: str) -> list:
     """name's old versions: those of the names renamed into it (by start), then its own old_stats. The card data keeps
     each name's apart; were it to carry them across a rename itself, they would count twice."""
@@ -1287,8 +1293,8 @@ def archived_text(tag: dict) -> str:
 
 
 def history_match(query: str) -> Optional[tuple]:
-    """(registry file name or None, card name) for query, archived cards included (their PNG may be gone; their own
-    name before an alias or another card's PNG that claims it): /query as_of."""
+    """(registry file name or None, card name) for query, archived cards included (their PNG may be gone; a renamed
+    one's name finds its card of today, as /query): /query as_of."""
     found = _history_lookup(query)
     return found[:2] if found else None
 
@@ -1297,13 +1303,11 @@ def _history_lookup(query: str) -> Optional[tuple]:
     """history_match's (key, name), and whether it was a guess."""
     from commands.psd_analyzer import card_name, stats_db
     try:
-        archived = {card_repo._normalize_card_name(name): name for name in stats_db.archived()}
+        records = stats_db.archived()
     except RuntimeError:                                 # /update_stats writing meanwhile
-        archived = {}
+        records = {}
+    archived = {card_repo._normalize_card_name(name): name for name in records}
     key = card_repo._normalize_card_name(query)
-    if key in archived and key in card_repo.git_files and \
-            card_repo._normalize_card_name(card_name(card_repo.git_files[key])) != key:
-        return (None, archived[key], False)              # an alias or another card's PNG claims the archived name
     guess = key not in card_repo.git_files and key not in archived
     if guess:
         key = card_repo.closest(key, card_repo.card_keys + list(archived))     # /query's guess
@@ -1311,7 +1315,10 @@ def _history_lookup(query: str) -> Optional[tuple]:
             return None
     if key in card_repo.git_files:
         return (key, _stats_name(card_name(card_repo.git_files[key])), guess)
-    return (None, archived[key], guess)
+    name = archived[key]
+    end = rename_end(name, records, stats_db.stats)[0]   # renamed: its card of today, as /query
+    now = card_repo._key_of(end) if end in stats_db.stats else None
+    return (now, end, guess) if now else (None, name, guess)
 
 
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:

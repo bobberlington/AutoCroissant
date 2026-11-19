@@ -205,13 +205,34 @@ def test_a_png_named_in_another_case_finds_its_card(db, monkeypatch):
     assert "**omori** as of 2026-10-22 " in _texts("omori", "2026-10-22")[0]   # once: no stored card data
 
 
-def test_an_archived_name_wins_over_an_alias(db, monkeypatch):
-    """ZOEY!!!!! renamed to Z!!!!!, with an alias zoey!!!!! -> Z!!!!!'s PNG: as_of for ZOEY!!!!! is the archived card's
-    history; Z!!!!!'s own name still finds Z!!!!!."""
-    monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
-    monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", "Creatures/Other/5 Stars/Z!!!!!.png")
-    assert qc.history_match("ZOEY!!!!!") == (None, "ZOEY!!!!!")
-    assert qc.history_match("Z!!!!!") == ("z!!!!!.png", "Z!!!!!")
+def test_a_renamed_name_finds_its_card_of_today(db, monkeypatch):
+    """ZOEY!!!!! renamed to Z!!!!!: as_of for ZOEY!!!!! is Z!!!!!'s, as /query, with or without an alias zoey!!!!! ->
+    Z!!!!!'s PNG; before the rename it is ZOEY's version, among Z!!!!!'s."""
+    cm.stats_db.old_stats["ZOEY!!!!!"][1].archived["renamed_to"] = "Z!!!!!"
+    z = "Creatures/Other/5 Stars/Z!!!!!"
+    monkeypatch.setitem(cm.stats_db.stats, "Z!!!!!", _card("Z!!!!!", z, _at(2026, 6, 18, 12), "Z now."))
+    monkeypatch.setitem(qc.card_repo.git_files, "z!!!!!.png", f"{z}.png")
+    assert qc.history_match("ZOEY!!!!!") == ("z!!!!!.png", "Z!!!!!")
+    monkeypatch.setitem(qc.card_repo.git_files, "zoey!!!!!.png", f"{z}.png")
+    assert qc.history_match("ZOEY!!!!!") == ("zoey!!!!!.png", "Z!!!!!")
+    text = _texts("ZOEY!!!!!", "2026-03-01")[0]
+    assert text.startswith(f"**Z!!!!!** as of 2026-03-01 {HEAD}version 2 of 3, from 2026-02-07 (date approximate) "
+                           "until 2026-06-18.") and "ability: Zoey last." in text
+
+
+def test_a_printed_title_it_was_renamed_from_is_the_current_card(db, monkeypatch):
+    """PANDA Mk A prints P.A.N.D.A. Mk A, its name before the rename: after it that title is the current card (it said
+    archived, its last version, 11-19)."""
+    panda = "Creatures/Pandas/3 Stars/PANDA_Mk_A"
+    old = _card("P.A.N.D.A. Mk A", panda, _at(2025, 9, 2), "Old text.")
+    old.archived = {"at": _at(2026, 11, 11), "path": f"{panda}.psd", "blob": None, "commit": "b" * 40,
+                    "renamed_to": "PANDA Mk A"}
+    monkeypatch.setitem(cm.stats_db.old_stats, "P.A.N.D.A. Mk A", [old])
+    monkeypatch.setitem(cm.stats_db.stats, "PANDA Mk A", _card("PANDA Mk A", panda, _at(2026, 11, 11, 12), "Now.",
+                                                               blob="e" * 40, display_name="P.A.N.D.A. Mk A"))
+    qc.card_repo.git_files.update({"panda_mk_a.png": f"{panda}.png", "p.a.n.d.a._mk_a.png": f"{panda}.png"})
+    assert _texts("P.A.N.D.A. Mk A", "2026-11-18")[0].startswith(
+        f"**PANDA Mk A** as of 2026-11-18 {HEAD}the current card (version 2 of 2), from 2026-11-11.")
 
 
 # ========================
