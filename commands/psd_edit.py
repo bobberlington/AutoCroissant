@@ -3100,6 +3100,19 @@ def kept_chars(old: str, new: str) -> list:
     return out
 
 
+def kept_moved(old: str, new: str) -> list:
+    """kept_chars, plus the letters of a paragraph the edit moved (text_align.moves), as edit_styles' colours."""
+    out = kept_chars(old, new)
+    taken = {j for j in out if j >= 0}
+    for (s0, _), (t0, _), blocks in text_moves(old, new):
+        for i, j, n in blocks:
+            for k in range(n):
+                if out[s0 + i + k] < 0 and t0 + j + k not in taken:
+                    out[s0 + i + k] = t0 + j + k
+                    taken.add(t0 + j + k)
+    return out
+
+
 def kept_spans(ranges: list, kept: list) -> list:
     """The ranges of the old text the edit kept whole (kept_chars: every character, in a row), as ranges of the new."""
     return [(kept[a], kept[a] + b - a) for a, b in ranges
@@ -6198,7 +6211,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             words = status_word_spans(text, chart, drawn)
             styled = [span for span in words if span[2].styled]
             plans = plan_fx(layer, old_fx, chart)
-            kept = kept_chars(old_text, text)
+            kept = kept_moved(old_text, text)   # an FX layer follows a moved line's words, as its colours do
             for plan in plans:                  # a layer whose style can't follow goes: its words print without it
                 lost = [fx_phrase for fx_phrase, was in plan.found if not was]
                 try:
@@ -12974,6 +12987,7 @@ __all__ = [
     'heads',
     'header_looks',
     'kept_chars',
+    'kept_moved',
     'held_words',
     'kept_spans',
     'new_fx',

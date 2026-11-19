@@ -1805,6 +1805,24 @@ def test_a_stale_fx_layer_is_cut_again(clone, parser, chart, tmp_path):
     assert "Ability FX: Glued" in [name for _, name, _ in baked.records] and not baked.fx_notes
 
 
+def test_a_moved_line_keeps_its_fx_layer(clone, chart):
+    """A line the edit moves keeps its own-style FX layer, as it keeps its colours (text_align.moves): Computer Virus's
+    '1st: Slime' swapped above the first line is cut again there, not deleted with its words printed plain."""
+    psd = PSDImage.open(_card(clone, VIRUS)[0])
+    layer = pe.ability_layer(psd)
+    slime = "Ability FX: 1st: Slime"
+    top = {fx.name: fx.bbox[1] for fx in pe.fx_layers(psd, layer)}[slime]
+    lines = layer.text.split("\r")
+    lines[0], lines[1] = lines[1], lines[0]
+    edit = pe.set_text_layer(psd, "ability", "\n".join(lines), str(clone / pe.FONTS_DIR), chart)
+    assert not edit.dropped and not edit.notes and (slime, [(0, 10)]) in edit.held
+    fx, = [fx for fx in pe.fx_layers(psd, layer) if fx.name == slime]
+    canvas = (psd.height, psd.width)
+    ours, base = pe._on_canvas(fx, canvas), pe._on_canvas(layer, canvas)
+    held = ours[..., 3] > 0
+    assert fx.bbox[1] < top - 100 and held.sum() > 2000 and np.array_equal(ours[held], base[held])
+
+
 def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style,
     sized and shifted to its text (owner 2026-10-25: the pill 1.35 times the capital height, its middle on theirs; Mini
