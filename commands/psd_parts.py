@@ -142,7 +142,16 @@ def _part(parser: PSDParser, layer, named: Optional[bool] = None) -> dict:
     if named is not None:
         out["named"] = named
     out.update(text=parser.layer_text(layer), sha=raw_sha(layer), box=list(layer.bbox), variants=None)
+    clip = _clip(layer)
+    if clip:
+        out["clip"] = clip
     return out
+
+
+def _clip(layer) -> Optional[str]:
+    """The opaque layer clipped over the part that a phrase's colour is refused under (psd_edit _clipped_over), or None."""
+    from commands.psd_edit import _clipped_over, _opaque    # lazy: psd_edit imports this module
+    return next((one.name for one in _clipped_over(layer) if _opaque(one)), None)
 
 
 def _shows(psd, layer) -> bool:
