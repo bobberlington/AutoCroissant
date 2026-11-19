@@ -437,6 +437,19 @@ def test_game_txt_rulebook_says_what_the_bot_does(bs):
     assert bs.rulebook_text(source) == rulebook.plain_text(source) == "🕐FORCED\n(BOT) = Beginning of turn."
 
 
+def test_tts_and_game_txt_kinds_name_each_item_type(bs):
+    """tts.json's k (TTS Card details, Find a card) and game.txt's kind name each item type an item prints, as the card
+    page (grid.js itemTypes; one map, card_models'); a field card's own icon none."""
+    cards = [dict(name="Life Shroom", type="item", subtype="heal", types=["food", "fragile equip"], stars=3, png="a.png"),
+             dict(name="Electric Dart", type="nme", subtype="attack", types=["nme", "attack", "food"], stars=2, png="b.png"),
+             dict(name="Nexus", type="field", types=["field"], stars=4, png="c.png")]
+    kinds = ["Item (heal, equip)", "N.M.E. item (attack, heal)", "Field card"]
+    assert [c["k"] for c in bs.tts_details(cards, [], {}, {})["cards"].values()] == kinds
+    game = bs.game_text(cards, [], {"notes": [], "groups": []}, {})
+    assert all(f"{c['name']} | {k} | {c['stars']}★ |" in game for c, k in zip(cards, kinds))
+    assert bs.ICON_ITEM_TYPES == cm.AUX_ITEM_TYPES
+
+
 def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
     """site.yml's PSD sizes (psd_sizes.py): kept by blob; the first run reads the whole tree, a later one only a new
     PSD's folder; build_site.psd_sizes reads its file as the trees API's reply."""
