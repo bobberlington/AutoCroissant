@@ -55,9 +55,10 @@ def _png(colour) -> bytes:
     return out.getvalue()
 
 
-def test_pdf_printed_only_when_a_page_changes(tmp_path):
+def test_pdf_printed_only_when_a_page_changes(tmp_path, monkeypatch):
     """pages.json keeps each page's pixel hash; the PDF is printed again only when one changes (its bytes carry the print
-    time); other files beside it stay; each page's text is kept for the TTS save's search."""
+    time) or a page's text does (the save reads pages.json at the PDF's commit); other files beside it stay; each page's
+    text is kept for the TTS save's search, and how it is read (TEXT_JS) is in the key and pre-key."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "notes.png").write_bytes(_png("white"))
@@ -78,6 +79,11 @@ def test_pdf_printed_only_when_a_page_changes(tmp_path):
     assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2")["printed"]  # a new key, the same pixels: kept
     assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k2" and len(printed) == 3
     assert rulebook_pages.key("<sheets>", str(tmp_path)) == rulebook_pages.key("<sheets>", str(tmp_path)) != rulebook_pages.key("<sheet>", str(tmp_path))
+    named = [shots[0], ({**shots[1][0], "text": "STATS [machine] Peppy"}, _png("blue")), shots[2]]   # the same pixels
+    assert rulebook_pages.write_pages(str(folder), named, pdf, "k3")["changed"] == ["Stats"] and len(printed) == 4
+    keys = (rulebook_pages.key("<sheets>", str(tmp_path)), rulebook_pages.pre_key(_seen(), ["t"], []))
+    monkeypatch.setattr(rulebook_pages, "TEXT_JS", rulebook_pages.TEXT_JS + " ")
+    assert all(a != b for a, b in zip(keys, (rulebook_pages.key("<sheets>", str(tmp_path)), rulebook_pages.pre_key(_seen(), ["t"], []))))
 
 
 def _commit(repo, when, files):
