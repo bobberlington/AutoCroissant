@@ -445,9 +445,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    ("[unknown]" made "Unknown", "(1CD)" made "Once per turn:" or "(abc)": edit_styles, 2026-11-13); letters left in the
    icon font that it draws no badge of (a badge cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
    `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font has no glyph
-   for (gid 0, `no_glyph`: a box in the engine and in Photoshop) refuses `font`; a typed em or en dash, ellipsis or
-   curly double quote its font lacks is set plain first (- ... ", `plain_typed`; kept where the font has it; the
-   read-back gates compare them as plain: owner D13, 2026-11-15). A `[token]` the website draws as an
+   for is set in Myriad Pro, that character alone (`missing_glyphs`, `MGP_FONT`: Photoshop 2023's Missing Glyph
+   Protection, r51), and only one Myriad Pro lacks too is a box (gid 0, `no_glyph`) told `font`; a typed em or en dash,
+   ellipsis or curly double quote its font lacks is set plain first (- ... ", `plain_typed`; kept where the font has
+   it; the read-back gates compare them as plain: owner D13, 2026-11-15). A `[token]` the website draws as an
    icon that the font prints as letters (`unlettered_icons`: text.js takes the base before the first colon, `norm()`ed,
    whatever the variant, the font ligates exact spellings only: "[fire:]", "[fire: no]", "[Fire.]", "[warp  star]")
    refuses `font` before anything changes, typed or made by deleting letters (review 2026-10-24: "[fire:]" counted as
