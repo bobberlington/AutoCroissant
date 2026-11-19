@@ -26,12 +26,12 @@ import pytest
 
 import commands.card_bake as cb
 import commands.psd_edit as pe
-from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha
+from conftest import SITE_SRC, blob_sha_bytes as _sha
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: F401 (fixtures)
 
 
-LIVE_EDITS = CLONE / "site" / "Card Edits.json"
-EDIT_JS = CLONE / "site" / "assets" / "edit.js"
+LIVE_EDITS = SITE_SRC / "site" / "Card Edits.json"
+EDIT_JS = SITE_SRC / "site" / "assets" / "edit.js"
 WORKFLOW = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
 
 
