@@ -210,6 +210,25 @@ def test_guess_points_to_abilities(repo):
     assert reply("frostmourne") == (None, None) and reply("freezer") == ("Closest match: **The Freezer**", None)
 
 
+def test_series_name_gives_its_cards(repo, capsys):
+    """A series' or subseries' name (as a search term takes it) says how many cards, with a website search button; a card
+    named so is still the card (OMORI); a typo still guesses."""
+    repo.cards_dff = DataFrame({"ability": [""] * 4, "series": ["The Binding of Isaac", "The Binding of Isaac", "Mario", "Mario"],
+                                "subseries": [None, "Dogma", "Paper Mario: The Thousand-Year Door", None]},
+                               index=["Tainted Isaac", "Dogma", "Grodus", "Bobbery"])
+
+    def reply(query):
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        return utils.dispatch_queue[0][1]["content"], utils.dispatch_queue[0][1].get("links")
+
+    assert reply("binding of isaac") == ("**The Binding of Isaac** is a series: 2 cards", [
+        ("Its cards on the website", f"{qc.SITE_URL}/#/cards?q=binding%20of%20isaac")])
+    assert "Search series: /query 'binding of isaac'" in capsys.readouterr().out
+    assert reply("Thousand-Year Door")[0] == "**Paper Mario: The Thousand-Year Door** is a subseries of Mario: 1 card"
+    assert reply("dogma")[1] is None and reply("magolr") == ("Closest match: **Magolor**", None)
+
+
 def test_morgue_and_unfinished_cards_say_so(monkeypatch):
     """A Morgue card (cards.json morgue) says it is retired, with its page; an MDW/Unfinished/ one says it is not in play,
     its archived name finding it (Pandiety); a live card and cardback.png as before."""
