@@ -307,7 +307,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `unsupported-card` before anything changes. Where each layer's phrases land is worked out before the text is set
    (`follow_fx`): `phrase_ranges` over the new text (a phrase that occurs more often is cut on every occurrence), but a
    `"styled"` or `"own"` layer (`ANCHORED`), whose style and colour belong to its own words, stays on the characters it
-   covered (`kept_chars`;
+   covered (`kept_moved`: `kept_chars` plus a moved line's letters, as its colours, 2026-11-19;
    review 2026-10-23): Goofy's `1#1` is the first "1" of a text with no whole-word "1", so a "1" typed before it renumbers
    the layer (`1#2`, told), a whole-word "1" typed anywhere ("Draw 1 card.") would take the JSX's `1#1` off "3T1" and
    refuses `unsupported-card` ("would leave its 1 for another"), a styled phrase matched inside other words that would
