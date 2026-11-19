@@ -24,7 +24,7 @@ from os import remove, replace
 from os.path import basename, exists, expanduser, join, splitext
 from re import DOTALL, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
-from subprocess import CalledProcessError
+from subprocess import CalledProcessError, TimeoutExpired
 from types import SimpleNamespace
 from typing import Optional
 from urllib.parse import quote, unquote
@@ -398,17 +398,25 @@ def db_names(stats_path: str, tree: dict) -> dict:
     return out
 
 
-class _Names:
-    """Website names for card images: Card Edits.json > a card data build's stats.json (db_names) > PSD stem > PNG
-    stem."""
+def _named(entry) -> Optional[str]:
+    """A Card Edits.json entry's name, or None."""
+    name = entry.get("name") if isinstance(entry, dict) else None
+    return name if isinstance(name, str) and name.strip() else None
 
-    def __init__(self, repo: _Repo, errors: list, stats_path: str = ""):
+
+class _Names:
+    """Website names for card images: Card Edits.json > the names a Bake took out of it (baked) > a card data build's
+    stats.json (db_names) > PSD stem > PNG stem."""
+
+    def __init__(self, repo: _Repo, errors: list, stats_path: str = "", baked: str = ""):
         """stats_path: a card data build's stats.json (Card sync: the run's own data); "": no names but Card Edits.json's
-        and the file stems, Nicknames left as they are."""
+        and the file stems, Nicknames left as they are. baked: a commit before the Bake (Card sync's main): a name its
+        Card Edits.json has and the checkout's lacks is that card's title now (the data has it after its next build)."""
         edits = None
         self.repo = repo
         self.site: dict = {}
         self.edits: dict = {}
+        self.baked: dict = {}
         self.source = "file stems"
         if stats_path:
             try:
@@ -424,6 +432,13 @@ class _Names:
                 self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
             pass
+        if baked:
+            try:
+                was = loads(_git(repo.checkout, "show", f"{baked}:{EDITS_PATH}").decode("utf-8")).get("cards") or {}
+                self.baked = {key: name for key, name in ((CardAuthors.key(k), _named(v)) for k, v in was.items())
+                              if name and not _named(self.edits.get(key))}
+            except (CalledProcessError, TimeoutExpired, OSError, ValueError, AttributeError):
+                pass
 
     def _stem(self, path: str) -> str:
         psd = self.repo.by_lower.get(splitext(path)[0].lower() + ".psd")
@@ -431,10 +446,8 @@ class _Names:
 
     def known(self, path: str):
         """The website's name for the image (Card Edits.json first), or None when it has none."""
-        found = self.edits.get(CardAuthors.key(self._stem(path)))
-        if found and isinstance(found.get("name"), str) and found["name"].strip():
-            return found["name"]
-        return self.site.get(path)
+        key = CardAuthors.key(self._stem(path))
+        return _named(self.edits.get(key)) or self.baked.get(key) or self.site.get(path)
 
     def of(self, path: str) -> str:
         """known(), else the file stem (a card the data doesn't list)."""
@@ -1001,15 +1014,15 @@ def _commit_message(report: _Report) -> str:
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
-def _update(save_path: str, names_from: str = "") -> tuple:
-    """update_save, also returning the _Report. names_from: see _Names (its stats_path)."""
+def _update(save_path: str, names_from: str = "", baked: str = "") -> tuple:
+    """update_save, also returning the _Report. names_from, baked: see _Names (stats_path, baked)."""
     with open(save_path, "rb") as f:
         raw = f.read()
     save = loads(raw.decode("utf-8"))
     report = _Report()
     repo = _Repo(report.errors)
     rules, rules_from = _load_rules(repo, report.errors) if repo.tree and repo.history else (None, "nowhere")
-    names = _Names(repo, report.errors, names_from)
+    names = _Names(repo, report.errors, names_from, baked)
     _pin_links(save, repo, report)
     if repo.tree:
         _fix_keys(save, report)
@@ -1038,7 +1051,8 @@ def _update(save_path: str, names_from: str = "") -> tuple:
             + (f"updated ({len(out):,} bytes; backup `{basename(backup)}`)" if report.changed else "unchanged"),
             f"- Repo: main `{repo.head[:8]}` from {repo.source or 'nowhere'} ({len(repo.tree)} files, {len(repo.pngs)} PNGs)",
             f"- Rules: `{RULES_PATH}` from {rules_from} ({len((rules or {}).get('decks', {}))} decks)",
-            f"- Names: from {names.source} ({len(names.site)} cards)"]
+            f"- Names: from {names.source} ({len(names.site)} cards)"
+            + (f"; {_plural(len(names.baked), 'name')} the Bake took from `{EDITS_PATH}`" if names.baked else "")]
     text = _render(report, head)
     if report.changed:
         with open(f"{stem}.report.md", "w", encoding="utf-8") as f:
@@ -1051,18 +1065,19 @@ def _update(save_path: str, names_from: str = "") -> tuple:
 # ========================
 # Public API Functions
 # ========================
-def update_save(save_path: str, names_from: str = "") -> str:
+def update_save(save_path: str, names_from: str = "", baked: str = "") -> str:
     """
     Update a TTS save in place and return the report. When it changed: backup, report and commit subject beside it.
 
     Args:
         save_path: The save's JSON file
         names_from: A card data build's stats.json for the Nicknames ("": Nicknames left as they are)
+        baked: A commit before the Bake (Card sync's main): the names it took out of Card Edits.json win over the data's
 
     Returns:
         The markdown change report (also written to <stem>.report.md when the save changed)
     """
-    return _update(save_path, names_from=names_from)[0]
+    return _update(save_path, names_from=names_from, baked=baked)[0]
 
 
 def main(args: Optional[list] = None) -> int:
@@ -1070,8 +1085,10 @@ def main(args: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.tts_save", description="Update the TTS save of the card table in place.")
     parser.add_argument("save", help="the save's JSON file")
     parser.add_argument("--names", required=True, help="a card data build's stats.json for the Nicknames")
+    parser.add_argument("--baked", default="", metavar="COMMIT",
+                        help="main before the Bake: a name its Card Edits.json has and the checkout's lacks names that card")
     options = parser.parse_args(args)
-    print(update_save(options.save, options.names), end="")
+    print(update_save(options.save, options.names, options.baked), end="")
     return 0
 
 
