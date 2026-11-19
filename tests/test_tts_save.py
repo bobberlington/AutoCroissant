@@ -38,6 +38,8 @@ def test_serializer_tts_style():
 # Forged save
 # ========================
 class Names:
+    baked: dict = {}
+
     def of(self, path):
         return "Name of " + tts._stem(path)
 
@@ -151,7 +153,7 @@ def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="": names)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="", baked="": names)
     monkeypatch.setattr(tts, "_load_rules", lambda repo, errors: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
@@ -379,7 +381,7 @@ def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="": names)
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="", baked="": names)
     monkeypatch.setattr(tts, "_load_rules", lambda repo, errors: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
@@ -460,6 +462,37 @@ def test_names_changed_by_newer_data(tmp_path):
     assert tts.names_changed(old, old, str(co)) == []
     with pytest.raises(ValueError):
         tts.names_changed(old, str(tmp_path / "gone.json"), str(co))
+
+
+def test_names_the_bake_took_win_over_the_data(tmp_path):
+    """card-sync.yml's --baked (11-07: 14 baked titles old in the save for 5 h): a name the Bake took out of Card
+    Edits.json since main names its card over the data's old title; none taken or an unread commit: as before."""
+    import commands.card_db as cdb
+    import commands.card_models as cm
+    co, cab, snack = tmp_path / "co", "Items/Heal/2 Stars/Cabbage", "Items/Food/A_Snack"
+    co.mkdir()
+    git(co, "init", "-q")
+    for rel in (cab + ".psd", cab + ".png", snack + ".psd", snack + ".png"):
+        put(co, rel, b"x")
+    site = {"A Snack": {"name": "Snack on the site"}}
+    put(co, "site/Card Edits.json", dumps({"cards": {**site, "Cabbage": {"name": "Cabbage", "hp": 3}}}).encode())
+    main = commit(co, "t", 1)
+    put(co, "site/Card Edits.json", dumps({"cards": site}).encode())
+    commit(co, "t", 2)                                  # B: the Bake took Cabbage's name and HP
+    stats = tmp_path / "stats.json"
+    stats.write_text(cdb.stats_text({
+        "Cabbage": cm.CardInfo(name="Cabbage", card_type="item", path=cab + ".psd", display_name="CABBAGE"),
+        "A Snack": cm.CardInfo(name="A Snack", card_type="item", path=snack + ".psd")}), encoding="utf-8")
+    tree = tts._ls_tree(str(co), "HEAD")
+    repo = SimpleNamespace(checkout=str(co), tree=tree, by_lower={p.lower(): p for p in tree})
+
+    def names(baked):
+        errors = []
+        got = tts._Names(repo, errors, str(stats), baked)
+        return got.of(cab + ".png"), got.of(snack + ".png"), errors
+    assert names("") == ("CABBAGE", "Snack on the site", [])
+    assert names(main) == ("Cabbage", "Snack on the site", [])
+    assert names("HEAD") == names("0" * 40) == names("")
 
 
 def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
