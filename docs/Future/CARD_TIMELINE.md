@@ -110,8 +110,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    `minor`: a minor version by the owner's word, as an item's look whose types were read as kinds alone never settles
    for the 11-09 fold rule; its share 2.0%). Mini Bee's Mini Bees and SOMETHING's Something ('Mr. Grabby') are the Morgue's only (map keys null,
    the eye's `first_files` of the joke entries Mini Bees and Mr. Grabby), as The Puppet's copy is The Puppet (Dancing
-   Doll)'s. A `meme_rows` 'before' rule (an undated first entry, shown "before <the oldest dated picture's day>") is
-   kept in the code, unused. Two in-jokes are on both a live card and the Morgue (`owner.json` `morgue` entries keyed by
+   Doll)'s. (The 'before' rule, an undated first entry, went unused and was deleted 11-19.) Two in-jokes are on both a live card and the Morgue (`owner.json` `morgue` entries keyed by
    the picture with `in_joke`: `discord_morgue` gives them the id `<group id>-joke` and never takes the picture from the
    card): Tyler's 2019-05-02 picture and The Panda Future's 2021-04-29 #meme-cards picture, each named as its card
    (11-17 ~23:50: 'Tyler', 'The Panda Future'; pages `tyler-morgue`, `the-panda-future-morgue`) and linked to it

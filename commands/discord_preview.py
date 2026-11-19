@@ -156,8 +156,6 @@ def entry_out(e: dict, image: Optional[str], drop=()) -> dict:
                    minor=bool(e.get("minor")))
         if e.get("meme_copy"):
             out["meme_copy"] = True         # the owner's Meme folder copy: a row, no point of its own
-        if e.get("undated") == "before":
-            out["before"] = e.get("before")     # the owner's undated Meme copy: before this time (no date of its own)
         if kind == "discord":
             out["posts"] = len(e.get("pictures") or ())
             if (e.get("look") or {}).get("git"):
@@ -218,11 +216,6 @@ def timeline_out(t: dict, created: Optional[dict], eye: Optional[dict] = None, r
                     ch.pop(key, None)
                 if field == "ability" and ch.get("ability_change") in ("changed", "same", "formatting", "removed"):
                     ch["ability_change"] = "unknown"
-    pics = [{**e, "kind": e["kind"], "undated": "before" if "before" in e else None} for e in pictures]
-    dc.before_oldest(pics)                  # what is published: an eye's drop can take the oldest dated picture
-    for e, p in zip(pictures, pics):
-        if "before" in e:
-            e["before"] = p["before"]
     stop = t.get("stop") or {}
     out = {"card": t["card"], "key": t["key"], "name": t["name"], "kind": t.get("kind"),
            "stop": {"day": stop.get("day"), "source": stop.get("source")} if stop else None, "entries": entries}

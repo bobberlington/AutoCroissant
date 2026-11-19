@@ -922,28 +922,23 @@ def test_created_is_a_pacific_day_and_a_minion_label_is_no_ability():
     assert rows[1]["changes"]["ability_change"] == "same"          # the old repo's own read never overrides the rule
 
 
-def test_meme_copies_fold_or_come_first_undated_and_git_first_keeps_time_order():
+def test_meme_copies_fold_and_git_first_keeps_time_order():
     """Owner 11-17 ~18:10 (owner.json meme_rows): a Meme copy folds into the Discord version of the same picture (one
-    entry, kept as evidence) or is the first entry with no date of its own, before the oldest dated picture, dating
-    nothing. git_first is diffed against the last picture at or before its own date (Shadow Queen)."""
+    entry, kept as evidence). git_first is diffed against the last picture at or before its own date (Shadow Queen)."""
     meme = lambda when, path: dict(old_row("Bolt", when, "m" * 40, 9), id=f"mmmm:{path}", path=path, meme_copy=True,
                                    repo="first")
     first, second = picture(1, T + 5 * DAY), picture(2, T + 40 * DAY, whole=FAR)
-    got = inputs([first, second], old_rows=[meme(T + 60 * DAY, "Cards/Meme/Bolt.png"),
-                                            meme(T + 61 * DAY, "Cards/Meme/Bolt2.png")],
+    got = inputs([first, second], old_rows=[meme(T + 60 * DAY, "Cards/Meme/Bolt.png")],
                  created={"Bolt": {"date": dc.day(T + 5 * DAY), "from": "discord"}})
-    got.owner = {"meme_rows": {"Cards/Meme/Bolt.png": {"card": "Bolt", "how": "fold", "into": second["id"]},
-                               "Cards/Meme/Bolt2.png": {"card": "Bolt", "how": "before"},
-                               "Cards/Meme/Pike.png": {"card": "Pike", "how": "before"}}}
+    got.owner = {"meme_rows": {"Cards/Meme/Bolt.png": {"card": "Bolt", "how": "fold", "into": second["id"]}}}
     chain = dc.Chain(got)
     found, _ = chain.discord_rows()
     t = chain.card("bolt", found["bolt"], [])
-    assert [e["id"] for e in t["entries"]] == ["O-mmmm:Cards/Meme/Bolt2.png", "D-" + first["id"], "D-" + second["id"]]
-    undated, _, folded = t["entries"]
-    assert (undated["date"], undated["day"], undated["before"]) == (None, None, iso(T + 5 * DAY)) and undated["changes"] == {}
+    assert [e["id"] for e in t["entries"]] == ["D-" + first["id"], "D-" + second["id"]]
+    kept, folded = t["entries"]
     assert folded["folded"] == [{"id": "O-mmmm:Cards/Meme/Bolt.png", "repo": "first", "path": "Cards/Meme/Bolt.png",
-                                 "date": iso(T + 60 * DAY)}]
-    made = chain.created("bolt", t, [first, second])                  # the undated copy dates nothing
+                                 "date": iso(T + 60 * DAY)}] and "folded" not in kept
+    made = chain.created("bolt", t, [first, second])
     assert (made["status"], made["ours"]["picture"]) == ("same", first["id"])
     late = {"kind": "discord", "date": iso(T + 10 * DAY), "fields": {}}
     early = {"kind": "old repo", "date": iso(T + 2 * DAY), "fields": {}}

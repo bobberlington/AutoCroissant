@@ -666,10 +666,6 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
         assert bs.history_host(str(hist)) == ("http://127.0.0.1:8000/h/", None)
         monkeypatch.setattr(bs, "HISTORY_URL", "")
         shutil.rmtree(hist / ".git")
-        # an owner's undated Meme copy (11-17 ~18:10): no date of its own, before the oldest dated picture, listed oldest
-        before = {"id": "O-m", "kind": "old repo", "date": None, "before": "2021-03-04T05:06:07+00:00", "fields": {}}
-        got = bs.history_rows("alpha", {"entries": [before, *json.loads((hist / "alpha" / "timeline.json").read_text())["entries"]]})
-        assert (got[-1]["ts"], got[-1]["b"]) == (None, 1614834367) and "b" not in got[0]
         # Created (owner 11-17 ~18:10): Pacific days; the timelines' label on the file's own day; made before a year
         evening = 1556862973                                                  # 2019-05-03 05:56 UTC, the 2nd in Pacific
         made = [{"key": "Up", "fs": evening}, {"key": "Pizza", "fs": 1700000000}, {"key": "Pep", "fs": 1600000000},

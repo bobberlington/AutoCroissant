@@ -1136,14 +1136,6 @@ def last_version(entries: list, until=None) -> Optional[dict]:
                  and (until is None or (dm.epoch(e.get("date")) or float("-inf")) <= until + 1)), None)
 
 
-def before_oldest(entries: list) -> None:
-    """An undated 'before' entry (an owner's Meme copy) is shown before the oldest dated picture: its time."""
-    dated = [dm.epoch(e["date"]) for e in entries if e["kind"] in ("discord", "old repo") and e.get("date")]
-    for e in entries:
-        if e.get("undated") == "before":
-            e["before"] = dm.iso(min(dated)) if dated else None
-
-
 def created_sort(date: Optional[str]) -> str:
     return BEFORE_SORT if date == BEFORE_DAY else date or "9999"
 
@@ -1557,8 +1549,7 @@ class Chain:
     def meme_rows(self, cid: str, entries: list) -> list:
         """The owner's Meme folder copies (owner.json meme_rows by the first repo's path, 11-17 ~18:10): 'fold' joins a
         copy to the Discord version of the same picture (into: one of its pictures; one entry: the copy's row goes,
-        folded on that entry keeps it as evidence); 'before' makes it the card's first entry with no date of its own
-        (undated, dating nothing; before: the oldest dated picture's time, 'before <that day>' on the site)."""
+        folded on that entry keeps it as evidence)."""
         rules = (getattr(self.inputs, "owner", None) or {}).get("meme_rows") or {}
         key, out = self.inputs.cards[cid]["key"], []
         for e in entries:
@@ -1576,11 +1567,7 @@ class Chain:
                 into.setdefault("folded", []).append({k: e.get(k) for k in ("id", "repo", "path", "date")})
                 self.tally["owner: a Meme copy folded into its Discord version"] += 1
                 continue
-            if rule.get("how") == "before":
-                e.update(date=None, day=None, undated="before")
-                self.tally["owner: a Meme copy first, undated"] += 1
             out.append(e)
-        before_oldest(out)
         return out
 
     def text_entries(self, cid: str) -> list:
@@ -1618,7 +1605,7 @@ class Chain:
         unbacked run between two others (a blip), at an end beside a backed run, or last after an unbacked run (the
         change's new value, nothing after agrees) goes to review; again until none is left."""
         versions = [e for e in entries if e["kind"] in ("discord", "old repo") and is_sure(e["fields"].get("stars"))
-                    and e.get("date")]                         # an undated Meme copy (owner 11-17): no run of its own
+                    and e.get("date")]                         # an undated one: no run of its own
         facts = [e for e in entries if e["kind"] == "text" and e["change"].get("field") == "stars" and
                  "to" in e["change"]]
         out = set()
