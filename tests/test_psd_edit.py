@@ -1301,6 +1301,14 @@ def test_split_title_keeps_its_printed_letter_case(clone, parser):
     assert parser._printed_title(psd, texts, "Possessed Vessel the Azamoth") is None
 
 
+def test_a_title_typed_over_in_another_case_prints_once(clone, parser):
+    """Grapes (11-18): Name 'GRAPES' over the old Name 'Grapes' is one title, the file's spelling; else the first read."""
+    psd = PSDImage.open(BytesIO(card_blob(clone, "0ec86e216ec81a40199a721f7b830a3a2012bac3")))
+    texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+    assert parser._printed_title(psd, texts, "Grapes") is None
+    assert parser._printed_title(psd, texts, "Grape Bunch") == "GRAPES"
+
+
 def test_name_redundancy_uses_the_printed_title(clone, parser):
     """A name edit is redundant when the bot already shows it (the parser's display_name, else the file name)."""
     path = _card(clone, MINI_DOOMER)[0]

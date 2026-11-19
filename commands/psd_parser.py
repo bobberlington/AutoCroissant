@@ -781,10 +781,18 @@ class PSDParser:
             The printed title, or None when it equals the name or can't be read
         """
         found = self.title_layers(psd, text_layers, name)
-        texts = []
-        for text, _ in self._sort_by_position([(title_text(layer.text), BoundingBox.from_tuple(layer.bbox[:2])) for layer in found]):
-            if text and text not in texts:              # a layer copied for an effect prints its words once
+        texts, boxes = [], []
+        for layer in self.reading(found):
+            text = title_text(layer.text)
+            if not text or text in texts:               # a layer copied for an effect prints its words once
+                continue
+            twin = next((i for i, kept in enumerate(texts)
+                         if kept.lower() == text.lower() and _overlap(boxes[i], layer.bbox) > 0), None)
+            if twin is None:
                 texts.append(text)
+                boxes.append(layer.bbox)
+            elif text == name:                          # its case twin over it prints once, the file's spelling (Grapes)
+                texts[twin] = text
         title = " ".join(texts)
         if not title or title == name:
             return None
