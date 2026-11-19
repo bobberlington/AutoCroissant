@@ -72,10 +72,9 @@ QUERIES = [                                              # query, the cards foun
 ]
 
 
-@pytest.fixture(scope="module")
-def repo():
+def _repo(cards):
     stats = {}
-    for c in CARDS:
+    for c in cards:
         name = c.get("file", c["name"])
         stats[name] = cm.CardInfo(name=name, card_type=c["type"], path=f"X/{name}.psd", ability=c["ability"],
                                   stars=c.get("stars"), series=c.get("series"), subseries=c.get("subseries"),
@@ -87,9 +86,14 @@ def repo():
         mp.setattr(cm.stats_db, "stats", stats)
         repo = qc.CardRepository()
         repo._edit_names = ("sha", {qc.CardAuthors.key(c.get("file", c["name"])): c["aliases"]   # as Card Edits.json
-                                    for c in CARDS if c.get("aliases")})
+                                    for c in cards if c.get("aliases")})
         repo.prep_dataframes()
     return repo
+
+
+@pytest.fixture(scope="module")
+def repo():
+    return _repo(CARDS)
 
 
 def _shown(repo, names) -> set:
@@ -140,11 +144,12 @@ def test_any_creature_meets_a_stat(repo, tmp_path):
     assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
 
 
-def _website(tmp_path, queries) -> list:
-    """search.js on CARDS as cards.json has them: each query's card names."""
+def _website(tmp_path, queries, cards=CARDS) -> list:
+    """search.js on cards as cards.json has them: each query's card names."""
     stats = lambda x: dict(zip(("hp", "def", "atk", "spd"), x))
-    shaped = [{**{k: c.get(k) for k in ("name", "aliases", "ability", "series", "subseries", "hp", "atk", "spd", "stars")},
-               "def": c.get("defense"), "creatures": [stats(x) for x in c.get("creatures", ())]} for c in CARDS]
+    keys = ("name", "aliases", "ability", "type", "subtype", "types", "series", "subseries", "hp", "atk", "spd", "stars")
+    shaped = [{**{k: c.get(k) for k in keys}, "def": c.get("defense"),
+               "creatures": [stats(x) for x in c.get("creatures", ())]} for c in cards]
     script = tmp_path / "search.mjs"
     script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
 const cards = {json.dumps(shaped)};
@@ -153,6 +158,38 @@ process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => cards.filter(
     done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
     return [set(names) for names in json.loads(done.stdout)]
+
+
+# the 9 items printing two item-type symbols (data 903e6fd1): kind, subtype (folder or left-most icon), icons
+DUAL = [("Bolts and Screws", "item", "heal", ["food", "infliction"]), ("Cake Mix", "item", "heal", ["attack", "food"]),
+        ("Hadal Stew", "item", "heal", ["food", "infliction"]), ("Salt", "aux item", "heal", ["food", "infliction"]),
+        ("Inconspicuous Cake", "aux item", "heal", ["food", "infliction"]), ("Pie", "item", "attack", ["attack", "food"]),
+        ("Magnum Opus", "aux item", "active", ["active", "field"]), ("Life Shroom", "item", "heal", ["food", "fragile equip"]),
+        ("Electric Dart", "nme", "attack", ["nme", "attack", "food"])]
+
+
+def test_items_count_at_each_item_type(tmp_path):
+    """An item printing two item-type symbols counts at both (as TTS's decks), a field card's own icon at none: the bot
+    and search.js subtype==, grid.js's Item type exclusion; one map (card_models, grid.js)."""
+    cards = [dict(name=n, type=k, subtype=s, types=t, ability="Use it.") for n, k, s, t in DUAL] + [
+        dict(name="Nexus", type="field", types=["field"], ability="A field."),
+        dict(name="Potion", type="item", subtype="heal", types=["food"], ability="Heal.")]
+    rows = [("subtype==infliction", {"Bolts and Screws", "Hadal Stew", "Inconspicuous Cake", "Salt"}),
+            ("subtype==attack", {"Cake Mix", "Pie", "Electric Dart"}), ("subtype~equip", {"Life Shroom"}),
+            ("subtype==field", {"Magnum Opus"}), ("!subtype==heal", {"Magnum Opus", "Nexus"})]
+    repo = _repo(cards)
+    assert [set(repo.ability_search_engine(q).index) for q, _ in rows] == [names for _, names in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [names for _, names in rows]
+    script = tmp_path / "grid.mjs"
+    script.write_text(f"""const G = await import({json.dumps((SITE_SRC / "site" / "assets" / "grid.js").as_uri())});
+const cards = {json.dumps(cards)};
+const kept = G.dropExcluded(cards, new URLSearchParams("xsub=infliction,equip")).map(c => c.name);
+process.stdout.write(JSON.stringify([G.ICON_ITEM_TYPES, kept]));""",
+                      encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [cm.AUX_ITEM_TYPES, ["Cake Mix", "Pie", "Magnum Opus", "Electric Dart", "Nexus",
+                                                           "Potion"]]
 
 
 def test_space_finds_line_break(repo, monkeypatch):
