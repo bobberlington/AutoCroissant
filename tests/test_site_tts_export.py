@@ -1,7 +1,8 @@
 """
 The deck builder's "Download for TTS" (TTSCardMaker site/assets/deck.js ttsSave, in node) makes each card as the TTS save
 holds its own: CardCustom at the size its back is played at (creatures 3, items and field cards 2, x = z), each pile at
-its cards' size. Sizes from the save when the checkout has it. Loads the site from $AC_SITE_SRC or the clone.
+its cards' size. Sizes from the save when the checkout has it. Print proxies take each card's 720 px copy (an absolute
+URL: the sheet is about:blank), the PNG without one. Loads the site from $AC_SITE_SRC or the clone.
 """
 import json
 from collections import Counter
@@ -55,3 +56,18 @@ process.stdout.write(JSON.stringify(save.ObjectStates.map(o => ({{ name: o.Name,
     for p in piles:
         assert p["size"] == want[p["back"]]
         assert p["cards"] == [["CardCustom", want[p["back"]]]] * len(p["cards"])
+
+
+def test_print_sheet_uses_the_720_px_copies(tmp_path):
+    script = tmp_path / "probe.mjs"
+    script.write_text(f"""let html = "";
+globalThis.window = {{ open: () => ({{ document: {{ write: s => {{ html += s; }}, close() {{}} }} }}) }};
+const D = await import({json.dumps(DECK_JS.as_uri())});
+const byId = new Map([["a", {{ id: "a", name: "A", type: "creature", png: "C/a.png", img: "abc" }}],
+  ["f", {{ id: "f", name: "F", type: "field", png: "F/f g.png" }}]]);
+D.printSheet({{ name: "H", cards: ["a"], field: "f" }}, byId, "https://raw/x/main/", {{ 720: "t7" }}, "https://site/x/");
+process.stdout.write(JSON.stringify([...html.matchAll(/<img src="([^"]+)"/g)].map(m => m[1])));
+""", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == ["https://site/x/thumbs/abc-720-t7.avif", "https://raw/x/main/F/f%20g.png"]
