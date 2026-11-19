@@ -107,6 +107,7 @@ LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 PLAIN_MARKS = {"\u2014": "-", "\u2013": "-", "\u2026": "...", "\u201c": '"', "\u201d": '"'}   # typed: plain where its
 #   font has no glyph for it (owner D13, 2026-11-15)
+MGP_FONT = "MyriadPro-Regular"  # a typed character its font lacks is set in it, as Photoshop's Missing Glyph Protection
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
@@ -5136,7 +5137,8 @@ def _lit_copy(psd: PSDImage, stat: str, group, cells: dict, k: int, pitch: float
 def no_glyph(layer, text: str, changed: list, fonts) -> list:
     """
     The characters of the changed ranges of text (set on the layer) whose font has no glyph for them (.notdef, gid 0):
-    the engine and Photoshop draw a box ("5★" in the body font: review 2026-10-23), and a re-parse reads them as typed.
+    the engine draws a box ("5★" in the body font: review 2026-10-23; MGP_FONT lacks it too), and a re-parse reads
+    them as typed.
     """
     from psd_tools.composite.text.layout import layout
     from psd_tools.composite.text.model import TextModel
@@ -5172,6 +5174,20 @@ def _lacks(fonts, font: str, mark: str) -> bool:
     except MissingFontError:
         return False
     return face is not None and face.hb.get_nominal_glyph(ord(mark)) is None
+
+
+def missing_glyphs(layer, text: str, changed: list, skip: set, fonts) -> list:
+    """
+    [(start, end)] of the changed characters (not skip's, nor blank) their run's font lacks and MGP_FONT, supplied,
+    has: Photoshop 2023 sets each such typed character in it alone (r51: '+', '/', '2' on 15 cards), not a box.
+    """
+    hit = fonts.find(MGP_FONT)
+    if hit is None or hit[2] not in OK_FONTS:
+        return []
+    runs = _run_fonts(layer)
+    return _stretches([i for a, b in changed for i in range(a, b) if i not in skip and not text[i].isspace()
+                       and text[i] != "\x03" and runs[i] and runs[i] != MGP_FONT and _lacks(fonts, runs[i], text[i])
+                       and not _lacks(fonts, MGP_FONT, text[i])])
 
 
 def plain_typed(layer, which: Optional[str], old_text: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> str:
@@ -5932,8 +5948,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     typed or kept, takes the icon font's Stylistic Alternates (set_alternates; owner 2026-10-25). Told too: another typed
     badge or token under the Ability's overlay (any opacity) or blending (Pin Light) (_tinted), a [type] token
     on a card with image icons in its gaps (image_icons), letters the icon font draws plainly (typed, or left by
-    deleting: "(GCD)"), a typed character its font has no glyph for (no_glyph: a box; a dash, ellipsis or curly double
-    quote is set plain first: plain_typed, owner D13), a timing badge typed in a title
+    deleting: "(GCD)"), a typed character its font has no glyph for (a dash, ellipsis or curly double quote is set
+    plain first: plain_typed, owner D13; then one Myriad Pro has is set in it: missing_glyphs; else no_glyph's box),
+    a timing badge typed in a title
     (plain words, as the website shows it). Typed badges and tokens are unstretched (unstretch). An icon character
     typed ("★") is set in the icon font as a token. An FX layer in no chart status's style (Fire Staff's Smoldering
     stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that an FX layer's words have no pixels.
@@ -6115,6 +6132,12 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                     layer.set_span_style(c, d, fill=plan.fill)
     if which == "ability":                      # one-colour badges and stickers under an overlay (owner 2026-10-25)
         set_alternates(layer, alternate_spans(text, drawn, _char_styles(layer)[1]) if one_colour(layer) else [], changed)
+    lacking = missing_glyphs(layer, text, changed, glyphs, fonts)
+    if lacking:                                 # no box: Myriad Pro, as Photoshop types it (r51)
+        layer.add_font(MGP_FONT, font_type=0)
+        faces = list(dict.fromkeys(faces + [MGP_FONT]))
+        for a, b in lacking:
+            layer.set_span_style(a, b, Font=MGP_FONT)
 
     def draw():
         return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
