@@ -104,6 +104,7 @@ WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() 
 TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colour: the :sticker outline, the :tint silhouette
 GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo
 LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
+SHOWN_PLAIN = r"(?::(?:%s))?" % "|".join(TEXT_COLOURED + GLOWS)   # variants the website shows plain ([light:tint]: [light])
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 PLAIN_MARKS = {"\u2014": "-", "\u2013": "-", "\u2026": "...", "\u201c": '"', "\u201d": '"'}   # typed: plain where its
 #   font has no glyph for it (owner D13, 2026-11-15)
@@ -2679,9 +2680,12 @@ def _edges(text: str, a: int, b: int) -> tuple:
     return not ALNUM.match(text[a - 1] if a else " "), not ALNUM.match(text[b] if b < len(text) else " ")
 
 
-def _matches(text: str, words: str) -> tuple:
-    """A phrase's words' matches in the text (any case, any blanks or forced breaks between them), and the whole-word ones."""
+def _matches(text: str, words: str, plain: bool = False) -> tuple:
+    """A phrase's words' matches in the text (any case, any blanks or forced breaks between them), and the whole-word ones.
+    plain (a colour's): its [token] also finds the variants the website shows plain ([light] finds [light:tint])."""
     pattern = r"[\s\x03]+".join(escape(word) for word in words.replace("\x03", " ").split())
+    if plain:
+        pattern = sub(r"(\\\[\w+)(\\\])", lambda m: m.group(1) + SHOWN_PLAIN + m.group(2), pattern)
     found, whole = [], []
     for match in re_compile(pattern, IGNORECASE).finditer(text) if pattern else ():
         a, b = match.span()
@@ -6409,7 +6413,7 @@ def color_spans(layers: list, one: dict) -> tuple:
     words, nth = _numbered(phrase)
     found, whole = [], []
     for layer in layers:
-        some, own = _matches(layer.text, words)
+        some, own = _matches(layer.text, words, True)
         found += [(layer, a, b) for a, b in some]
         whole += [(layer, a, b) for a, b in own]
     hits = whole or found
@@ -6445,7 +6449,7 @@ def _whole_span(text: str, a: int, b: int) -> bool:
 
 def _whole_words(text: str, words: str) -> bool:
     """Whether the phrase's words are all of the text (_whole_span of a match)."""
-    return any(_whole_span(text, a, b) for a, b in _matches(text, words)[0])
+    return any(_whole_span(text, a, b) for a, b in _matches(text, words, True)[0])
 
 
 def status_letters(text: str, chart: Optional[dict], icons=()) -> set:
@@ -6480,7 +6484,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         what = "title" if field == "name" else "ability"
         if retyped and field in retyped:      # found in the new text (the bake looks again once it is set)
             words, nth = _numbered(phrase) if phrase else ("", 0)
-            some, own = _matches(retyped[field] or "", words) if phrase else ([], [])
+            some, own = _matches(retyped[field] or "", words, True) if phrase else ([], [])
             hits = (own or some)[nth - 1:nth] if nth else own or some
             kept = status_letters(retyped[field] or "", chart) if field == "ability" else set()
             alone = hits and all(i in kept or retyped[field][i].isspace() for a, b in hits for i in range(a, b))
@@ -6491,7 +6495,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
                 layers = color_layers(psd, field, card, view)
                 new = {id(layer): (boxes or {}).get(str(layer.layer_id), retyped[field] if len(layers) == 1 else layer.text)
                        for layer in layers}
-                into = [layer for layer in layers if not phrase or _matches(new[id(layer)] or "", words)[0]]
+                into = [layer for layer in layers if not phrase or _matches(new[id(layer)] or "", words, True)[0]]
             full = {id(layer) for layer in into if phrase and _whole_words(new[id(layer)] or "", words)}
             over = {_painted_over(layer, bool(phrase) and id(layer) not in lit | full and not _solid_overlay(layer)) for layer in into}
             if into and None not in over:
