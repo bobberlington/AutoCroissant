@@ -710,7 +710,10 @@ Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower()
 `_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today, else to the PNG beside
 the PSD its archive `moved_to` MDW/ (Pandiety -> MDW/Unfinished/6 Stars/Pandeity.png, not autocompleted); the reply says
 "(renamed from X)"); else a guess (`closest` :632), which the reply labels "Closest match: X" and the console logs
-(`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
+(`Search guess:`; a miss logs `Search miss:`). When the typed text is also in card abilities (`ability_hits`,
+/query_ability's count: lowercased, spaces as one, synonyms), a guess adds "· N cards have \"text\" in their
+ability: /query_ability text" and a 'Cards with "text"' website search button (2026-11-19). `closest` compares
+names WITHOUT ".png" (it lifted every score:
 "luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
 `DEFAULT_MATCH_RATIO` in query_card.py; `/set_ratio`, which set it until the next restart, was deleted 2026-11-12 — see

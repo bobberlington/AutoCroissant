@@ -656,6 +656,14 @@ class CardRepository:
             results.attrs = {"near": True}
         return results
 
+    def ability_hits(self, text: str) -> int:
+        """How many cards' abilities hold text as a /query_ability text term (lowercased, spaces as one, DMG damage...)."""
+        df, term = self.cards_dff, " ".join(typed(text, quotes=True).split()).lower()
+        if not term or "ability" not in df:
+            return 0
+        abilities = df["ability"].map(lambda a: " ".join(a.split()))
+        return int(abilities.str.contains(self._text_pattern(term), na=False).sum())
+
     def _fuzzy_labels(self, ability: str) -> Series:
         """Cards whose SequenceMatcher ratio with the query beats match_ratio: their ratios, in frame order."""
         frame = self.cards_dff
@@ -1067,7 +1075,7 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
         queue_message(interaction, "No card found!")
         return
-    note = None
+    note, more = None, None
     if how == "renamed":
         note = f"**{_label(closest)}** (renamed from {old})"
     elif how == "guess":
@@ -1076,7 +1084,15 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     gone = _out_of_play(closest)                        # The Morgue, MDW/Unfinished: never as if in play
     if gone:
         note = f"{note or f'**{_label(closest)}**'} {gone}"
-    _post_card(interaction, closest, note=note)
+    hits = card_repo.ability_hits(query) if how == "guess" else 0
+    if hits:                                            # maybe ability text: /query_ability's cards too
+        text = " ".join(typed(query, quotes=True).split())
+        shown = text if len(text) <= 60 else text[:59].rsplit(" ", 1)[0] + "…"      # a button label holds 80
+        said = escape_markdown(shown)
+        note += (f" · {hits} card{'s have' if hits > 1 else ' has'} \"{said}\" in {'their' if hits > 1 else 'its'} "
+                 f"ability: /query_ability {said}")
+        more = [(f'Cards with "{shown}"', search_link("cards", text))]
+    _post_card(interaction, closest, note=note, more=more)
 
 
 def _out_of_play(key: str) -> str:

@@ -4,6 +4,7 @@ from collections import defaultdict
 from types import SimpleNamespace
 
 import pytest
+from pandas import DataFrame
 
 import commands.card_models as cm
 import commands.query_card as qc
@@ -188,6 +189,25 @@ def test_guesses_cards_only(repo, monkeypatch):
     qc.query_name(utils.make_simple_fake_interaction(1), "light")                # Types/Light.png: the chapter
     assert [kw["content"] for _, kw in utils.dispatch_queue] == [
         f"**22. Light** is a rulebook chapter: {qc.SITE_URL}/#/rules/light"]
+
+
+def test_guess_points_to_abilities(repo):
+    """A guess whose text is in abilities says how many, as /query_ability counts them, with a website search button
+    (real uses: 'draw', 'assume' then typed into /query_ability); exact names and other guesses as before."""
+    repo.cards_dff = DataFrame({"ability": ["gain frost\narmor.", "deal 2 damage. frost them.", "*eden*'s  frost dmg"]},
+                               index=["Rope", "Spice", "Regen"])
+
+    def reply(query):
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        return utils.dispatch_queue[0][1]["content"], utils.dispatch_queue[0][1].get("links")
+
+    assert reply("Frost") == ('Closest match: **Frostmourne** · 3 cards have "Frost" in their ability: /query_ability Frost',
+                              [('Cards with "Frost"', f"{qc.SITE_URL}/#/cards?q=Frost")])
+    assert reply("eden") == ('Closest match: **Tainted Eden** · 1 card has "eden" in its ability: /query_ability eden',
+                             [('Cards with "eden"', f"{qc.SITE_URL}/#/cards?q=eden")])
+    assert repo.ability_hits("FROST  DAMAGE") == repo.ability_hits("frost armor") == 1 and repo.ability_hits("heal") == 0
+    assert reply("frostmourne") == (None, None) and reply("freezer") == ("Closest match: **The Freezer**", None)
 
 
 def test_morgue_and_unfinished_cards_say_so(monkeypatch):
