@@ -12,7 +12,7 @@ import commands.repo_history as rh
 import commands.tts_save as tts
 from types import SimpleNamespace
 from conftest import CLONE, REPO, SITE_SRC
-from helpers import commit, put
+from helpers import commit, git, put
 
 RAW = tts.RAW
 HEAL = "Items/Heal/2 Stars/"
@@ -433,6 +433,33 @@ def test_db_names_variant_pictures(tmp_path):
     pngs = [psd[:-4] + n + ".png" for n in ("", "2", "3")]
     tree = {p: "0" * 40 for p in [psd, *pngs]}
     assert tts.db_names(str(tmp_path / "stats.json"), tree) == dict(zip(pngs, ("A snack", "Breakfast", "Supper")))
+
+
+def test_names_changed_by_newer_data(tmp_path):
+    """card-sync.yml's watcher (Grapes 11-19): a newer stats.json moving a Nickname counts, one under a Card Edits.json
+    name doesn't; an unread file raises."""
+    import commands.card_db as cdb
+    import commands.card_models as cm
+    co, grapes, snack = tmp_path / "co", "Items/Heal/2 Stars/Grapes", "Items/Food/A_Snack"
+    co.mkdir()
+    git(co, "init", "-q")
+    for rel in (grapes + ".psd", grapes + ".png", snack + ".psd", snack + ".png"):
+        put(co, rel, b"x")
+    put(co, "site/Card Edits.json", dumps({"cards": {"A Snack": {"name": "Snack on the site"}}}).encode())
+    commit(co, "t", 1)
+
+    def stats(name, grape, snacked):
+        path = tmp_path / name
+        path.write_text(cdb.stats_text({
+            "Grapes": cm.CardInfo(name="Grapes", card_type="item", path=grapes + ".psd", display_name=grape),
+            "A Snack": cm.CardInfo(name="A Snack", card_type="item", path=snack + ".psd", display_name=snacked)}),
+            encoding="utf-8")
+        return str(path)
+    old, new = stats("old.json", "GRAPES Grapes", "A Snack"), stats("new.json", None, "A Snack!")
+    assert tts.names_changed(old, new, str(co)) == [grapes + ".png"]
+    assert tts.names_changed(old, old, str(co)) == []
+    with pytest.raises(ValueError):
+        tts.names_changed(old, str(tmp_path / "gone.json"), str(co))
 
 
 def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
