@@ -165,7 +165,7 @@ def test_cards_json_columns(bs):
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
     """Alpha's text started at c2 (the bot's carried start), though its PSD was last committed at c3: cards.json keeps
     ts (the last commit, "updated") and adds since; history.json holds the older text at c1. A variant picture's goes
-    back through its picture 1's. cards.json's recent (and recent.json, one release) holds the earlier texts of the cards
+    back through its picture 1's. cards.json's recent holds the earlier texts of the cards
     whose update changed the text (not Alpha's): Recently updated draws at once."""
     t1, t2, t3 = repo["t"]
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -176,8 +176,7 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     melon2 = _by_name(out["cards.json"])["Watermelon2"]
     assert out["history.json"][melon2["id"]] == [{"ts": t1, "ability": "Heal 1."}]
     melon = _by_name(out["cards.json"])["Watermelon"]                   # Recently updated: only the texts that changed
-    assert out["recent.json"] == {melon["id"]: "Heal 1.", melon2["id"]: "Heal 1."}
-    assert out["cards.json"]["recent"] == out["recent.json"]
+    assert out["cards.json"]["recent"] == {melon["id"]: "Heal 1.", melon2["id"]: "Heal 1."}
 
 
 def test_a_merge_keeping_the_older_picture_stays_pinned(bs, tmp_path, monkeypatch):
@@ -686,22 +685,21 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
 
 def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
     """Image versions read one small file per card (data/versions/<id>.json, app.js loadVersions when the card opens): every
-    card and Morgue entry with rows has one, and together they give versions.json's rows, minor, early, repo, visible and hb
-    exactly (versions.json stays one release for tabs on the older app.js); one stamp for the folder (index.html's meta data,
-    app.js dataUrl). Each also holds the card's own history.json texts and analytics.json Balance row, their commit
-    indexes into its own lists (its dialog needs neither all-cards file)."""
+    card and Morgue entry with rows has one, holding its rows alone (its commits, minor, early) and the shared repo,
+    visible and hb; one stamp for the folder (index.html's meta data, app.js dataUrl). Each also holds the card's own
+    history.json texts and analytics.json Balance row, their commit indexes into its own lists (its dialog needs neither
+    all-cards file)."""
     if not hasattr(bs, "version_files"):
         pytest.skip("a site before data/versions/")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
-    full, per = out["versions.json"], out["versions/"]
+    per = out["versions/"]
     cards = cm.site_cards(out["cards.json"]) + out["cards.json"]["morgue"]
-    assert set(per) == set(full["cards"]) | set(full["early"]) == {c["id"] for c in cards if c.get("iv") or c.get("ive")}
+    assert set(per) == {c["id"] for c in cards if c.get("iv") or c.get("ive")}
     for cid, one in per.items():
-        assert [[one["commits"][r[0]], *r[1:]] for r in one["cards"][cid]] == [[full["commits"][r[0]], *r[1:]] for r in full["cards"].get(cid, [])]
-        assert len(one["commits"]) == len({r[0] for r in one["cards"][cid]}) and set(one["cards"]) == {cid}
-        assert all(one.get(k, {}).get(cid) == full.get(k, {}).get(cid) for k in ("minor", "early"))
-        assert all(one.get(k) == full.get(k) for k in ("repo", "visible", "hb"))
+        assert len(one["commits"]) == len({r[0] for r in one["cards"].get(cid, [])}) and set(one["cards"]) <= {cid}
+        assert all(set(one.get(k, {})) <= {cid} for k in ("minor", "early")) and (cid in one["cards"] or cid in one["early"])
+        assert all(one.get(k) == next(iter(per.values())).get(k) for k in ("repo", "visible", "hb"))
     hist, bal, texts = out["history.json"], out["analytics.json"], 0     # a card's own texts and Balance row (card_sections)
     for cid, one in per.items():
         if "texts" in one:
