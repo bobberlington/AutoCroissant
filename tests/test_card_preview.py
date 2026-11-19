@@ -58,6 +58,13 @@ def _git(where, *args, env=None) -> str:
     return done.stdout
 
 
+@pytest.fixture(autouse=True)
+def lane_memory(monkeypatch):
+    """The lane's MAX_RSS counts from the test's start (ru_maxrss: the worker's peak so far)."""
+    import commands.card_preview_lane as lane_mod
+    monkeypatch.setattr(lane_mod, "MAX_RSS", lane_mod._rss() + lane_mod.MAX_RSS)
+
+
 def _commit(repo, message="Website edit: test") -> str:
     who = {"GIT_AUTHOR_NAME": "web", "GIT_AUTHOR_EMAIL": "w@x", "GIT_COMMITTER_NAME": "web", "GIT_COMMITTER_EMAIL": "w@x"}
     _git(repo, "add", "-A")
