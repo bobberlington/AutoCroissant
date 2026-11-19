@@ -107,15 +107,17 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
     assert delays == [1000, 500, 7000, 1000]
 
 
-def test_the_editor_takes_the_lanes_hand_over(tmp_path):
+@pytest.mark.parametrize("miss", [False, pytest.param(True, marks=pytest.mark.skipif(not has(PREVIEW_JS, "ZIP_404S"), reason="no zip 404s looked past"))])
+def test_the_editor_takes_the_lanes_hand_over(tmp_path, miss):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
     press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), then rings the lane's
     doorbell (a commit status at press 1's result's commit: the lane's CONTEXT and RUNG) and shows the lane's
     card-preview-<request> 2 s after the press; one toast each; a 422 with a lane dispatches again without it, and no
-    lane is named after that; a blob not posted rings nothing."""
+    lane is named after that; a blob not posted rings nothing. miss: each zip's first fetch a 404 (listed just before
+    it's finalized, run 44465554232): both shown on the next round, press 2 still named to the lane."""
     import base64
     from commands.card_preview_lane import CONTEXT, RUNG, press_blob
-    out = node(tmp_path, """let T = 1e12; const q = []; Date.now = () => T;
+    out = node(tmp_path, f"const miss = {str(miss).lower()}, zipped = new Set();\n" + """let T = 1e12; const q = []; Date.now = () => T;
 globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
 const mem = new Map(); globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
@@ -134,6 +136,7 @@ const github = async (path, o = {}) => {
   if (path.includes("/contents/")) { const e = new Error("404"); e.status = 404; throw e; }
   if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + sent[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(1e12).toISOString() }] };
   const z = path.split("/zip/")[1];
+  if (z && miss && !zipped.has(z)) { zipped.add(z); const e = new Error("GitHub 404"); e.status = 404; throw e; }
   if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {}, base: { commit: (z === sent[0].request ? "c" : "d").repeat(40) } }));   // the lane followed
   const name = path.split("name=")[1], own = name === "card-preview" ? sent[0].request : name.slice(13);
   listed.push([T - 1e12, name]);
@@ -147,12 +150,14 @@ await pv.start(card("c1"), { hp: 7 }); await run(T + 20000);
 refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"), { hp: 5 });
 refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
 out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, head: pv.entries("c1")[0].fromHead, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
+  shown: [pv.entries("c0")[0].fromAt - 1e12, pv.entries("c1")[0].fromAt - second],
   named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null) });""")
     sent = out["sent"]
     data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
     assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
     assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
-    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == [2000]     # the lane's, 2 s on
+    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == ([2000, 2500] if miss else [2000])   # the lane's, 2 s on
+    assert out["shown"] == ([13000, 2500] if miss else [12000, 2000])
     assert out["head"] == "c" * 40                                  # still rung where the lane lists, not where it baked
     at, method, commit, body = out["refs"][0]
     rung = RUNG.fullmatch(body["description"])
