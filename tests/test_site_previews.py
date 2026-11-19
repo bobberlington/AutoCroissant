@@ -261,6 +261,21 @@ out(["Gain 1 (3 points) now.", "Gain 1 (1 point) now."].map(fit));""")
     assert out == [[7, 100, 0], [7, 90, -10]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function paintLines"), reason="no exported paintLines in this mockup.js")
+def test_a_redrawn_pill_keeps_the_layers_stroke(tmp_path):
+    """A badge painted again on a layer with a Stroke is outlined in its colour at its width under the pill (as the card
+    prints it); not on a one-colour layer, nor without the record's Stroke width."""
+    out = node(tmp_path, """const rec = [], ctx = new Proxy({}, { set: (t, k, v) => (t[k] = v, true), get: (t, k) => k in t ? t[k]
+  : k === "measureText" ? () => ({ width: 10, actualBoundingBoxAscent: 14 }) : k === "createLinearGradient" ? () => ({ addColorStop() {} })
+  : () => { if (k === "stroke" || k === "fill") rec.push(k === "fill" ? k : `${k} ${t.strokeStyle} ${t.lineWidth}`); } });
+const look = { at: () => 0, base: 40, pitch: 0, z: 20, fam: "x", fill: [255, 255, 255], stroke: [1, 2, 3], strokeW: 6, imgs: new Map() };
+const run = o => { rec.length = 0; m.paintLines(ctx, [{ pieces: [{ badge: "2GCD", group: "any", w: 60 }] }], { ...look, ...o }); return [...rec]; };
+out([run({}), run({ one: true }), run({ strokeW: 0 })]);""")
+    ring, one, bare = out
+    assert ring[:2] == ["stroke rgb(1,2,3) 6", "fill"]
+    assert not any(s.endswith("rgb(1,2,3) 6") for s in one + bare) and bare[0] == "fill"
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "const iconEm"), reason="no icon glyph shapes in this mockup.js")
 def test_an_icon_swap_keeps_the_line_at_the_glyphs_shape(tmp_path):
     """A typed icon steps as its stoogedings glyph (its picture's width over height, 1 em tall or 1.4 wide, 0.04 em each
