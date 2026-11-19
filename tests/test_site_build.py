@@ -521,7 +521,7 @@ def _timelines(root):
     """A HISTORY_DIR: Alpha's stale paper row (none since owner Q6, 11-14), Discord look, changelog facts (one its
     old-repo version confirms), old-repo version, git_first and a Discord post after its first version here; one Morgue
     joke card and M'uru ('Before 2020'); White Palace's (MDW) Discord pictures, one after its PNG's first record;
-    Alpha's Created proposed as a physical card photo's."""
+    Alpha's Created proposed as a physical card photo's. The joke card's list copy; M'uru's names another picture."""
     from PIL import Image
 
     def pic(folder, name):
@@ -549,7 +549,9 @@ def _timelines(root):
             "first": {"date": "2020-07-14T03:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"},
             "entries": [{"id": "P-9", "kind": "discord", "date": "2020-07-14T00:00:00+00:00", "channel": "meme-cards",
                          "image": pic("_morgue/joke-card", "P-9.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
-    muru = {"card": "m-uru", "key": "M'uru", "name": "M'uru", "kind_of": "played", "git_file": "first repo",
+    Image.new("RGB", (20, 40), (90, 40, 20)).save(root / "_morgue/joke-card/P-9-list.avif", "AVIF")
+    joke["list"] = "P-9-list.avif"                                         # discord_preview list_copies
+    muru = {"card": "m-uru", "key": "M'uru", "name": "M'uru", "kind_of": "played", "git_file": "first repo", "list": "P-1-list.avif",
             "first": {"date": None, "day": "Before 2020", "channel": None, "source": "physical card photo"},
             "entries": [{"id": "P-10", "kind": "discord", "date": "2020-07-18T00:00:00+00:00", "channel": "port",
                          "image": pic("_morgue/m-uru", "P-10.webp"), "w": 40, "h": 80, "fields": {}, "changes": {}}]}
@@ -598,6 +600,9 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     # the Morgue's entry from Discord: picture only, never a live card
     joke = [c for c in out["cards.json"]["morgue"] if c["name"] == "Joke Card"]
     assert joke and joke[0]["lost"] == "joke" and joke[0]["pic"] == "history/_morgue/joke-card/P-9.webp"
+    if hasattr(bs, "HISTORY_LIST"):                                            # the Morgue list's copy of its picture
+        assert joke[0]["lpic"] == "history/_morgue/joke-card/P-9-list.avif" and (tmp_path / "a/dist" / joke[0]["lpic"]).is_file()
+        assert "lpic" not in next(c for c in out["cards.json"]["morgue"] if c["name"] == "M'uru")   # not its picture's
     assert joke[0]["first"] == "2020-07-13"                                         # the Pacific day, as its rows
     muru = next(c for c in out["cards.json"]["morgue"] if c["name"] == "M'uru")     # owner Q6: Created, no first day
     assert (muru["created"], muru["createdFrom"], muru["createdBefore"], muru["lost"]) == ("2019-01-01", "photo", 2020,
@@ -656,6 +661,7 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
         assert [r.get("img") for r in rows] == [None, "alpha/P-2.webp"]
         joke = next(c for c in branch["cards.json"]["morgue"] if c["name"] == "Joke Card")
         assert joke["pic"] == hb + "_morgue/joke-card/P-9.webp"
+        assert not hasattr(bs, "HISTORY_LIST") or joke["lpic"] == hb + "_morgue/joke-card/P-9-list.avif"
         monkeypatch.setattr(bs, "HISTORY_URL", "http://127.0.0.1:8000/h")    # a local preview's server
         assert bs.history_host(str(hist)) == ("http://127.0.0.1:8000/h/", None)
         monkeypatch.setattr(bs, "HISTORY_URL", "")
@@ -804,3 +810,22 @@ def test_changes_tabs_first_screens(bs, tmp_path):
     assert "!S.restoring && !S.placing && ![...r.params.keys()].length ? HEADS[file] : null" in app
     assert 'if (S.restoring || S.placing || [...r.params.keys()].length) { page([...parts].join("")); return; }' in app
     assert "window.requestIdleCallback || (f => setTimeout(f, 0))" in app[app.index("function appendParts("):]   # Safari: no 50 ms gaps
+
+
+def test_morgue_tiles_show_the_list_copy(tmp_path):
+    """A Morgue entry from Discord (cards.json morgue pic, lpic): its tiles, table rows and tips (grid.js thumb at 360 px
+    or less, imgAttrs) show the 360 px list copy; the card view's sizes (480, 720: the dialog, the compare view) the
+    webp; without a copy, the webp everywhere (grid.js in node)."""
+    grid = SITE_SRC / "site" / "assets" / "grid.js"
+    if "lpic" not in grid.read_text(encoding="utf-8"):
+        pytest.skip("a site before the Morgue list copies")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
+const c = {{ pic: "h/P-1.webp", lpic: "h/P-1-list.avif", tw: 40, th: 80 }}, old = {{ pic: "h/P-1.webp" }};
+process.stdout.write(JSON.stringify([G.imgAttrs({{}}, c, 168), ...[30, 360, 480, 720].map(w => G.thumb({{}}, c, w)),
+  G.imgAttrs({{}}, old, 168), G.thumb({{}}, old, 360)]));
+""", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == ['src="h/P-1-list.avif" width="40" height="80"', "h/P-1-list.avif", "h/P-1-list.avif",
+                                       "h/P-1.webp", "h/P-1.webp", 'src="h/P-1.webp"', "h/P-1.webp"]
