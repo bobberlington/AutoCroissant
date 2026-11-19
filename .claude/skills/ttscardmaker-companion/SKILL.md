@@ -922,7 +922,8 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   Lua checks need `lupa`. The names check (`updater_idempotent`) follows the live website, so between a data commit and the next run it
   fails (24 of 24 at c6b1e144, 2026-11-01; `contents_names`, `scripts_global_refs`, `scripts_state_xml` and
   `lua_resize_roundtrip` deleted 2026-11-12, lean tests).
-  `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`.
+  `AUTOCROISSANT` (an AutoCroissant checkout) unset: AutoCroissant main, the updater Card sync runs (a depth-1 clone
+  beside `TTS_HISTORY`, fetched each run; since 2026-11-18, not the Desktop clone's working tree).
 
 ### 2.7 Card previews: the website's contract (card-preview.yml, 2026-10-23)
 

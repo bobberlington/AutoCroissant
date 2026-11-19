@@ -1,4 +1,5 @@
 """tts_save: byte-identical serializer, _sync_decks and _fix_keys on a small forged save; the Action's env overrides."""
+import importlib.util
 from copy import deepcopy
 from json import dumps, loads
 from os import environ
@@ -10,7 +11,8 @@ import pytest
 import commands.repo_history as rh
 import commands.tts_save as tts
 from types import SimpleNamespace
-from conftest import CLONE, REPO
+from conftest import CLONE, REPO, SITE_SRC
+from helpers import commit, put
 
 RAW = tts.RAW
 HEAL = "Items/Heal/2 Stars/"
@@ -494,3 +496,35 @@ def test_resize_targets_list_minion_creatures(repo):
     repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
     tts._resize_targets(save, repo, Names(), report := tts._Report(), None)
     assert report.lua_added == ["Name of N"] and not report.lua_removed and '["Q"]' in save["LuaScript"]
+
+
+# ========================
+# TTS checks (TTSCardMaker TTS/checks)
+# ========================
+def test_tts_checks_take_ac_main_unless_told(tmp_path, monkeypatch):
+    """updater_idempotent's code (checks_env.copy_bot): AUTOCROISSANT unset = AC main as committed, fetched each run (not
+    a checkout's working tree); set = that tree."""
+    path = SITE_SRC / "TTS" / "checks" / "checks_env.py"
+    if not path.is_file():
+        pytest.skip(f"no {path} (AC_SITE_SRC lacks TTS/checks)")
+    spec = importlib.util.spec_from_file_location("checks_env", path)
+    env = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(env)
+    ac = tmp_path / "ac"
+    run(["git", "init", "-q", "-b", "main", str(ac)], check=True)
+    for rel in ("global_config.py", "commands/tts_save.py", "commands/x.py"):
+        put(ac, rel, b"main")
+    commit(ac, "a", 1)
+    monkeypatch.setattr(env, "BOT_REPO_URL", ac.as_uri())
+    monkeypatch.setattr(env, "HISTORY", str(tmp_path / "cache" / "history.git"))
+    monkeypatch.setattr(env, "BOT", "")
+    got = lambda d, rel: (tmp_path / d / rel).read_bytes()     # noqa: E731
+    assert env.copy_bot(str(tmp_path / "a")).startswith("AutoCroissant main ")
+    assert [got("a", r) for r in ("global_config.py", "commands/tts_save.py", "commands/x.py")] == [b"main"] * 3
+    put(ac, "commands/x.py", b"main 2")
+    commit(ac, "a", 2)
+    put(ac, "commands/tts_save.py", b"tree")                      # uncommitted
+    env.copy_bot(str(tmp_path / "b"))
+    assert got("b", "commands/x.py") == b"main 2" and got("b", "commands/tts_save.py") == b"main"
+    monkeypatch.setattr(env, "BOT", str(ac))
+    assert env.copy_bot(str(tmp_path / "c")) == str(ac) and got("c", "commands/tts_save.py") == b"tree"
