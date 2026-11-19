@@ -3,6 +3,7 @@ Also the corpus: every card PSD at one card repo commit, replayed from the bytes
 import json
 import zlib
 from bisect import bisect_right
+from os import getpid
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,6 @@ def save_record(blob: str, data: bytes, reads: list) -> None:
             merged.append([start, stop])
     head = json.dumps({"size": len(data), "spans": merged}).encode()
     RECORDS.mkdir(parents=True, exist_ok=True)
-    temp = RECORDS / f".{blob}.z"
+    temp = RECORDS / f".{blob}.{getpid()}.z"                # runs at once may record the same blob
     temp.write_bytes(zlib.compress(head + b"\n" + b"".join(data[a:b] for a, b in merged), 6))
     temp.replace(RECORDS / f"{blob}.z")
