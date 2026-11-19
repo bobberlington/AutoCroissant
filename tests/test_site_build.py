@@ -806,6 +806,33 @@ def test_changes_tabs_first_screens(bs, tmp_path):
     assert "window.requestIdleCallback || (f => setTimeout(f, 0))" in app[app.index("function appendParts("):]   # Safari: no 50 ms gaps
 
 
+def test_rename_keeping_the_shown_name_left_off(bs, tmp_path):
+    """11-11's file names: a rename from the name the card shows today (P.A.N.D.A. Mk A to PANDA_Mk_A.psd) is off the
+    Changelog (and its head counts), the Archive tab and person pages; a name change stays, a letter's case too (D11),
+    and 'renamed to' shows the card's name today, not its file's."""
+    renames = [("P.A.N.D.A. Mk A", "PANDA Mk A", "panda-mk-a"), ("omori", "Omori", "omori"), ("Avatar Of Wrath", "Avatar of Wrath", "avatar-of-wrath")]
+    names = {"panda-mk-a": "P.A.N.D.A. Mk A", "omori": "OMORI", "avatar-of-wrath": "Avatar of Wrath"}
+    push = {"after": "a" * 40, "before": "0" * 40, "by": "MichaelJSr", "at": 1_794_392_205}
+    events = [{"seq": i + 1, "at": 1_794_392_205, "build": "b", "kind": "renamed", "card": old, "title": names[i_d], "renamed_to": new,
+               "renamedId": i_d, "push": push} for i, (old, new, i_d) in enumerate(renames)]
+    rows = [{"card": old, "renamed_to": new, "renamedId": i_d, "author": "MichaelJSr", "at": 1_794_392_205} for old, new, i_d in renames]
+    assert bs.changelog_counts(events, names) == (2, {"renamed": 2}) and bs.changelog_counts(events) == (3, {"renamed": 3})
+    assets = BUILD_SITE.parents[1] / "assets"
+    probe = tmp_path / "renames.mjs"
+    probe.write_text(f"const cl = await import({json.dumps((assets / 'changelog.js').as_uri())}), pf = await import({json.dumps((assets / 'profile.js').as_uri())});\n"
+                     f"const names = new Map(Object.entries({json.dumps(names)}).map(([id, name]) => [id, {{ name }}])), rows = {json.dumps(rows)};\n"
+                     "cl.useNames(id => names.get(id)?.name);\n"
+                     f"const C = {{ days: 180, repo: 'o/r', events: {json.dumps(events)} }}, p = new URLSearchParams();\n"
+                     "process.stdout.write(JSON.stringify([cl.changelogHtml(C, p), cl.archiveHtml(rows, 'o/r', p), pf.archivedPanelHtml(rows, names)]));\n",
+                     encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    for html, heading in zip(json.loads(done.stdout), ("Changelog", "Archive", "Archived cards")):
+        assert re.findall(r'<a href="#/card/[^"]+">([^<]*)</a>', html) == ["OMORI", "Avatar of Wrath"], html
+        assert "omori" in html and "Avatar Of Wrath" in html and "PANDA" not in html and "P.A.N.D.A." not in html
+        assert f'{heading} <span class="muted">2</span>' in html
+
+
 def test_morgue_tiles_show_the_list_copy(tmp_path):
     """A Morgue entry from Discord (cards.json morgue pic, lpic): its tiles, table rows and tips (grid.js thumb at 360 px
     or less, imgAttrs) show the 360 px list copy; the card view's sizes (480, 720: the dialog, the compare view) the
