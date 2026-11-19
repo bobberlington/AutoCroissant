@@ -158,22 +158,28 @@ def test_a_variant_picture_printing_its_files_name(clone):
     assert [p.parse(psd, rel, variant=n).display_name for n in (1, 2)] == [None, "All-Purpose Medical Kit"]
 
 
-def test_a_drawn_duplicate_is_its_psds_picture(clone):
-    """Owner 11-13 (a full picture 2): a picture-only duplicate a tagged PSD draws (Morning_Meal.png, dup_of A Snack, its
-    art tagged 'Morning Meal #2') is that picture in the data, named after its PNG, matched by its tag before the printed
-    title ('Breakfast'); its PSD stored before (no variants) is read again once; Card Edits.json unread, it stays drawn."""
+def _tagged_snack(clone, renamed=None) -> tuple:
+    """(path, A_Snack.psd with §9's tags, some renamed)."""
     import sys
     from pathlib import Path
     from psd_tools import PSDImage
-    from commands.psd_details import VERSION
-    from commands.psd_parser import PARSER_VERSION
     sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
     from make_fixtures import CARDS
     rel, _, tags = CARDS["a_snack_tagged"]
     psd = PSDImage.open(str(clone / rel))
     for layer in psd.descendants():
         if layer.layer_id in tags:
-            layer.name = {**tags, 1022: "Morning Meal #2"}[layer.layer_id]
+            layer.name = {**tags, **(renamed or {})}[layer.layer_id]
+    return rel, psd
+
+
+def test_a_drawn_duplicate_is_its_psds_picture(clone):
+    """Owner 11-13 (a full picture 2): a picture-only duplicate a tagged PSD draws (Morning_Meal.png, dup_of A Snack, its
+    art tagged 'Morning Meal #2') is that picture in the data, named after its PNG, matched by its tag before the printed
+    title ('Breakfast'); its PSD stored before (no variants) is read again once; Card Edits.json unread, it stays drawn."""
+    from commands.psd_details import VERSION
+    from commands.psd_parser import PARSER_VERSION
+    rel, psd = _tagged_snack(clone, {1022: "Morning Meal #2"})
     folder = rel.rsplit("/", 1)[0] + "/"
     dup = folder + "Morning_Meal.png"
     tr = _traverser({})
@@ -192,6 +198,23 @@ def test_a_drawn_duplicate_is_its_psds_picture(clone):
     assert tr._psd_changed("A Snack", rel, sha)                               # stored apart: read again once
     card.variants = ["Morning Meal", "A Snack3"]
     assert not tr._psd_changed("A Snack", rel, sha)
+
+
+def test_a_picture_without_its_png_is_a_problem_on_card_1(clone):
+    """11-11's made-up 'Gust of Wind2': a tagged picture with no PNG in the tree is no card, a problem on card 1; the
+    push adding its PNG reads the PSD again."""
+    from commands.psd_parser import PARSER_VERSION
+    rel, psd = _tagged_snack(clone)
+    folder, sha = rel.rsplit("/", 1)[0] + "/", "1" * 40
+    tr = _traverser({})
+    tr.parser, tr.shas = parser(), {p: sha for p in (rel, folder + "A_Snack.png", folder + "A_Snack2.png")}
+    card, variants = tr._parse_psd(psd, rel, "A Snack", None)
+    assert [v.name for v in variants] == card.variants == ["A Snack2"]
+    assert [p for p in card.problems if "VARIANT" in p] == ["VARIANT 3 HAS NO PNG"]
+    card.blob_sha, card.parser_version, tr.db.stats = sha, PARSER_VERSION, {"A Snack": card}
+    assert not tr._psd_changed("A Snack", rel, sha)
+    tr.shas[folder + "A_Snack3.png"] = sha
+    assert tr._psd_changed("A Snack", rel, sha)
 
 
 def test_duplicate_name_order():
