@@ -1,8 +1,7 @@
 """
 git_commit, the commit path card_bake and card_guards share: upload_blob's NO_WRITE / rate-limit split, commit_files'
-API-then-git order (a blob too large for the API too), push_target against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network) and its delta push.
+API-then-git order (a blob too large for the API too), push_target against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network), never a delta push.
 """
-from io import StringIO
 from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired, run as run_process
 
 import pytest
@@ -148,9 +147,9 @@ def test_git_commit_push_outcomes(monkeypatch):
         gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
 
 
-def test_git_commit_deltas_against_old_blobs_it_holds(monkeypatch, tmp_path):
-    """Head's blobs at the written paths all in the clone (its alternates' too: the guards' checkout): a delta push with
-    no lazy fetch, then on a failure other than a rejection the push as before; one missing: only the push as before.
+def test_git_commit_pushes_plain_with_the_old_blobs_here(monkeypatch, tmp_path):
+    """Head's blobs at the written paths in the clone (its alternates' too: the guards' checkout; has_blobs, land's
+    by_git) or not: one push without delta search (GitHub would rebuild each delta'd PSD), no second try on a failure.
     Real git, the push faked."""
     clone, other = tmp_path / "clone.git", tmp_path / "other.git"
     for repo in (clone, other):
@@ -166,24 +165,18 @@ def test_git_commit_deltas_against_old_blobs_it_holds(monkeypatch, tmp_path):
     def fake_run(cmd, **kwargs):
         if "push" not in cmd:
             return run_process(cmd, **kwargs)
-        delta = "--no-thin" not in cmd
-        pushes.append(("delta", kwargs["env"].get("GIT_NO_LAZY_FETCH")) if delta else ("plain", None))
+        pushes.append(cmd[3:10])
         return CompletedProcess(cmd, *replies.pop(0))
     monkeypatch.setattr(gc, "run_process", fake_run)
-    monkeypatch.setattr(gc, "stderr", err := StringIO())
     files = {"dir/x.psd": b"new", "dir/y.png": b"y"}
-    replies[:] = [(0, b"", b"")]
-    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("plain", None)]   # the old blob missing
+    plain = ["-c", "pack.window=0", "-c", "pack.compression=1", "push", "--porcelain", "--no-thin"]
     assert not gc.has_blobs([]) and not gc.has_blobs([old], str(tmp_path / "none"))
     (clone / "objects" / "info" / "alternates").write_text(f"{other / 'objects'}\n")
     assert gc.has_blobs([old]) and not gc.has_blobs([old, "1" * 40])
-    pushes.clear()
     replies[:] = [(0, b"", b"")]
-    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("delta", "1")]
+    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [plain]
     pushes.clear()
-    replies[:] = [(1, b"", b"fatal: could not fetch 8aa81b20 from promisor remote\n"), (0, b"", b"")]
-    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("delta", "1"), ("plain", None)]
-    assert "git delta push failed, again without: fatal: could not fetch 8aa81b20" in err.getvalue()
-    pushes.clear()
-    replies[:] = [(1, b"!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\n", b"")]
-    assert gc.git_commit(gc.CARD_REPO, head, files, "m") is None and pushes == [("delta", "1")]   # the branch moved
+    replies[:] = [(1, b"", b"fatal: could not fetch 8aa81b20 from promisor remote\n")]
+    with pytest.raises(gc.Transient, match="git push failed: fatal: could not fetch 8aa81b20"):
+        gc.git_commit(gc.CARD_REPO, head, files, "m")
+    assert pushes == [plain]

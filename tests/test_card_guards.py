@@ -900,7 +900,7 @@ def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
 
 
 def test_land_by_git_past_the_bytes(tmp_path, monkeypatch):
-    """Past GIT_LAND_BYTES, or with the old blobs in the history clone (a delta push), one git push, else the API; a
+    """Past GIT_LAND_BYTES, or with the old blobs in the history clone (it's up), one git push, else the API; a
     broken git falls back to the API."""
     plan = _plan(tmp_path, [("A", "X/A.png", b"aaaa", {"X/A.psd": "s1"})])
     hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p0")})
