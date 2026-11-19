@@ -1,7 +1,8 @@
 """
 The rulebook's TTS PDF: the website's #/rules/print pages (1080x1920, the cover then the chapters cut as the Photoshop
 pages were) printed by Chrome to the card repo's TTS/Rulebook/Rulebook.pdf (real text: searchable and selectable, one
-page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels and its text (the TTS save's search). Card
+page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels and its text
+with its icons' and card pictures' names (the TTS save's search). Card
 sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object). The
 pages are drawn in the website's fonts (BOOK_FONTS, the checkout's MDW/Fonts copies, also where the machine has none:
 Card sync's Ubuntu), so their lines break as on the website.
@@ -15,7 +16,7 @@ looked at again at once; an old CDN copy: drawn again after SITE_POLL; in that t
 3 (card-sync.yml marks the lane: the schedule's next lane draws again; so does an exit 1). Headless Chrome ($CHROME,
 else the first of CHROMES on PATH) over its DevTools pipe, the page past the CDN's copy; no package beyond Pillow.
 Each page is screenshot and hashed: the PDF is printed again only when a hash
-changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
+or a page's text changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
 Chrome too when the website and the fonts are as at the last kept key (--full: Chrome looks in any case).
 Other files in the folder are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
@@ -85,6 +86,14 @@ KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || ""
           '[...document.styleSheets].map(s => { const root = new URL(".", document.baseURI).href; '
           'return s.href ? (s.href.startsWith(root) ? s.href.slice(root.length) : s.href) : s.ownerNode?.textContent || ""; }), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
+# each page's text (pages.json "t": the TTS save's search): innerText with its icons as [name] and its card pictures by
+# name (app.js bookWords' words), put in for the read and taken out again (nothing drawn changes)
+TEXT_JS = """(() => { const sheets = [...document.querySelectorAll(".rb-sheets .rb-sheet")];
+  const added = [...document.querySelectorAll(".rb-sheets .rb-sheet :is(img.tok, img.tokv, .rb-card img)")].filter(i => i.alt.trim())
+    .map(i => { const next = i.nextSibling?.nodeType === 3 ? i.nextSibling.data : "";     // "[machine]." kept tight
+      const t = document.createTextNode(` ${i.matches(".tok, .tokv") ? `[${i.alt.replaceAll("_", " ")}]` : i.alt}${/^[^\\s\\w]/.test(next) ? "" : " "}`);
+      i.after(t); return t; });
+  try { return sheets.map(e => e.innerText.replace(/\\s+/g, " ").trim()); } finally { for (const t of added) t.remove(); } })()"""
 UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
 FONTS_DIR = "MDW/Fonts"                        # the card repo's fonts (psd_edit.FONTS_DIR)
 # the rulebook's fonts on the website (style.css: .rb's first, .rb-grid's tables' first): their files in FONTS_DIR
@@ -276,7 +285,7 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
         plain = run(PLAIN_JS) or {}
         if key and key == known:                             # nothing they draw changed: no screenshots
             return dict(listed["chapters"]), None, Printer(None, chrome.close), key, page, plain
-        texts = run('[...document.querySelectorAll(".rb-sheets .rb-sheet")].map(e => e.innerText.replace(/\\s+/g, " ").trim())')
+        texts = run(TEXT_JS)
         for entry, text in zip(listed["sheets"], texts or []):
             entry["text"] = text                             # the TTS save's search (Global.lua)
         shots = []
@@ -335,15 +344,15 @@ def _trees(checkout: str) -> list:
 
 
 def key(drawn: str, checkout: str, trees: Optional[list] = None) -> str:
-    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED and FONTS_DIR git trees in the checkout
-    (trees: _trees()'s, else read)."""
-    return sha256("\n".join([drawn, *(_trees(checkout) if trees is None else trees)]).encode("utf-8")).hexdigest()
+    """The print's key: what the pages draw (KEY_JS's text), how their text is read (TEXT_JS) and the UNSTAMPED and
+    FONTS_DIR git trees in the checkout (trees: _trees()'s, else read)."""
+    return sha256("\n".join([drawn, TEXT_JS, *(_trees(checkout) if trees is None else trees)]).encode("utf-8")).hexdigest()
 
 
 def pre_key(seen: dict, trees: list, fonts: list) -> str:
     """
-    What the print view reads (site_inputs()'s seen), Chrome not started: index.html's code (its stamped asset URLs and
-    inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants, tagMeanings and thumbs, every
+    What the print view reads (site_inputs()'s seen), Chrome not started: KEY_JS and TEXT_JS, index.html's code (its
+    stamped asset URLs and inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants, tagMeanings and thumbs, every
     card's name and key in order (app.js cardByName, text.js's renderer) and the id, name and picture of the cards the
     chapters name (any look-alike too); the UNSTAMPED and FONTS_DIR trees (_trees()) and the book fonts (book_fonts()).
     Not Chrome's version (as key(): the runners' two images differ in it).
@@ -357,7 +366,7 @@ def pre_key(seen: dict, trees: list, fonts: list) -> str:
             named[loose(m.group(2))] = named.get(loose(m.group(2))) or bool(m.group(1))
     refs = [[c.get("id"), c.get("name"), c.get("img") if any(named.get(loose(k)) for k in (c.get("name"), c.get("key"))) else ""]
             for c in cards if any(loose(k) in named for k in (c.get("name"), c.get("key")))]
-    parts = ["pre 2", KEY_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
+    parts = ["pre 2", KEY_JS, TEXT_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
              {k: data.get(k) for k in ("icons", "iconVariants", "tagMeanings", "thumbs")},
              [[c.get("name"), c.get("key")] for c in cards], refs, trees, sha256(dumps(fonts).encode()).hexdigest()]
     return sha256(dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
@@ -383,7 +392,7 @@ def read_pages(checkout: str, folder: str = "", path: str = "") -> dict:
 
 def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "") -> Optional[dict]:
     """
-    pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
+    pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash or text changed, the list changed or the
     PDF is missing; key (draw's, of a settled website: update_pages) kept for the next run, else the last print's when
     not printed. pre (pre_key() of the build drawn) goes with a kept key; the last one stays with the last key.
     pdf_maker None (--local): nothing written when it would print.
@@ -402,8 +411,9 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "
                 old = loads(fh.read())
         except ValueError:
             old = {}
-    before = [(p.get("name"), p.get("sha")) for p in old.get("pages") or [] if isinstance(p, dict)]
-    changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"])]
+    # a page's text too: the save reads pages.json at the PDF's commit (tts_save)
+    before = [(p.get("name"), p.get("sha"), p.get("t")) for p in old.get("pages") or [] if isinstance(p, dict)]
+    changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"], p.get("t"))]
     need = bool(changed) or len(before) != len(pages) or not isfile(pdf)
     if need and pdf_maker is None:
         return None
