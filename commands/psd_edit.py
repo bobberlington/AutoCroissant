@@ -6279,11 +6279,25 @@ def _opaque(one) -> bool:
     return one.blend_mode == BlendMode.NORMAL and one.opacity >= 250 and one.fill_opacity >= 250
 
 
+def _boxes_meet(a, b) -> bool:
+    return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
+
+
 def _clipped_over(layer) -> list:
     """The shown layers clipped onto a text layer when one of them hides its letters (_opaque: the Totems' fire,
-    Paintbrush's rainbow), else []."""
+    Paintbrush's rainbow), else []; and a group's above it, those over its box and no other shown text's (Miasma's
+    texture on 'Text'; adjustments, boxless, stay the group's look)."""
     chain = [one for one in _clip_chain(layer) if one.visible]
-    return chain if any(map(_opaque, chain)) else []
+    out = chain if any(map(_opaque, chain)) else []
+    box, node = tuple(layer.bbox), layer.parent
+    while node is not None and node.kind != "psdimage":
+        chain = [one for one in _clip_chain(node) if one.visible and _boxes_meet(tuple(one.bbox), box)]
+        if chain:
+            others = [tuple(t.bbox) for t in node.descendants() if t.kind == "type" and t is not layer and t.is_visible()]
+            chain = [one for one in chain if not any(_boxes_meet(tuple(one.bbox), b) for b in others)]
+        out += chain if any(map(_opaque, chain)) else []
+        node = node.parent
+    return out
 
 
 def _clip_text(chain: list) -> str:
