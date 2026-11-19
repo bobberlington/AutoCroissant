@@ -355,6 +355,7 @@ def offline(monkeypatch, tmp_path):
     for queue in queues:                                                 # main imports them by name: clear, never replace
         queue.clear()
     yield
+    environ.pop("GIT_NO_LAZY_FETCH", None)                               # a script's process-wide set (oldgit_index) ends here
     for queue in queues:
         queue.clear()
 
