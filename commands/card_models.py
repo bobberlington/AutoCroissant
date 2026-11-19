@@ -26,6 +26,19 @@ class CardType(Enum):
 
 STAT_LIMIT = 20                                 # a stat above it is STATS TOO HIGH (10 until 2026-11-06)
 RAID_STARS = 6                                  # a card with this many stars is a raid boss: no STAT_LIMIT (owner 11-06)
+# an item-type icon's item type, named as the Items/ folders (owner 11-08; Field its own); site grid.js ICON_ITEM_TYPES
+AUX_ITEM_TYPES = {"equip": "equip", "fragile equip": "equip", "food": "heal", "active": "active", "attack": "attack",
+                  "infliction": "infliction", "deploy": "deploy", "support": "support", "counter": "counter",
+                  "negation": "negation", "field": "field"}
+ITEM_KINDS = (CardType.ITEM.value, CardType.AUX_ITEM.value, CardType.NME.value)
+
+
+def item_types(card_type, subtype, types) -> list:
+    """A card's item types: its subtype, then an item's other item-type icons (Salt: heal, infliction), as grid.js."""
+    out = [subtype] if isinstance(subtype, str) and subtype else []
+    if card_type in ITEM_KINDS and isinstance(types, (list, tuple)):
+        out += [k for k in dict.fromkeys(AUX_ITEM_TYPES.get(t) for t in types) if k and k not in out]
+    return out
 
 
 @dataclass

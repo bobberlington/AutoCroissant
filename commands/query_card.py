@@ -24,7 +24,7 @@ from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZ
 from commands.card_edits import CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
-from commands.card_models import picture_only, site_cards, stats_db, straight
+from commands.card_models import item_types, picture_only, site_cards, stats_db, straight
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
@@ -451,7 +451,7 @@ class CardRepository:
                 hint = VALUE_HINTS.get(column)
                 raise QueryError(f"{column}{operator} takes a value" + (f": {column}{operator}{hint}." if hint else "."))
             value = value.strip('"')
-            if column == "alias":                        # any one alias (search.js)
+            if column in ("alias", "subtype"):           # any one alias or item type (search.js)
                 same = (lambda a: a == value) if operator == "==" else (lambda a: value in a)
                 kept = col.map(lambda names: any(same(a.lower()) for a in names)).astype(bool)
             else:
@@ -484,6 +484,9 @@ class CardRepository:
                         got.append(alias)
                 out.append(got)
             return Series(out, index=df.index, dtype=object)
+        if column == "subtype":                          # an item's item types, each (Salt: heal, infliction)
+            kinds, subs, types = (df[c] if c in df else [None] * len(df) for c in ("type", "subtype", "types"))
+            return Series([item_types(*x) for x in zip(kinds, subs, types)], index=df.index, dtype=object)
         if column == "types" and column in df:           # space-joined, as the website
             return df["types"].map(lambda v: " ".join(v) if isinstance(v, (list, tuple)) and v else None)
         return df[column] if column in df else None

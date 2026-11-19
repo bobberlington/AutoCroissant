@@ -60,10 +60,12 @@ live folder tree.
 | anything else | `unknown` | — | none |
 
 An auxiliary item's `subtype` (owner 2026-11-08), and an N.M.E. item's (2026-11-15), is its header's item-type icon
-named as the `Items/` folders (`psd_parser.AUX_ITEM_TYPES`: Equip and Fragile Equip -> equip, Food -> heal, Active,
+named as the `Items/` folders (`card_models.AUX_ITEM_TYPES`: Equip and Fragile Equip -> equip, Food -> heal, Active,
 Attack, Infliction, Deploy, Support, Counter, Negation as named, Field -> `field`, an item type of its own); of two icons
 the first in reading order of their drawn pixels (`PSDParser._aux_item_type`: Magnum Opus active, Salt heal, Electric
-Dart attack).
+Dart attack). The stored `subtype` is that one, but `subtype==`/`~` and the website count an item at each item type it
+prints (`card_models.item_types`, site grid.js `itemTypes`; 2026-11-19): the 9 dual items (Salt heal + infliction, Life
+Shroom heal + equip, ...), as the TTS decks do.
 
 `subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json sets it (the website; `/update_metadata` until 2026-10-25), and a
 re-parse keeps it like `author` and `series` (§6).
@@ -774,7 +776,7 @@ is later (`CardDates.created`, the website's rule); it is in `/export_cards` and
 `site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
-count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (space-joined as the
+count 0, no stats at all: no total). Text: type, subtype (any one item type), series, subseries, author, types (space-joined as the
 website: `types==fire`, `types~undead`, `types==wind offensive_minion`), name (printed title, else the name), alias
 (alias/aliases: the website's aliases, i.e. Card Edits.json aliases then the file name, none the shown name; `==`/`~`
 test each one, 2026-11-17), ability, path, created. `has:alias`: cards with an alias (search.js FLAGS). Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).

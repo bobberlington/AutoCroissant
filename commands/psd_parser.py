@@ -15,7 +15,7 @@ from psd_tools import PSDImage
 from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Callable, Optional, Union
 
-from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
+from commands.card_models import AUX_ITEM_TYPES, RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
 from commands.psd_regions import (comp_creature, comp_stat, comp_value, digit_span, drawn_box, linked_name,
                                    reaches_over, union_box)
 
@@ -53,10 +53,6 @@ FRAME_SHARE = 0.1                 # ink over more of the card is a frame or a fi
 TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
-# an auxiliary or N.M.E. item's item type: its item-type icon, named as the Items/ folders (owner 11-08; Field its own)
-AUX_ITEM_TYPES = {"equip": "equip", "fragile equip": "equip", "food": "heal", "active": "active", "attack": "attack",
-                  "infliction": "infliction", "deploy": "deploy", "support": "support", "counter": "counter",
-                  "negation": "negation", "field": "field"}
 # a variant tag: a layer or group named "... #2" (" #2,3") shows only in those pictures (PARTS_EDITOR.md §9)
 TAG = re_compile(r"^(.*\S) #(\d{1,2}(?:,\d{1,2})*)$")
 LINE_PAD = re_compile(r"(?m)^[^\S\n]{3,}(?=\S)")             # a line's leading layout padding
