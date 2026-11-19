@@ -762,14 +762,18 @@ def test_changes_tabs_first_screens(bs, tmp_path):
     newest pushes (at least HEAD_ROWS events, none older than a push left out, also when a push's seq and time
     disagree) with the whole file's heading counts, and the newest batches when every edit event fits. Drawn from the
     head, then the whole file's other parts appended (changelog.js headDrawn, changelogParts, editsParts), a tab is the
-    same HTML as drawn from the whole file at once."""
+    same HTML as drawn from the whole file at once, also with no events (one heading); a head with no blocks while
+    the whole file has some is drawn again whole."""
     cases = []
-    for name, (seed, edits, batches) in {"many": (400, 300, 12), "few edits": (600, 30, 12), "no edits": (60, 0, 0)}.items():
-        files = bs.changelog_files(_changes(seed, edits, batches))
+    for name, (seed, edits, batches) in {"many": (400, 300, 12), "few edits": (600, 30, 12), "no edits": (60, 0, 0), "empty": (0, 0, 0)}.items():
+        data = _changes(seed, edits, batches)
+        if name == "empty":                           # 180 quiet days, or card data without a changelog
+            data["events"] = []
+        files = bs.changelog_files(data)
         heads = bs.changelog_heads(files)
-        late = next(e["at"] for e in files["changelog.json"]["events"] if e.get("build") == "late")
         head = heads["changelog-head.json"]["events"]
         if name == "few edits":                       # the late push: every push after it in time comes along
+            late = next(e["at"] for e in files["changelog.json"]["events"] if e.get("build") == "late")
             assert len(head) < len(files["changelog.json"]["events"]) and min(e["at"] for e in head) == late
         for f in ("changelog.json", "edits.json", "changelog-head.json", "edits-head.json"):
             (tmp_path / f"{len(cases)}-{f}").write_text(json.dumps({**files, **heads}[f]), encoding="utf-8")
@@ -783,7 +787,8 @@ def test_changes_tabs_first_screens(bs, tmp_path):
                      "    const C = read(`${dir}/${i}-${f}`), H = read(`${dir}/${i}-${h}`), from = cl.headDrawn(H, C, edits);\n"
                      "    const whole = edits ? cl.editsHtml(C, p) : cl.changelogHtml(C, p), first = edits ? cl.editsHtml(H, p) : cl.changelogHtml(H, p);\n"
                      "    const rest = from === null ? null : [...(edits ? cl.editsParts(C, p, from) : cl.changelogParts(C, p, from))].join('');\n"
-                     "    r[f] = { same: first + rest === whole, from, part: first.length / whole.length }; }\n"
+                     "    const stale = cl.headDrawn({ ...H, events: [] }, C, edits);\n"
+                     "    r[f] = { same: first + rest === whole, from, part: first.length / whole.length, stale }; }\n"
                      "  out.push(r); }\n"
                      "process.stdout.write(JSON.stringify(out));\n", encoding="utf-8")
     done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
@@ -793,6 +798,9 @@ def test_changes_tabs_first_screens(bs, tmp_path):
     assert got["many"]["changelog.json"]["part"] < 0.5 and got["many"]["edits.json"]["from"]["header"] is False
     assert got["few edits"]["edits.json"]["from"] == {"groups": got["few edits"]["edits.json"]["from"]["groups"], "header": True, "batches": bs.HEAD_BATCHES}
     assert got["no edits"]["edits.json"]["from"]["batches"] == 0
-    app = (BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")   # a filter or a place: whole, as before
+    assert got["empty"]["changelog.json"]["from"] == 0 and got["many"]["changelog.json"]["stale"] is None
+    assert got["many"]["edits.json"]["stale"] is None
+    app =(BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")   # a filter or a place: whole, as before
     assert "!S.restoring && !S.placing && ![...r.params.keys()].length ? HEADS[file] : null" in app
     assert 'if (S.restoring || S.placing || [...r.params.keys()].length) { page([...parts].join("")); return; }' in app
+    assert "window.requestIdleCallback || (f => setTimeout(f, 0))" in app[app.index("function appendParts("):]   # Safari: no 50 ms gaps
