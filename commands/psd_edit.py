@@ -6964,13 +6964,15 @@ def _ink_off(ink: tuple, inks: list) -> float:
     return 1 - sum(_ink_overlap(mine, ink) for mine in inks) / total if total else 0.0
 
 
-def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[str]:
+def _blocked(psd: PSDImage, inks: list, core: tuple, others: list, shown: Optional[tuple] = None) -> Optional[str]:
     """
-    Why a star or icon cannot go where its inks are ((bbox, alpha) on the canvas): its core off the canvas, or its ink on
-    the ink of another layer that shows (others: the visible text layers, and the stars or icons it must clear); None.
+    Why a star or icon cannot go where its inks are ((bbox, alpha) on the canvas): its core off the canvas (shown: the
+    part of it that shows, tested instead), or its ink on the ink of another layer that shows (others: the visible text
+    layers, and the stars or icons it must clear); None.
     """
     slack = _tol(max(core[2] - core[0], core[3] - core[1]))     # the cards' own icons pass the edge a little
-    if core[0] < -slack or core[1] < -slack or core[2] > psd.width + slack or core[3] > psd.height + slack:
+    box = core if shown is None else shown
+    if box[0] < -slack or box[1] < -slack or box[2] > psd.width + slack or box[3] > psd.height + slack:
         return "runs off the canvas"
     reach = union_box([(b[0], b[1], b[0] + solid.shape[1], b[1] + solid.shape[0]) for b, solid in filter(None, inks)])
     for other in others:
@@ -7007,6 +7009,17 @@ def _lowered(psd: PSDImage, inks: list, core: tuple, others: list, icons: list) 
                 _ink_overlap(a, b) > ICON_TOUCH * min(a[1].sum(), b[1].sum()) for a in mine for b in icons):
             return d
     return None
+
+
+def _shown_core(unit: _Unit) -> tuple:
+    """unit.core with a clipped leaf's core cut to the layer it clips onto, where it shows (Shield of Ogmur's texture
+    runs past its star and the card's edge)."""
+    leaves = [leaf for layer in unit.layers for leaf in _drawn(layer)]
+    if not any(leaf.clipping for leaf in leaves):
+        return unit.core
+    cores = [PSDParser._core_box(leaf) if (base := _clip_base(leaf)) is None
+             else clip_to(PSDParser._core_box(leaf), tuple(base.bbox)) for leaf in leaves]
+    return clip_to(unit.core, union_box(cores) or unit.core) or unit.core
 
 
 def _moved_inks(unit: _Unit, dx: int, dy: int) -> list:
@@ -7323,7 +7336,7 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False,
             inks = [(_moved_box(box, dx, dy), solid) for box, solid in grown[id(unit)][1]]
         else:
             inks = _moved_inks(unit, dx, dy)
-        blocked = _blocked(psd, inks, _moved_box(unit.core, dx, dy), clear)
+        blocked = _blocked(psd, inks, _moved_box(unit.core, dx, dy), clear, _moved_box(_shown_core(unit), dx, dy))
         if blocked:
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}" + \
                 (f" (or comes within {gap} px)" if gap and (dx or dy) else "")
