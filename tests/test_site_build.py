@@ -793,3 +793,6 @@ def test_changes_tabs_first_screens(bs, tmp_path):
     assert got["many"]["changelog.json"]["part"] < 0.5 and got["many"]["edits.json"]["from"]["header"] is False
     assert got["few edits"]["edits.json"]["from"] == {"groups": got["few edits"]["edits.json"]["from"]["groups"], "header": True, "batches": bs.HEAD_BATCHES}
     assert got["no edits"]["edits.json"]["from"]["batches"] == 0
+    app = (BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")   # a filter or a place: whole, as before
+    assert "!S.restoring && !S.placing && ![...r.params.keys()].length ? HEADS[file] : null" in app
+    assert 'if (S.restoring || S.placing || [...r.params.keys()].length) { page([...parts].join("")); return; }' in app
