@@ -162,6 +162,21 @@ def test_cards_json_columns(bs):
         assert bs.columns(odd) is odd
 
 
+def test_mentions_built_as_the_site_finds_them(bs, monkeypatch):
+    """cards.json mentions (mention_lists: text.js in node): per card the indexes of the cards its ability names, 0 for
+    none, hidden cards neither naming nor named (app.js derive() at boot); no node, none (the boot parses)."""
+    if not hasattr(bs, "mention_lists"):
+        pytest.skip("a site before built mentions")
+    cards = [{"id": "alpha", "name": "Alpha", "type": "creature", "ability": "Summon a Beta. Alpha heals."},
+             {"id": "beta", "name": "Beta", "type": "minion", "ability": "Hits Gamma."},
+             {"id": "gamma", "name": "Gamma", "type": "creature", "ability": "Alpha.", "hidden": True},
+             {"id": "delta", "name": "Delta", "type": "item", "ability": ""}]
+    assert bs.mention_lists(cards, {}, {}) == [[1, 0], 0, 0, 0]
+    monkeypatch.delenv("NODE", raising=False)
+    monkeypatch.setattr(bs.shutil, "which", lambda name: None)
+    assert bs.mention_lists(cards, {}, {}) is None
+
+
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
     """Alpha's text started at c2 (the bot's carried start), though its PSD was last committed at c3: cards.json keeps
     ts (the last commit, "updated") and adds since; history.json holds the older text at c1. A variant picture's goes
