@@ -528,7 +528,8 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text.
     A phrase under a layer clipped onto the title (Cake Mix) or onto its group over it (Yin Yarn): refused, not a whole one.
     A group's overlay over a title alone in it (The Big Yellow Cat): not for a whole title's colour; over the stat labels
-    too (The Radiance): refused."""
+    too (The Radiance): refused. The mock-up's (mixed: the plate draws a part): refused as before unless the plate draws
+    every part under it, with no phrase and no retyping."""
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
@@ -545,20 +546,25 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
              "Creatures/Kirby/5 Stars/Yin_Yarn.psd": [[{**name, "phrase": "Yin"}], [name, {**name, "phrase": "Yin"}]],
              "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd": [[name], [{**name, "phrase": "Big"}], [name, {**name, "phrase": "Big"}]],
              "Creatures/Hollow Knight/5 Stars/The_Radiance.psd": [[name]]}
-    jobs, want = [], []
+    jobs, want, recs = [], [], {}
     for rel, sets in cases.items():
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
-        record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
+        record = recs[card] = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
         for colors, edit in (s if isinstance(s, tuple) else (s, {}) for s in sets):
             typed, boxes = {f: edit[f] for f in ("name", "ability") if f in edit}, {k: v["text"] for k, v in edit.get("parts", {}).items()}
             jobs.append({"rec": record, "colors": colors, "typed": list(typed), "edit": edit})
             want.append([[one, how] for one, how in pe.plan_colors(psd, colors, card, typed, None, boxes) if "paints over" in how])
+    why, big, n = "its group 'Name''s Gradient Overlay paints over the title's colours: recolour it in Photoshop", {**name, "phrase": "Big"}, len(jobs)
+    for colors, edit, mixed, out in (([name], {}, True, []), ([name], {}, False, [name]), ([name, big], {}, True, [name, big]),
+                                     ([name], {"name": "The Big Yellow Dog"}, True, [name])):
+        jobs.append({"rec": recs["The Big Yellow Cat"], "colors": colors, "typed": list(edit), "edit": edit, "mixed": mixed})
+        want.append([[one, why] for one in out])
     (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
     (tmp_path / "over.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
-process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
+process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit, "mixed" in j ? () => j.mixed : null).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1], (got, want)
+    assert got == want and [len(w) for w in want[:n]] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1], (got, want)
 
 
 @site
