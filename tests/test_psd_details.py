@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads", "effects"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads", "effects", "fb", "outline"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -91,13 +91,17 @@ def test_how_text_is_set(clone):
 
 def test_stroke_is_the_layers_or_its_groups(records, clone):
     """VERSION 7: the outline the mock-up draws round re-laid letters. Mini Doomer's Ability: the Text group's (7 px
-    black); Afraid's: its own; Dark Matter Swordsman's nearest is its own at 44%: none (the mock-up's guess)."""
+    black); Afraid's: its own; Dark Matter Swordsman's nearest is its own at 44%: none (the mock-up's guess). VERSION 12:
+    Retro Kirby's faux bold Ability, its own 2 px under the Text group's 7 px: outline 9; Mini Doomer's: none."""
     from psd_tools import PSDImage
     assert {t["layer"]: t.get("stroke") for t in records[DOOMER]["text"]}["Text/Ability"] == [0, 0, 0, 7]
     got = {}
     for rel, lid in (("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 23), ("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", 596)):
         got[rel.rsplit("/", 1)[1]] = pd._stroke(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
     assert got == {"Afraid.psd": [0, 0, 0, 6], "Dark_Matter_Swordsman.psd": None}
+    kirby = next(x for x in PSDImage.open(str(clone / "Creatures/Kirby/3 Stars/Retro_Kirby.psd")).descendants() if x.layer_id == 417)
+    assert (pd._stroke(kirby), pd._outline(kirby), pd._set(kirby).get("fb")) == ([0, 0, 0, 2], [0, 0, 0, 9], True)
+    assert pd._outline(next(x for x in PSDImage.open(str(clone / DOOMER)).descendants() if x.name == "Ability")) is None
 
 
 def test_shadows_and_glows_that_show(records, clone):

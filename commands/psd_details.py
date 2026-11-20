@@ -6,8 +6,8 @@ VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own sta
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
 6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
 lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11; a type layer's own effects
-where layers share its path: VERSION 12). One record
-per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
+where layers share its path, and faux bold, fb, and its groups' Strokes stacked, outline: VERSION 12). One record per
+card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -45,7 +45,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 12                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects"
+VERSION = 12                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -204,7 +204,8 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
     their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the font most of them are set in, when
     not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
     not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set;
-    "lead", the line pitch the bake sets a new line at (its runs' largest leading). {} when rotated."""
+    "lead", the line pitch the bake sets a new line at (its runs' largest leading); "fb" when most of them are faux
+    bold. {} when rotated."""
     from psd_tools.composite.text.layout import frame, leading
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
@@ -212,7 +213,7 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
     sx, sy = hypot(xx, xy), hypot(yx, yy)
     if not sx or not sy or abs(xy) > 0.01 * sx or abs(yx) > 0.01 * sy:
         return {}
-    out, letters, faces = {}, Counter(), Counter()
+    out, letters, faces, bold = {}, Counter(), Counter(), 0
     ways = {p.justification for p in model.paragraphs if model.text[p.start:p.end].strip()}
     if ways in ({0}, {1}):
         out["just"] = ways.pop()                # left or right set (none: centred, justified or mixed)
@@ -232,6 +233,7 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
             n = sum(not c.isspace() and i not in head for i, c in enumerate(model.text[run.start:run.end], run.start))
             letters[(s.size, s.vertical_scale, s.horizontal_scale, s.tracking)] += n
             faces[str(s.font)] += n
+            bold += n if s.faux_bold else 0
     if letters and letters.most_common(1)[0][1]:
         size, v, h, track = letters.most_common(1)[0][0]
         hx = round(sx * h / (sy * v), 3) if v else 1
@@ -240,6 +242,8 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
         lf = faces.most_common(1)[0][0]
         if lf != font:
             out["lf"] = lf
+        if 2 * bold > sum(letters.values()):
+            out["fb"] = True
         badges = []
         for a, b in psd_edit.badge_spans(model.text):
             styles = [r.style for r in model.runs if r.start < b and a < r.end]
@@ -273,6 +277,40 @@ def _stroke(layer) -> Optional[list]:
     return None
 
 
+def _reach(e) -> float:
+    """How far a Stroke reaches past what it strokes: OUTSIDE its size, CENTER half of it, INSIDE none."""
+    from psd_tools.constants import StrokePosition
+    size = float(e.size)
+    return size if e.position == StrokePosition.OUTSIDE else size / 2 if e.position == StrokePosition.CENTER else 0.0
+
+
+def _outline(layer) -> Optional[list]:
+    """[r, g, b, size] of the outline round a type layer's letters when its own Stroke and its groups' stack (a group
+    strokes its composite again: Retro Kirby's 2 px under the Text group's 7 px shows 9): their reaches (_reach) summed.
+    Only for two or more, each solid, Normal and 100%, the reaching ones one colour; else None."""
+    from psd_tools.api.effects import Stroke
+    from psd_tools.constants import BlendMode, StrokeFillType
+    rings, count = [], 0
+    for owner in (layer, *_ancestors(layer)):
+        try:
+            effects = list(owner.effects) if owner.effects.enabled else []
+        except Exception:                       # an effects block psd-tools can't read
+            return None
+        stroke = next((e for e in effects if isinstance(e, Stroke) and e.enabled), None)
+        if stroke is None:
+            continue
+        rgb = [(stroke.color or {}).get(key) for key in (b"Rd  ", b"Grn ", b"Bl  ")]
+        if (None in rgb or stroke.fill_type != StrokeFillType.SOLID_COLOR or stroke.blend_mode != BlendMode.NORMAL
+                or float(stroke.opacity) != 100):
+            return None
+        count += 1
+        if _reach(stroke) > 0:
+            rings.append((tuple(max(0, min(255, round(float(_value(v))))) for v in rgb), _reach(stroke)))
+    if count < 2 or not rings or len({rgb for rgb, _ in rings}) != 1:
+        return None
+    return [*rings[0][0], _num(sum(w for _, w in rings))]
+
+
 def _num(value: float):
     value = float(value)
     return int(value) if value.is_integer() else round(value, 2)
@@ -292,7 +330,6 @@ def _text_fx(layer) -> Optional[list]:
     either at FX_OPACITY or more. Each: k (shadow, glow), size, spread, blend, color, opacity (x its layer's and parents'),
     dx/dy (a shadow's), ws/wo (a Stroke set deeper: a group's effect is cast round it). Else None."""
     from psd_tools.api.effects import DropShadow, OuterGlow, Stroke
-    from psd_tools.constants import StrokePosition
     chain = [*reversed(list(_ancestors(layer))), layer]
     levels = []                                 # (depth, opacity down to it, enabled effects)
     opacity = 1.0
@@ -304,14 +341,10 @@ def _text_fx(layer) -> Optional[list]:
             continue
         levels.append((depth, opacity, effects))
 
-    def outline(e):
-        size = float(e.size)
-        return size if e.position == StrokePosition.OUTSIDE else size / 2 if e.position == StrokePosition.CENTER else 0.0
-
     out, shows = [], False
     for depth, op, effects in levels:
-        own = max((outline(e) for e in effects if isinstance(e, Stroke)), default=0.0)
-        deeper = max(((outline(e), float(e.opacity)) for d, _, es in levels if d > depth for e in es if isinstance(e, Stroke)),
+        own = max((_reach(e) for e in effects if isinstance(e, Stroke)), default=0.0)
+        deeper = max(((_reach(e), float(e.opacity)) for d, _, es in levels if d > depth for e in es if isinstance(e, Stroke)),
                      default=(0.0, 100.0))
         for e in effects:
             if not isinstance(e, (DropShadow, OuterGlow)):
@@ -340,9 +373,10 @@ def _text_fx(layer) -> Optional[list]:
 
 def _text(texts: list, layers: list = ()) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
-    A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke); its
-    shadows and glows: "fx" (_text_fx); its header lines' text, "heads" (psd_edit.heads: a line typed under one takes
-    the next line's look); its own "effects" (_names) when another of layers has its path (the record's keep one)."""
+    A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke), and
+    "outline" (_outline) when its groups' Strokes stack on it; its shadows and glows: "fx" (_text_fx); its header lines'
+    text, "heads" (psd_edit.heads: a line typed under one takes the next line's look); its own "effects" (_names) when
+    another of layers has its path (the record's keep one)."""
     shared = {p for p, n in Counter(layer_path(x) for x in layers).items() if n > 1}
     out = []
     for layer in texts:
@@ -377,6 +411,12 @@ def _text(texts: list, layers: list = ()) -> list:
             stroke = None
         if stroke:
             out[-1]["stroke"] = stroke
+        try:
+            outline = _outline(layer)
+        except Exception:                       # the stroke alone
+            outline = None
+        if outline and outline != stroke:
+            out[-1]["outline"] = outline
         try:
             fx = _text_fx(layer)
         except Exception:                       # drawn without them
