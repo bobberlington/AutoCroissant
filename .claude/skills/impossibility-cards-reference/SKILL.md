@@ -833,7 +833,9 @@ abbreviation's `.` (bold **N.M.E.**, never **turn.**).
    `commands/rulebook.py`: the contents and chapters 1-23, index "7. Stats"), not the Photoshop pages (history in
    `MDW/Old Rules/`, not cards since 2026-10-30). It posts the matching LINES under their chapter names (`rulebook_lines`; long lines cut to SNIPPET
    around the match, the match in bold outside emoji markup), first the chapters with the most lines where the text
-   starts a word (`ring`, not `during`; since 2026-11-04), then the most lines.
+   starts a word (`ring`, not `during`; since 2026-11-04), then the most lines. Since 2026-11-20 a numbered timing tag
+   the book never prints whole (`(2PG)`, `3cd`, `4u`; `2pg` is not (2PGT)'s) quotes its X row ((XPG), (XCD), (Y/XCD)),
+   the reply saying so (`x_row`; the website's app.js `bookTag` likewise, TTS Global.lua `xTag`).
 10. One result (or `limit` 1) posts as /query does since 2026-11-15 (`_post_card`: one embed, the count line above it,
     'Card page' + the website button, no ambiguity line; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,

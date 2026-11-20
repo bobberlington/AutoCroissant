@@ -58,6 +58,7 @@ URL_MAX = 512                                            # Discord's longest lin
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
+TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE)   # (2PG), -1/3cd (TTS xTag, app.js)
 PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
 ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
 WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next word: a ' or ABBR_END, never a sentence's end
@@ -1670,8 +1671,12 @@ def query_rulebook(interaction: Interaction,
         queue_message(interaction, "Give a word or phrase to search the rulebook for.")
         return
 
-    pages = rulebook_lines(card_repo.rulebook_search_engine(text), text)
-    links = [("Rulebook on the website", search_link("rules", text))]
+    find, said = text, f"'{text}' is"
+    tag = x_row(text, card_repo.rulebook_search_engine("")["ability"])
+    if tag and not card_repo.rulebook_search_engine(tag[1]).empty:     # '(2PG)': the book's (XPG) row
+        find, said = tag[1], f"'{tag[0]}' is not printed in the rulebook; its row {tag[1]}, with {tag[2]}, is"
+    pages = rulebook_lines(card_repo.rulebook_search_engine(find), find)
+    links = [("Rulebook on the website", search_link("rules", find))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
         queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
@@ -1686,9 +1691,9 @@ def query_rulebook(interaction: Interaction,
             links = []
         if BAN_LIST in dict(shown):                  # last: a limit cuts it first
             links.append((BAN_LIST, f"{SITE_URL}/#/rules/banlist"))
-    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}"
+    head = f"{said} on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}"
     head += f" (showing {len(shown)} chapters):" if len(shown) < len(pages) else ":"
-    blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), text)}" for line in lines)
+    blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), find)}" for line in lines)
                        for name, lines in shown]
     messages = [blocks[0]]
     for block in blocks[1:]:                         # whole chapters per message while they fit
@@ -1698,6 +1703,25 @@ def query_rulebook(interaction: Interaction,
             messages.append(block)                   # a page longer than a message: the dispatch splits it
     for i, message in enumerate(messages):
         queue_message(interaction, message, links=links if i == len(messages) - 1 else None)
+
+
+def x_row(text: str, book) -> Optional[tuple]:
+    """
+    A numbered timing tag the book (its pages' text) never prints whole ('(2PG)'; '2pg' is not (2PGT)'s), as its X row
+    (TTS Global.lua xTag, app.js bookTag).
+
+    Returns:
+        ('(2PG)', '(XPG)', 'X = 2'), ('(-1/3CD)', '(Y/XCD)', 'Y = -1 and X = 3'), or None
+    """
+    found = TIMING_TAG.fullmatch(text)
+    if not found:
+        return None
+    y, x, end = found.groups()
+    tag = text.strip("()")
+    whole = compile(r"(?<![\w/-])" + escape(tag) + r"(?![a-z])", IGNORECASE)
+    if any(whole.search(str(page)) for page in book):
+        return None
+    return f"({tag.upper()})", f"({'Y/' if y else ''}X{end.upper()})", f"Y = {y} and X = {x}" if y else f"X = {x}"
 
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:
