@@ -169,6 +169,26 @@ def test_a_textured_titles_letter_look(clone):
     assert name.parent.clip_layers and not cp.textured(clot, name)
 
 
+def test_tints_are_the_bakes_colour_looks(clone):
+    """Clot Gold's title under a Gradient Map: its box drawn after the bake's whole-title colour in each probe colour,
+    the map reading luma (another colour's look: the two looks' mix at its luma); its Ability, neither textured nor
+    adjusted, has none."""
+    from conftest import card_blob
+    psd = PSDImage.open(io.BytesIO(raw := card_blob(clone, CLOT)))
+    name, ability = (next(x for x in psd.descendants() if x.kind == "type" and x.name == n) for n in ("Name", "Ability"))
+    fonts = str(clone / "MDW/Fonts")
+    box, looks, luma = cp.tint_looks(psd, raw, name, "name", "Clot Gold", fonts, None, False, cp._step(psd))
+    assert luma and len(looks) == len(cp.PROBES) == 9 and box[1] < name.bbox[1] < name.bbox[3] < box[3]
+    k, red, magenta, white = (np.asarray(looks[n], np.float32) for n in (0, 1, 5, 7))
+    copy = psd_edit.edit_copy(psd, raw)
+    edit = psd_edit.set_colors(copy, [{"field": "name", "color": "#c03030"}], fonts, "Clot Gold")
+    other = np.asarray(psd_edit.render_region(copy, box, False, edited=psd_edit.edited_ids([edit])).convert("RGB"), np.float32)
+    t = ((0.3 * 192 + 0.7 * 48) / 255 - 0.3) / (0.41 - 0.3)   # psd-tools' luma 0.3 R + 0.59 G + 0.11 B: red .3, magenta .41
+    moved = np.abs(white - k).max(-1) > 60
+    assert moved.sum() > 1000 and np.abs(other - (red + (magenta - red) * t)).max(-1)[moved].mean() < 15
+    assert cp.tint_looks(psd, raw, ability, "ability", "Clot Gold", fonts, None, False, cp._step(psd)) is None
+
+
 def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     """A stat's picture is the bake's PNG of that edit (apply_jobs); the sheet keeps per value the view pixels moving past
     BAR_MOVED: pasted on the card's view, the bake's view there and within BAR_MOVED of it elsewhere; none for 11. A lossy

@@ -335,6 +335,28 @@ out([own(plan("Can't"), "Can't"), own(plan("creatures"), "creatures")]);""")
     assert out == [["255,255,255"] * 5, ["32,80,255"] * 9]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function mixPlan"), reason="no mixPlan in this mockup.js")
+def test_a_whole_field_colour_mixes_the_bakes_looks(tmp_path):
+    """A plate's tints (card_plates: the bake's looks of a layer in the 9 probe colours): a whole-field colour mixes them
+    where they move (a corner probe: its look, grey: the grey look; luma: through black, grey and white), the rest keeps
+    the card; a phrase, another field's colour or looks off the card's pixels: none."""
+    out = node(tmp_path, """
+const W = 60, H = 1, card = new Uint8ClampedArray(W * H * 4).fill(40), lin = c => c.map(v => 200 * v + 20);
+const look = (n, px) => { const a = card.slice(); for (const x of [0, 1, 2]) a.set([...px, 255], x * 4); return a; };
+const P = m.PROBES.map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255));
+const looks = P.map((c, n) => look(n, n === 8 ? lin(c).map((v, e) => v + [30, 0, -30][e]) : lin(c)));
+const plate = luma => ({ tints: [{ id: 7, box: [0, 0, W, H], at: looks.map((_, n) => [0, n, W, H]), ...(luma ? { luma } : {}) }] });
+const read = ({ at }) => looks[at[1]], data = card.slice();
+const mix = (color, luma = false, f = "name", phrase) => { const d = data.slice(), p = m.mixPlan(d, W, H, 1, plate(luma), [7], [{ field: f, color, ...(phrase ? { phrase } : {}) }], "name", read);
+  if (p) m.paintMix(d, W, p); return p && [...d.slice(0, 16)]; };
+const off = card.slice().fill(90);
+out([mix("#ff0000"), mix("#808080"), mix("#ffffff", true), mix("#ff0000", false, "name", "Claw"), mix("#ff0000", false, "ability"),
+  m.mixPlan(off, W, H, 1, plate(false), [7], [{ field: "name", color: "#ff0000" }], "name", read)]);""")
+    red, grey, white, phrase, other, stale = out
+    assert red == [220, 20, 20, 40] * 3 + [40] * 4 and grey == [150, 120, 90, 40] * 3 + [40] * 4 and white == [220, 220, 220, 40] * 3 + [40] * 4
+    assert phrase is None and other is None and stale is None
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function firstBase"), reason="no firstBase in this mockup.js")
 def test_a_no_layout_ability_starts_on_its_own_first_baseline(tmp_path):
     """An Ability whose plate has no layout, retyped with the same words: line 1 on the record's first baseline, its ink
