@@ -1646,7 +1646,7 @@ def steps_end_with_the_test():
 
 def test_a_steps_background_jobs_end_with_the_test(tmp_path):
     """A step's background loop and a timeout (a process group of its own) are found by session and killed by PID."""
-    step = {"run": """( until false; do sleep 0.02; done ) < /dev/null > /dev/null 2>&1 &
+    step = {"run": """( end=$((SECONDS+60)); until [ $SECONDS -ge $end ]; do sleep 0.02; done ) < /dev/null > /dev/null 2>&1 &
                       timeout 60 sh -c 'touch "$0"; exec sleep 60' "$RUNNER_TEMP/up" < /dev/null > /dev/null 2>&1 &
                       until [ -e "$RUNNER_TEMP/up" ]; do sleep 0.02; done"""}
     done, _ = _shell(step, {"PATH": os.environ["PATH"], "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(tmp_path / "out")})
