@@ -25,6 +25,7 @@ BOLTS = "Items/Heal/1 Stars/Bolts_and_Screws.psd"      # two type icons over its
 EARTH = ("dd70ddfd9e430de6b51b301f822b52294382b57b",    # Earth_Totem.psd (TC 5743332b): its title under clipped stone
          "d7bf86ab789310481b48a3db0c8b9b45db837b98")    # its PNG
 CLOT = "3f7040af67a5f605e0220b79051da3d0f9b43e57"       # Clot_Gold.psd (TC 96c3608e): its title's group under a Gradient Map
+BYC = "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd"   # its title on four layers alone in a group with a Gradient Overlay
 AUTOPSY = "Auxiliary/Items/Autopsy_Report.psd"        # its title printed again in its Evidence box (parts' follow)
 EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"     # two copies on its title, a few px aside: its red and cyan
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
@@ -187,6 +188,10 @@ def test_tints_are_the_bakes_colour_looks(clone):
     moved = np.abs(white - k).max(-1) > 60
     assert moved.sum() > 1000 and np.abs(other - (red + (magenta - red) * t)).max(-1)[moved].mean() < 15
     assert cp.tint_looks(psd, raw, ability, "ability", "Clot Gold", fonts, None, False, cp._step(psd)) is None
+    cat = PSDImage.open(io.BytesIO(raw := (clone / BYC).read_bytes()))     # its title alone under its group's Gradient Overlay
+    word = next(x for x in cat.descendants() if x.kind == "type" and x.text.strip() == "Cat")
+    box, looks, luma = cp.tint_looks(cat, raw, word, "name", "The Big Yellow Cat", fonts, None, False, cp._step(cat))
+    assert not luma and np.abs(np.asarray(looks[1], np.float32) - np.asarray(looks[3], np.float32)).max(-1).max() > 200
 
 
 def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):

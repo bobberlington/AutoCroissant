@@ -176,7 +176,8 @@ def adjusted(psd: PSDImage, layer) -> list:
 def tint_looks(psd: PSDImage, raw: bytes, layer, field: str, card: str, fonts_dir: str, chart, icc: bool, step: int,
                view: Optional[int] = None) -> Optional[tuple]:
     """
-    (box, [image per PROBES], luma) of a textured() or adjusted() title, or an adjusted() Ability (a textured one alone
+    (box, [image per PROBES], luma) of a textured() or adjusted() title, one under a group's overlay a whole colour turns
+    off (psd_edit._owned_group: The Big Yellow Cat's), or an adjusted() Ability (a textured one alone
     tints fine: Pizza's; its box is large): its padded box (canvas px) drawn after the bake's whole-field colour job in
     each probe colour (plan_colors, set_colors on an edit copy; one it calls redundant: the card itself), luma when a
     Gradient Map is over it; the box cut to where the looks differ and TINT_RIM past it. None for other layers, looks
@@ -189,8 +190,8 @@ def tint_looks(psd: PSDImage, raw: bytes, layer, field: str, card: str, fonts_di
     """
     from psd_tools.api.adjustments import GradientMap
     over = adjusted(psd, layer)
-    if layer.kind != "type" or not layer.is_visible() or not (over or field == "name" and textured(psd, layer)) \
-            or _padded(layer) is None:
+    if layer.kind != "type" or not layer.is_visible() or _padded(layer) is None or not (over or field == "name" and (
+            textured(psd, layer) or psd_edit._owned_group(layer, psd_edit.color_layers(psd, field, card, view)))):
         return None
     box, images = _snap(_padded(layer), step, psd.size), []
     colours = chart() if chart and field == "ability" else None
