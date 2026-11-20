@@ -53,7 +53,11 @@ GAP = 8                                     # px between crops in the sheet (AVI
 QUALITY = 60
 KINDS = ("title", "ability")
 OVER_SHARE = 0.01                           # of a copy's shown px another layer may cover (Wickerbottom's crest)
-LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: the layout isn't the card's, none kept
+LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: kept only when _lines_match
+LINE_SHIFT = 6                              # px a line's stored ink may sit off the drawn (live 5 at most)
+LINE_SEARCH = 12                            # px searched for that shift
+LINE_GROW = 2                               # px the glyphs' ink boxes grow for LINE_COVER
+LINE_COVER = 0.99                           # of the stored ink inside them, at least (live 0.997 and up)
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 TEXTURES = ("pixel", "smartobject", "shape", "solidcolorfill", "gradientfill", "patternfill")   # adjustments alone: none
 BAND = 4                                    # a letter look's band: the layer's box and 1/BAND of its height past it
@@ -264,16 +268,18 @@ def _without(psd: PSDImage, groups: list, png: np.ndarray, icc: bool, step: int,
 def layout(layer, fonts_dir: str, stored: bool = True) -> Optional[dict]:
     """
     The fork's layout of a type layer in canvas px, when it draws the stored pixels (card_standards._ink_off within
-    LAYOUT_OFF) and is not turned (TILT): {"text": the engine's text (\\r paragraphs, \\x03 breaks), "lines": [[start,
-    end, baseline, left, right, top, bottom, justification]], "glyphs": [[char index, pen x, ink left, ink right]],
-    "frame": [left, right] or None (point text)}, else None. start/end index text (end: the break excluded); baseline:
-    its letters' (BaselineShift in); left/right: the pen's ends; top/bottom: the ink's, underlines too; a blank glyph
-    has no ink ends. stored False: also when it doesn't draw them (a warped layer: the bake re-lays it unwarped).
+    LAYOUT_OFF, or past it each line still theirs: _lines_match) and is not turned (TILT): {"text": the engine's text
+    (\\r paragraphs, \\x03 breaks), "lines": [[start, end, baseline, left, right, top, bottom, justification]],
+    "glyphs": [[char index, pen x, ink left, ink right]], "frame": [left, right] or None (point text)}, else None.
+    start/end index text (end: the break excluded); baseline: its letters' (BaselineShift in); left/right: the pen's
+    ends; top/bottom: the ink's, underlines too; a blank glyph has no ink ends. stored False: also when it doesn't draw
+    them (a warped layer: the bake re-lays it unwarped).
     """
     from statistics import median
     from psd_tools.composite.text.geometry import text_geometry
     from psd_tools.composite.text.layout import frame, layout as lay_out
     from psd_tools.composite.text.model import TextModel
+    from psd_tools.composite.text import capture, render
     from commands.card_standards import _ink_off
     faces = psd_edit.font_map(fonts_dir, layer)
     model = TextModel.from_layer(layer)
@@ -281,8 +287,8 @@ def layout(layer, fonts_dir: str, stored: bool = True) -> Optional[dict]:
     if xx <= 0 or yy <= 0 or max(abs(xy), abs(yx)) > TILT * xx:
         return None
     geo = text_geometry(layer, faces)
-    if stored and _ink_off(layer, faces, geo) > LAYOUT_OFF:
-        return None
+    pair = (capture(layer, faces), render(layer, fonts=faces)) if stored else None
+    off = stored and _ink_off(layer, faces, geo, pair) > LAYOUT_OFF
     lay = lay_out(model, faces)
     if (geo["missing_fonts"] or not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
             or [g["i"] for g in geo["glyphs"]] != [g.cluster for g in lay.glyphs]):
@@ -309,10 +315,58 @@ def layout(layer, fonts_dir: str, stored: bool = True) -> Optional[dict]:
         top, bottom = ink.get(n, (base[n], base[n]))
         lines.append([line["start"], line["end"], r(base[n]), r(line["baseline"][0]), r(line["baseline"][2]), r(top),
                       r(bottom), just])
+    glyphs = [[g["i"], r(g["cell"][0]), *(r(g["ink"][k]) for k in (0, 2) if g["ink"])] for g in geo["glyphs"]]
+    if off and not _lines_match(*pair, lines, glyphs):
+        return None
     box = frame(model)
-    return {"text": geo["text"], "lines": lines,
-            "glyphs": [[g["i"], r(g["cell"][0]), *(r(g["ink"][k]) for k in (0, 2) if g["ink"])] for g in geo["glyphs"]],
+    return {"text": geo["text"], "lines": lines, "glyphs": glyphs,
             "frame": [r(xx * box[0] + tx), r(xx * (box[0] + box[2]) + tx)] if box else None}
+
+
+def _alpha(found, window: tuple) -> np.ndarray:
+    """A capture's or render's alpha on window (canvas px), 0 off it."""
+    x0, y0, x1, y1 = window
+    out = np.zeros((y1 - y0, x1 - x0), np.float32)
+    if found.rgba is not None and found.bbox is not None:
+        bx0, by0, bx1, by1 = (int(v) for v in found.bbox)
+        cx0, cy0, cx1, cy1 = max(bx0, x0), max(by0, y0), min(bx1, x1), min(by1, y1)
+        if cx1 > cx0 and cy1 > cy0:
+            a = np.asarray(found.rgba)[cy0 - by0:cy1 - by0, cx0 - bx0:cx1 - bx0, 3].astype(np.float32)
+            out[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0] = a / 255 if found.rgba.dtype == np.uint8 else a
+    return out
+
+
+def _lines_match(stored, drawn, lines: list, glyphs: list) -> bool:
+    """
+    Whether a layout's lines are the stored pixels' though the fork draws them off (layout() past LAYOUT_OFF): on each
+    line's ink band the stored and drawn ink within LINE_SHIFT px across, every inked glyph's box with stored ink, and
+    LINE_COVER of the stored ink in the glyphs' boxes (LINE_GROW px out). A word on another line (Monkey D Letion's
+    Ability) fails.
+    """
+    if stored.rgba is None or stored.bbox is None:
+        return False
+    m, xs = LINE_SEARCH + LINE_GROW + 2, [x for n in lines for x in n[3:5]] + [x for one in glyphs for x in one[2:]]
+    tops, bottoms = floor(min(n[5] for n in lines)), ceil(max(n[6] for n in lines))
+    window = (min(int(stored.bbox[0]), floor(min(xs))) - m, min(int(stored.bbox[1]), tops) - m,
+              max(int(stored.bbox[2]), ceil(max(xs))) + m, max(int(stored.bbox[3]), bottoms) + m)
+    a, d = _alpha(stored, window), _alpha(drawn, window)
+    ink, boxes = a > 0.5, np.zeros(a.shape, bool)
+    x0, y0, g = window[0], window[1], LINE_GROW
+    for start, end, _, _, _, top, bottom, _ in lines:
+        inked = [one for one in glyphs if start <= one[0] < end and len(one) > 3]
+        if not inked:
+            continue
+        t, b = floor(top) - y0, ceil(bottom) - y0
+        band = a[t - 2:b + 2].sum(0), d[t - 2:b + 2].sum(0)
+        dx = max(range(-LINE_SEARCH, LINE_SEARCH + 1),
+                 key=lambda k: (float((band[0] * np.roll(band[1], k)).sum()), -abs(k)))
+        if abs(dx) > LINE_SHIFT:
+            return False
+        for _, _, left, right in inked:
+            boxes[t - g:b + g, floor(left) - x0 - g:ceil(right) - x0 + g] = True
+            if right - left >= 2 and not ink[t - 2:b + 2, floor(left) - x0 - 1:ceil(right) - x0 + 1].any():
+                return False
+    return bool(ink.any()) and float((ink & boxes).sum()) >= LINE_COVER * int(ink.sum())
 
 
 def _layout(layer, fonts_dir: Optional[str], relaid: bool = False) -> dict:

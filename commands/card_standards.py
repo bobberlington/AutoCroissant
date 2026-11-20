@@ -1360,13 +1360,14 @@ def _recut_fx(psd: PSDImage, layer, moved: set, faces) -> list:
     return out
 
 
-def _ink_off(layer, faces, geo: dict) -> float:
+def _ink_off(layer, faces, geo: dict, pair: Optional[tuple] = None) -> float:
     """The share of the layer's ink (stored or drawn) off the fork's render of it as it stands, unshifted: how far the
     fork's layout is from Photoshop's (1.0 when either has none). Off pixels within ICON_SLACK px of an icon glyph's ink
-    (geo: the layer's text_geometry) aren't counted, its ink is: how an icon is drawn isn't the layout."""
+    (geo: the layer's text_geometry) aren't counted, its ink is: how an icon is drawn isn't the layout. pair: its
+    (capture, render) when made already."""
     from math import ceil, floor
     from psd_tools.composite.text import capture, render
-    stored, drawn = capture(layer, faces), render(layer, fonts=faces)
+    stored, drawn = pair or (capture(layer, faces), render(layer, fonts=faces))
     if stored.rgba is None or stored.bbox is None or drawn.rgba is None or drawn.bbox is None:
         return 1.0
     boxes = (stored.bbox, drawn.bbox)
