@@ -78,6 +78,7 @@ KIND = CardEdits.KIND
 STAT_MAX = 10                                   # one bar row shows 0-10
 EFFECT_BLOCKS = (Tag.OBJECT_BASED_EFFECTS_LAYER_INFO, Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V0,
                  Tag.OBJECT_BASED_EFFECTS_LAYER_INFO_V1, Tag.EFFECTS_LAYER)   # a digit's effect blocks: lfx2 and its kin
+EFFECT_KEYS = tuple(key.value for key in EFFECT_BLOCKS)
 PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research score_cards.py THRESH)
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG (past it: a miss, told)
 PARITY_FLOOR = 25.0         # % of bad pixels past which a region's render is broken: refused; a miss under it is told (owner, 2026-10-23)
@@ -160,10 +161,10 @@ SPLICE_UNIT = "glyph"       # a text edit redraws its changed glyphs ("line": th
 KEY_SLACK = 2               # px a key render may pass a spliced layer's bbox (Photoshop's ink beside the engine's)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
                          "overlay": {"flags"}, "toggle": {"flags"}, "fx": {"rect", "channels", "name", "blocks"},
-                         "comp": {"rect", "channels", "blocks"}}
+                         "comp": {"rect", "channels", "blocks"}, "effects": {"blocks"}}
 #   what an edit may change per record (overlay: a clipped layer hidden, Edit.hidden; toggle: a star or type icon shown or
 #   hidden; fx: an FX layer cut again in place, its name and blocks only as _fx_rebuilt allows; comp: a layer-comp stat
-#   bar set, its SoLd block alone)
+#   bar set, its SoLd block alone; effects: a group's overlays turned off, Edit.groups, its effect blocks alone)
 STORY_KEYS = ("1", "1", "0", "0")      # Txt2's stories and their text (Photoshop CC's numbered keys)
 STORY_STYLE_KEYS = {    # a story's style runs, a run's features, the FontSet, a paint's values
     "runs": ("6", "0"), "data": "0", "length": "1", "features": ("0", "6"), "fonts": ("0", "1", "0"),
@@ -329,6 +330,7 @@ class Edit:
     region: Optional[tuple]  # padded canvas bbox the edit can reach
     moves: list = field(default_factory=list)   # (record from, record to or None, block key): effect blocks moved or cleared
     hidden: list = field(default_factory=list)  # record indices of the clipped layers hidden (set_colors)
+    groups: list = field(default_factory=list)  # record indices of the groups whose overlays went off (set_colors)
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer made above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted (their words left the text)
     rebuilt: list = field(default_factory=list)  # (record index, old name, name): an FX layer cut again in place, its own
@@ -6498,10 +6500,10 @@ def _clip_text(chain: list) -> str:
     return f"clipped layer {next(one for one in chain if _opaque(one)).name!r}"
 
 
-def _painted_over(layer, own: bool = True) -> Optional[str]:
+def _painted_over(layer, own: bool = True, skip=None) -> Optional[str]:
     """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
     ("its Gradient Overlay"), a layer clipped onto it, or a fill at 0; None when they show. own False: not its own
-    overlays or clipped layers (_overlay_off's)."""
+    overlays or clipped layers (_overlay_off's); skip: a group whose overlays go off too (_owned_group)."""
     node = layer
     while node is not None and node.kind != "psdimage":
         whose = "its" if node is layer else f"its group {node.name!r}'s"
@@ -6510,7 +6512,7 @@ def _painted_over(layer, own: bool = True) -> Optional[str]:
         clipped = _clipped_over(layer) if node is layer and own else []
         if clipped:
             return f"its {_clip_text(clipped)}"
-        hiding = _hiding(node) if own or node is not layer else []
+        hiding = _hiding(node) if (own or node is not layer) and node is not skip else []
         if hiding:
             return f"{whose} {hiding[0][1]}"
         node = node.parent
@@ -6544,25 +6546,41 @@ def _salted(layer) -> set:
     return {i for a, b in (stylistic_alternates(layer) or ()) for i in range(a, b) if i < len(icons) and icons[i]}
 
 
-def _unveils(layer) -> bool:
-    """Whether turning the layer's own overlays off and hiding its clipped layers shows its colours (nothing else hides
-    them)."""
-    return bool(_hiding(layer) or _clipped_over(layer)) and _painted_over(layer, own=False) is None
+def _owned_group(layer, parts: list):
+    """The nearest group above layer with overlays (_hiding) when every leaf it shows is one of parts (a whole field's
+    layers: The Big Yellow Cat's 'Name' group): a whole colour turns its overlays off as the layer's own; else None."""
+    mine = {id(one) for one in parts}
+    node = layer.parent
+    while node is not None and node.kind != "psdimage":
+        if _hiding(node):
+            leaves = [one for one in node.descendants() if not one.is_group() and one.is_visible()]
+            return node if leaves and all(id(one) in mine for one in leaves) else None
+        node = node.parent
+    return None
 
 
-def _overlay_off(layer) -> str:
+def _unveils(layer, group=None) -> bool:
+    """Whether turning the layer's own overlays off (and group's, _owned_group) and hiding its clipped layers shows its
+    colours (nothing else hides them)."""
+    return bool(_hiding(layer) or _clipped_over(layer) or group is not None) \
+        and _painted_over(layer, own=False, skip=group) is None
+
+
+def _overlay_off(layer, group=None) -> str:
     """A whole field's colour (owner 2026-10-24: no refusing), or a phrase's on all of the layer's text (_whole_span) or
-    under _solid_overlay: its own overlays off when that shows it, the layers clipped onto it hidden (Edit.hidden); the
-    first's kind, or ""."""
-    if not _unveils(layer):
+    under _solid_overlay: its own overlays off when that shows it (and group's: a whole field's, _owned_group), the layers
+    clipped onto it hidden (Edit.hidden); the first's kind, "" when nothing new went off."""
+    if not _unveils(layer, group):
         return ""
     hiding, clipped = _hiding(layer), _clipped_over(layer)
-    for effect, _ in hiding:
+    theirs = _hiding(group) if group is not None else []
+    for effect, _ in hiding + theirs:
         effect.descriptor[b"enab"] = Bool(False)
     for one in clipped:
         one.visible = False
     layer._psd.mark_updated()
-    return hiding[0][1] if hiding else _clip_text(clipped)
+    return hiding[0][1] if hiding else _clip_text(clipped) if clipped else \
+        f"group {group.name!r}'s {theirs[0][1]}" if theirs else ""
 
 
 def color_spans(layers: list, one: dict) -> tuple:
@@ -6645,9 +6663,10 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     Ability's capitalised status words keep its colours (a phrase of them alone refused). A whole field's colour turns
     its layers' own overlays off and hides the layers clipped onto them (set_colors), as a phrase's does on a layer it
     is all of (_whole_span) or under a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after
-    it, and baked even in the colour it has.
+    it, and baked even in the colour it has. A whole field's colour turns a group's overlays off too when every layer
+    the group shows is the field's (_owned_group); a phrase's alone never does.
     """
-    out, final, painted, lit, unveil = {}, {}, {}, set(), set()
+    out, final, painted, lit, unveil, gone = {}, {}, {}, set(), set(), {}
     ordered = color_order(value)
     for k, one in enumerate(ordered):
         field, phrase = one["field"], one.get("phrase")
@@ -6667,11 +6686,14 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
                        for layer in layers}
                 into = [layer for layer in layers if not phrase or _matches(new[id(layer)] or "", words, True)[0]]
             full = {id(layer) for layer in into if phrase and _whole_words(new[id(layer)] or "", words)}
-            over = {_painted_over(layer, bool(phrase) and id(layer) not in lit | full and not _solid_overlay(layer)) for layer in into}
+            owned = {id(layer): _owned_group(layer, layers) for layer in into} if into and not phrase else {}
+            over = {_painted_over(layer, bool(phrase) and id(layer) not in lit | full and not _solid_overlay(layer),
+                                  owned.get(id(layer)) or gone.get(id(layer))) for layer in into}
             if into and None not in over:
                 out[k] = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
-            elif into and not phrase:           # its own overlays go off (set_colors)
+            elif into and not phrase:           # its own overlays go off (set_colors), its group's too
                 lit |= {id(layer) for layer in into}
+                gone.update({key: group for key, group in owned.items() if group is not None})
             elif into:
                 lit |= full
             continue
@@ -6689,18 +6711,22 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         if not why and not mine:
             why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
                    else "only badges, icons, effect layers' or status words, which keep their own colours")
-        whole = not phrase                          # its own overlays go off (set_colors)
+        whole = not phrase                          # its own overlays go off (set_colors), its group's too
         solid = {id(layer) for layer, _, _ in spans if _solid_overlay(layer)} if phrase and not why else set()
         full = {id(layer) for layer, a, b in spans if _whole_span(layer.text, a, b)} if phrase and not why else set()
-        over = {_painted_over(layer, not whole and id(layer) not in lit | solid | full) for layer, _ in mine}
+        parts = [layer for layer, _, _ in spans]
+        owned = {id(layer): _owned_group(layer, parts) for layer in parts} if whole and not why else {}
+        over = {_painted_over(layer, not whole and id(layer) not in lit | solid | full,
+                              owned.get(id(layer)) or gone.get(id(layer))) for layer, _ in mine}
         if not why and None not in over:        # nothing would show on the card image
             why = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
         if why:
             out[k] = why
             continue
-        unveil |= {k} if (whole or solid) and any(_unveils(layer) for layer, _, _ in spans) \
-            or any(_unveils(layer) for layer, _, _ in spans if id(layer) in full) else set()
+        unveil |= {k} if (whole or solid) and any(_unveils(layer, owned.get(id(layer))) for layer in parts) \
+            or any(_unveils(layer) for layer in parts if id(layer) in full) else set()
         lit |= {id(layer) for layer, _, _ in spans if whole} | solid | full
+        gone.update({key: group for key, group in owned.items() if group is not None})
         for layer, i in mine:
             painted[id(layer)] = layer
             final[(id(layer), i)] = k
@@ -6766,11 +6792,14 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         whole field's colour or a whole layer's (_whole_span), or a phrase's under a lone Color Overlay (_overlay_off;
         that one's colour then goes to the rest, its one-colour badges too), words an effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
-    jobs, notes, hidden = {}, [], []
+    jobs, notes, hidden, owned, groups = {}, [], [], {}, []
     for one in color_order(value):
         spans, why = color_spans(color_layers(psd, one["field"], card, view), one)
         if why:
             raise Refused("unsupported-card", f"colors: {color_text(one)}: {why}", "colors")
+        parts = [layer for layer, _, _ in spans]
+        if not one.get("phrase"):               # a whole field's: its group's overlays go off too (_owned_group)
+            owned.update({id(layer): _owned_group(layer, parts) for layer in parts if id(layer) not in owned})
         for layer, a, b in spans:
             jobs.setdefault(layer.layer_id, (layer, one["field"], []))[2].append((a, b, one))
     fonts = font_map(fonts_dir)
@@ -6780,10 +6809,12 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         fx, paint, status = _fx_words(psd, layer), {}, _status_kept(layer, which, chart)
         whole = any(not one.get("phrase") or _whole_span(layer.text, a, b) for a, b, one in spans)
         base = None if whole else _solid_overlay(layer)
-        clipped = _clipped_over(layer)
-        off = _overlay_off(layer) if whole or base else ""
+        clipped, group = _clipped_over(layer), owned.get(id(layer))
+        off = _overlay_off(layer, group) if whole or base else ""
         hidden += [_record_index(one) for one in clipped if not one.visible]       # _overlay_off hid them
-        salted = _salted(layer) if off else set()       # its badges, coloured as the overlay did
+        gone = group is not None and not _hiding(group)   # its group's overlays off (this layer's or a sibling's)
+        groups += [_record_index(group)] if gone and _record_index(group) not in groups else []
+        salted = _salted(layer) if off or gone else set()  # its badges, coloured as the overlay did
         todo = ([(0, len(layer.text), None)] if base and off else []) + spans
         kept = sorted({name for a, b, _ in spans for s, e, name in fx if s < b and a < e})
         if kept:
@@ -6808,7 +6839,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     if not layers:
         return Edit("colors", value, value, [], [], None)
     return Edit("colors", value, value, layers, records, union_box(boxes), story=stories[0], stories=stories[1:],
-                notes=notes, hidden=hidden)
+                notes=notes, hidden=hidden, groups=groups)
 
 
 # ========================
@@ -10671,12 +10702,13 @@ def layer_records(path) -> list:
     return out
 
 
-def _comp_record(a: dict, b: dict) -> Optional[str]:
-    """What a layer-comp bar's record changed besides its rect, channels and SoLd block (set_comp), else None."""
+def _comp_record(a: dict, b: dict, keys: tuple = (Tag.SMART_OBJECT_LAYER_DATA1.value, Tag.SMART_OBJECT_LAYER_DATA2.value)) \
+        -> Optional[str]:
+    """What a layer-comp bar's record changed besides its rect, channels and SoLd block (set_comp), else None; keys: the
+    blocks it may change (EFFECT_KEYS: a group's overlays turned off)."""
     if [key for key, _ in a["blocks"]] != [key for key, _ in b["blocks"]]:
         return "changed its blocks' list"
-    placed = (Tag.SMART_OBJECT_LAYER_DATA1.value, Tag.SMART_OBJECT_LAYER_DATA2.value)
-    other = [key for (key, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and key not in placed]
+    other = [key for (key, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and key not in keys]
     return f"changed {', '.join(map(repr, other))}" if other else None
 
 
@@ -10819,6 +10851,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind])
         for index in edit.hidden:
             allowed[index] = ("overlay", ALLOWED_RECORD_FIELDS["overlay"])
+        for index in edit.groups:
+            allowed[index] = ("effects", ALLOWED_RECORD_FIELDS["effects"])
         for index, _, name in edit.rebuilt:
             allowed[index] = ("fx", ALLOWED_RECORD_FIELDS["fx"])
             names[index] = name                 # a rebuilt FX layer's declared name (_fx_rebuilt checks it too)
@@ -10932,6 +10966,10 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                 why = _comp_record(a, b)
                 if why:
                     raise Refused("bytes", f"layer-comp bar {j} {a['name']!r} {why}")
+            if kind == "effects":
+                why = _comp_record(a, b, EFFECT_KEYS)
+                if why:
+                    raise Refused("bytes", f"group {j} {a['name']!r} {why}")
             changed.append((j, a["name"], fields))
         i += 1
         j += 1

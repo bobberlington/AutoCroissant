@@ -387,6 +387,35 @@ def test_split_title_part_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(crowned) == "its Gradient Overlay"
 
 
+def test_group_overlay_goes_off(clone, tmp_path):
+    """The Big Yellow Cat's title on four layers alone in the group 'Name' under its Gradient Overlay: a whole title's
+    colour turns the group's overlay off (its Stroke and Outer Glow kept, the record's effect blocks alone) and bakes; a
+    phrase alone, even a whole layer, stays refused."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    big = {"field": "name", "phrase": "Big", "color": "#00bfff"}
+    assert "its group 'Name''s Gradient Overlay paints over" in pe.classify(parsed, {"colors": [big]}, psd, parser).refusals[0].why
+    edits = {"colors": [{"field": "name", "color": "#ff2200"}, big]}
+    got = pe.classify(parsed, edits, psd, parser)
+    assert got.jobs == edits and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert "colors: title: its group 'Name''s Gradient Overlay is off for the colour" in baked.fx_notes
+    layers = pe.color_layers(PSDImage.open(baked.psd_path), "name", "The Big Yellow Cat")
+    group = layers[0].parent
+    assert [(type(e).__name__, e.enabled) for e in group.effects] == [("OuterGlow", True), ("GradientOverlay", False), ("Stroke", True)]
+    fills = {layer.text.strip(): {pe._hex(f) for *_, f in pe.run_fills(layer)} for layer in layers}
+    assert all(pe._painted_over(layer) is None for layer in layers) and fills == {
+        "Big": {"#00bfff"}, "The": {"#ff2200"}, "Yellow": {"#ff2200"}, "Cat": {"#ff2200"}}, fills
+    lfx2 = pe.EFFECT_KEYS[0]
+    assert pe._comp_record({"blocks": ((lfx2, b"a"), (b"luni", b"n"))}, {"blocks": ((lfx2, b"b"), (b"luni", b"m"))},
+                           pe.EFFECT_KEYS) == "changed b'luni'"
+
+
 def test_phrase_icon_finds_its_variant(clone):
     """Afraid prints [dark:sticker], the website shows [dark]: a colour over it plans as baked, the icon keeping its
     look; FX phrases stay exact."""
@@ -497,7 +526,9 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color
     Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text.
-    A phrase under a layer clipped onto the title (Cake Mix) or onto its group over it (Yin Yarn): refused, not a whole one."""
+    A phrase under a layer clipped onto the title (Cake Mix) or onto its group over it (Yin Yarn): refused, not a whole one.
+    A group's overlay over a title alone in it (The Big Yellow Cat): not for a whole title's colour; over the stat labels
+    too (The Radiance): refused."""
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
@@ -511,7 +542,9 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
              "Creatures/Kirby/5 Stars/Crowned_Magolor.psd": [[{**name, "phrase": "Magolor"}], [{**name, "phrase": "Crown"}],
                                                              [{**name, "phrase": "Magolor"}, {**name, "phrase": "Mag"}]],
              "Items/Heal/2 Stars/Cake_Mix.psd": [[{**name, "phrase": "Mix"}]],
-             "Creatures/Kirby/5 Stars/Yin_Yarn.psd": [[{**name, "phrase": "Yin"}], [name, {**name, "phrase": "Yin"}]]}
+             "Creatures/Kirby/5 Stars/Yin_Yarn.psd": [[{**name, "phrase": "Yin"}], [name, {**name, "phrase": "Yin"}]],
+             "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd": [[name], [{**name, "phrase": "Big"}], [name, {**name, "phrase": "Big"}]],
+             "Creatures/Hollow Knight/5 Stars/The_Radiance.psd": [[name]]}
     jobs, want = [], []
     for rel, sets in cases.items():
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
@@ -525,7 +558,7 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
 process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], (got, want)
+    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1], (got, want)
 
 
 @site
@@ -569,25 +602,27 @@ process.stdout.write(JSON.stringify(jobs.map(j => M.keptOver(j.rec, j.colors, j.
                     reason="no titleOff in this mockup.js")
 def test_mockup_draws_a_whole_title_colour_flat_as_the_bake(clone, tmp_path):
     """mockup.js titleOff, on the cards' details records: a whole title's colour turns the title's own Gradient Overlay
-    off where set_colors does (_overlay_off: its letters flat, so the mock-up redraws them, not tints them); a phrase's
-    doesn't, nor a clipped layer's (Cake Mix)."""
+    off where set_colors does (_overlay_off: its letters flat, so the mock-up redraws them, not tints them), or its
+    group's (The Big Yellow Cat); a phrase's doesn't, nor a clipped layer's (Cake Mix)."""
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
     parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
     name = {"field": "name", "color": "#20a0ff"}
     jobs, want = [], []
-    for rel in ("Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd", "Creatures/Kirby/5 Stars/Yin_Yarn.psd", "Items/Heal/2 Stars/Cake_Mix.psd"):
+    for rel in ("Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd", "Creatures/Kirby/5 Stars/Yin_Yarn.psd", "Items/Heal/2 Stars/Cake_Mix.psd",
+                "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd"):
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
         record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
-        for layer in pe.color_layers(psd, "name", card):
-            path, off = pd.layer_path(layer), pe._overlay_off(layer)
+        for k, layer in enumerate(pe.color_layers(psd, "name", card)):
+            layers = pe.color_layers(PSDImage.open(_card(clone, rel)[0]), "name", card)     # each off on its own copy
+            path, off = pd.layer_path(layer), pe._overlay_off(layers[k], pe._owned_group(layers[k], layers))
             for colors in ([name], [{**name, "phrase": card.split()[0]}]):
                 jobs.append({"rec": record, "path": path, "colors": colors})
-                want.append("phrase" not in colors[0] and off in ("Color Overlay", "Gradient Overlay"))
+                want.append("phrase" not in colors[0] and off.endswith(("Color Overlay", "Gradient Overlay")))
     (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
     (tmp_path / "off.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
 process.stdout.write(JSON.stringify(jobs.map(j => M.titleOff(j.rec, j.path, j.colors))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "off.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want == [True, False, True, False, False, False], (got, want)
+    assert got == want == [True, False, True, False, False, False] + [True, False] * 4, (got, want)
