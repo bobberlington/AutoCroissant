@@ -281,6 +281,18 @@ out([run({}), run({ one: true }), run({ strokeW: 0 })]);""")
     assert not any(s.endswith("rgb(1,2,3) 6") for s in one + bare) and bare[0] == "fill"
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "if (im && one === true) paintMask"), reason="no one-colour icons in this mockup.js")
+def test_a_typed_icon_under_an_overlay_takes_its_colour(tmp_path):
+    """Under the Ability's overlay a typed icon is its shape in the text's fill (the overlay paints over it in the
+    bake); elsewhere, or with the overlay off for a whole colour ("badges"), the icon's own picture."""
+    out = node(tmp_path, """const rec = [], pic = { pic: 1 }, proxy = (t, on) => new Proxy(t, { set: (o, k, v) => (o[k] = v, true), get: (o, k) => k in o ? o[k] : (...a) => on(o, k, a) });
+globalThis.document = { createElement: () => { const g = proxy({}, (o, k) => { if (k === "fillRect") rec.push(`mask ${o.fillStyle}`); }); return { getContext: () => g }; } };
+const ctx = proxy({}, (o, k, a) => { if (k === "drawImage") rec.push(a[0] === pic ? "icon" : "canvas"); });
+const run = one => { rec.length = 0; m.paintLines(ctx, [{ pieces: [{ icon: "f.webp", a: 1, w: 20 }] }], { at: () => 0, base: 40, pitch: 0, z: 20, fam: "x", fill: [200, 10, 10], stroke: null, imgs: new Map([["f.webp", pic]]), one }); return [...rec]; };
+out([run(false), run(true), run("badges")]);""")
+    assert out == [["icon"], ["mask rgb(200,10,10)", "canvas"], ["icon"]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "const iconEm"), reason="no icon glyph shapes in this mockup.js")
 def test_an_icon_swap_keeps_the_line_at_the_glyphs_shape(tmp_path):
     """A typed icon steps as its stoogedings glyph (its picture's width over height, 1 em tall or 1.4 wide, 0.04 em each
