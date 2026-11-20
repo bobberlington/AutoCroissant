@@ -2989,6 +2989,29 @@ def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart,
     assert {run.style.font for run in TextModel.from_layer(title).runs} == {"OMORI_GAME"}
 
 
+def test_an_arc_warped_title_copy_bends_as_photoshop_draws_it(clone, parser, chart):
+    """Mosling's script name behind its Ability (Art/Name) is a title copy on Photoshop's Arc warp (bend 12%), which the
+    engine draws flat: bent (arc_bent) its saved pixels read as its font (flat: 16% alike, a false font note), and a
+    title edit prints the copy bent in its box measured again, not flat and off the card's bottom (r46)."""
+    from struct import pack, unpack
+    bar = (0, -10, 100, 0)
+    rgba, box = pe.arc_bent(np.ones((10, 100, 4), np.float32), bar, (1, 0, 0, 1, 0, 0), bar, 0.12)
+    assert box == (-2, -15, 102, 0) and rgba[0, 52, 3] == pytest.approx(0.73, abs=0.01)    # corners kept, middle up
+    fonts, rel = str(clone / pe.FONTS_DIR), "Auxiliary/Minions/Mosling.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    copy, = [layer for layer in psd.descendants() if pe._arc(layer)]
+    assert pe._arc(copy) == 0.12 and pe.drawn_in_font(copy, pe.font_map(fonts), (psd.height, psd.width)) is None
+    was = pe._text_box(copy)
+    record = pe.card_parts(psd, rel, "Mosling", parser)
+    edits = pe.set_parts(psd, {str(record["title"][0]["id"]): {"field": "name", "text": "Moslings"}}, record, fonts,
+                         chart, "Mosling", parser=parser)
+    assert not [note for edit in edits for note in edit.notes if note.startswith(("font", "overflow"))]
+    now, data = pe._text_box(copy), copy._data
+    assert now[2] - now[0] > was[2] - was[0] + 10 and now[1::2] == was[1::2] and copy.bbox[3] < 2380   # flat: 2430
+    assert [unpack(">f", pack(">i", v))[0] for v in (data.left, data.top, data.right, data.bottom)] \
+        == pytest.approx(now)
+
+
 def test_font_map_shared_while_the_fonts_stand(clone, tmp_path, monkeypatch):
     """One FontMap per fonts dir while its files stand; a font added makes a new one. With FONT_DIRS_ENV starting with
     the dir it is walked once, the index the same."""
