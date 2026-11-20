@@ -273,6 +273,30 @@ def test_rulebook_lines(monkeypatch):
     assert qc._cut(line, "turn") == "\u2026[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]\u2026"
 
 
+def test_rulebook_timing_tag_finds_its_x_row(monkeypatch):
+    """/query_rulebook: a numbered timing tag the book never prints whole ((2PG); 2pg is not (2PGT)'s) quotes its X row,
+    saying so; a printed one ((1PG), (1/2CD)) as before (TTS xTag)."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": ["(XCD) | Cooldown: needs X turn(s) of charge\n(1/2CD) | Starts with 1 of 2\n"
+                                               "(XPG) | Can only be activated X time(s) per game\n(2PGT) | Now (1GCD)(2U)",
+                                               "3. (AAT)(1PG) Deal 10 damage."]}, index=["23. Timing Tags", "11. Abilities"])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    for text in ("(2PG)", "(3CD)", "2pg", "(1PG)", "1/2cd"):
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    sent = [(kw["content"], kw["links"][0][1]) for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    pg = ("'(2PG)' is not printed in the rulebook; its row (XPG), with X = 2, is on 1 line of 1 rulebook chapter:\n\n"
+          "**23. Timing Tags**\n- **(XPG)** | Can only be activated X time(s) per game", qc.search_link("rules", "(XPG)"))
+    assert sent[0] == sent[2] == pg
+    assert sent[1][0].startswith("'(3CD)' is not printed in the rulebook; its row (XCD), with X = 3, is on 1 line")
+    assert sent[3][0].startswith("'(1PG)' is on 1 line") and sent[4][0].startswith("'1/2cd' is on 1 line")
+    assert qc.x_row("-1/3cd", ["(XCD)"]) == ("(-1/3CD)", "(Y/XCD)", "Y = -1 and X = 3") and qc.x_row("(2PGT)", []) == (
+        "(2PGT)", "(XPGT)", "X = 2") and qc.x_row("-3cd", []) is None
+
+
 def _app_book(tmp_path, tail: str):
     """app.js's rulebook search (bookFold to the deck builder: bookRe, highlight...) in node, its marks into out; then
     tail, which writes JSON."""
@@ -303,6 +327,22 @@ process.stdout.write(JSON.stringify(["can't", "creature's hp", '"on death"', "it
   [seen(q), seen(q.replace(/'/g, "\\u2019").replace(/"([^"]*)"/, "\\u201c$1\\u201d"))])));""")
     assert all(plain == curly and plain[0] for plain, curly in found), found
     assert [marks for (_, marks), _ in found] == [["can't"], [], ["\u201cOn Death\u201d"], ["It's"]]
+
+
+def test_website_rulebook_timing_tag_finds_its_x_row(tmp_path):
+    """The website's Rulebook search (app.js bookTag): a numbered timing tag the printed chapters never print whole
+    searches its X row instead, as the bot; (3U) only in the website-only Stoogedings chapter counts as not printed."""
+    found = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
+    return {{ file: f, ast, text: bookFold(`${{ast.title}}\\n${{RB.plainText(ast)}}`) }}; }});
+process.stdout.write(JSON.stringify(["(2PG)", "2pg", "(3CD)", "(3U)", "(1CD)", "(1/2CD)", "(XPG)", "(2/3U)"].map(q =>
+  bookTag(bookFold(q), chapters))));""")
+    assert found[:4] == [{"tag": "(2PG)", "row": "(xpg)", "says": "X = 2"}] * 2 + [
+        {"tag": "(3CD)", "row": "(xcd)", "says": "X = 3"}, {"tag": "(3U)", "row": "(xu)", "says": "X = 3"}]
+    assert found[4:] == [None] * 4                      # printed, not numbered, or no (Y/XU) row
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    rules = app[app.index("function renderRules(r) {"):app.index("// a deep link's place, again once")]
+    assert "x = typed && bookTag(typed, chapters)" in rules and "is not printed in the rulebook; its row" in rules
 
 
 def test_words_typed_without_punctuation(tmp_path, monkeypatch):
