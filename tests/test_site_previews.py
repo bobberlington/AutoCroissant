@@ -214,6 +214,51 @@ out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
     assert out["lane"] == 101 and len(refs) == 2 and RUNG.fullmatch(refs[1][1]) and refs[1][2] == "c" * 40   # the press's doorbell
 
 
+@pytest.mark.skipif(not has(PREVIEW_JS, "takeLock(null, TAB)"), reason="a press doesn't take the check in this preview.js")
+def test_the_pressing_tab_shows_its_hand_over(tmp_path):
+    """Two tabs, one localStorage, storage events to the other: press 1 in tab B (B then holds the check, 75 s from its
+    last), press 2 in tab A 40 s later. A takes the check at the press and shows the lane's hand-over (listed 5.06 s on,
+    run 44465651236) about 5.5 s after it, not from the branch at 16 s; B stops checking (one round at most)."""
+    out = node(tmp_path, """const { AsyncLocalStorage } = await import("node:async_hooks"), tab = new AsyncLocalStorage();
+let T = 1e12; const q = []; Date.now = () => T;
+globalThis.setTimeout = (fn, ms = 0) => { const t = tab.getStore(); q.push([T + ms, () => tab.run(t, fn)]); return q.length; }; globalThis.clearTimeout = () => {};
+const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
+const mem = new Map(), tabs = [], tell = (key, newValue) => { const me = tab.getStore(); for (const t of tabs) if (t !== me) q.push([T + 2, () => tab.run(t, () => t.on.forEach(f => f({ key, newValue })))]); };
+globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => { mem.set(k, String(v)); tell(k, String(v)); }, removeItem: k => { mem.delete(k); tell(k, null); } };
+globalThis.document = { visibilityState: "visible" }; URL.createObjectURL = () => "blob:x";
+const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text), h = Buffer.alloc(30), c = Buffer.alloc(46), e = Buffer.alloc(22);
+  h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
+  e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
+const { createHash } = await import("node:crypto"), presses = [];
+const result = r => JSON.stringify({ request: r, state: "baked", files: {}, base: { commit: "c".repeat(40) } }), none = () => { const e = new Error("GitHub 404"); e.status = 404; throw e; };
+const github = me => async (path, o = {}) => {
+  if (path.endsWith("/git/blobs")) { const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\\0`), raw])).digest("hex") }; }
+  if (o.method === "POST") { if (!path.includes("/statuses/")) presses.push({ ...o.body.inputs, at: T }); return null; }
+  me.gets.push(T);
+  const age = r => { const x = presses.find(x => x.request === r); return x ? T - x.at : -1; };
+  if (path.includes("/contents/")) { const x = presses.find(x => path.includes(x.request)); return x && age(x.request) >= (x.lane ? 16000 : 15000) ? result(x.request) : none(); }
+  if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + presses[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(presses[0].at).toISOString() }] };
+  const z = path.split("/zip/")[1];
+  if (z) return zip(result(z));
+  const name = path.split("name=")[1], own = name === "card-preview" ? presses[0].request : name.slice(13);
+  return { artifacts: path.includes("/runs/101/") && age(own) >= (name === "card-preview" ? 12200 : 5060) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
+};
+const open = name => { const t = { name, on: [], gets: [] }; tabs.push(t);
+  globalThis.window = { addEventListener: (type, f) => { if (type === "storage") t.on.push(f); } };
+  t.pv = tab.run(t, () => p.createPreviews({ S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github: github(t) }, toast() {}, badges() {} }));
+  return t; };
+const B = open("B"), A = open("A"), card = id => ({ id, key: id, name: id });
+await tab.run(B, () => B.pv.start(card("c0"), { hp: 8 })); await run(T + 40000);
+const t1 = T;
+await tab.run(A, () => A.pv.start(card("c1"), { hp: 7 })); await run(t1 + 6000);
+const at6 = [A, B].map(t => t.pv.entries("c1")[0].state);
+await run(t1 + 30000);
+out({ lane: presses[1].lane ?? null, at6, shown: A.pv.entries("c1")[0].fromAt - t1, after: [A, B].map(t => t.pv.entries("c1")[0].state), bGets: B.gets.filter(x => x >= t1).length });""")
+    assert out["lane"] and out["lane"].startswith("101-")             # press 2 named press 1's run as its lane
+    assert out["at6"] == ["baked", "running"] and 5000 < out["shown"] <= 6000   # A shows it; B waits for the branch
+    assert out["after"] == ["baked", "baked"] and out["bGets"] <= 2
+
+
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
     empty line; a long text shrinks until it fits, a name keeps its line count."""
