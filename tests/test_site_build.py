@@ -280,7 +280,8 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
     each one's files (app.js early()). Share pages preload the chunks app.js imports, index.html doesn't; its head script
-    names the rulebook's for a Rulebook link. A card page preloads the picture size its own picture picks (one download)."""
+    names the rulebook's for a Rulebook link. A card page preloads the picture size its own picture picks (one download); a
+    person page People's files and chunks, after style.css (its first paint first)."""
     exe = bs.esbuild()
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -309,6 +310,10 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     hinted = lambda p: re.findall(r'<link rel="modulepreload" href="assets/(?!app\.js)([^"]+)">', p)
     card = (tmp_path / "b" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
     assert sorted(hinted(card)) == sorted(first[1:]) and first[1:] and not hinted(page)
+    person = next((tmp_path / "b" / "dist" / "u").glob("*/index.html")).read_text(encoding="utf-8")
+    head, css, after = person.partition('<link rel="stylesheet" href="assets/style.css')
+    assert css and sorted(hinted(head)) == sorted(first[1:]) and "data/users.json" not in head
+    assert sorted(hinted(after)) == sorted({*chunks["profile.js"], *chunks["decks.js"]}) and 'href="data/contributions.json?v=' in after
     sources = {}
     for f in {*first, *(n for v in chunks.values() for n in v)}:
         code = (assets / f).read_text(encoding="utf-8")
@@ -323,6 +328,35 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     assert "signin.js" in src("signin.js") and not src("signin.js") & {"edit.js", "mockup.js", "preview.js", "inline.js", "tokens.js"}
     assert {"stats.js", "balance.js"} <= src("charts.js") and {"balance.js", "chartkit.js"} <= src("balance.js")
     assert "stats.js" not in src("balance.js") | src("profile.js") | src("editing.js")
+
+
+def test_head_script_starts_the_pages_data(bs, tmp_path):
+    """index.html's head script, in node: a link to the Rulebook, a Changes tab, Stats or People starts its files (app.js
+    dataUrl's URLs) and chunks, the Changelog's and Database edits' first screen's file instead of the whole unless a ?query
+    or a reload draws them whole; the plain grid its first pictures; any other link (the profile editor too) nothing."""
+    lazy = {"rulebook.js": ["rulebook-A.js"], "changelog.js": ["changelog-E.js"], "charts.js": ["charts-B.js", "chunk-C.js"],
+            "balance.js": ["balance-F.js", "chunk-C.js"], "profile.js": ["profile-D.js", "chunk-C.js"], "decks.js": ["decks-G.js"]}
+    tag = bs.grid_preload([{"id": "a", "name": "A", "img": "i"}], version="ab12", lazy=lazy, own={"users.json": "cd34", "edits.json": "x"})
+    script = tmp_path / "head.mjs"
+    script.write_text(f"""const out = {{}}, set = (k, value) => Object.defineProperty(globalThis, k, {{ value, configurable: true, writable: true }});
+for (const [hash, type] of [["#/rules/3"], ["#/changes/changelog"], ["#changes/changelog?kind=x"], ["#/changes/changelog", "reload"], ["#/changes/edits/"],
+    ["#/changes/archive"], ["#/stats"], ["#/users"], ["#/u/Me"], ["#/u/Me/edit"], ["#/changes"], ["#/changes/parser"], ["#/decks"], [""]]) {{
+  const links = out[hash + (type ? " " + type : "")] = [];
+  set("location", {{ hash }}); set("localStorage", {{ getItem: () => null }}); set("performance", {{ getEntriesByType: () => [{{ type: type || "navigate" }}] }});
+  set("document", {{ createElement: () => ({{}}), head: {{ append: l => links.push(l.as === "image" ? "image" : l.href) }} }});
+  {re.fullmatch(r"<script>(.*)</script>", tag, re.S)[1]}
+}}
+process.stdout.write(JSON.stringify(out));""", encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    data = lambda *names: [f"data/{n}?v={'cd34' if n == 'users.json' else 'ab12'}" for n in names]
+    log, people = data("changelog.json") + ["assets/changelog-E.js"], data("users.json", "contributions.json", "decks.json") + ["assets/profile-D.js", "assets/chunk-C.js", "assets/decks-G.js"]
+    assert json.loads(done.stdout) == {
+        "#/rules/3": data("rules.json") + ["assets/rulebook-A.js"], "#/changes/changelog": data("changelog-head.json") + log[1:],
+        "#changes/changelog?kind=x": log, "#/changes/changelog reload": log, "#/changes/edits/": data("edits-head.json") + log[1:],
+        "#/changes/archive": data("archive.json") + ["assets/changelog-E.js"],
+        "#/stats": data("analytics.json") + ["assets/charts-B.js", "assets/chunk-C.js", "assets/balance-F.js"],
+        "#/users": people, "#/u/Me": people, "#/u/Me/edit": [], "#/changes": [], "#/changes/parser": [], "#/decks": [], "": ["image"]}
 
 
 def test_website_only_fields(bs, tmp_path, monkeypatch):
