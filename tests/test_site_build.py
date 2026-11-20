@@ -939,3 +939,40 @@ process.stdout.write(JSON.stringify([1, 2, 3, 4, 5].map(n => G.compareAttrs({{ 3
             got = eval(re.sub(r"(\d+)vw", lambda m: f"{vw * int(m[1]) / 100}", length).replace("calc", "").replace("px", ""))
             inner = vw - 32
             assert got == pytest.approx(max(min(220, (inner - 14) / 2), (inner - 14 * (n - 1)) / n) - 30), (n, vw, sizes)
+
+
+def test_icons_34_68_96(bs, tmp_path, monkeypatch):
+    """build_icons writes each icon at 96, 68 and 34 px; grid.js iconSet lists them. Picked as browsers do (first sizes
+    entry whose condition holds, then the first width covering the screen): up to 2.4x an icon under 26 px takes the 26 px
+    toggles' file at any width (1x, 1.25x: 34; 2x phones: 68), so a page fetches one file; above, as before."""
+    from PIL import Image
+    root = tmp_path / "repo"
+    (root / "Types").mkdir(parents=True)
+    Image.new("RGBA", (200, 160), (200, 40, 40, 255)).save(root / "Types" / "fire.png")
+    for name, value in (("REPO", root), ("DIST", tmp_path / "dist"), ("CACHE", tmp_path / ".cache")):
+        monkeypatch.setattr(bs, name, str(value))
+    icons, _ = bs.build_icons({"Types/fire.png": "ab" * 20})
+    file = tmp_path / "dist" / icons["fire"]["file"]
+    assert [max(Image.open(str(file).replace(".webp", s)).size) for s in (".webp", ".68.webp", ".34.webp")] == [96, 68, 34]
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const G = await import({json.dumps((SITE_SRC / 'site/assets/grid.js').as_uri())});\n"
+                     "process.stdout.write(JSON.stringify([16, 18, 22, 26, 34].map(px => G.iconSet({ file: 'i/f.webp' }, px))));\n",
+                     encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    sets = dict(zip((16, 18, 22, 26, 34), json.loads(done.stdout)))
+
+    def pick(px, dpr):
+        srcset, sizes = re.fullmatch(r' srcset="([^"]*)" sizes="([^"]*)"', sets[px]).groups()
+        for entry in sizes.split(", "):
+            cond, _, size = entry.rpartition(" ")
+            limit = re.fullmatch(r"\((?:max-resolution: ([\d.]+)dppx|-webkit-max-device-pixel-ratio: ([\d.]+))\)", cond)
+            if not cond or limit and dpr <= float(limit[1] or limit[2]):     # any other condition: false, as on a phone
+                break
+        files = [(int(w[:-1]) / float(size[:-2]), f) for f, w in (c.split(" ") for c in srcset.split(", "))]
+        return next((f for d, f in files if d >= dpr), files[-1][1])
+
+    for dpr in (1, 1.25, 1.5, 1.75, 2, 2.25, 2.4):
+        assert {pick(px, dpr) for px in (16, 18, 22, 26)} == {pick(26, dpr)}, dpr
+    assert [pick(26, d) for d in (1, 1.25, 1.5, 2, 2.625)] == ["i/f.34.webp"] * 2 + ["i/f.68.webp"] * 2 + ["i/f.webp"]
+    assert [pick(px, 3) for px in (16, 18, 22, 26, 34)] == ["i/f.68.webp"] * 3 + ["i/f.webp"] * 2
