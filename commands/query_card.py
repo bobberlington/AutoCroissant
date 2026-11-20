@@ -148,11 +148,11 @@ class _NameIndex:
 
     def __init__(self, keys: list):
         self.keys = list(keys)                              # a copy: the caller may change its list
-        self.stems: dict = {}
+        self.stems: dict = {}                               # name -> key: no folder (creatures/panda), a plain key first
         for k in keys:
-            self.stems.setdefault(k[:len(k) - 4] if k.endswith(".png") else k, k)
+            stem = k[:len(k) - 4] if k.endswith(".png") else k
+            self.stems.setdefault(stem[stem.rfind("/") + 1:], k)
         self.names = list(self.stems)
-        self.bases = [(s[s.rfind("/") + 1:], s) for s in self.names]
         self.column = {c: i for i, c in enumerate(sorted({c for s in self.names for c in s}))}
         self.counts = zeros((len(self.names), len(self.column)), dtype=int32)
         for row, s in enumerate(self.names):
@@ -164,10 +164,9 @@ class _NameIndex:
         """CardRepository.closest over these keys."""
         stem = key[:len(key) - 4] if key.endswith(".png") else key
         if len(stem) >= 3:
-            hits = [(not base.startswith(stem), len(base), "/" in s, s) for base, s in self.bases
-                    if base.startswith(stem) or "_" + stem in base]
+            hits = [(not s.startswith(stem), len(s), s) for s in self.names if s.startswith(stem) or "_" + stem in s]
             if hits:
-                return self.stems[min(hits)[3]]
+                return self.stems[min(hits)[2]]
         wanted = zeros(len(self.column), dtype=int32)
         for c in stem:
             col = self.column.get(c)
@@ -1010,6 +1009,9 @@ class CardRepository:
         renamed = self._renamed.get(key)
         if renamed:
             return (renamed[0], "renamed", renamed[1])
+        name = key[key.rfind("/") + 1:]
+        if name != key and name[0] not in "_.":                 # a typed path (Creatures/Pizza.png): its file name
+            return self.lookup(name)
         found = self.closest(key, self.card_keys)
         return (found, "guess", "") if found else (None, "", "")
 
@@ -1017,7 +1019,7 @@ class CardRepository:
         """
         The best guess for a key among keys: a name starting with it or with a word that does (3+ letters; the
         shortest, a plain key before its folder-prefixed ones), else the most similar name above match_ratio, compared
-        without ".png" (it raised every score).
+        without ".png" (it raised every score) and the folder ('creatures' was Panda).
         """
         for index in self._indexes:                             # one per key list, kept while it is unchanged
             if index.keys == keys:
@@ -1116,7 +1118,8 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
-        queue_message(interaction, "No card found!")
+        hint, more = _in_abilities(query)
+        queue_message(interaction, "No card found!" + hint, links=more)
         return
     note, more = None, None
     if how == "renamed":
@@ -1127,15 +1130,23 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     gone = _out_of_play(closest)                        # The Morgue, MDW/Unfinished: never as if in play
     if gone:
         note = f"{note or f'**{_label(closest)}**'} {gone}"
-    hits = card_repo.ability_hits(query) if how == "guess" else 0
-    if hits:                                            # maybe ability text: /query_ability's cards too
-        text = " ".join(typed(query, quotes=True).split())
-        shown = text if len(text) <= 60 else text[:59].rsplit(" ", 1)[0] + "…"      # a button label holds 80
-        said = escape_markdown(shown)
-        note += (f" · {hits} card{'s have' if hits > 1 else ' has'} \"{said}\" in {'their' if hits > 1 else 'its'} "
-                 f"ability: /query_ability {said}")
-        more = [(f'Cards with "{shown}"', search_link("cards", text))]
+    if how == "guess":
+        hint, more = _in_abilities(query)
+        note += hint
     _post_card(interaction, closest, note=note, more=more)
+
+
+def _in_abilities(query: str) -> tuple:
+    """(' · N cards have "query" in their ability: /query_ability query', its website button) for a guess or a miss
+    whose text is in abilities, else ("", None)."""
+    hits = card_repo.ability_hits(query)
+    if not hits:
+        return "", None
+    text = " ".join(typed(query, quotes=True).split())
+    shown = text if len(text) <= 60 else text[:59].rsplit(" ", 1)[0] + "…"      # a button label holds 80
+    said = escape_markdown(shown)
+    return (f" · {hits} card{'s have' if hits > 1 else ' has'} \"{said}\" in {'their' if hits > 1 else 'its'} "
+            f"ability: /query_ability {said}", [(f'Cards with "{shown}"', search_link("cards", text))])
 
 
 def _out_of_play(key: str) -> str:
