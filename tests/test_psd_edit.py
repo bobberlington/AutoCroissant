@@ -3084,6 +3084,21 @@ def test_project_keeps_a_layers_padding():
     assert pe.project("Deal 7 DMG.", "Deal 9 DMG.", "\r    Deal 7 DMG.\r   ") == "\r    Deal 9 DMG.\r   "
 
 
+def test_project_keeps_a_hidden_indent_only_at_a_kept_lines_start():
+    """An indent the box never shows (Warcraftian Hunter's pets, Mage's title) goes with its break or line; a line
+    still starting a line keeps it, and words typed at its start go after it."""
+    old, raw = "Pets: \nTurtle  Cat\nHawk  Wolf\nEnd.", "Pets: \r      Turtle  Cat\r      Hawk  Wolf\rEnd."
+    assert pe.project(old, "Pets: \nTurtle  Cat\nEnd.", raw) == "Pets: \r      Turtle  Cat\rEnd."
+    assert pe.project(old, "Pets: Turtle  Cat\nHawk  Wolf\nEnd.", raw) == "Pets: Turtle  Cat\r      Hawk  Wolf\rEnd."
+    assert pe.project(old, "Turtle  Cat\nHawk  Wolf\nEnd.", raw) == "      Turtle  Cat\r      Hawk  Wolf\rEnd."
+    assert pe.project(old, "Hawk  Wolf\nEnd.", raw) == "      Hawk  Wolf\rEnd."
+    assert pe.project(old, "Pets: \nBig Turtle  Cat\nHawk  Wolf\nEnd.", raw) == \
+        "Pets: \r      Big Turtle  Cat\r      Hawk  Wolf\rEnd."
+    was = "Warcraftian \x03             Mage\r"
+    assert pe._part_raw(was, "Warcraftian \nMage", "Warcraftian Mage") == "Warcraftian Mage\r"
+    assert pe._part_raw(was, "Warcraftian \nMage", "Mage") == "             Mage\r"
+
+
 def test_project_fills_an_empty_box_in_order():
     """Lines typed into an empty box keep their order."""
     assert pe.project("", "A\nB", "") == "A\rB"
