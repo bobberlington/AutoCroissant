@@ -273,30 +273,69 @@ def test_rulebook_lines(monkeypatch):
     assert qc._cut(line, "turn") == "\u2026[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]\u2026"
 
 
-def test_website_rulebook_search_takes_curly_quotes(tmp_path):
-    """The website's rulebook search (app.js bookFold, highlight): a phone's curly ' and " list the same chapters and
-    marks as plain ones, the marks keeping the printed characters."""
+def _app_book(tmp_path, tail: str):
+    """app.js's rulebook search (bookFold to the deck builder: bookRe, highlight...) in node, its marks into out; then
+    tail, which writes JSON."""
     assets, app = SITE_SRC / "site" / "assets", (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
     code = app[app.index("const bookFold"):app.index("// ---- deck builder")]
     script = tmp_path / "book.mjs"
     script.write_text(f"""import fs from "fs";
-const {{ straight }} = await import({json.dumps((assets / "search.js").as_uri())});
+const {{ straight, loose }} = await import({json.dumps((assets / "search.js").as_uri())});
 const RB = await import({json.dumps((assets / "rulebook.js").as_uri())});
 const NodeFilter = {{ SHOW_TEXT: 4 }}, out = [];
 const document = {{ createTreeWalker: el => {{ let i = -1; return {{ nextNode: () => ++i < el.length, get currentNode() {{ return el[i]; }} }}; }},
   createDocumentFragment: () => ({{ append: x => x.textContent && out.push(x.textContent) }}), createElement: () => ({{}}) }};
+const marks = (text, q) => {{ out.length = 0; highlight([[{{ nodeValue: text, replaceWith() {{}} }}]], bookFold(q)); return [...out]; }};
 {code}
-const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, texts = fs.readdirSync(dir).filter(f => f.endsWith(".md")).sort()
-  .map(f => [f, bookFold(RB.plainText(RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"))))]);
-const seen = q => {{ out.length = 0; highlight([[{{ nodeValue: "It's “On Death”: can't.", replaceWith() {{}} }}]], bookFold(q));
-  return [texts.filter(([, t]) => t.includes(bookFold(q))).map(([f]) => f), [...out]]; }};
-process.stdout.write(JSON.stringify(["can't", "creature's hp", '"on death"', "it's"].map(q =>
-  [seen(q), seen(q.replace(/'/g, "\\u2019").replace(/"([^"]*)"/, "\\u201c$1\\u201d"))])));""", encoding="utf-8")
+{tail}""", encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
-    found = json.loads(done.stdout)
+    return json.loads(done.stdout)
+
+
+def test_website_rulebook_search_takes_curly_quotes(tmp_path):
+    """The website's rulebook search (app.js bookFold, highlight): a phone's curly ' and " list the same chapters and
+    marks as plain ones, the marks keeping the printed characters."""
+    found = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, texts = fs.readdirSync(dir).filter(f => f.endsWith(".md")).sort()
+  .map(f => [f, bookFold(RB.plainText(RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"))))]);
+const seen = q => [texts.filter(([, t]) => bookRe(bookFold(q)).test(t)).map(([f]) => f), marks("It's “On Death”: can't.", q)];
+process.stdout.write(JSON.stringify(["can't", "creature's hp", '"on death"', "it's"].map(q =>
+  [seen(q), seen(q.replace(/'/g, "\\u2019").replace(/"([^"]*)"/, "\\u201c$1\\u201d"))])));""")
     assert all(plain == curly and plain[0] for plain, curly in found), found
     assert [marks for (_, marks), _ in found] == [["can't"], [], ["\u201cOn Death\u201d"], ["It's"]]
+
+
+def test_words_typed_without_punctuation(tmp_path, monkeypatch):
+    """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.); digits
+    never (05 is not 0.5); quoted or typed with them: exact. Cards and rulebook, the bot and the website alike."""
+    from pandas import DataFrame
+    cards = [dict(name="Gag", type="debuff", ability="Can't attack."), dict(name="Tilt", type="item", ability="A cant."),
+             dict(name="Shop", type="item", ability="Buy an N.M.E. shop item."),
+             dict(name="Half", type="item", ability="Heal 0.5 HP.")]
+    rows = [("cant", {"Gag", "Tilt"}), ("can't", {"Gag"}), ('"cant"', {"Tilt"}), ('"can\'t"', {"Gag"}),
+            ("nme shop", {"Shop"}), ("05", set()), ("0.5", {"Half"})]
+    repo = _repo(cards)
+    assert [_shown(repo, repo.ability_search_engine(q, near=False).index) for q, _ in rows] == [c for _, c in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
+    assert repo.ability_hits("cant") == 2
+    book = {"4. Table": "4. N.M.E. Items for the N.M.E. Shop.\nThe next turn.", "5. Shops": "N.M.E SHOP\nIt can't fit 0.5.",
+            "6. Bans": "NME stock"}
+    repo.rulebook_dff = DataFrame({"ability": list(book.values())}, index=list(book))
+    lines = lambda q: qc.rulebook_lines(repo.rulebook_search_engine(q), q)
+    assert lines("nme") == [("4. Table", ["4. N.M.E. Items for the N.M.E. Shop."]), ("5. Shops", ["N.M.E SHOP"]),
+                            ("6. Bans", ["NME stock"])]                  # the lines, not the whole chapter
+    queries = ["nme", "nme shop", "cant", "05", "turn"]
+    bot = [[n for n, _ in lines(q)] for q in queries]
+    assert bot == [["4. Table", "5. Shops", "6. Bans"], ["4. Table", "5. Shops"], ["5. Shops"], [], ["4. Table"]]
+    shown = "4. N.M.E. Items for the N.M.E. Shop. The next turn."
+    bolded = [qc._bold(shown, q) for q in ("nme", "nme shop", "turn")]
+    assert bolded == ["4. **N.M.E.** Items for the **N.M.E.** Shop. The next turn.",
+                      "4. N.M.E. Items for the **N.M.E. Shop**. The next turn.",
+                      "4. N.M.E. Items for the N.M.E. Shop. The next **turn**."]   # an abbreviation's last '.' only
+    site = _app_book(tmp_path, f"""const book = {json.dumps(book)};
+process.stdout.write(JSON.stringify([{json.dumps(queries)}.map(q => Object.keys(book).filter(n => bookRe(bookFold(q)).test(bookFold(book[n])))),
+  ["nme", "nme shop", "turn"].map(q => marks({json.dumps(shown)}, q))]));""")
+    assert site == [bot, [["N.M.E.", "N.M.E."], ["N.M.E. Shop"], ["turn"]]]
 
 
 def test_replies_ping_nobody(monkeypatch):
