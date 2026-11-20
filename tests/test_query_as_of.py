@@ -155,6 +155,15 @@ def test_a_duplicate_shows_its_originals_history(db):
     assert "ability: Second text." in text
 
 
+def test_heads_name_the_printed_titles_as_query(db):
+    """The card and its original by their printed titles (Red Bloon, not PoD01Red Bloon), as /query's embed."""
+    cm.stats_db.stats["Tainted Bethany"].display_name = "TAINTED BETHANY"
+    cm.stats_db.stats["Bethany Copy"].display_name = "Bethany's Copy"
+    assert _texts("Tainted Bethany", "2026-02-01")[0].startswith(f"**TAINTED BETHANY** as of 2026-02-01 {HEAD}version 1 ")
+    assert _texts("Bethany Copy", "2026-02-10")[0].startswith(
+        f"**Bethany's Copy** (same card as TAINTED BETHANY) as of 2026-02-10 {HEAD}version 2 of 5, ")
+
+
 def test_a_variant_picture_goes_back_through_its_picture_1(db):
     """Picture 2 of Bethany's PSD with no history of its own: older dates answer from picture 1's (owner 10-25)."""
     current = cm.stats_db.stats["Tainted Bethany"]
@@ -232,7 +241,7 @@ def test_a_printed_title_it_was_renamed_from_is_the_current_card(db, monkeypatch
                                                                blob="e" * 40, display_name="P.A.N.D.A. Mk A"))
     qc.card_repo.git_files.update({"panda_mk_a.png": f"{panda}.png", "p.a.n.d.a._mk_a.png": f"{panda}.png"})
     assert _texts("P.A.N.D.A. Mk A", "2026-11-18")[0].startswith(
-        f"**PANDA Mk A** as of 2026-11-18 {HEAD}the current card (version 2 of 2), from 2026-11-11.")
+        f"**P.A.N.D.A. Mk A** as of 2026-11-18 {HEAD}the current card (version 2 of 2), from 2026-11-11.")
 
 
 # ========================
