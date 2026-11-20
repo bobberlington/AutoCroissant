@@ -227,6 +227,16 @@ def test_series_name_gives_its_cards(repo, capsys):
     assert "Search series: /query 'binding of isaac'" in capsys.readouterr().out
     assert reply("Thousand-Year Door")[0] == "**Paper Mario: The Thousand-Year Door** is a subseries of Mario: 1 card"
     assert reply("dogma")[1] is None and reply("magolr") == ("Closest match: **Magolor**", None)
+    # /query's autocomplete lists them as it does chapters: after the cards unless typed whole; never a card's name
+    repo._populate_renames()
+    names = lambda text: [shown for shown, _ in repo.name_choices(text, chapters=True)]
+    assert repo.name_choices("Mario", chapters=True)[0] == ("Mario (series, 2 cards)", "Mario")
+    assert names("isaac") == ["Tainted Isaac", "The Binding of Isaac (series, 2 cards)"]
+    assert names("thousand") == ["Paper Mario: The Thousand-Year Door (subseries of Mario, 1 card)"]
+    assert names("dogma") == ["Dogma"] and repo.name_choices("mario") == []
+    for name, (path, _) in CARDS.items():                       # each card's name: its card first
+        if not path.startswith(qc.NOT_CARDS):
+            assert repo.name_choices(name, chapters=True)[0][1].lower() == name.lower(), name
 
 
 def test_morgue_and_unfinished_cards_say_so(monkeypatch):
