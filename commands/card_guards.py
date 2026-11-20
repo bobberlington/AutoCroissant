@@ -19,11 +19,12 @@ post (discord.json; standards_post merges it with the card and font checks': the
 over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
 the same pixels, banded) when that saves more than 3% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
-pushed one in a process of its own, beside the rest of the check (_overlap).
+pushed one in a process of its own, beside the rest of the check (_overlap), or with --recompress later (a push's, on)
+after it, joined by land (_start_bands, join_bands).
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|on] [--convert now|later|off]
-                                         --out <dir>
+                                         [--recompress now|later] --out <dir>
     python -m commands.card_guards normalise --out <dir> --clone <dir> [--repo <owner/name>] [--deadline <epoch>]
     python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
 
@@ -52,7 +53,7 @@ config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.
 and font checks' too, run in its check job) and requirements-cards.txt.
 """
 from argparse import ArgumentParser
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -61,12 +62,14 @@ from gzip import decompress as gzip_decompress
 from hashlib import blake2b
 from io import BytesIO
 from json import dump, load, loads
-from os import cpu_count, environ, listdir, makedirs, pathsep
-from os.path import basename, dirname, exists, isdir, join, splitext
+from os import cpu_count, environ, kill, listdir, makedirs, pathsep
+from os.path import abspath, basename, dirname, exists, isdir, join, splitext
 from re import IGNORECASE, escape, fullmatch, sub
 from struct import unpack
-from subprocess import CalledProcessError, TimeoutExpired
-from sys import stderr
+from shutil import rmtree
+from signal import SIGKILL
+from subprocess import DEVNULL, STDOUT, CalledProcessError, Popen, TimeoutExpired
+from sys import executable, stderr
 from tempfile import TemporaryDirectory
 from time import sleep, time
 from traceback import format_exc
@@ -151,6 +154,9 @@ QUIET_PIXELS = (NORMALISE, "status words", "status font")   # pixel fixes that m
 FOLDERS = "folders as the templates'"           # card_standards.standard_folders: said in the commit message alone
 CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
 CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never
+RECOMPRESSES = ("now", "later")                 # check's --recompress: the pushed PNGs in the check, or after it (_start_bands)
+BANDS_DIR = join("files", ".bands")             # _start_bands' process's files (under files/: never in the artifact)
+BANDS_WAIT = 300                                # join_bands waits this long for that process, then makes the rest itself
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
 LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
 LINKED_DIR = "MDW/Linked/"
@@ -164,6 +170,8 @@ GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base6
 _worker: dict = {}
 _early: dict = {}                               # pushed PNG blob sha -> its recompression's Future (_overlap)
 _waiting: list = []                             # _recompress's entries left to _collect
+_late: list = []                                # [True]: check --recompress later (_recompress leaves them to join_bands)
+_bands: dict = {}                               # out -> _start_bands' process (join_bands waits for it)
 _glyphs: dict = {}                              # icon font blob sha -> font_glyphs (earlier_fonts)
 
 
@@ -239,6 +247,7 @@ class Result:
     shown: dict = field(default_factory=dict)   # PNG path -> {"file"} or {"blob"}: the PNGs that show the PSD as checked
     shows: str = "pushed"                       # which PSD they show: "pushed", or "fixed" (guard 2 redrew and they follow)
     links: dict = field(default_factory=dict)   # the PSD as it lands: what housekeeping reads of it (_links)
+    pending: list = field(default_factory=list) # --recompress later: {"path", "sha", "old", "at", "noted"} for join_bands
     error: str = ""
 
     @property
@@ -806,7 +815,12 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes], 
     """A PNG the push brought (read() gives it), recompressed losslessly (owner, 2026-10-23) when more than RECOMPRESS_MIN
     and RECOMPRESS_BYTES smaller (our thresholds): a write of its own kind, resting on that PNG alone and never told on
     Discord. A failure is a comment note, never the card's error (which Discord would tell). One _overlap started (its
-    blob sha) is left to _collect, which puts it where it goes here. before() gives the file it replaces (_prior)."""
+    blob sha) is left to _collect, which puts it where it goes here. before() gives the file it replaces (_prior).
+    --recompress later: left to join_bands, which puts it here (result.pending)."""
+    if _late and sha:
+        result.pending.append({"path": path, "sha": sha, "old": result.job.olds.get(path, ""), "at": len(result.writes),
+                               "noted": len(result.notes)})
+        return
     if sha in _early:
         _waiting.append((result, len(result.writes), len(result.notes), out, path, read, _early[sha], before))
         return
@@ -911,6 +925,145 @@ def _overlap(source: Source, jobs) -> Iterator[None]:
         _early.clear()
         if pool is not None:
             pool.shutdown(cancel_futures=True)
+
+
+def _start_bands(out: str, source: Source, jobs: list) -> None:
+    """check --recompress later: the jobs' pushed PNGs (_pngs) recompressed in a process of its own at nice 19 (beside the
+    check on idle cores, then after Decided), started now and left running for join_bands. One that does not start:
+    join_bands makes them."""
+    folder = join(out, BANDS_DIR)
+    makedirs(folder, exist_ok=True)
+    items = list(dict.fromkeys((sha, old) for job in jobs for sha, old in _pngs(job)))
+    with open(join(folder, "items.json"), "w", encoding="utf-8") as fh:
+        dump({"clone": source.clone, "repository": source.repository, "items": items}, fh)
+    if not items:
+        return
+    try:
+        with open(join(folder, "log"), "wb") as log:
+            _bands[out] = Popen(["nice", "-n", "19", executable, "-m", "commands.card_guards", "bands", "--out", out],
+                                cwd=dirname(dirname(abspath(__file__))), stdin=DEVNULL, stdout=log, stderr=STDOUT,
+                                start_new_session=True)
+        with open(join(folder, "pid"), "w", encoding="utf-8") as fh:
+            fh.write(str(_bands[out].pid))
+    except OSError:                             # join_bands makes them
+        print(format_exc(), file=stderr)
+
+
+def _band_file(folder: str, sha: str, old: str) -> str:
+    return join(folder, f"{sha}-{old or 'none'}")
+
+
+def bands(out: str) -> None:
+    """_start_bands' process: each of items.json's (blob, the blob it replaces) recompressed on every core (_recompressed),
+    its size and file (none: not worth it) beside it; "done" at the end. One that fails is left to join_bands."""
+    folder = join(out, BANDS_DIR)
+    try:
+        with open(join(folder, "items.json"), encoding="utf-8") as fh:
+            spec = load(fh)
+        png_export.use_cores(cpu_count() or 1)
+        for sha, old in spec["items"]:
+            try:
+                size, smaller = _recompressed(spec["clone"], spec["repository"], sha, old)
+            except Exception:                   # join_bands makes it
+                print(format_exc(), file=stderr)
+                continue
+            stem = _band_file(folder, sha, old)
+            if smaller is not None:
+                with open(stem + ".png", "wb") as fh:
+                    fh.write(smaller)
+            with open(stem + ".json", "w", encoding="utf-8") as fh:
+                dump({"size": size, "smaller": smaller is not None}, fh)
+    finally:
+        open(join(folder, "done"), "w").close()
+
+
+def _bands_running(out: str, folder: str) -> bool:
+    if exists(join(folder, "done")):
+        return False
+    if out in _bands:                           # this process started it
+        return _bands[out].poll() is None
+    try:
+        with open(join(folder, "pid"), encoding="utf-8") as fh:
+            kill(int(fh.read()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _band_made(folder: str, sha: str, old: str) -> Optional[Future]:
+    """bands()' answer for (sha, old) as _made's early; None: not made there."""
+    stem = _band_file(folder, sha, old)
+    try:
+        with open(stem + ".json", encoding="utf-8") as fh:
+            found = load(fh)
+        smaller = None
+        if found["smaller"]:
+            with open(stem + ".png", "rb") as fh:
+                smaller = fh.read()
+    except (OSError, ValueError, KeyError):
+        return None
+    early: Future = Future()
+    early.set_result((found["size"], smaller))
+    return early
+
+
+def join_bands(plan_path: str, wait: float = BANDS_WAIT) -> None:
+    """
+    Land's first step after a check --recompress later: once _start_bands' process has ended (wait seconds at most),
+    each card's pushed PNGs left to it (plan.json's "recompress") put where the check would have put them, as _collect
+    does (one it did not make is made here: _made); plan.json, summary.json and report.md written again. Never raises:
+    a failure lands the plan without them.
+    """
+    out = dirname(plan_path)
+    folder = join(out, BANDS_DIR)
+    try:
+        with open(plan_path, encoding="utf-8") as fh:
+            data = load(fh)
+        entries = [entry for entry in data["cards"] if "recompress" in entry]
+        if not entries:
+            return
+        end = time() + wait
+        while any(entry["recompress"] for entry in entries) and _bands_running(out, folder) and time() < end:
+            sleep(0.05)
+        try:
+            with open(join(folder, "items.json"), encoding="utf-8") as fh:
+                spec = load(fh)
+        except (OSError, ValueError):
+            spec = {}
+        source = Source(spec.get("clone", ""), spec.get("repository") or data.get("repo", ""))
+        for entry in entries:
+            for p in reversed(entry.pop("recompress")):
+                before = partial(source.blob, p["old"]) if p["old"] else None
+                write, note = _made(out, p["path"], partial(source.blob, p["sha"]), _band_made(folder, p["sha"], p["old"]),
+                                    before)
+                if write:
+                    entry["writes"].insert(p["at"], write)
+                if note:
+                    entry["notes"].insert(p["noted"], note[0])
+        report = data.get("report", {})
+        with open(join(out, "report.md"), "w", encoding="utf-8") as fh:
+            fh.write(markdown(data, report.get("notes", []), report.get("skipped", []), report.get("errors", [])))
+        _write_plan(data, out)
+    except Exception:                           # they only save bytes: the plan lands without them
+        print(format_exc(), file=stderr)
+    finally:
+        _end_bands(out, folder)
+        rmtree(folder, ignore_errors=True)
+
+
+def _end_bands(out: str, folder: str) -> None:
+    """_start_bands' process, still running past join_bands' wait: killed by its PID."""
+    process = _bands.pop(out, None)
+    try:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        elif _bands_running(out, folder):
+            with open(join(folder, "pid"), encoding="utf-8") as fh:
+                kill(int(fh.read()), SIGKILL)
+    except (OSError, ValueError):
+        pass
 
 
 def _export_dict(found) -> dict:
@@ -1272,6 +1425,7 @@ def _made_again(out: str, job: Job, result: Result, data: bytes, line: str, why:
     """R10's write of job's PNG made again (why: the write's key, back or skipped); its recompression gives way."""
     _collect()
     result.writes = [w for w in result.writes if not (w["path"] == job.png and w["kind"] == "recompress")]
+    result.pending = [p for p in result.pending if p["path"] != job.png]
     result.writes.append({"path": job.png, "file": _save(out, job.png, data), "sha": blob_sha(data), "kind": "png",
                           "line": line, why: True})
 
@@ -1431,6 +1585,7 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict, faces=
     for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items()) if d]:
         write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
         result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]
+        result.pending = [p for p in result.pending if p["path"] != path]
         if write is None:
             write = {"path": path, "kind": "png", "line": line, "silent": True}
             result.writes.append(write)
@@ -1451,10 +1606,12 @@ def changes(old, new, parser, fonts=None) -> list:
         return []
 
 
-def _init_worker(clone: str, repository: str, context, vocab, tree: dict, earlier: tuple = (), cores: int = 0) -> None:
+def _init_worker(clone: str, repository: str, context, vocab, tree: dict, earlier: tuple = (), cores: int = 0,
+                 late: bool = False) -> None:
     _init_pool()            # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     if cores:
         png_export.use_cores(cores)             # its share for band()'s threads
+    _late[:] = [True] if late else []
     wait_fonts()
     source = Source(clone, repository)
     source.checked = tree
@@ -1701,6 +1858,8 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
                                     "silent": True, "line": "linked file added"})
     for path, data in sorted(done.get("pngs", {}).items()):
         entry["writes"] = [w for w in entry["writes"] if not (w["path"] == path and w["kind"] == "recompress")]
+        if "recompress" in entry:
+            entry["recompress"] = [p for p in entry["recompress"] if p["path"] != path]
         old = next((w for w in entry["writes"] if w["path"] == path and w["kind"] == "png"), None)
         if old is None:
             old = {"path": path, "kind": "png", "line": f"re-exported for {line}", "silent": True}
@@ -1988,6 +2147,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes,
                  "convert": result.convert, "shown": result.shown, "shows": result.shows,
                  "dups": result.job.dups, "base_png": result.job.base_png, "links": result.links}
+        if result.pending:
+            entry["recompress"] = result.pending
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -2276,12 +2437,15 @@ def pool_size(jobs: int) -> int:
 
 
 def check(clone: str, after: str, before: str = "", repository: str = "", author: str = NOBODY, cards: Optional[set] = None,
-          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0, convert: str = "later") -> dict:
+          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0, convert: str = "later",
+          recompress: str = "now") -> dict:
     """
     Both guards on a push (or a whole tree); writes report.md, discord.json and plan.json (with the artifacts) to out.
     The 11-07 pass's conversions and linked-file housekeeping (convert_plan, G1-G4, silent): in the check (convert
     "now"), left to the normalise step after Decided ("later", card-guards.yml's: summary.json's normalise counts them;
-    with none, the housekeeping runs here), or none ("off"; a whole tree never).
+    with none, the housekeeping runs here), or none ("off"; a whole tree never). The pushed PNGs' recompressions: in the
+    check ("now"), or ("later", card-guards.yml's on a push) in a process of their own (_start_bands) that Land joins
+    (join_bands): plan.json's "recompress", counted by summary.json's writes.
 
     Returns:
         plan.json's data (with "markdown" and "discord")
@@ -2303,7 +2467,10 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     source.checked = tree
     least = 2 if environ.get("GITHUB_ACTIONS") == "true" else POOL_MIN
     pooled = len(jobs) >= least and workers != 1
-    early = workers != 1 and len(jobs) < (cpu_count() or 1)       # a core to spare: the pushed PNGs beside (_overlap)
+    late = recompress == "later" and not whole_tree
+    early = not late and workers != 1 and len(jobs) < (cpu_count() or 1)    # a core to spare: the pushed PNGs beside (_overlap)
+    if late:
+        _start_bands(out, source, jobs)
     with _overlap(source, jobs if early and not pooled else ()), TemporaryDirectory(prefix="guard-fonts-") as fonts:
         context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
         earlier = ()                            # the earlier icon fonts (in fonts)
@@ -2316,11 +2483,15 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
             count = workers or pool_size(len(jobs))
             with ProcessPoolExecutor(count, initializer=_init_worker,
                                      initargs=(clone, repository, context, vocab, tree, earlier,
-                                               png_export.share(count))) as pool:
+                                               png_export.share(count), late)) as pool:
                 results = list(pool.map(_pooled, [(job, out, early) for job in jobs], chunksize=1))
         else:
             parser = vocab.parser() if vocab is not None else None
-            results = [run_job(source, job, context, parser, out, earlier) for job in jobs]
+            _late[:] = [True] if late else []
+            try:
+                results = [run_job(source, job, context, parser, out, earlier) for job in jobs]
+            finally:
+                _late[:] = []
         data = plan(results, repository, base, head, mode)
         follow_dups(data, source, out)
         changed = [] if whole_tree else source.diff(base, head)
@@ -2389,12 +2560,14 @@ def _for_comment(entry: dict) -> bool:
 def summary(data: dict, errors: list) -> dict:
     """summary.json, the workflow's switches: cards checked; cards with something told (Land, the post), for the comment
     (the Comment step: a context error alone, a standing manifest or chart one say, comments on no push) and with an error
-    (a red run); writes planned; errors (the cards' and the context's)."""
+    (a red run); writes planned (the conversions and recompressions still to come too); errors (the cards' and the
+    context's)."""
     cards = data["cards"]
     pending = sum(1 for c in cards if c.get("convert") and "converted" not in c)    # --convert later: the normalise step's
+    late = sum(len(c.get("recompress") or ()) for c in cards)    # --recompress later: Land's (join_bands)
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
-            "comment": sum(1 for c in cards if _for_comment(c)),
-            "writes": sum(len(c["writes"]) for c in cards) + pending
+            "comment": sum(1 for c in cards if _for_comment(c) or c.get("recompress")),
+            "writes": sum(len(c["writes"]) for c in cards) + pending + late
             + sum(len((data.get(key) or {}).get("writes", [])) for key in ("linked", "fonts")) + len(data.get("renames") or {}),
             "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"]),
             "kept": pictures_kept(data)}
@@ -2669,6 +2842,7 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
          "unread": a rerun that could not read the branch, "renamed": {old path: new} the commit renames}
     """
     out_dir = dirname(plan_path)
+    join_bands(plan_path)                       # check --recompress later's
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
     repository = repository or data.get("repo") or ("" if local else CARD_REPO)
@@ -2805,6 +2979,10 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
     one.add_argument("--convert", default="later", choices=CONVERTS,
                      help="the pass's conversions and linked files: in the check (now), in the normalise step (later), none (off)")
+    one.add_argument("--recompress", default="now", choices=RECOMPRESSES,
+                     help="the pushed PNGs' recompressions: in the check (now), or in a process of their own that land joins (later)")
+    four = sub.add_parser("bands", help="check --recompress later's own process (it starts it)")
+    four.add_argument("--out", required=True, metavar="DIR", help="check's --out")
     three = sub.add_parser("normalise", help="a check --convert later plan's conversions and linked files (silent)")
     three.add_argument("--out", required=True, metavar="DIR", help="check's --out (plan.json and summary.json rewritten)")
     three.add_argument("--clone", required=True, metavar="DIR", help="the clone the check read")
@@ -2825,11 +3003,14 @@ def main(args: Optional[list] = None) -> int:
         if planned != "on":                     # a dry check must never reach the branch
             cli.error(f"the plan was checked with --mode {planned}: land commits only an `on` plan (pass --dry-run, or --local DIR)")
     token_from_env()
+    if options.command == "bands":
+        bands(options.out)
+        return 0
     if options.command == "check":
         cards = CardAuthors.keys(options.cards) or None
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
-                         options.mode, options.out, options.workers, options.convert)
+                         options.mode, options.out, options.workers, options.convert, options.recompress)
         except (Transient, Refused) as error:   # the clone or the API failed: one line; the run fails (card-guards.yml alerts)
             print(f"## Card guards\n\nNot checked: {error}\n")
             return 1
