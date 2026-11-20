@@ -107,14 +107,28 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
     assert delays == [1000, 500, 7000, 1000]
 
 
+def test_one_wait_with_its_run_known_is_checked_every_250_ms(tmp_path):
+    """pollDelay: 250 ms from the last round's start while one preview waits with its run known, nothing handed over
+    and the tab reads it directly; else as before (two waiting, no run yet, handed over, not read directly, past a
+    minute, before 12 s)."""
+    out = node(tmp_path, """const now = 1e12, s = 1000, run = { id: 7 };
+const one = (age, x = {}) => ({ c: [{ request: "r-00000001", at: now - age, hash: "h", state: "running", ...x }] });
+const two = { c: [{ request: "r-00000001", at: now - 13 * s, hash: "h", state: "running", run }, { request: "r-00000002", at: now - 14 * s, hash: "h", state: "running" }] };
+out([p.pollDelay(one(13 * s, { run }), now), p.pollDelay(one(13 * s, { run }), now, () => true, 100), p.pollDelay(one(13 * s, { run }), now, () => true, 400),
+  p.pollDelay(two, now), p.pollDelay(one(13 * s), now), p.pollDelay(one(13 * s, { run, fromAt: now }), now), p.pollDelay(one(13 * s, { run }), now, () => false),
+  p.pollDelay(one(61 * s, { run }), now), p.pollDelay(one(11 * s, { run }), now)]);""")
+    assert out == [250, 150, 0, 1000, 1000, 1000, 1000, 3000, 1000]
+
+
 @pytest.mark.parametrize("miss", [False, pytest.param(True, marks=pytest.mark.skipif(not has(PREVIEW_JS, "ZIP_404S"), reason="no zip 404s looked past"))])
 def test_the_editor_takes_the_lanes_hand_over(tmp_path, miss):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
     press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), then rings the lane's
     doorbell (a commit status at press 1's result's commit: the lane's CONTEXT and RUNG) and shows the lane's
     card-preview-<request> 2 s after the press; one toast each; a 422 with a lane dispatches again without it, and no
-    lane is named after that; a blob not posted rings nothing. miss: each zip's first fetch a 404 (listed just before
-    it's finalized, run 44465554232): both shown on the next round, press 2 still named to the lane."""
+    lane is named after that; a blob not posted rings nothing. Press 1's hand-over is listed from 12.5 s: its list goes
+    If-None-Match the last ETag (a 304: not yet) every 250 ms while it waits alone. miss: each zip's first fetch a 404
+    (listed just before it's finalized, run 44465554232): both shown on the next round, press 2 still named to the lane."""
     import base64
     from commands.card_preview_lane import CONTEXT, RUNG, press_blob
     out = node(tmp_path, f"const miss = {str(miss).lower()}, zipped = new Set();\n" + """let T = 1e12; const q = []; Date.now = () => T;
@@ -127,6 +141,7 @@ const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
 const { createHash } = await import("node:crypto");
 const sent = [], toasts = [], listed = [], blobs = [], refs = [];
+let n304 = 0;
 let refuse = false, failBlob = false;
 const github = async (path, o = {}) => {
   if (path.endsWith("/git/blobs")) { blobs.push(o.body); if (failBlob) { const e = new Error("GitHub 403"); e.status = 403; throw e; }
@@ -140,7 +155,10 @@ const github = async (path, o = {}) => {
   if (z) return zip(JSON.stringify({ request: z, state: "baked", files: {}, base: { commit: (z === sent[0].request ? "c" : "d").repeat(40) } }));   // the lane followed
   const name = path.split("name=")[1], own = name === "card-preview" ? sent[0].request : name.slice(13);
   listed.push([T - 1e12, name]);
-  return { artifacts: path.includes("/runs/101/") && (name === "card-preview" || own === sent[1].request) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
+  const list = { artifacts: path.includes("/runs/101/") && ((name === "card-preview" && T - 1e12 >= 12500) || own === sent[1]?.request) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
+  const tag = `W/"${createHash("sha1").update(JSON.stringify(list)).digest("hex")}"`, headers = new Headers({ ETag: tag });
+  if (o.etag === tag) { n304++; return { data: null, headers, status: 304 }; }
+  return o.full ? { data: list, headers } : list;
 };
 const app = { S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github }, toast: m => toasts.push(m), badges() {} };
 const pv = p.createPreviews(app), card = id => ({ id, key: "Mini Doomer", name: "Mini Doomer" });
@@ -151,13 +169,13 @@ refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"),
 refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
 out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, head: pv.entries("c1")[0].fromHead, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
   shown: [pv.entries("c0")[0].fromAt - 1e12, pv.entries("c1")[0].fromAt - second],
-  named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null) });""")
+  named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null), n304 });""")
     sent = out["sent"]
     data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
     assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
     assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
-    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == ([2000, 2500] if miss else [2000])   # the lane's, 2 s on
-    assert out["shown"] == ([13000, 2500] if miss else [12000, 2000])
+    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == ([2250, 2750] if miss else [2000])   # the lane's, 2 s on (rounds' phase)
+    assert out["shown"] == ([12750, 2750] if miss else [12500, 2000]) and out["n304"] == 1   # 12 s, 12.25 (304), 12.5
     assert out["head"] == "c" * 40                                  # still rung where the lane lists, not where it baked
     at, method, commit, body = out["refs"][0]
     rung = RUNG.fullmatch(body["description"])
