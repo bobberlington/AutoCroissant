@@ -62,6 +62,35 @@ environ.pop("GIT_NO_LAZY_FETCH", None)                    # fixture clones fetch
 environ["PSD_DIRTY_VERIFY"] = "1"                         # gate_dirty renders whole too: raises on any difference
 environ["TIMELINES_FIRST_GIT"] = "/dev/null/firstrepo.git"  # the machine's first-repo store never counts (a test gives its own)
 
+
+def _no_fork():
+    """macOS forks copy a worker's page tables (0.5-2.7 GB) for every git or bash: a bare program with no cwd starts
+    by posix_spawn instead. One thread only: no pipe2 or closefrom on macOS, so another thread's new pipe could leak."""
+    import os
+    import shutil
+    import subprocess
+    import threading
+    from functools import wraps
+    if sys.platform != "darwin" or not getattr(subprocess, "_USE_POSIX_SPAWN", False):
+        return
+    init = subprocess.Popen.__init__
+
+    @wraps(init)
+    def popen(self, args, *more, **kw):
+        if (threading.active_count() == 1 and not more and isinstance(args, (list, tuple)) and args
+                and "/" not in str(args[0])
+                and all(kw.get(k) is None for k in ("executable", "close_fds", "cwd", "preexec_fn", "user", "group",
+                                                    "extra_groups", "process_group"))
+                and not any(kw.get(k) for k in ("shell", "pass_fds", "start_new_session")) and kw.get("umask", -1) < 0):
+            found = shutil.which(str(args[0]), path=os.pathsep.join(os.get_exec_path(kw.get("env"))))
+            if found:
+                kw.update(executable=found, close_fds=False)
+        init(self, args, *more, **kw)
+    subprocess.Popen.__init__ = popen
+
+
+_no_fork()
+
 TC_PATHS = ("AC_SITE_SRC", "ESBUILD")                     # TTSCardMaker paths from the environment
 for _key in TC_PATHS:                                     # '~' expanded for build_site and subprocesses too
     if environ.get(_key):
