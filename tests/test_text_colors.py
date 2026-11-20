@@ -496,6 +496,42 @@ process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors,
 
 
 @site
+@pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "keptOver" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
+                    reason="no keptOver in this mockup.js")
+def test_mockup_says_kept_colours_as_the_bake(clone, tmp_path):
+    """mockup.js keptOver, on the cards' details records, says what plan_colors refuses as keeping its own look, in its
+    words: a phrase of only an FX layer's words (Computer Virus' '1st: Slime'), badges (Mini Doomer's '(BOT)') or status
+    words (Sigma's 'Hardened'); not one with a letter to paint, nor one in a retyped Ability. A colour on a title only a
+    Text/Name smart object prints: the picture's."""
+    from commands import psd_details as pd
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    chart = pe.status_fills(PSDImage.open(str(clone / pe.STATUS_CHART)))
+    red = {"field": "ability", "color": "#ff2020"}
+    cases = {"Auxiliary/Minions/Mini_Doomer.psd": [[{**red, "phrase": "(BOT)"}], [{**red, "phrase": "(BOT) Destroy"}],
+                                                   ([{**red, "phrase": "(BOT)"}], {"ability": "(BOT) Destroy this creature."})],
+             "Creatures/Kirby/3 Stars/Computer_Virus.psd": [[{**red, "phrase": "1st: Slime"}], [{**red, "phrase": "1st: Slime can attack"}]],
+             "Auxiliary/Minions/Sigma.psd": [[{**red, "phrase": "Hardened"}]]}
+    jobs, want = [], []
+    for rel, sets in cases.items():
+        psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
+        record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
+        for colors, edit in (s if isinstance(s, tuple) else (s, {}) for s in sets):
+            jobs.append({"rec": record, "colors": colors, "typed": list(edit)})
+            want.append([[one, how] for one, how in pe.plan_colors(psd, colors, card, edit, chart) if how not in ("baked", "redundant") and "paints over" not in how])
+    title = {"field": "name", "color": "#ff2020"}
+    jobs.append({"rec": {"parts": {"title": [], "ability": []}, "smart_objects": ["Text/Name #1"]}, "colors": [title], "typed": []})
+    want.append([[title, pe.PICTURE_TITLE]])
+    (tmp_path / "jobs.json").write_text(json.dumps({"jobs": jobs, "names": sorted({c.name for c in chart.values()})}), encoding="utf-8")
+    (tmp_path / "kept.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
+const {{ jobs, names }} = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
+process.stdout.write(JSON.stringify(jobs.map(j => M.keptOver(j.rec, j.colors, j.typed, names).map(n => [n.one, n.why]))));""", encoding="utf-8")
+    got = json.loads(run_process(["node", str(tmp_path / "kept.mjs")], capture_output=True, text=True, check=True).stdout)
+    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 0, 1, 1], (got, want)
+
+
+@site
 @pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "titleOff" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
                     reason="no titleOff in this mockup.js")
 def test_mockup_draws_a_whole_title_colour_flat_as_the_bake(clone, tmp_path):
