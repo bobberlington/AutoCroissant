@@ -863,3 +863,27 @@ process.stdout.write(JSON.stringify([G.imgAttrs({{}}, c, 168), ...[30, 360, 480,
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == ['src="h/P-1-list.avif" width="40" height="80"', "h/P-1-list.avif", "h/P-1-list.avif",
                                        "h/P-1.webp", "h/P-1.webp", 'src="h/P-1.webp"', "h/P-1.webp"]
+
+
+def test_compare_pictures_sized_to_their_column(tmp_path):
+    """Compare's pictures (grid.js compareAttrs) offer the card view's 480 and 720 px copies, and their sizes is the
+    column's width (style.css .compare: 32 px of padding, 14 px gaps, columns min(220px, half) at least, the panel's
+    30 px), at every screen width and card count."""
+    grid = SITE_SRC / "site" / "assets" / "grid.js"
+    if "compareAttrs" not in grid.read_text(encoding="utf-8"):
+        pytest.skip("a site before Compare's sized pictures")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
+process.stdout.write(JSON.stringify([1, 2, 3, 4, 5].map(n => G.compareAttrs({{ 360: "a", 480: "b", 720: "c" }}, {{ img: "x" }}, n))));
+""", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    for n, attrs in enumerate(json.loads(done.stdout), 1):
+        assert 'srcset="thumbs/x-360-a.avif 360w, thumbs/x-480-b.avif 480w, thumbs/x-720-c.avif 720w"' in attrs
+        sizes = re.search(r'sizes="([^"]+)"', attrs)[1]
+        for vw in (320, 390, 485, 486, 600, 820, 954, 1188, 1280, 1440, 1920, 2560):
+            length = next(s.split(") ", 1)[1] if s.startswith("(") else s for s in sizes.split(", ")
+                          if not s.startswith("(") or vw <= int(re.match(r"\(max-width: (\d+)px\)", s)[1]))
+            got = eval(re.sub(r"(\d+)vw", lambda m: f"{vw * int(m[1]) / 100}", length).replace("calc", "").replace("px", ""))
+            inner = vw - 32
+            assert got == pytest.approx(max(min(220, (inner - 14) / 2), (inner - 14 * (n - 1)) / n) - 30), (n, vw, sizes)
