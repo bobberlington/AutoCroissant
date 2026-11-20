@@ -58,7 +58,8 @@ records no data commit merged and website edits due but over the bake's cap; thr
 (the window from the dispatch) for edits held by a push in the last 30 minutes (`card_bake.pending` minus `due`, counted
 by the main lane's Leftover edits step). None when nothing is left, a lane failed, another live run's lane will read it,
 from a dry run, or after 3 runs in a row without a data or main commit or 12 runs (the summary says so). A run whose
-main lane waits a window also looks after its data lane (Chain after the data). A chained run gates its main lane as
+main lane waits a window also looks after its data lane (Chain after the data; not for the run's own bake records,
+which its after job merges, 2026-11-20). A chained run gates its main lane as
 the schedule and bakes `--pending`. The schedule is one safety cron at :17 every hour (GitHub delays the top of the hour
 most), for unposted events, failed lanes and stopped chains; the guards' Follow up dispatches as before.
 `TTS/checks/card_sync_steps.py` simulates the rules.
