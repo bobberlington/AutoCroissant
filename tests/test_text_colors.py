@@ -493,3 +493,32 @@ const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_pa
 process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
     assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0], (got, want)
+
+
+@site
+@pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "titleOff" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
+                    reason="no titleOff in this mockup.js")
+def test_mockup_draws_a_whole_title_colour_flat_as_the_bake(clone, tmp_path):
+    """mockup.js titleOff, on the cards' details records: a whole title's colour turns the title's own Gradient Overlay
+    off where set_colors does (_overlay_off: its letters flat, so the mock-up redraws them, not tints them); a phrase's
+    doesn't, nor a clipped layer's (Cake Mix)."""
+    from commands import psd_details as pd
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    name = {"field": "name", "color": "#20a0ff"}
+    jobs, want = [], []
+    for rel in ("Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd", "Creatures/Kirby/5 Stars/Yin_Yarn.psd", "Items/Heal/2 Stars/Cake_Mix.psd"):
+        psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
+        record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
+        for layer in pe.color_layers(psd, "name", card):
+            path, off = pd.layer_path(layer), pe._overlay_off(layer)
+            for colors in ([name], [{**name, "phrase": card.split()[0]}]):
+                jobs.append({"rec": record, "path": path, "colors": colors})
+                want.append("phrase" not in colors[0] and off in ("Color Overlay", "Gradient Overlay"))
+    (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
+    (tmp_path / "off.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
+const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
+process.stdout.write(JSON.stringify(jobs.map(j => M.titleOff(j.rec, j.path, j.colors))));""", encoding="utf-8")
+    got = json.loads(run_process(["node", str(tmp_path / "off.mjs")], capture_output=True, text=True, check=True).stdout)
+    assert got == want == [True, False, True, False, False, False], (got, want)
