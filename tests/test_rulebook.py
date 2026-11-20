@@ -49,6 +49,20 @@ def test_plain_text_and_chapters():
     assert rulebook.parse_rulebook(text) == found and text.count("\n") == 3          # one chapter per line
 
 
+def test_sections_as_the_website_has_them():
+    """Each '## ' section and titled panel (rulebook.js) as [start, end, title, slug] in the text's lines: a rule, a page
+    break, a fence's close or a row's next column ends it; its title without icons, its slug the website's anchor."""
+    src = ("# T\n\nIntro.\n\n## [fire] FIRE’S Café {.hp icon=fire}\nHot.\n\n---\n\nAfter.\n\n::: row\n## A\nIn a.\n"
+           "> [!kirby] Not a.\n:::\n## B\nIn b.\n\n---\n::: panel \"🕐ON YOUR TURN\" {.light}\nOYT.\n:::\n")
+    found = rulebook.chapter("site/rulebook/01-t.md", src)
+    rows = found["text"].split("\n")
+    assert found["text"] == rulebook.plain_text(src)
+    assert [(t, slug, [r for r in rows[s + 1:e] if r]) for s, e, t, slug in found["sections"]] == [
+        ("FIRE’S Café", "fires-cafe", ["Hot."]), ("A", "a", ["In a."]), ("B", "b", ["In b."]),
+        ("🕐ON YOUR TURN", "on-your-turn", ["OYT."])]
+    assert rows[found["sections"][0][0]] == "[fire] FIRE’S Café"
+
+
 def _png(colour) -> bytes:
     out = BytesIO()
     Image.new("RGB", (4, 6), colour).save(out, "PNG")
