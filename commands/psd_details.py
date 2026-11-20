@@ -5,7 +5,8 @@ would put them: the website mock-up's, psd_edit's geometry), a compact layer tre
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
 6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
-lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11). One record
+lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11; a type layer's own effects
+where layers share its path: VERSION 12). One record
 per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
@@ -44,7 +45,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 11                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"
+VERSION = 12                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -337,11 +338,12 @@ def _text_fx(layer) -> Optional[list]:
     return out if shows else None
 
 
-def _text(texts: list) -> list:
+def _text(texts: list, layers: list = ()) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
     A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke); its
     shadows and glows: "fx" (_text_fx); its header lines' text, "heads" (psd_edit.heads: a line typed under one takes
-    the next line's look)."""
+    the next line's look); its own "effects" (_names) when another of layers has its path (the record's keep one)."""
+    shared = {p for p, n in Counter(layer_path(x) for x in layers).items() if n > 1}
     out = []
     for layer in texts:
         try:
@@ -384,17 +386,24 @@ def _text(texts: list) -> list:
         heads = [layer.text[slice(*lines[k])].replace("\ufeff", "").strip() for k in found]
         if heads:
             out[-1]["heads"] = heads
+        if out[-1]["layer"] in shared:
+            out[-1]["effects"] = _names(layer)
     return out
+
+
+def _names(layer) -> list:
+    """The layer's effects' names; a switched-off one ends " (off)"."""
+    try:
+        on = layer.effects.enabled              # the layer's Effects switch off: every effect off (Springtrap's)
+        return [type(e).__name__ + ("" if on and e.enabled else " (off)") for e in layer.effects]
+    except Exception:                       # an effects block psd-tools can't read
+        return ["unreadable"]
 
 
 def _effects(layers: list) -> dict:
     out: dict = {}
     for layer in layers:
-        try:
-            on = layer.effects.enabled              # the layer's Effects switch off: every effect off (Springtrap's)
-            names = [type(e).__name__ + ("" if on and e.enabled else " (off)") for e in layer.effects]
-        except Exception:                       # an effects block psd-tools can't read
-            names = ["unreadable"]
+        names = _names(layer)
         if names:
             out[layer_path(layer)] = names
     return out
@@ -755,7 +764,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
             record[key] = walk_error
         return record
     record["fonts"] = _guard(_fonts, texts, index)
-    record["text"] = _guard(_text, texts)
+    record["text"] = _guard(_text, texts, layers)
     record["effects"] = _guard(_effects, layers)
     record["smart_objects"] = _guard(_smart_objects, layers)
     record["icons"] = _guard(_icons, psd, texts, vocab)

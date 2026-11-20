@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads", "effects"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -119,6 +119,16 @@ def test_effects_switch_off_marks_every_effect_off(clone):
     from psd_tools import PSDImage
     rel = "Auxiliary/Minions/Springtrap.psd"
     assert pd._effects(list(PSDImage.open(str(clone / rel)).descendants()))["Text/Ability"] == ["ColorOverlay (off)"]
+
+
+def test_layers_sharing_a_path_keep_their_own_effects(clone):
+    """VERSION 12: Twin Emperors' 5 Ability layers share one path, whose effects are a label's Gradient Overlay; each
+    says its own (the 3 overlay-free ones print typed icons in colour), layers of a path of their own nothing."""
+    from psd_tools import PSDImage
+    layers = list(PSDImage.open(str(clone / "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")).descendants())
+    got = {t["id"]: t.get("effects") for t in pd._text([x for x in layers if x.kind == "type"], layers)}
+    assert got == {97: None, 95: None, 96: None, 37: None, 526: [], 405: ["GradientOverlay"], 527: [], 406: ["GradientOverlay"],
+                   530: [], 215: None}
 
 
 def test_text_layers_and_template(records):
