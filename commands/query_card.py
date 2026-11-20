@@ -821,7 +821,8 @@ class CardRepository:
         self._populate_choices(cards)
 
     def _populate_choices(self, cards: dict) -> None:
-        """Autocomplete's names: cards (printed titles first), website names and aliases, renamed cards' old names."""
+        """Autocomplete's names: cards (printed titles first), website names and aliases, renamed cards' old names; for
+        /query, rulebook chapters and series."""
         found, shown_as = {}, {}
 
         def add(value: str, shown: str) -> None:
@@ -854,6 +855,15 @@ class CardRepository:
             title, value = c["title"], chapter_label(c)
             rows.append((title.lower(), f"{value} (rulebook chapter)", value, NAME_NORM.sub("", title.lower()),
                          frozenset(_pairs(title)), "#" + c["id"], True))
+        df = self.cards_dff
+        known = series_known(df)
+        for name in sorted(known):                               # /query only, as chapters: a series /query answers
+            said = None if name.strip().lower() in found else series_found(df, squash(name), known)
+            if said and said[0] == [name] and len(name) <= 100:
+                _, kind, parent, n = said
+                shown = f"{name} ({kind}{f' of {parent}' if parent else ''}, {n} card{'s' * (n != 1)})"
+                rows.append((name.lower(), shown[:100], name, NAME_NORM.sub("", name.lower()), frozenset(_pairs(name)),
+                             "@" + name, True))
         self.choices = tuple(sorted(rows, key=lambda r: r[:3]))
 
     def name_choices(self, current: str, chapters: bool = False) -> list:
@@ -862,12 +872,12 @@ class CardRepository:
 
         Args:
             current: What is typed so far
-            chapters: The rulebook chapters too (/query)
+            chapters: The rulebook chapters and series too (/query)
 
         Returns:
             Up to 25 (shown, value): names starting with it, then with a word that does, then holding it (a chapter
-            titled so: first); then names holding it without spaces and punctuation; none: up to 5 near spellings (3+
-            letters; one per card)
+            or series named so: first); then names holding it without spaces and punctuation; none: up to 5 near
+            spellings (3+ letters; one per card)
         """
         text = " ".join(typed(current).lower().replace("_", " ").split())
         choices = self.choices                                   # one read: a rebuild swaps it whole
@@ -878,7 +888,7 @@ class CardRepository:
             at = c[0].find(text)
             if at < 0 or c[6] and not chapters:
                 continue
-            if c[6]:                                             # a chapter: after the cards, unless it is the text
+            if c[6]:                                             # a chapter, series: after the cards, unless typed whole
                 rank = 0 if c[0] == text else 3
             else:
                 rank = 0 if at == 0 else 1 if c[0][at - 1] in " (-." else 2
@@ -1155,14 +1165,19 @@ def _chapter(query: str) -> Optional[dict]:
     return next(found, None) if text else None
 
 
-def _series(query: str) -> Optional[tuple]:
-    """('**Hollow Knight** is a series: 68 cards', 1 name) when query names a series or subseries as a search term does
-    (series_names), with the cards that term finds by it; None otherwise."""
-    df, term = card_repo.cards_dff, squash(query)
+def series_known(df: DataFrame) -> dict:
+    """series_names of each series and subseries name in df."""
+    subs = df["subseries"] if "subseries" in df else []
+    return {n: series_names(n) for n in {*df["series"], *subs} if isinstance(n, str)} if "series" in df else {}
+
+
+def series_found(df: DataFrame, term: str, known: dict) -> Optional[tuple]:
+    """(names, kind, its one series or None, n) when term (squashed) names a series or subseries as a search term does
+    (series_names): the series, else subseries, it names (the one typed, else each it is part of) and the n cards that
+    term finds by it; None otherwise."""
     if not term or "series" not in df:
         return None
     subs = df["subseries"] if "subseries" in df else [None] * len(df)
-    known = {n: series_names(n) for n in {*df["series"], *subs} if isinstance(n, str)}
     hit = lambda name: term in known.get(name, ())
     cards = [(s, u) for s, u in zip(df["series"], subs) if hit(s) or hit(u)]
     if not cards:
@@ -1171,10 +1186,20 @@ def _series(query: str) -> Optional[tuple]:
     names = top or sorted({u for _, u in cards if hit(u)})
     names = [n for n in names if squash(n) == term][:1] or names     # the name typed, else each it is part of
     parents = {s for s, u in cards if u in names and isinstance(s, str)}
-    kind = "series" if top else "subseries" + (f" of {escape_markdown(*parents)}" if len(parents) == 1 else "")
-    bold = [f"**{escape_markdown(n)}**" for n in names]
+    return names, "series" if top else "subseries", None if top or len(parents) != 1 else min(parents), len(cards)
+
+
+def _series(query: str) -> Optional[tuple]:
+    """('**Hollow Knight** is a series: 68 cards', 1 name) when query names a series or subseries as a search term does
+    (series_found), with the cards that term finds by it; None otherwise."""
+    df = card_repo.cards_dff
+    found = series_found(df, squash(query), series_known(df))
+    if not found:
+        return None
+    names, kind, parent, n = found
+    kind += f" of {escape_markdown(parent)}" if parent else ""
+    bold = [f"**{escape_markdown(name)}**" for name in names]
     said = " and ".join([", ".join(bold[:-1]), bold[-1]] if len(bold) > 1 else bold)
-    n = len(cards)
     return (f"{said} {'is a' if len(names) == 1 else 'are'} {kind}: {n} card{'s' * (n != 1)}", len(names))
 
 
