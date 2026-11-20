@@ -1219,7 +1219,9 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
     A layer's text with the edit old -> new of what the parser read from it applied where it prints: each changed part
     spliced over the characters of raw it replaces, an insertion after the character before it (a token typed as
     another variant: the whole printed token, _variant_ops); what the edit keeps, and the layer's own blank ends,
-    indents and breaks between, stay as they are.
+    indents and breaks between, stay as they are. An indent after a break that the reading hides (Warcraftian Hunter's
+    pet lines, Mage's title) goes with its break, unless its line still starts a line and keeps some of its words;
+    text typed at the start of a line whose break stays goes after its indent.
 
     Args:
         old: The text the parser read from raw (or a part of it)
@@ -1231,7 +1233,24 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
         The layer's new text (\\r breaks)
     """
     at, end = _align(old, raw), len(raw.rstrip(PAD))
-    for tag, i1, i2, j1, j2, whole in reversed(_variant_ops(old, new, raw, at, _opcodes(old, new))):
+    ops = _variant_ops(old, new, raw, at, _opcodes(old, new))
+    kept = {i for tag, i1, i2, *_ in ops if tag == "equal" for i in range(i1, i2)}
+    held, hidden = set(at.values()), {}     # hidden: indent start -> (end, its line keeps words, its break kept)
+    for b in (b for b, c in enumerate(old) if c == "\n" and b in at):
+        p = q = at[b] + 1
+        while q < len(raw) and raw[q] in " \t" and q not in held:
+            q += 1
+        if p < q < len(raw) and raw[q] not in "\r\x03":
+            e = (old + "\n").index("\n", b + 1)
+            hidden[p] = (q, any(i in kept and not old[i].isspace() for i in range(b + 1, e)), b in kept)
+    out, pos = [], 0
+
+    def copy(to):
+        nonlocal pos
+        if pos in hidden and pos < to and not (hidden[pos][1] and "".join(out)[-1:] in ("", "\r", "\x03")):
+            pos = hidden[pos][0]    # its break gone: the indent too
+        out.append(raw[pos:to])
+    for tag, i1, i2, j1, j2, whole in ops:
         if tag == "equal":
             continue
         if whole:
@@ -1243,8 +1262,13 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
             if lo is None:
                 lo = next((at[i] for i in range(i2, len(old)) if i in at), end)
             hi = lo
-        raw = raw[:lo] + new[j1:j2].replace("\n", brk) + raw[hi:]
-    return raw
+            if lo in hidden and hidden[lo][2] and not new[j1:j2].endswith("\n"):
+                lo = hi = hidden[lo][0]
+        copy(lo)
+        out.append(new[j1:j2].replace("\n", brk))
+        pos = max(pos, hi)
+    copy(len(raw))
+    return "".join(out)
 
 
 def _layer_reading(psd: PSDImage, layer, parser: Optional[PSDParser]) -> str:
