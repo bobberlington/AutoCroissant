@@ -711,7 +711,8 @@ Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower()
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
 `_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today, else to the PNG beside
 the PSD its archive `moved_to` MDW/ (Pandiety -> MDW/Unfinished/6 Stars/Pandeity.png, not autocompleted); the reply says
-"(renamed from X)"); else a typed path's file name ("Creatures/Pizza.png", "items/pizz": the same steps, 2026-11-20);
+"(renamed from X)"); else a typed path's file name when its first folder is one of the tree's (`tops`) or it ends ".png" ("Creatures/Pizza.png",
+"items/pizz": the same steps; another folder's file is a guess, never an MDW/ or Types/ one; "fire/water" is no path, 2026-11-20);
 else a guess (`closest` :632), which the reply labels "Closest match: X" and the console logs
 (`Search guess:`; a miss logs `Search miss:`). When the typed text is also in card abilities (`ability_hits`,
 /query_ability's count: lowercased, spaces as one, synonyms), a guess (or a miss, after "No card found!") adds "· N cards have \"text\" in their
