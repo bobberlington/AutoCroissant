@@ -674,6 +674,9 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
         joke = next(c for c in branch["cards.json"]["morgue"] if c["name"] == "Joke Card")
         assert joke["pic"] == hb + "_morgue/joke-card/P-9.webp"
         assert not hasattr(bs, "HISTORY_LIST") or joke["lpic"] == hb + "_morgue/joke-card/P-9-list.avif"
+        page = (tmp_path / "h/dist/c" / joke["id"] / "index.html").read_text(encoding="utf-8")   # its link preview and preload
+        assert f'<meta property="og:image" content="{joke["pic"]}">' in page and 'og:image:height" content="80">' in page
+        assert f'<link rel="preload" as="image" href="{joke["pic"]}" fetchpriority="high">' in page and "summary_large_image" in page
         monkeypatch.setattr(bs, "HISTORY_URL", "http://127.0.0.1:8000/h")    # a local preview's server
         assert bs.history_host(str(hist)) == ("http://127.0.0.1:8000/h/", None)
         monkeypatch.setattr(bs, "HISTORY_URL", "")
