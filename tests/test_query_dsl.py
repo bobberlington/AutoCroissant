@@ -345,6 +345,25 @@ process.stdout.write(JSON.stringify(["(2PG)", "2pg", "(3CD)", "(3U)", "(1CD)", "
     assert "x = typed && bookTag(typed, chapters)" in rules and "is not printed in the rulebook; its row" in rules
 
 
+def test_old_rulebook_page_links_open_their_chapter(tmp_path):
+    """The bot's 10-25 changelog posts link old Photoshop rulebook pages (#/rules?q=11%20Abilities4): app.js bookPage
+    opens the chapter of that number and title; any other search still searches."""
+    pages = {"contents": ["00 Table of Contents"], "getting-started": ["01 Getting Started"], "table": ["04 Table3", "04 Table5"],
+             "shops": ["05 Shops"], "reading-cards": ["06 Reading Cards"], "stats": ["07 Stats1"],
+             "the-global-turn": ["08 Global Turn"], "taking-your-turn": ["09 TakingYourTurn"],
+             "attacking": ["10 Attacking", "10 Attacking2"], "abilities": [f"11 Abilities{n}" for n in ("", 2, 3, 4, 6, 7)],
+             "reactions": [f"12 Reactions{n}" for n in ("", 2, 3, 4, 5)], "items": ["13 Items"], "item-types": ["14 Item Types2"],
+             "death": ["17 Death"], "field-cards": ["18 Field Cards"], "status-effects": ["19 Status Effects", "19 Status Effects2"]}
+    names = [n for ns in pages.values() for n in ns]
+    others = ["10 HP", "12 Abilities4", "11 abilities are", "11Abilities", "1 Abilities", "abilities", "(2PG)", "08 Turn"]
+    found = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => ({{ id: f.slice(3, -3), num: f.slice(0, 2), title: RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8")).title }}));
+process.stdout.write(JSON.stringify({json.dumps(names + others)}.map(q => bookPage(q, chapters)?.id ?? null)));""")
+    assert found == [c for c, ns in pages.items() for _ in ns] + [None] * len(others)
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    assert "history.replaceState(history.state, \"\", h); renderView(parseHash(), h)" in app[app.index("function renderRules(r) {"):]
+
+
 def test_words_typed_without_punctuation(tmp_path, monkeypatch):
     """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.), never a
     sentence's end between two words; digits never (05 is not 0.5); quoted or typed with them: exact. Cards and
