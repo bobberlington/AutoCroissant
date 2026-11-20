@@ -181,7 +181,7 @@ async def on_raw_thread_delete(payload):
 
 
 async def query_names(interaction: Interaction, current: str) -> list:
-    """Autocomplete for /query: card names, then the rulebook chapters too."""
+    """Autocomplete for /query: card names, then the rulebook chapters and series too."""
     return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, chapters=True)]
 
 

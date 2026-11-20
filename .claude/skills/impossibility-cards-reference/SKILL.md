@@ -735,7 +735,10 @@ text and letter pairs precomputed): today's substring ranking, then names holdin
 `_ - . ' ’ ! ? , : ™ ® ©` ("Moms Knife", "WX 78"), and when nothing matches (3+ letters) up to 5 near spellings
 (suggest()'s Dice > 0.35, one per card). /query alone also lists the rulebook chapters ("15. Minions (rulebook
 chapter)", after the cards unless the text is the title); a chapter's title or label answers before an MDW/ or
-Types/ file of that name (Negation).
+Types/ file of that name (Negation). It lists the series and subseries the same way, each one /query answers by its
+own name and that no card's choice holds (2026-11-20: "Hollow Knight (series, 68 cards)", "Paper Mario (subseries of
+Mario, 57 cards)"; not OMORI, Portal: cards; not Undertale, Deltarune: /query answers Undertale/Deltarune), counted as
+`_series` counts (`series_found`).
 main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
