@@ -1373,13 +1373,15 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         queue_message(interaction, "No card found!")
         return
     key, name, guess = found
-    label = f"**{name}**"
+    shown = _label(key) if key else name                # its printed title, as /query
+    title = lambda n: getattr(stats_db.stats.get(n), "display_name", None) or n
+    label = f"**{shown}**"
     if guess:
-        print(f"Search guess: /query {query!r} as_of -> {name}")
+        print(f"Search guess: /query {query!r} as_of -> {shown}")
     current = stats_db.stats.get(name)
     if current is not None and picture_only(current):
         # a copy: its original's history (a variant picture: its own, below; a marked PSD: its own)
-        label = f"**{name}** (same card as {current.duplicate_of})"
+        label = f"**{shown}** (same card as {title(current.duplicate_of)})"
         name = current.duplicate_of
         current = stats_db.stats.get(name)
     label = f"Closest match: {label}" if guess else label
@@ -1396,7 +1398,7 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
         versions = theirs + versions
     index = version_at(versions, end)
     if index is not None and index < len(theirs):
-        label = f"{label} (same card as {picture1})"
+        label = f"{label} (same card as {title(picture1)})"
     head = f"{label} as of {day.isoformat()} (end of day, {TIMEZONE.key}): "
     if index is None:
         first = versions[0]
