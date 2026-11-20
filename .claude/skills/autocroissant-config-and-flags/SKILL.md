@@ -243,7 +243,7 @@ Build mode only (`python -m commands.card_data`); legacy /update_stats ignores t
 | `RATE_FLOOR` | `150` | no more REST downloads once `X-RateLimit-Remaining` is below this |
 | `MIN_CARDS`, `FLOOR_SHARE` | `100`, `0.95` | gate G1 |
 | `ARCHIVE_MIN`, `ARCHIVE_SHARE` | `5`, `0.01` | gate G2: at most max(5, 1%) archived a run (`--allow-archive` lifts it) |
-| `REPARSE_MAX` | `25` | gate G4: same-blob re-parses without approval (`--full`, kept in `pending.full` while a budgeted re-parse goes on) |
+| `REPARSE_MAX` | `25` | gate G4: same-blob re-parses that changed a record, without approval (`--full`, kept in `pending.full` while a budgeted re-parse goes on); a details-only re-read is not counted |
 | `QUALITY_SLACK`, `DETAILS_SHARE` | `3`, `0.05` | gate G5 |
 | `SPARSE_FILES` | 18 paths | what card-sync.yml checks out of AutoCroissant: the build's, the bake's and the save's import closure (tests/test_card_data.py runs `--help` on all three CLIs with exactly this list) |
 | `EXIT_OK`, `EXIT_ERROR`, `EXIT_GATE` | `0`, `1`, `2` | written or nothing to do; an error (a file not fetched included); a gate refused |

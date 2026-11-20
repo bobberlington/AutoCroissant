@@ -331,7 +331,8 @@ Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs mo
   - (c) `PARSER_VERSION` at the builder ref differs from `manifest.builder.parser_version`. That version is one line of
     `commands/psd_parser.py`, read raw from AutoCroissant at no API cost, so a parser change shows up within one interval (gate
     G4 stops it until it is approved). The same for `psd_details.VERSION` against `manifest.builder.details_version`: each
-    details record keeps the VERSION it was gathered under, and a record of another one is read again like a parser bump;
+    details record keeps the VERSION it was gathered under, and a record of another one is read again like a parser bump
+    (G4 lets it through when the card's record stays the same, 2026-11-19: no `full` needed, the chain reads the rest);
   - (d) `manifest.pending.repin` is not empty: images baked by the last run still need their save links (§6.3, stage 4;
     gone 2026-11-12: the main lane re-pins in a second commit on M);
   - (e) events are unposted: the last event's `seq` is past `posted.seq` (a post failed);
@@ -1106,7 +1107,7 @@ A duplicate's change is listed under its original.
 | G1 floor | fewer than 100 cards (build_site's `MIN_CARDS`), or fewer than 95% of before's | nothing; fix the cause |
 | G2 archive ceiling | more than max(5, 1% of cards) archived in one run | `allow_archive` |
 | G3 round trip | any record changes through record → CardInfo → record; psd_details doesn't parse; a written file's sha256 differs from the manifest | nothing |
-| G4 same-blob re-parses | more than 25 cards re-parsed with an unchanged blob | `full` (approval kept in `pending.full`) or naming them in `cards` |
+| G4 same-blob re-parses | more than 25 cards re-parsed with an unchanged blob and a changed record (a details-only re-read leaves it: not counted) | `full` (approval kept in `pending.full`) or naming them in `cards` |
 | G5 quality | UNKNOWN card_type up by more than 3; more than 3 cards lost their ability text; more than 3 lost every stat; psd_details records down by more than 5% | after review: `cards` for the listed cards, or `full` |
 | G6 freshness | the `data` tip moved since checkout (another writer; a Card checks commit, `db/card_checks.json` alone, is rebased over since 2026-11-07) | the next run, automatically |
 

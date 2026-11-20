@@ -1253,7 +1253,7 @@ RATE_FLOOR = 150                                                  # no more REST
 MIN_CARDS = 100                                                   # G1: build_site's MIN_CARDS
 FLOOR_SHARE = 0.95                                                # G1: of the cards before
 ARCHIVE_MIN, ARCHIVE_SHARE = 5, 0.01                              # G2: archived per run, at most max(5, 1%)
-REPARSE_MAX = 25                                                  # G4: same-blob re-parses without approval
+REPARSE_MAX = 25                                                  # G4: same-blob re-parses that changed a record
 QUALITY_SLACK = 3                                                 # G5: cards that may lose a type, ability or stats
 DETAILS_SHARE = 0.05                                              # G5: psd_details records that may go
 EXIT_OK, EXIT_ERROR, EXIT_GATE = 0, 1, 2
@@ -1672,7 +1672,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
     """
     from commands import changelog, psd_details
-    from commands.card_db import check_db, read_db, round_trip_problems, write_db
+    from commands.card_db import check_db, read_db, record as card_record, round_trip_problems, write_db
     from commands.font_check import fonts_report
     from commands.card_history import date_archive, kept_values, record_versions, start_archived
     out = Outcome()
@@ -1786,7 +1786,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         if notes:
             out.problems.append({"card": name, "path": card.path, "notes": notes})
 
-    same_blob = [n for n, (o, _, sha) in run_build.reparsed.items() if o is not None and getattr(o, "blob_sha", None) == sha]
+    same_blob = [n for n, (o, _, sha) in run_build.reparsed.items() if o is not None and getattr(o, "blob_sha", None) == sha
+                 and (n not in db.stats or card_record(o) != card_record(db.stats[n]))]   # same record: no re-parse
     lost = [n for n in gone if not (db.archive_tag(n) or {}).get("renamed_to")     # an exact rename loses no card,
             and not getattr(db.old_stats[n][len(db.old_stats[n]) - 1], "duplicate_of", None)]   # an alt art no card either
     out.refused, out.lifted = gates(before, db.stats, details_before, len(details), lost, same_blob, approved,
