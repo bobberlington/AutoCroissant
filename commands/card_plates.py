@@ -10,7 +10,8 @@ of it (its lines and letters, layout()) when that is the stored pixels'. A card 
 cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it takes, at that view,
 which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own stars at every count,
 pasted in place of the mock-up's erased and redrawn ones; a card with header type icons gets "under" (with_under): the
-card without them, shown where a types edit takes one away.
+card without them, shown where a types edit takes one away. A title under a clipped texture or an adjustment layer (an
+Ability under an adjustment) gets "tints": the bake's own pictures of it in 9 colours, mixed for a whole-field colour.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
@@ -25,7 +26,7 @@ from re import IGNORECASE, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import argv, stderr
 from time import sleep
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -56,6 +57,9 @@ LAYOUT_OFF = 0.05                           # card_standards._ink_off past this:
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 TEXTURES = ("pixel", "smartobject", "shape", "solidcolorfill", "gradientfill", "patternfill")   # adjustments alone: none
 BAND = 4                                    # a letter look's band: the layer's box and 1/BAND of its height past it
+TINT_RIM = 8                                # px past where a layer's tints differ (the view's LANCZOS reach)
+# tints' colours (TTSCardMaker mockup.js PROBES): the RGB cube's corners, then grey
+PROBES = ("#000000", "#ff0000", "#00ff00", "#0000ff", "#00ffff", "#ff00ff", "#ffff00", "#ffffff", "#808080")
 BRANCH = "plates"
 LOCAL_REF = "refs/card-plates/head"         # where publish fetches the branch head (no remote-tracking ref moved)
 TRIES = 5
@@ -155,6 +159,61 @@ def letter_look(psd: PSDImage, raw: bytes, layer, icc: bool, step: int) -> Optio
     band._invalidate_bbox()
     image = like_mode(psd_edit.render_region(copy, box, icc, edited=(layer.layer_id,)), "RGB")
     return box, image, "#%02x%02x%02x" % tuple(fill)
+
+
+def adjusted(psd: PSDImage, layer) -> list:
+    """The shown adjustment layers over the layer: clipped onto it or a group above it, or above it in its groups."""
+    from psd_tools.api.layers import AdjustmentLayer
+    out, node = [], layer
+    while node is not None and node is not psd:
+        kids = list(node.parent)
+        out += [x for x in node.clip_layers if x.visible and isinstance(x, AdjustmentLayer)]
+        out += [x for x in kids[kids.index(node) + 1:] if x.visible and not x.clipping and isinstance(x, AdjustmentLayer)]
+        node = node.parent
+    return out
+
+
+def tint_looks(psd: PSDImage, raw: bytes, layer, field: str, card: str, fonts_dir: str, chart, icc: bool, step: int,
+               view: Optional[int] = None) -> Optional[tuple]:
+    """
+    (box, [image per PROBES], luma) of a textured() or adjusted() title, or an adjusted() Ability (a textured one alone
+    tints fine: Pizza's; its box is large): its padded box (canvas px) drawn after the bake's whole-field colour job in
+    each probe colour (plan_colors, set_colors on an edit copy; one it calls redundant: the card itself), luma when a
+    Gradient Map is over it; the box cut to where the looks differ and TINT_RIM past it. None for other layers, looks
+    all alike, or a colour the bake refuses.
+
+    Args:
+        field: "name" or "ability"
+        card: The card's name (color_layers')
+        chart: Returns status_fills() (an Ability's status words keep its colours)
+    """
+    from psd_tools.api.adjustments import GradientMap
+    over = adjusted(psd, layer)
+    if layer.kind != "type" or not layer.is_visible() or not (over or field == "name" and textured(psd, layer)) \
+            or _padded(layer) is None:
+        return None
+    box, images = _snap(_padded(layer), step, psd.size), []
+    colours = chart() if chart and field == "ability" else None
+    for colour in PROBES:
+        one = {"field": field, "color": colour}
+        how = psd_edit.plan_colors(psd, [one], card, chart=colours, view=view)[0][1]
+        if how == "redundant":
+            images.append(like_mode(psd_edit.render_region(psd, box, icc), "RGB"))
+            continue
+        if how != "baked":
+            return None
+        copy = psd_edit.edit_copy(psd, raw)
+        edit = psd_edit.set_colors(copy, [one], fonts_dir, card, colours, view)
+        images.append(like_mode(psd_edit.render_region(copy, box, icc, edited=psd_edit.edited_ids([edit])), "RGB"))
+    arrays = [_rgb(image) for image in images]
+    ys, xs = np.nonzero(np.logical_or.reduce([np.abs(a - arrays[0]).max(-1) > INK for a in arrays[1:]]))
+    if not len(ys):
+        return None
+    cut = _snap((box[0] + int(xs.min()) - TINT_RIM, box[1] + int(ys.min()) - TINT_RIM, box[0] + int(xs.max()) + 1 + TINT_RIM,
+                 box[1] + int(ys.max()) + 1 + TINT_RIM), step, psd.size)
+    cut = (max(cut[0], box[0]), max(cut[1], box[1]), min(cut[2], box[2]), min(cut[3], box[3]))
+    images = [image.crop((cut[0] - box[0], cut[1] - box[1], cut[2] - box[0], cut[3] - box[1])) for image in images]
+    return cut, images, any(isinstance(x, GradientMap) for x in over)
 
 
 def _without(psd: PSDImage, groups: list, png: np.ndarray, icc: bool, step: int, tight: int = 0) -> Optional[tuple]:
@@ -343,7 +402,8 @@ def _stacked(psd: PSDImage, layer, copies: list, png: np.ndarray, icc: bool, ste
 
 
 def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None,
-           pictures: Optional[dict] = None, raw: Optional[bytes] = None) -> Optional[dict]:
+           pictures: Optional[dict] = None, raw: Optional[bytes] = None, card: str = "",
+           chart: Optional[Callable] = None) -> Optional[dict]:
     """
     The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"}, or None when no layer gave one.
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
@@ -353,7 +413,9 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     crops, the first one's "stacked" (_stacked) telling how the bake draws them; a copy or watermark elsewhere has a crop
     of its own ("fill": its colour where it shows, "over": the cropped layers drawn over it, "relaid": _layout's), one
     that never shows none. With raw, a textured layer's letter_look() is in img too: "letters": [{"id", "fill", "box",
-    "at"}] (the mock-up fills typed letters of that colour with it).
+    "at"}] (the mock-up fills typed letters of that colour with it); with raw and fonts_dir, a textured or adjusted
+    layer's tint_looks() too: "tints": [{"id", "box", "at": [a cut per PROBES], "luma"}] (the mock-up's whole-field
+    colour, mixed from them).
 
     Args:
         psd: The card
@@ -361,7 +423,9 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
         parts: Its details record's parts (psd_parts.card_parts)
         fonts_dir: MDW/Fonts (the layouts'); None: none
         pictures: A tagged PSD's {n: picture n's PNG}: the layers shown in picture n alone (Name #2) cropped against it
-        raw: The bytes psd was opened from (letter looks); None: none
+        raw: The bytes psd was opened from (letter looks, tints); None: none
+        card: The card's name (tints')
+        chart: Returns status_fills() (tints')
     """
     if psd.width <= 0 or png.size != psd.size:
         return None
@@ -369,7 +433,9 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
-    found, looks, cropped = [], [], set()
+    found, looks, tints, cropped = [], [], [], set()
+    fields = {p["id"]: "name" if k == "title" else "ability" for k in KINDS for p in (parts or {}).get(k) or []
+              if isinstance(p, dict) and p.get("id") is not None}
     tagged = len(variants_of(psd)) > 1
     views = [(1 if tagged else None, png, dict.fromkeys(layer_ids(parts)))]
     for n, picture in sorted((pictures or {}).items()) if tagged else ():
@@ -402,6 +468,14 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                     look = None
                 if look:
                     looks.append(({"id": lid, "fill": look[2]}, look[0], look[1], None, None))
+                try:
+                    tint = tint_looks(psd, raw, layer, fields[lid], card, fonts_dir, chart, icc, step, n) \
+                        if raw is not None and fonts_dir else None
+                except Exception as error:          # noqa: BLE001 - none: the mock-up tints the letters
+                    print(f"{layer.name}: no tints: {type(error).__name__}: {error}", file=stderr)
+                    tint = None
+                if tint:
+                    tints.append(({"id": lid, **({"luma": True} if tint[2] else {})}, tint[0], tint[1]))
             for f in follow:                    # a copy or watermark elsewhere: its own crop
                 one, of = by_id.get(f.get("id")), [by_id[i] for i in f.get("of") or [] if i in by_id and i in ids]
                 if one is None or not of or one.layer_id in cropped or any(_meets(x, one) for x in of):
@@ -416,16 +490,20 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                     found.append(({"id": one.layer_id, **_layout(one, fonts_dir, True), "fill": fill, **({"over": over} if over else {})},
                                   *got))
                     cropped.add(one.layer_id)
-    if not found and not looks:
+    if not found and not looks and not tints:
         return None
+    entries = [(key, box, image, ink) for key, box, image, _, ink in found + looks]
+    entries += [(key, box, image, "tint") for key, box, images in tints for image in images]
     small = [(key, box, ink, image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),
-                                          Image.LANCZOS)) for key, box, image, _, ink in found + looks]
-    width, last, crops, letters, parts, y = max(im.width for *_, im in small), len(small) - 1, [], [], [], 0
+                                          Image.LANCZOS)) for key, box, image, ink in entries]
+    width, last, crops, letters, tinted, parts, y = max(im.width for *_, im in small), len(small) - 1, [], [], {}, [], 0
     for n, (key, box, ink, im) in enumerate(small):     # gaps and the right side: edge pixels, no seam bleeds in
         top, bottom = (GAP // 2 if n else 0), (GAP - GAP // 2 if n < last else 0)
         parts.append(np.pad(np.asarray(im), ((top, bottom), (0, width - im.width), (0, 0)), mode="edge"))
         at = [0, y + top, im.width, im.height]
-        if ink is None:
+        if ink == "tint":                       # a look per probe, in PROBES' order
+            tinted.setdefault(id(key), {**key, "box": list(box), "at": []})["at"].append(at)
+        elif ink is None:
             letters.append({**key, "box": list(box), "at": at})
         else:
             crops.append({**key, "box": list(box), "ink": list(ink), "at": at})
@@ -433,6 +511,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     buf = BytesIO()
     Image.fromarray(np.concatenate(parts)).save(buf, "AVIF", quality=QUALITY)
     return {"v": VERSION, "w": psd.width, "crops": crops, **({"letters": letters} if letters else {}),
+            **({"tints": list(tinted.values())} if tinted else {}),
             "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}
 
 
@@ -1075,9 +1154,11 @@ __all__ = [
     'BAR_MOVED',
     'BAR_TOP',
     'BRANCH',
+    'PROBES',
     'Unpublished',
     'VERSION',
     'VIEW_W',
+    'adjusted',
     'bar_changes',
     'bar_sheet',
     'bar_value',
@@ -1097,6 +1178,7 @@ __all__ = [
     'star_changes',
     'star_value',
     'textured',
+    'tint_looks',
     'view',
     'with_bars',
     'with_stars',
