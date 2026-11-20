@@ -5,6 +5,7 @@ address; every cf keeps its matches and every xcf drops them, in the search box'
 $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
+import re
 from subprocess import run as run_process
 
 from conftest import SITE_SRC
@@ -54,3 +55,13 @@ process.stdout.write(JSON.stringify({{ apply: cases.map(names), back: CF.vals(ba
     assert json.loads(out["stored"]) == ["(1GCD)", "heal"]
     assert out["junk"] == [[], [], ["a", "b"]]
     assert out["vals"] == ["a", "b"]
+
+
+def test_save_as_filter_beside_the_search_chip():
+    """Not in the bar: shown on typing, it squeezed the box (desktop) or dropped it a row (phones) (2026-11-20)."""
+    page = (SITE_SRC / "site" / "index.html").read_text(encoding="utf-8")
+    form = re.search(r'<form class="search".*?</form>', page, re.S).group(0)
+    assert re.findall(r'id="([\w-]+)"', form) == ["search-form", "q", "search-help"]
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    assert re.search(r'active\.push\(\["q",[^\n]*id="save-filter" data-action="save-filter"', app)
+    assert 'actions["save-filter"] =' in app
