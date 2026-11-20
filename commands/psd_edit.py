@@ -6602,10 +6602,13 @@ def _fx_words(psd: PSDImage, layer) -> list:
 
 
 def _painted(layer, a: int, b: int, fx: list, kept=frozenset()) -> list:
-    """The str indices a colour paints in layer.text[a:b]: not the icon font's (badges and icons keep their colours), not
-    an FX layer's words (its pixels show), not kept's (status_letters)."""
-    icons = _char_styles(layer)[1]
-    return [i for i in range(a, b) if not icons[i] and i not in kept and not any(s <= i < e for s, e, _ in fx)]
+    """The str indices a colour paints in layer.text[a:b]: not the icon font's badges, icons (icon_text: they keep their
+    colours) or blanks (its other characters do take it: Gasoline's '+' and '/'), not an FX layer's words (its pixels
+    show), not kept's (status_letters)."""
+    icons, text = _char_styles(layer)[1], layer.text
+    drawn = {i for s, e in icon_text(text, None) for i in range(s, e)}
+    return [i for i in range(a, b) if not (icons[i] and (i in drawn or text[i].isspace() or text[i] == "\x03"))
+            and i not in kept and not any(s <= i < e for s, e, _ in fx)]
 
 
 def _whole_span(text: str, a: int, b: int) -> bool:
