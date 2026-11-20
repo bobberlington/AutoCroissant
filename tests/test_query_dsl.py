@@ -364,6 +364,42 @@ process.stdout.write(JSON.stringify({json.dumps(names + others)}.map(q => bookPa
     assert "history.replaceState(history.state, \"\", h); renderView(parseHash(), h)" in app[app.index("function renderRules(r) {"):]
 
 
+def test_page_search_boxes_close_a_phones_keyboard(tmp_path):
+    """The Rulebook's and the published decks' own search boxes (app.js searchBox, no form): Enter searches at once and
+    a phone's Search key closes the keyboard, also past the search's 200 ms re-focus; a desktop keeps the redrawn box
+    focused; an IME's Enter and other keys change nothing."""
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    for sel in ("#rules-q", "#decks-q"):
+        assert re.search(rf'const input = \$\("{sel}"\);\n\s*searchBox\(input, debounce\(', app), sel
+    at = app.index("function searchBox(")
+    code = re.search(r"^function debounce\(.*$", app, re.M)[0] + "\n" + app[at:app.index("\n}\n", at) + 2]
+    script = tmp_path / "box.mjs"
+    script.write_text(code + r"""
+let active = null, cur = null, coarse = true, redraws = 0;
+const document = { get activeElement() { return active; } }, matchMedia = () => ({ matches: coarse }), $ = () => cur;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const draw = () => { const on = {}, b = { id: "rules-q", on, addEventListener: (t, h) => { on[t] = h; }, setSelectionRange() {},
+  focus() { active = b; }, blur() { if (active === b) active = null; } };
+  cur = b; searchBox(b, debounce(() => { redraws++; draw(); $().focus(); }, 200)); };   // setParams redraws the box
+const seen = () => [redraws, active && active.id];
+async function press(phone, key, waited = false) {
+  coarse = phone; redraws = 0; draw(); cur.focus(); cur.on.input();
+  if (waited) await sleep(300);
+  cur.on.keydown(key); const now = seen(); await sleep(300); return [now, seen()];
+}
+const enter = { key: "Enter" };
+process.stdout.write(JSON.stringify([await press(true, enter), await press(false, enter), await press(true, enter, true),
+  await press(true, { key: "Enter", isComposing: true }), await press(true, { key: "Enter", keyCode: 229 }), await press(true, { key: "a" })]));
+""", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    phone, desk, later, *typing = json.loads(done.stdout)
+    assert phone == [[1, None], [1, None]]                # searched now, keyboard closed, no re-focus after
+    assert desk == [[1, "rules-q"], [1, "rules-q"]]
+    assert later == [[1, None], [1, None]]                # the search had run: only the keyboard closes
+    assert typing == [[[0, "rules-q"], [1, "rules-q"]]] * 3
+
+
 def test_words_typed_without_punctuation(tmp_path, monkeypatch):
     """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.), never a
     sentence's end between two words; digits never (05 is not 0.5); quoted or typed with them: exact. Cards and
