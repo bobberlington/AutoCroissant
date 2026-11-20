@@ -581,19 +581,21 @@ is `-r requirements-cards.txt` and `-r requirements-bot.txt`, `requirements-dev.
 jetson installs `requirements-bot.txt` alone since 2026-11-11: no fork there. The five card workflows on
 Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
 card-preview.yml (without the oxipng CLI: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
-(now card-guards.yml's check job), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
-`~/.cache/card-wheels`, key `card-wheels-<requirement lines' sha256>-<OS>-<arch>-py<3.14>` since 2026-11-04 (the minor
-version: a runner image's new patch reuses them; the venv beside it, `card-venv-...-py<3.14.x>-ox<oxipng>` (the CLI in it since 2026-11-08), is per patch; `cards-...-py<3.14.x>`
-before, which two runner images in turn kept rebuilding): one entry for all of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
-first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
-pyoxipng's Rust) and saves them; later runs skip the git clone and the builds (a cold miss on the Mac: 16.4 s for the
-wheels, 19.5 s for pyoxipng's sdist, 10.7 s to install; a runner is slower, PUSH_GUARDS.md section 20). The
-install goes by name (a copy of the file without the URL, `sed 's/ @ [^;]*//'`): pip builds a URL line from git again,
-offline or not. The wheels freeze numpy, scipy, Pillow and the rest at that first build; any edit of the file refreshes
-them (for a bad dependency release, delete the entry: step 1's `gh cache delete`).
+(now card-guards.yml's check job), check the file out of AutoCroissant and keep it installed in one cached venv (key
+`card-venv-<requirement lines' sha256>-<OS>-<arch>-py<3.14.x>-ox<oxipng>`, the oxipng CLI in it since 2026-11-08; one
+entry for all of them). A runner image's new 3.14 patch restores the last patch's entry and re-points its interpreter
+links (`venv --upgrade` after deleting them: it keeps a dangling link), about 5 s instead of a rebuild (2026-11-19; until
+then a wheel cache `card-wheels-...-py<3.14>` sat beside it, `cards-...-py<3.14.x>` before 2026-11-04, which two runner
+images in turn kept rebuilding; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own
+`-py<3.14.x>-py<3.12.x>`). The first run after a change to the file builds the wheels (`pip wheel -r`: the fork's C
+extensions) and installs them with uv, 51-63 s on a runner (a cold miss on the Mac: 16.4 s for the wheels, 10.7 s to
+install, PUSH_GUARDS.md section 20); later runs restore the venv. The install goes by name (a copy of the file without
+the URL, `sed 's/ @ [^;]*//'`): pip builds a URL line from git again, offline or not. The venv freezes numpy, scipy,
+Pillow and the rest at that first build; any edit of the file refreshes them (for a bad dependency release, delete the
+entry: step 1's `gh cache delete`).
 
 Re-pin:
-1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first wheels;
+1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first build;
    delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
 2. Change the tag in `requirements-cards.txt` (one line) and commit it to AutoCroissant main. The workflows need nothing:
    they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days). TTSCardMaker's

@@ -292,7 +292,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 - **Automatic: the Font check step of TTSCardMaker's `card-guards.yml` `checks` job (a dispatch: its check job)** (font-check.yml until 2026-10-25;
   ttscardmaker-companion §3). On a push to main that changes a PSD or `MDW/Fonts/`, whatever `CARD_GUARDS` says, it uses
   the fonts folder (cached by its tree sha) and the guards' bot checkout (`card_guards.SPARSE_FILES`, the card packages from
-  the shared wheel cache), reads the push's PSDs by blob sha
+  the shared venv cache), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, comments on the commit and puts the fonts the push made missing on a card (its PSD before the push did not ask
   for them) in the standards channel's one post per push (the tell job, `commands/standards_post.py`, owner 2026-11-11:
@@ -320,7 +320,7 @@ network, a truncated tree) is one error line.
 
 - **Automatic: the Card check step of TTSCardMaker's `card-guards.yml` `checks` job (a dispatch: its check job)** (card-check.yml until 2026-10-25, which
   also ran on `Types/` and `site/Card Edits.json` pushes and so checked nothing there). On a push to main that changes a PSD,
-  whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared wheel cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+  whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared venv cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it comments on the commit and its notes the push made new (the PSD before the push lacked them; owner 2026-11-11) go
   in the standards channel's one post per push (`commands/standards_post.py`, posted by the tell job), no ping. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
