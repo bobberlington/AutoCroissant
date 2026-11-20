@@ -280,11 +280,15 @@ def test_morgue_and_unfinished_cards_say_so(monkeypatch):
 
 def test_folders_and_paths(repo):
     """Guesses score names without their folder (creatures/panda, there for Types/Panda.png, took every 'creatures ...');
-    a typed path finds its file name; folder keys still exact; a miss in abilities points to them as a guess does."""
+    a typed path (a top folder or .png) finds its file name, exact only in its own folder, never an icon from another;
+    slash phrases stay misses; folder keys still exact; a miss in abilities points to them as a guess does."""
     repo.cards_dff = DataFrame({"ability": ["your creatures and stats rise."]}, index=["Spice"])
     assert [repo.lookup(q)[0] for q in ("creatures and stats", "your creatures", "creatures/spi")] == [None, None, "spice.png"]
-    assert [repo.lookup(q)[0:2] for q in ("Creatures/Rope.png", "items/rop", "creatures/panda", "Types/Panda.png")] == [
-        ("rope.png", EXACT), ("rope.png", GUESS), ("creatures/panda.png", EXACT), ("types/panda.png", EXACT)]
+    assert [repo.lookup(q)[0:2] for q in ("Items/Rope.png", "Creatures/Rope.png", "Items/Heal/Rope.png", "items/rop",
+                                          "creatures/panda", "Types/Panda.png", "types/light", "dark/light",
+                                          "creatures/light.png")] == [
+        ("rope.png", EXACT), ("rope.png", GUESS), ("rope.png", GUESS), ("rope.png", GUESS), ("creatures/panda.png", EXACT),
+        ("types/panda.png", EXACT), ("light.png", EXACT), (None, ""), (None, "")]
     utils.dispatch_queue.clear()
     qc.query_name(utils.make_simple_fake_interaction(1), "creatures and stats")
     assert [(kw["content"], kw["links"]) for _, kw in utils.dispatch_queue] == [(
