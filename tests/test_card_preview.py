@@ -922,7 +922,8 @@ def test_the_warm_lane(cards, tmp_path, monkeypatch):
     import commands.card_preview_lane as lane_mod
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from time import time
-    bot = _git(REPO, "rev-parse", "HEAD").strip()
+    bot = run_process(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True,  # as the lane: "" in a copy
+                      timeout=30).stdout.strip()
     records = tmp_path / "records"
     records.mkdir()
     for name in early.RECORDS:

@@ -572,7 +572,7 @@ def test_out_dir_inside_a_repo_is_refused(tmp_path, monkeypatch, capsys):
     with pytest.raises(SystemExit) as refused:
         da.main(["--guild", G, "--all", "--out", str(tmp_path / "repo" / "data"), "--config", str(tmp_path / "no.py")])
     assert refused.value.code == 2 and not (tmp_path / "repo" / "data").exists()
-    assert da.inside_git(str(REPO / "commands")) is not None and da.inside_git(str(tmp_path / "elsewhere")) is None
+    assert da.inside_git(str(tmp_path / "elsewhere")) is None
     os.symlink(tmp_path / "repo", tmp_path / "link")                         # a symlink into a repo
     assert da.inside_git(str(tmp_path / "link" / "data")) == os.path.realpath(tmp_path / "repo")
 
