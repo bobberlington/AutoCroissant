@@ -333,7 +333,7 @@ def live_files_untouched():
 def offline(monkeypatch, tmp_path):
     """No network, cwd in a temp dir so cwd-relative saves (card_data/, json maps) land there, and no history clone (for
     /query as_of's images) unless a test gives one (the machine's own never counts). Also: no retry sleeps, pools of 2,
-    and utils' queues empty (tests that count waits override the sleep stub)."""
+    no pending list from an earlier test and utils' queues empty (tests that count waits override the sleep stub)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -345,6 +345,7 @@ def offline(monkeypatch, tmp_path):
             monkeypatch.setattr(sys.modules[name], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
     import commands.github_api as ga                                     # get_with_retry's waits
     monkeypatch.setattr(ga, "sleep", lambda seconds: None)
+    monkeypatch.setattr(ga, "_listed", {})                               # pending lists read per test (tmp paths recur)
     if "commands.card_preview_branch" in sys.modules:                    # the publisher's backoff
         monkeypatch.setattr(sys.modules["commands.card_preview_branch"], "sleep", lambda seconds: None)
     for name in POOLED:                                                  # half of 4 cores: 2 processes per pool
