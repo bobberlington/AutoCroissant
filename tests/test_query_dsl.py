@@ -306,27 +306,31 @@ process.stdout.write(JSON.stringify(["can't", "creature's hp", '"on death"', "it
 
 
 def test_words_typed_without_punctuation(tmp_path, monkeypatch):
-    """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.); digits
-    never (05 is not 0.5); quoted or typed with them: exact. Cards and rulebook, the bot and the website alike."""
+    """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.), never a
+    sentence's end between two words; digits never (05 is not 0.5); quoted or typed with them: exact. Cards and
+    rulebook, the bot and the website alike."""
     from pandas import DataFrame
     cards = [dict(name="Gag", type="debuff", ability="Can't attack."), dict(name="Tilt", type="item", ability="A cant."),
              dict(name="Shop", type="item", ability="Buy an N.M.E. shop item."),
-             dict(name="Half", type="item", ability="Heal 0.5 HP.")]
+             dict(name="Half", type="item", ability="Heal 0.5 HP."),
+             dict(name="Clot", type="minion", ability="Its parent creature. Attacks hit the owners' foes.")]
     rows = [("cant", {"Gag", "Tilt"}), ("can't", {"Gag"}), ('"cant"', {"Tilt"}), ('"can\'t"', {"Gag"}),
-            ("nme shop", {"Shop"}), ("05", set()), ("0.5", {"Half"})]
+            ("nme shop", {"Shop"}), ("05", set()), ("0.5", {"Half"}), ("creature attacks", set()),
+            ("owners foes", {"Clot"})]
     repo = _repo(cards)
     assert [_shown(repo, repo.ability_search_engine(q, near=False).index) for q, _ in rows] == [c for _, c in rows]
     assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
     assert repo.ability_hits("cant") == 2
     book = {"4. Table": "4. N.M.E. Items for the N.M.E. Shop.\nThe next turn.", "5. Shops": "N.M.E SHOP\nIt can't fit 0.5.",
-            "6. Bans": "NME stock"}
+            "6. Bans": "NME stock", "7. Fights": "A creature. Attacks hit the owners' foes."}
     repo.rulebook_dff = DataFrame({"ability": list(book.values())}, index=list(book))
     lines = lambda q: qc.rulebook_lines(repo.rulebook_search_engine(q), q)
     assert lines("nme") == [("4. Table", ["4. N.M.E. Items for the N.M.E. Shop."]), ("5. Shops", ["N.M.E SHOP"]),
                             ("6. Bans", ["NME stock"])]                  # the lines, not the whole chapter
-    queries = ["nme", "nme shop", "cant", "05", "turn"]
+    queries = ["nme", "nme shop", "cant", "05", "turn", "creature attacks", "owners foes"]
     bot = [[n for n, _ in lines(q)] for q in queries]
-    assert bot == [["4. Table", "5. Shops", "6. Bans"], ["4. Table", "5. Shops"], ["5. Shops"], [], ["4. Table"]]
+    assert bot == [["4. Table", "5. Shops", "6. Bans"], ["4. Table", "5. Shops"], ["5. Shops"], [], ["4. Table"], [],
+                   ["7. Fights"]]
     shown = "4. N.M.E. Items for the N.M.E. Shop. The next turn."
     bolded = [qc._bold(shown, q) for q in ("nme", "nme shop", "turn")]
     assert bolded == ["4. **N.M.E.** Items for the **N.M.E.** Shop. The next turn.",
