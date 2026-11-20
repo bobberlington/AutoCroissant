@@ -465,3 +465,18 @@ const stars = { units: [star([1063, 9, 1178, 111], [1063, 8, 1187, 120]), star([
 const types = { row: [{ name: "defensive_minion", core: [-5, 20, 153, 130], box: [-5, 20, 153, 130] }, { name: "ice", core: [168, 8, 289, 143], box: [26, -2, 1228, 2400] }] };
 out([m.starPlan(stars, 2, 1).erase, m.starPlan(stars, 2, 0).erase, m.typePlan(types, ["defensive_minion"]).erase]);""")
     assert out == [[[891.5, -48.5, 1121.5, 168.5]], [[1063, 8, 1187, 120], [891.5, -48.5, 1121.5, 168.5]], [[100.5, -2, 356.5, 210.5]]]
+
+
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function creatureSite"), reason="no creatureSite in this mockup.js")
+def test_creatures_the_bake_leaves_on_the_website_are_said(tmp_path):
+    """Split, + or - Creature and creature 2's stat emptied leave the list on the website (psd_edit._classify_creatures):
+    said; a creature's stat edit (the plate's picture), creature 1's emptied stat and no list say nothing."""
+    out = node(tmp_path, """
+const a = { hp: 7, def: 4, atk: 5, spd: 5 }, b = { hp: 5, def: 4, atk: 6, spd: 4 }, psd = { creatures: [a, b] };
+const say = (edit, was = psd) => p.mockNote({ site: [["The creature list", m.creatureSite(edit, was)]].filter(x => x[1]) });
+out([say({ creatures: [a, { ...a }] }, { creatures: null }), say({ creatures: [a, b, b] }), say({ creatures: null }),
+  say({ creatures: [a, { ...b, hp: null, atk: null }] }), say({ creatures: [a, { ...b, hp: 6 }] }), say({ creatures: [{ ...a, hp: null }, b] }),
+  say({}, { creatures: null })]);""")
+    assert out[:3] == ["The creature list shows on the website only: each creature's stats print only on a bar per creature."] * 3
+    assert out[3] == "The creature list shows on the website only: a bar can't show no value (creature 2's HP)."
+    assert out[4:] == ["", "", ""]
