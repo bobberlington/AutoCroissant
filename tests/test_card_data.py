@@ -358,15 +358,17 @@ def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
     assert {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()} == times
 
 
-@pytest.mark.parametrize("bump", ["parser", "details"])
+@pytest.mark.parametrize("bump", ["parser", "details", "details and records"])
 def test_version_bump_approval_carries_over(cards, monkeypatch, bump):
-    """A PARSER_VERSION or psd_details VERSION bump: G4 refuses until `full`; the continuation runs keep that approval."""
+    """A PARSER_VERSION bump, or a psd_details VERSION bump whose re-read changes records: G4 refuses until `full`; the
+    continuation runs keep that approval. A details bump that leaves every record as it was passes G4 (run 44626125249)."""
     import commands.psd_details as pd
     import commands.psd_parser as pp
     _build(cards, "--empty")
     put(cards.repo, OTHER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
     _build(cards)
+    records = (cards.db / "stats.json").read_bytes()
     _rest_psds(cards, monkeypatch)
     monkeypatch.setattr(cd, "REPARSE_MAX", 0)
     if bump == "parser":
@@ -374,6 +376,22 @@ def test_version_bump_approval_carries_over(cards, monkeypatch, bump):
         monkeypatch.setattr(pp, "PARSER_VERSION", pp.PARSER_VERSION + 1)
     else:
         monkeypatch.setattr(pd, "VERSION", pd.VERSION + 1)
+    if bump == "details":                                                       # no approval: the chain goes on
+        assert _build(cards, "--budget", "2")[0] == cd.EXIT_OK and len(_read(cards)[3]["pending"]["stale"]) == 1
+        assert _build(cards, "--budget", "2")[0] == cd.EXIT_OK
+        _, _, details, manifest, _ = _read(cards)
+        assert (cards.db / "stats.json").read_bytes() == records and {r["version"] for r in details.values()} == {pd.VERSION}
+        assert manifest["gates"] == {} and manifest["pending"] == {"stale": [], "failed": [], "full": None}
+        return
+    if bump == "details and records":
+        keep = cd.CardBuild._keep
+
+        def louder(self, *args):
+            card = keep(self, *args)
+            if card is not None:
+                card.ability = (card.ability or "") + "!"
+            return card
+        monkeypatch.setattr(cd.CardBuild, "_keep", louder)
     assert _build(cards, "--budget", "5")[0] == cd.EXIT_GATE                     # unapproved
     assert _build(cards, "--full", "--budget", "2", "--run", "https://x/runs/7")[0] == cd.EXIT_OK
     assert len(_read(cards)[3]["pending"]["stale"]) == 1
