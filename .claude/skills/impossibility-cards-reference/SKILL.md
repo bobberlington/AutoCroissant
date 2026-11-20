@@ -838,7 +838,9 @@ abbreviation's `.` (bold **N.M.E.**, never **turn.**).
    around the match, the match in bold outside emoji markup), first the chapters with the most lines where the text
    starts a word (`ring`, not `during`; since 2026-11-04), then the most lines. Since 2026-11-20 a numbered timing tag
    the book never prints whole (`(2PG)`, `3cd`, `4u`; `2pg` is not (2PGT)'s) quotes its X row ((XPG), (XCD), (Y/XCD)),
-   the reply saying so (`x_row`; the website's app.js `bookTag` likewise, TTS Global.lua `xTag`).
+   the reply saying so (`x_row`; the website's app.js `bookTag` likewise, TTS Global.lua `xTag`); a printed one
+   (`(1GCD)`, `2u`) finds itself OR its row, the row's lines first in each chapter ("'(1GCD)' (its row (XGCD), with
+   X = 1) is on ...", so its meaning shows; the website searches both too).
 10. One result (or `limit` 1) posts as /query does since 2026-11-15 (`_post_card`: one embed, the count line above it,
     'Card page' + the website button, no ambiguity line; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,

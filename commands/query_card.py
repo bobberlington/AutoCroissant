@@ -728,12 +728,13 @@ class CardRepository:
                 found.append((-score, last, name.lower(), name, title))
         return [(name, title) for *_, name, title in sorted(found)[:n]]
 
-    def rulebook_search_engine(self, search_text: str) -> DataFrame:
+    def rulebook_search_engine(self, search_text) -> DataFrame:
         """
         Search rulebook entries for matching text.
 
         Args:
-            search_text: Text to search for (case-insensitive; a straight or curly " finds either; loose)
+            search_text: Text to search for (case-insensitive; a straight or curly " finds either; loose), or a tuple
+                of texts (any of them)
 
         Returns:
             DataFrame of matching rulebook entries
@@ -741,10 +742,12 @@ class CardRepository:
         pages, bans = self.rulebook_dff, ban_list_text(self.banlist)
         if bans:                                                   # the ban list: one more section
             pages = concat([pages, DataFrame({"ability": [bans]}, index=[BAN_LIST])])
-        words = search_text.translate(BOOK_QUOTES).split()
-        if not words:
+        texts = search_text if isinstance(search_text, tuple) else (search_text,)
+        words = [text.translate(BOOK_QUOTES).split() for text in texts]
+        if not all(words):
             return pages
-        pattern = loose(" ".join(words), gap=r"\s+")              # any spaces or line breaks between the words; nme N.M.E.
+        # any spaces or line breaks between the words; nme N.M.E.
+        pattern = "|".join(loose(" ".join(w), gap=r"\s+") for w in words)
         return pages[pages["ability"].str.translate(BOOK_QUOTES).str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
@@ -1696,12 +1699,16 @@ def query_rulebook(interaction: Interaction,
         queue_message(interaction, "Give a word or phrase to search the rulebook for.")
         return
 
-    find, said = text, f"'{text}' is"
+    find, said, link = text, f"'{text}' is", text
     tag = x_row(text, card_repo.rulebook_search_engine("")["ability"])
-    if tag and not card_repo.rulebook_search_engine(tag[1]).empty:     # '(2PG)': the book's (XPG) row
-        find, said = tag[1], f"'{tag[0]}' is not printed in the rulebook; its row {tag[1]}, with {tag[2]}, is"
+    if tag and not card_repo.rulebook_search_engine(tag[1]).empty:
+        if tag[3]:                                   # '(1GCD)': its row's lines first ((XGCD) | Global cooldown...)
+            find, said = (tag[1], tag[0]), f"'{tag[0]}' (its row {tag[1]}, with {tag[2]}) is"
+        else:                                        # '(2PG)': the book's (XPG) row
+            find = link = tag[1]
+            said = f"'{tag[0]}' is not printed in the rulebook; its row {tag[1]}, with {tag[2]}, is"
     pages = rulebook_lines(card_repo.rulebook_search_engine(find), find)
-    links = [("Rulebook on the website", search_link("rules", find))]
+    links = [("Rulebook on the website", search_link("rules", link))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
         queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
@@ -1732,11 +1739,11 @@ def query_rulebook(interaction: Interaction,
 
 def x_row(text: str, book) -> Optional[tuple]:
     """
-    A numbered timing tag the book (its pages' text) never prints whole ('(2PG)'; '2pg' is not (2PGT)'s), as its X row
-    (TTS Global.lua xTag, app.js bookTag).
+    A numbered timing tag's X row, and whether the book (its pages' text) prints the tag whole ('(2PG)' never; '2pg'
+    is not (2PGT)'s) (TTS Global.lua xTag, app.js bookTag).
 
     Returns:
-        ('(2PG)', '(XPG)', 'X = 2'), ('(-1/3CD)', '(Y/XCD)', 'Y = -1 and X = 3'), or None
+        ('(2PG)', '(XPG)', 'X = 2', False), ('(-1/3CD)', '(Y/XCD)', 'Y = -1 and X = 3', False), or None
     """
     found = TIMING_TAG.fullmatch(text)
     if not found:
@@ -1744,24 +1751,28 @@ def x_row(text: str, book) -> Optional[tuple]:
     y, x, end = found.groups()
     tag = text.strip("()")
     whole = compile(r"(?<![\w/-])" + escape(tag) + r"(?![a-z])", IGNORECASE)
-    if any(whole.search(str(page)) for page in book):
-        return None
-    return f"({tag.upper()})", f"({'Y/' if y else ''}X{end.upper()})", f"Y = {y} and X = {x}" if y else f"X = {x}"
+    printed = any(whole.search(str(page)) for page in book)
+    return (f"({tag.upper()})", f"({'Y/' if y else ''}X{end.upper()})", f"Y = {y} and X = {x}" if y else f"X = {x}",
+            printed)
 
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:
     """
-    The lines of each page holding text (any case), cut to SNIPPET around it.
+    The lines of each page holding text (any case; a tuple: any of its texts, the first one's lines first), cut to
+    SNIPPET around it.
 
     Returns:
         [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
         most lines, then by name, the ban list last; a match across a line break: that passage
     """
     found, pattern = [], compile(_book_pattern(text), IGNORECASE)      # either quotes find both; nme N.M.E.
-    start = compile(r"(?<![a-z])" + pattern.pattern, IGNORECASE)   # no letter just before: "ring", not "during"
+    start = compile(r"(?<![a-z])(?:" + pattern.pattern + ")", IGNORECASE)   # no letter just before: "ring", not "during"
+    first = compile(_book_pattern(text[0]), IGNORECASE) if isinstance(text, tuple) else None
     for name, ability in pages["ability"].items():
         lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
         lines = [line for line in lines if pattern.search(line)]
+        if first:
+            lines.sort(key=lambda line: not first.search(line))
         if not lines:                                # the text runs over a line break
             lines = [" ".join(str(ability).split())]
         found.append((name, [_cut(line, text) for line in lines]))
@@ -1786,8 +1797,10 @@ def _cut(line: str, text: str) -> str:
     return ("…" if start else "") + line[start:end].strip() + ("…" if end < len(line) else "")
 
 
-def _book_pattern(text: str) -> str:
-    """text as a regex (loose), its " (straight or curly) finding either printed quote."""
+def _book_pattern(text) -> str:
+    """text as a regex (loose), its " (straight or curly) finding either printed quote; a tuple: any of its texts."""
+    if isinstance(text, tuple):
+        return "|".join(_book_pattern(t) for t in text)
     return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch))
 
 
