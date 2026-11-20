@@ -5704,15 +5704,141 @@ def _face_stem(name: str) -> str:
     return sub(r"\d+$", "", sub(r"[^a-z0-9]", "", name.lower()))
 
 
-def _face_iou(layer, fonts, shape: tuple) -> float:
-    """The IoU of the layer's whole redraw in fonts and its saved pixels, ink past INK_ALPHA."""
+BOX_KEYS = (b"Left", b"Top ", b"Rght", b"Btom")
+
+
+def _arc(layer) -> float:
+    """A type layer's Arc text warp bend (Photoshop's Bend, a fraction); 0 for none or any other warp (drawn flat)."""
+    warp = getattr(layer._data, "warp", None) if _is_text_layer(layer) else None
+    if warp is None:
+        return 0.0
+
+    def get(key, default=None):
+        value = warp.get(key)
+        return getattr(value, "enum", getattr(value, "value", default))
+    if get(b"warpStyle") != b"warpArc" or get(b"warpRotate", b"Hrzn") != b"Hrzn" or get(b"warpPerspective", 0) \
+            or get(b"warpPerspectiveOther", 0):
+        return 0.0
+    return max(float(get(b"warpValue", 0) or 0) / 100, 0.0)
+
+
+def _text_box(layer) -> Optional[tuple]:
+    """A type layer's TySh bounds (text space: left, top, right, bottom): the box an Arc warp bends."""
+    found = layer._data.text_data.get(b"bounds")
+    try:
+        return tuple(float(found.get(key).value) for key in BOX_KEYS)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _measure_box(layer, report, bbox: tuple) -> Optional[tuple]:
+    """A flat render's measure in text space: (ink's left, first baseline, ink's right, last baseline)."""
+    drawn = [line for line in report.lines if line.drawn]
+    xx, xy, yx, yy, tx, ty = layer._data.transform
+    det = xx * yy - xy * yx
+    if not drawn or not det or bbox[2] <= bbox[0]:
+        return None
+    across = [((x - tx) * yy - (y - ty) * yx) / det for x in bbox[0::2] for y in bbox[1::2]]
+    return min(across), drawn[0].y, max(across), drawn[len(drawn) - 1].y
+
+
+def arc_bent(rgba: np.ndarray, bbox: tuple, transform: tuple, box: tuple, bend: float) -> tuple:
+    """
+    A flat text raster (straight RGBA float32 at canvas bbox) bent as Photoshop's horizontal Arc warp draws it, fitted
+    on its own pixels (r46: Mosling, Moose Goose, Wickerbottom): in text space the box's bottom edge becomes a chord
+    through its bottom corners, its rows concentric arcs, its sides radial, the sweep bend x 180 degrees.
+
+    Returns:
+        (rgba, bbox) of the bent ink
+    """
+    from scipy.ndimage import map_coordinates
+    xx, xy, yx, yy, tx, ty = transform
+    det = xx * yy - xy * yx
+    left, _, right, bottom = box
+    half, sweep = (right - left) / 2, bend * np.pi
+    if not det or half <= 0 or not 0 < sweep < np.pi or not rgba.size:
+        return rgba, bbox
+    radius = half / np.sin(sweep / 2)
+    cx, cy = (left + right) / 2, bottom + radius * np.cos(sweep / 2)
+
+    def text(px, py):
+        px, py = px - tx, py - ty
+        return (px * yy - py * yx) / det, (py * xx - px * xy) / det
+
+    def canvas(u, v):
+        return xx * u + yx * v + tx, xy * u + yy * v + ty
+    x0, y0, x1, y1 = bbox
+    edge = np.linspace(0, 1, 65)
+    u, v = text(np.concatenate([x0 + (x1 - x0) * edge, np.full(65, x1), x0 + (x1 - x0) * edge, np.full(65, x0)]),
+                np.concatenate([np.full(65, y0), y0 + (y1 - y0) * edge, np.full(65, y1), y0 + (y1 - y0) * edge]))
+    angle, far = (u - cx) / half * sweep / 2, radius + bottom - v
+    ox, oy = canvas(cx + far * np.sin(angle), cy - far * np.cos(angle))     # where the flat box's edges land
+    ox0, oy0 = int(np.floor(ox.min())) - 1, int(np.floor(oy.min())) - 1
+    gy, gx = np.mgrid[oy0:int(np.ceil(oy.max())) + 1, ox0:int(np.ceil(ox.max())) + 1].astype(np.float64) + 0.5
+    u, v = text(gx, gy)
+    dx, dy = u - cx, cy - v
+    sx, sy = canvas(cx + np.arctan2(dx, dy) / (sweep / 2) * half, bottom + radius - np.hypot(dx, dy))
+    at = [sy - y0 - 0.5, sx - x0 - 0.5]
+    alpha = rgba[..., 3]
+    out = np.stack([map_coordinates(plane, at, order=1, mode="grid-constant")
+                    for plane in (*(rgba[..., k] * alpha for k in range(3)), alpha)], axis=-1).astype(np.float32)
+    ink = out[..., 3] > 0
+    if not ink.any():
+        return np.zeros((0, 0, 4), np.float32), (ox0, oy0, ox0, oy0)
+    ys, xs = np.nonzero(ink)
+    out = out[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    out[..., :3] = np.where(out[..., 3:] > 0, out[..., :3] / np.maximum(out[..., 3:], 1e-12), 0)
+    np.clip(out, 0, 1, out=out)
+    return np.ascontiguousarray(out), (ox0 + int(xs.min()), oy0 + int(ys.min()), ox0 + int(xs.max()) + 1,
+                                       oy0 + int(ys.max()) + 1)
+
+
+def arc_shift(layer, fonts) -> tuple:
+    """What the layer's TySh bounds (Photoshop's measure) add to its flat render's (_measure_box), per side."""
     from psd_tools.composite.text import render
     result = render(layer, fonts=fonts)
+    box, flat = _text_box(layer), _measure_box(layer, result.report, result.bbox)
+    return (0.0,) * 4 if box is None or flat is None else tuple(b - f for b, f in zip(box, flat))
+
+
+def arc_rasterize(layer, fonts, bend: float, shift: Optional[tuple] = None):
+    """
+    An Arc-warped type layer drawn as Photoshop draws it: rasterized whole (the box's new width moves every row), then
+    bent (arc_bent) in the box Photoshop measures again around the new text (its flat render's measure plus arc_shift's;
+    None: the text is unchanged, its own bounds), which TySh's bounds are set to, both copies. Returns the report.
+    """
+    from psd_tools.composite.text.verify import stored_raster
+    box = _text_box(layer) if shift is None else None
+    report = layer.rasterize(fonts=fonts)
+    rgba, bbox = stored_raster(layer)
+    flat = _measure_box(layer, report, bbox) if rgba is not None else None
+    if flat is None or shift is None and box is None:
+        return report
+    box = box or tuple(f + s for f, s in zip(flat, shift))
+    rgba, bbox = arc_bent(rgba, bbox, layer._data.transform, box, bend)
+    layer._store_raster(rgba, bbox)
+    data = layer._data
+    for key, value in zip(BOX_KEYS, box):
+        _set_number(data.text_data.get(b"bounds"), key, value)
+    data.left, data.top, data.right, data.bottom = (unpack(">i", pack(">f", value))[0] for value in box)
+    layer._invalidate_bbox()
+    layer._psd.mark_updated()
+    return report
+
+
+def _face_iou(layer, fonts, shape: tuple) -> float:
+    """The IoU of the layer's whole redraw in fonts (an Arc warp's bent: arc_bent) and its saved pixels, ink past
+    INK_ALPHA."""
+    from psd_tools.composite.text import render
+    result = render(layer, fonts=fonts)
+    rgba, box, bend = result.rgba, result.bbox, _arc(layer)
+    if bend and _text_box(layer) is not None:
+        rgba, box = arc_bent(rgba, box, layer._data.transform, _text_box(layer), bend)
     redraw = np.zeros(shape, bool)
-    x0, y0, x1, y1 = clip(result.bbox, shape[1], shape[0])
+    x0, y0, x1, y1 = clip(box, shape[1], shape[0])
     if x1 > x0 and y1 > y0:
-        bx, by = result.bbox[:2]
-        redraw[y0:y1, x0:x1] = result.rgba[y0 - by:y1 - by, x0 - bx:x1 - bx, 3] > INK_ALPHA
+        bx, by = box[:2]
+        redraw[y0:y1, x0:x1] = rgba[y0 - by:y1 - by, x0 - bx:x1 - bx, 3] > INK_ALPHA
     saved = _on_canvas(layer, shape)[..., 3] > INK_ALPHA * 255
     union = int((redraw | saved).sum())
     return int((redraw & saved).sum()) / union if union else 1.0
@@ -6083,6 +6209,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flag("font", f"{which}: {alien}")
     from psd_tools.composite.text import capture  # Photoshop's raster stays on the lines the edit leaves alone
     before = capture(layer, fonts)
+    bend = _arc(layer)                          # an Arc warp: bent as Photoshop draws it (arc_rasterize)
+    shift = arc_shift(layer, fonts) if bend else None
     if which == "name":                         # the title stays on its lines (review 2026-10-24: Basic Shield's box
         from psd_tools.composite.text.geometry import text_geometry     # wrapped a typed [fire] onto the art)
         lines_before = _title_lines(text_geometry(layer, fonts))
@@ -6165,6 +6293,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             layer.set_span_style(a, b, Font=MGP_FONT)
 
     def draw():
+        if bend:
+            return arc_rasterize(layer, fonts, bend, shift)
         return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
     seen = {}
 
@@ -10359,7 +10489,11 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
     for layer in copy.descendants():
         if layer.layer_id in ids:
             follow_kerning(copy, layer)         # as the edit drew it (B12)
-            layer.rasterize(fonts=font_map(fonts_dir, layer))     # in the face its pixels show (R3)
+            fonts = font_map(fonts_dir, layer)  # in the face its pixels show (R3)
+            if _arc(layer):
+                arc_rasterize(layer, fonts, _arc(layer))
+            else:
+                layer.rasterize(fonts=fonts)
     return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
 
 
