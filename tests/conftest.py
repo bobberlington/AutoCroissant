@@ -362,7 +362,8 @@ def live_files_untouched():
 def offline(monkeypatch, tmp_path):
     """No network, cwd in a temp dir so cwd-relative saves (card_data/, json maps) land there, and no history clone (for
     /query as_of's images) unless a test gives one (the machine's own never counts). Also: no retry sleeps, pools of 2,
-    no pending list from an earlier test and utils' queues empty (tests that count waits override the sleep stub)."""
+    no pending list from an earlier test, utils' queues empty and no kept prefetch pool after (tests that count waits
+    override the sleep stub)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -388,6 +389,9 @@ def offline(monkeypatch, tmp_path):
     environ.pop("GIT_NO_LAZY_FETCH", None)                               # a script's process-wide set (oldgit_index) ends here
     for queue in queues:
         queue.clear()
+    bake = sys.modules.get("commands.card_bake")
+    if bake and bake._POOL:                                              # its kept threads end: _no_fork spawns again
+        bake._POOL.pop().shutdown(wait=False, cancel_futures=True)
 
 
 @pytest.fixture(autouse=True)
