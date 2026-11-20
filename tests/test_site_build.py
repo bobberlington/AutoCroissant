@@ -976,3 +976,21 @@ def test_icons_34_68_96(bs, tmp_path, monkeypatch):
         assert {pick(px, dpr) for px in (16, 18, 22, 26)} == {pick(26, dpr)}, dpr
     assert [pick(26, d) for d in (1, 1.25, 1.5, 2, 2.625)] == ["i/f.34.webp"] * 2 + ["i/f.68.webp"] * 2 + ["i/f.webp"]
     assert [pick(px, 3) for px in (16, 18, 22, 26, 34)] == ["i/f.68.webp"] * 3 + ["i/f.webp"] * 2
+
+
+def test_table_rows_take_the_small_copies_unless_drawn_wider(tmp_path):
+    """Table rows (30x42, object-fit: cover; app.js imgAttrs(c, 30, 42)) list the 48 and 64 px copies for a card drawn 30
+    px wide; a square or wide one is drawn wider, so it keeps 96 first, as before (grid.js in node)."""
+    grid = SITE_SRC / "site" / "assets" / "grid.js"
+    if "coverH" not in grid.read_text(encoding="utf-8"):
+        pytest.skip("a site before the 48 and 64 px copies")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
+const t = {{ 48: "a", 64: "b", 96: "c", 192: "d", 240: "e", 360: "f" }}, w = s => /srcset="([^"]*)"/.exec(s)[1].match(/\\d+w/g).join(" ");
+process.stdout.write(JSON.stringify([[360, 540], [360, 720], [360, 360], [360, 250], [0, 0]].map(([tw, th]) => w(G.imgAttrs(t, {{ img: "x", tw, th }}, 30, 42)))
+  .concat([w(G.imgAttrs(t, {{ img: "x", tw: 360, th: 360 }}, 64))])));
+""", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    small, old = "48w 64w 96w 192w 240w 360w", "96w 192w 240w 360w"
+    assert json.loads(done.stdout) == [small, small, old, old, old, "64w 96w 192w 240w 360w"]
