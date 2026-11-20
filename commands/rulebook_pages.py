@@ -352,10 +352,10 @@ def key(drawn: str, checkout: str, trees: Optional[list] = None) -> str:
 def pre_key(seen: dict, trees: list, fonts: list) -> str:
     """
     What the print view reads (site_inputs()'s seen), Chrome not started: KEY_JS and TEXT_JS, index.html's code (its
-    stamped asset URLs and inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants, tagMeanings and thumbs, every
-    card's name and key in order (app.js cardByName, text.js's renderer) and the id, name and picture of the cards the
-    chapters name (any look-alike too); the UNSTAMPED and FONTS_DIR trees (_trees()) and the book fonts (book_fonts()).
-    Not Chrome's version (as key(): the runners' two images differ in it).
+    stamped asset URLs and inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants,
+    tagMeanings and thumbs, and the id, name, key and picture of the cards the chapters name, any look-alike too, in
+    order (app.js cardByName; its text renders with links off, so no other card's name); the UNSTAMPED and FONTS_DIR
+    trees (_trees()) and the book fonts (book_fonts()). Not Chrome's version (as key(): the runners' two images differ in it).
     """
     data, index = seen["cards"], seen["index"]
     cards = [c for c in site_cards(data) if isinstance(c, dict)]
@@ -364,11 +364,12 @@ def pre_key(seen: dict, trees: list, fonts: list) -> str:
     for chapter in loads(seen["rules"]).get("chapters") or []:
         for m in CARD_REF.finditer(str(chapter.get("source") or "") if isinstance(chapter, dict) else ""):
             named[loose(m.group(2))] = named.get(loose(m.group(2))) or bool(m.group(1))
-    refs = [[c.get("id"), c.get("name"), c.get("img") if any(named.get(loose(k)) for k in (c.get("name"), c.get("key"))) else ""]
+    refs = [[c.get("id"), c.get("name"), c.get("key"),
+             c.get("img") if any(named.get(loose(k)) for k in (c.get("name"), c.get("key"))) else ""]
             for c in cards if any(loose(k) in named for k in (c.get("name"), c.get("key")))]
-    parts = ["pre 2", KEY_JS, TEXT_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
+    parts = ["pre 3", KEY_JS, TEXT_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
              {k: data.get(k) for k in ("icons", "iconVariants", "tagMeanings", "thumbs")},
-             [[c.get("name"), c.get("key")] for c in cards], refs, trees, sha256(dumps(fonts).encode()).hexdigest()]
+             refs, trees, sha256(dumps(fonts).encode()).hexdigest()]
     return sha256(dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
