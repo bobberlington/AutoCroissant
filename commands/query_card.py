@@ -1129,9 +1129,10 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     if sections:                                        # a section's title, not a card's or icon's: its place on the website
         print(f"Search section: /query {query!r} -> {chapter_label(sections[0][0])}")
         links = [(chapter_label(c), f"{SITE_URL}/#/rules/{c['id']}/{slug}") for c, _, slug in sections]
-        title = sections[0][1]
-        queue_message(interaction, f"**{title}** is a section of **{links[0][0]}**: {links[0][1]}" if len(links) == 1 else
-                      f"**{title}** is a section of {len(links)} rulebook chapters:\n" + "\n".join(f"- **{n}**: {u}" for n, u in links))
+        title, (said, more) = sections[0][1], _ability_note(query)
+        queue_message(interaction, (f"**{title}** is a section of **{links[0][0]}**: {links[0][1]}" if len(links) == 1 else
+                                    f"**{title}** is a section of {len(links)} rulebook chapters:\n"
+                                    + "\n".join(f"- **{n}**: {u}" for n, u in links)) + said, links=more)
         return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases

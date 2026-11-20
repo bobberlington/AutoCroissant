@@ -203,9 +203,10 @@ def test_guesses_cards_only(repo, monkeypatch):
     assert not any("section" in str(c) for c in sent[2] + sent[3])
 
 
-def test_guess_points_to_abilities(repo):
+def test_guess_points_to_abilities(repo, monkeypatch):
     """A guess whose text is in abilities says how many, as /query_ability counts them, with a website search button
-    (real uses: 'draw', 'assume' then typed into /query_ability); exact names and other guesses as before."""
+    (real uses: 'draw', 'assume' then typed into /query_ability), a rulebook section's title too; exact names and other
+    guesses as before."""
     repo.cards_dff = DataFrame({"ability": ["gain frost\narmor.", "deal 2 damage. frost them.", "*eden*'s  frost dmg"]},
                                index=["Rope", "Spice", "Regen"])
 
@@ -220,6 +221,11 @@ def test_guess_points_to_abilities(repo):
                              [('Cards with "eden"', f"{qc.SITE_URL}/#/cards?q=eden")])
     assert repo.ability_hits("FROST  DAMAGE") == repo.ability_hits("frost armor") == 1 and repo.ability_hits("heal") == 0
     assert reply("frostmourne") == (None, None) and reply("freezer") == ("Closest match: **The Freezer**", None)
+    monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "ice", "num": "9", "title": "Ice", "text": "",
+                                                   "sections": [[2, 4, "FROST ARMOR", "frost-armor"]]}])
+    assert reply("frost armor") == (f'**FROST ARMOR** is a section of **9. Ice**: {qc.SITE_URL}/#/rules/ice/frost-armor · 1 card '
+                                    'has "frost armor" in its ability: /query_ability frost armor',
+                                    [('Cards with "frost armor"', f"{qc.SITE_URL}/#/cards?q=frost%20armor")])
 
 
 def test_series_name_gives_its_cards(repo, capsys):
