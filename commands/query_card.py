@@ -56,6 +56,7 @@ EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: n
 MAX_CONTENT = 2000                                       # Discord's message length limit
 URL_MAX = 512                                            # Discord's longest link-button url (else no message)
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
+OPENING = 400                                            # /query_rulebook: a section titled the text, its first characters
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
 TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE)   # (2PG), -1/3cd (TTS xTag, app.js)
@@ -982,7 +983,8 @@ class CardRepository:
             print(f"Loaded {len(self.cards_dff)} cards")
         # the rulebook: its chapters (db/rulebook.json), as written: /query_rulebook quotes their lines
         chapters = stats_db.rulebook
-        self.rulebook_dff = DataFrame({"ability": [c["text"] for c in chapters]}, index=[chapter_label(c) for c in chapters])
+        self.rulebook_dff = DataFrame({"ability": [c["text"] for c in chapters], "title": [c["title"] for c in chapters],
+                                       "sections": [c.get("sections") for c in chapters]}, index=[chapter_label(c) for c in chapters])
         print(f"Loaded {len(self.rulebook_dff)} rulebook chapters")
         self._populate_renames()                        # renamed cards and autocomplete follow the new stats
 
@@ -1123,6 +1125,14 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         text = " ".join(typed(query, quotes=True).split())
         queue_message(interaction, series[0], links=[(f"{label} cards on the website", search_link("cards", text))])
         return
+    sections = [] if how in ("exact", "renamed") else _sections(query)
+    if sections:                                        # a section's title, not a card's or icon's: its place on the website
+        print(f"Search section: /query {query!r} -> {chapter_label(sections[0][0])}")
+        links = [(chapter_label(c), f"{SITE_URL}/#/rules/{c['id']}/{slug}") for c, _, slug in sections]
+        title = sections[0][1]
+        queue_message(interaction, f"**{title}** is a section of **{links[0][0]}**: {links[0][1]}" if len(links) == 1 else
+                      f"**{title}** is a section of {len(links)} rulebook chapters:\n" + "\n".join(f"- **{n}**: {u}" for n, u in links))
+        return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
         said, more = _ability_note(query)
@@ -1184,6 +1194,16 @@ def _chapter(query: str) -> Optional[dict]:
     text = squeeze(query)
     found = (c for c in stats_db.rulebook if text in (squeeze(c["title"]), squeeze(chapter_label(c))))
     return next(found, None) if text else None
+
+
+def _sections(query: str) -> list:
+    """The rulebook sections titled query (_title_key), [(chapter, title, slug)], one per anchor."""
+    text, found = _title_key(query), {}
+    for c in stats_db.rulebook if text else ():
+        for _, _, title, slug in c.get("sections") or ():
+            if _title_key(title) == text:
+                found.setdefault((c["id"], slug), (c, title, slug))
+    return list(found.values())
 
 
 def series_known(df: DataFrame) -> dict:
@@ -1732,21 +1752,22 @@ def query_rulebook(interaction: Interaction,
         queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
         return
     shown = pages if limit < 0 else pages[:limit]
-    count = sum(len(lines) for _, lines in pages)
-    chapters = sum(name != BAN_LIST for name, _ in pages)
+    count = sum(n for *_, n in pages)
+    chapters = sum(name != BAN_LIST for name, *_ in pages)
     where = [f"{chapters} rulebook chapter{'s' if chapters != 1 else ''}"] if chapters else []
     if chapters < len(pages):                        # the ban list: its own link (the website's ?q= search skips it)
         where.append(f"the {BAN_LIST}")
         if not chapters:
             links = []
-        if BAN_LIST in dict(shown):                  # last: a limit cuts it first
+        if any(name == BAN_LIST for name, *_ in shown):     # last: a limit cuts it first
             links.append((BAN_LIST, f"{SITE_URL}/#/rules/banlist"))
     head = f"{said} on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}"
     head += f" (showing {len(shown)} chapters):" if len(shown) < len(pages) else ":"
-    blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), find)}" for line in lines)
-                       for name, lines in shown]
+    blocks = [head] + [f"**{name}{f' · {title}' if title else ''}**"
+                       + "".join(f"\n- {_bold(render_type_tokens(line, escape=True), find)}" for line in lines)
+                       for name, groups, _ in shown for title, lines in groups]
     messages = [blocks[0]]
-    for block in blocks[1:]:                         # whole chapters per message while they fit
+    for block in blocks[1:]:                         # whole sections per message while they fit
         if len(messages[len(messages) - 1]) + len(block) + 2 <= BREAK_LEN:
             messages[len(messages) - 1] += "\n\n" + block
         else:
@@ -1776,27 +1797,105 @@ def x_row(text: str, book) -> Optional[tuple]:
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:
     """
-    The lines of each page holding text (any case; a tuple: any of its texts, the first one's lines first), cut to
-    SNIPPET around it.
+    The lines of each page holding text (any case; a tuple: any of its texts, the first one's sections first), cut to
+    SNIPPET around it, under their sections (db/rulebook.json's; the ban list and an older file: all under the page). A
+    section titled text, or whose title alone in it holds it: its first lines (OPENING characters), then its later lines
+    holding text. The page's own title is not a line; when only it holds the text, the page's first lines.
 
     Returns:
-        [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
-        most lines, then by name, the ban list last; a match across a line break: that passage
+        [(page name, [(section title or "", [lines])], lines holding text)], the most lines with the text at a word start
+        first ("ring" before "during"), then the most lines, then by name, the ban list last; a match across a line
+        break: that passage
     """
     found, pattern = [], compile(_book_pattern(text), IGNORECASE)      # either quotes find both; nme N.M.E.
     start = compile(r"(?<![a-z])(?:" + pattern.pattern + ")", IGNORECASE)   # no letter just before: "ring", not "during"
-    first = compile(_book_pattern(text[0]), IGNORECASE) if isinstance(text, tuple) else None
-    for name, ability in pages["ability"].items():
-        lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
-        lines = [line for line in lines if pattern.search(line)]
-        if first:
-            lines.sort(key=lambda line: not first.search(line))
-        if not lines:                                # the text runs over a line break
-            lines = [" ".join(str(ability).split())]
-        found.append((name, [_cut(line, text) for line in lines]))
-    found.sort(key=lambda page: (page[0] == BAN_LIST, -sum(bool(start.search(line)) for line in page[1]), -len(page[1]),
+    lead = compile(_book_pattern(text[0]), IGNORECASE) if isinstance(text, tuple) else None
+    none = [None] * len(pages)
+    for name, ability, title, secs in zip(pages.index, pages["ability"], pages.get("title", none), pages.get("sections", none)):
+        rows = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
+        hits = [i for i, line in enumerate(rows) if pattern.search(line)]
+        if not isinstance(secs, list):               # no sections: the lines under the page
+            held = [rows[i] for i in hits] or [" ".join(str(ability).split())]     # none: the text runs over a line break
+            if lead:
+                held.sort(key=lambda line: not lead.search(line))
+            found.append((name, [("", [_cut(line, text) for line in held])], held))
+            continue
+        own = int(bool(rows) and rows[0] == title)   # the page's "# Title" line
+        groups = _section_groups(rows, secs, [i for i in hits if i >= own], text, pattern, own)
+        if not groups:                               # the text runs over a line break
+            groups = [("", [_cut(" ".join(str(ability).split()), text)])]
+        held = [rows[i] for i in hits if i >= own] or [rows[i] for i in hits] or groups[0][1]
+        found.append((name, groups, held))
+    found.sort(key=lambda page: (page[0] == BAN_LIST, -sum(bool(start.search(line)) for line in page[2]), -len(page[2]),
                                  str(page[0]).lower()))      # the ban list after the chapters
-    return found
+    return [(name, groups, len(held)) for name, groups, held in found]
+
+
+def _section_groups(rows: list, secs: list, hits: list, text: str, pattern, own: int) -> list:
+    """rulebook_lines' [(section title or "", [lines])] for a page's rows: hits under their sections, in book order; a
+    section titled text, or whose title alone in it holds it: _opening, its later hits, "…" where lines are left out."""
+    of = {i: k for k, (s, e, *_) in enumerate(secs) for i in range(s, e)}     # nested: the innermost
+    starts = {s: k for k, (s, *_) in enumerate(secs)}
+    if not hits and own and pattern.search(rows[0]):  # only the page's title: its first section, or the lines before one
+        first = next((i for i in range(own, len(rows)) if rows[i]), None)
+        if first is None:
+            return []
+        if first not in starts:
+            end = min([s for s in starts if s > first] + [len(rows)])
+            lines, seen = _opening(rows[first:end], text, pattern)
+            return [("", lines + ["…"] * _rest(rows, first + seen, end))]
+        hits = [first]
+    runs, opened = [], set()
+    for i in hits:                                   # runs of hits in one section
+        k = of.get(i)
+        if not runs or runs[-1][0] != k:
+            runs.append((k, []))
+        runs[-1][1].append(i)
+    groups = []
+    for k, run in runs:
+        if k is None:
+            groups.append(("", [_cut(rows[i], text) for i in run]))
+            continue
+        head, end, title, _ = secs[k]
+        later = [i for i in run if i != head]        # a title: the group's heading, not a line
+        if k in opened or head not in run or (later and _title_key(title) != _title_key(text)):
+            groups.append((title, [_cut(rows[i], text) for i in later]))
+            continue
+        opened.add(k)                                # titled text, or its title alone holds it: its first lines
+        lines, seen = _opening(rows[head + 1:end], text, pattern)
+        past = head + 1 + seen
+        later = [i for i in later if i >= past]
+        if later and _rest(rows, past, later[0]):
+            lines.append("…")
+        lines += [_cut(rows[i], text) for i in later]
+        groups.append((title, lines + ["…"] * _rest(rows, later[-1] + 1 if later else past, end)))
+    return groups
+
+
+def _title_key(text: str) -> str:
+    """A title compared as typed: letters and digits only (case, spaces, punctuation and emoji aside)."""
+    return squash(text)
+
+
+def _opening(rows: list, text: str, pattern) -> tuple:
+    """A section's first lines, about OPENING characters of them, and how many rows they take (a longer first line: cut,
+    around text if it holds it)."""
+    out, size = [], 0
+    for n, line in enumerate(rows):
+        if not line:
+            continue
+        if size and size + len(line) > OPENING:
+            return out, n
+        if len(line) > OPENING:
+            return out + [_cut(line, text) if pattern.search(line) else line[:OPENING].rsplit(" ", 1)[0] + "…"], n + 1
+        out.append(line)
+        size += len(line)
+    return out, len(rows)
+
+
+def _rest(rows: list, start: int, end: int) -> bool:
+    """A line left out between start and end (blank ones aside)."""
+    return any(rows[start:end])
 
 
 def _cut(line: str, text: str) -> str:

@@ -235,7 +235,9 @@ def test_near_matches_say_so(repo, monkeypatch):
 
 
 def test_rulebook_lines(monkeypatch):
-    """/query_rulebook: the matching lines under their page names (word starts, then most matches), whole pages per message."""
+    """/query_rulebook: the matching lines under their page names (word starts, then most matches), whole sections per
+    message; with db/rulebook.json's sections, under them: a section titled the text brings its first lines, then every
+    later line holding it, "…" only where lines are left out; the page's "# Title" is no line."""
     import commands.utils as utils
     from pandas import DataFrame
     pages = {"08 Global Turn": "THE GLOBAL TURN\nEach slot takes its turn.\nThen the next turn.",
@@ -246,14 +248,15 @@ def test_rulebook_lines(monkeypatch):
     monkeypatch.setattr(qc, "card_repo", repo)
     monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
     found = qc.rulebook_lines(repo.rulebook_search_engine("Turn"), "Turn")
-    assert [(n, len(lines)) for n, lines in found] == [("08 Global Turn", 3), ("02 Abbreviations", 2), ("30 Long", 1),
-                                                       ("50 Bricks", 1)]
-    assert found[1][1] == ["(OYT) = On your turn.", "(BOT) = Beginning of turn."]          # its own bullet dropped
-    assert len(found[2][1][0]) <= qc.SNIPPET + 2 and "turn" in found[2][1][0] and found[2][1][0].startswith("…")
+    assert [(n, count) for n, _, count in found] == [("08 Global Turn", 3), ("02 Abbreviations", 2), ("30 Long", 1),
+                                                     ("50 Bricks", 1)]
+    assert found[1][1] == [("", ["(OYT) = On your turn.", "(BOT) = Beginning of turn."])]   # its own bullet dropped
+    long = found[2][1][0][1][0]
+    assert len(long) <= qc.SNIPPET + 2 and "turn" in long and long.startswith("…")
     assert qc._bold("A <:defensive_minion:12> minion, <a:x_1:12> 1", "minion") == "A <:defensive_minion:12> **minion**, <a:x_1:12> 1"
     assert qc._bold("<:x_1:12> 1", "1") == "<:x_1:12> **1**"                                   # emoji markup kept whole
     assert qc.rulebook_lines(repo.rulebook_search_engine("global  turn"), "global turn") == [
-        ("08 Global Turn", ["THE GLOBAL TURN"]), ("50 Bricks", ["1 per global turn."])]          # over a line break
+        ("08 Global Turn", [("", ["THE GLOBAL TURN"])], 1), ("50 Bricks", [("", ["1 per global turn."])], 1)]   # over a line break
     qc.query_rulebook(utils.make_simple_fake_interaction(1), "turn")
     sent = [kw for _, kw in utils.dispatch_queue]
     utils.dispatch_queue.clear()
@@ -261,7 +264,7 @@ def test_rulebook_lines(monkeypatch):
     assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook chapters:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")
     repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD).", "It's \u201cfree\u201d.",
                                                'A "sneak attack".']}, index=["A", "B", "C", "D"])
-    assert [n for n, _ in qc.rulebook_lines(repo.rulebook_search_engine("ring"), "ring")] == ["B", "A"]   # word starts first
+    assert [n for n, *_ in qc.rulebook_lines(repo.rulebook_search_engine("ring"), "ring")] == ["B", "A"]   # word starts first
     for text in ("it\u2019s", "\u201cfree\u201d", '"free"', "\u201csneak attack\u201d"):   # either quotes find both
         qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
     sent = [kw["content"] for _, kw in utils.dispatch_queue]
@@ -271,6 +274,21 @@ def test_rulebook_lines(monkeypatch):
                     "'\u201csneak attack\u201d' is on 1 line of 1 rulebook chapter:\n\n**D**\n- A **\"sneak attack\"**."]
     line = "y " * 50 + "[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]: end."
     assert qc._cut(line, "turn") == "\u2026[defensive_minion] " + "x" * 56 + " turn " + "z" * 120 + " [defensive_minion]\u2026"
+    rules = [f"Rule {i} " + "x" * 90 for i in range(6)]
+    text = "\n".join(["Creature Types", "", "Every type has a function.", "", "MACHINE", "Immune to Sickness.", "", "WIND", *rules[:5],
+                      "Wind again " + "x" * 90, rules[5], "Wind last.", "", "After."])
+    repo.rulebook_dff = DataFrame({"ability": [text], "title": ["Creature Types"], "sections": [
+        [[4, 7, "MACHINE", "machine"], [7, 17, "WIND", "wind"]]]}, index=["20. Creature Types"])
+    lines = lambda q: qc.rulebook_lines(repo.rulebook_search_engine(q), q)
+    assert lines("immune") == [("20. Creature Types", [("MACHINE", ["Immune to Sickness."])], 1)]
+    assert lines("wind") == [("20. Creature Types", [("WIND", rules[:4] + ["\u2026", "Wind again " + "x" * 90, "Wind last."])], 3)]
+    assert lines("rule 5") == [("20. Creature Types", [("WIND", [rules[5]])], 1)]
+    assert lines("creature types") == [("20. Creature Types", [("", ["Every type has a function."])], 1)]   # the page's title
+    utils.dispatch_queue.clear()
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "wind")
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent[0].startswith("'wind' is on 3 lines of 1 rulebook chapter:\n\n**20. Creature Types \u00b7 WIND**\n- Rule 0 x")
 
 
 def test_rulebook_timing_tag_finds_its_x_row(monkeypatch):
@@ -459,10 +477,10 @@ def test_words_typed_without_punctuation(tmp_path, monkeypatch):
             "6. Bans": "NME stock", "7. Fights": "A creature. Attacks hit the owners' foes."}
     repo.rulebook_dff = DataFrame({"ability": list(book.values())}, index=list(book))
     lines = lambda q: qc.rulebook_lines(repo.rulebook_search_engine(q), q)
-    assert lines("nme") == [("4. Table", ["4. N.M.E. Items for the N.M.E. Shop."]), ("5. Shops", ["N.M.E SHOP"]),
-                            ("6. Bans", ["NME stock"])]                  # the lines, not the whole chapter
+    assert lines("nme") == [("4. Table", [("", ["4. N.M.E. Items for the N.M.E. Shop."])], 1), ("5. Shops", [("", ["N.M.E SHOP"])], 1),
+                            ("6. Bans", [("", ["NME stock"])], 1)]       # the lines, not the whole chapter
     queries = ["nme", "nme shop", "cant", "05", "turn", "creature attacks", "owners foes"]
-    bot = [[n for n, _ in lines(q)] for q in queries]
+    bot = [[n for n, *_ in lines(q)] for q in queries]
     assert bot == [["4. Table", "5. Shops", "6. Bans"], ["4. Table", "5. Shops"], ["5. Shops"], [], ["4. Table"], [],
                    ["7. Fights"]]
     shown = "4. N.M.E. Items for the N.M.E. Shop. The next turn."

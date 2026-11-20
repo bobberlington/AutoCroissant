@@ -169,9 +169,12 @@ def test_curly_apostrophes(repo):
 
 def test_guesses_cards_only(repo, monkeypatch):
     """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title or label, its
-    chapter (before a Types/ icon); the autocomplete lists chapters for /query only."""
-    monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "minions", "num": "15", "title": "Minions", "text": ""},
-                                                  {"id": "light", "num": "22", "title": "Light", "text": ""}])
+    chapter (before a Types/ icon); a section's title that is no card's or icon's, its section; the autocomplete lists
+    chapters for /query only."""
+    monkeypatch.setattr(cm.stats_db, "rulebook", [
+        {"id": "minions", "num": "15", "title": "Minions", "text": "", "sections": [[2, 4, "SHADOW", "shadow"], [4, 6, "TIPS:", "tips"]]},
+        {"id": "light", "num": "22", "title": "Light", "text": "", "sections": [[2, 4, "🕐TIPS", "tips"], [4, 6, "ROPE", "rope"],
+                                                                                [6, 8, "PANDA", "panda"]]}])
     assert repo.lookup("NebulaStar")[0:2] == ("nebula_star.png", GUESS)       # not the linked art's "_-_nebulastar"
     assert qc.history_match("NebulaStar") == ("nebula_star.png", "Nebula Star")
     assert repo.lookup("13 minions")[0:2] == ("13_minions.png", EXACT)
@@ -189,6 +192,15 @@ def test_guesses_cards_only(repo, monkeypatch):
     qc.query_name(utils.make_simple_fake_interaction(1), "light")                # Types/Light.png: the chapter
     assert [kw["content"] for _, kw in utils.dispatch_queue] == [
         f"**22. Light** is a rulebook chapter: {qc.SITE_URL}/#/rules/light"]
+    sent = []
+    for query in ("Shadow", "tips", "rope", "panda"):              # Shadow Chopper a guess; Rope a card, Panda an icon too
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        sent.append([kw.get("content") for _, kw in utils.dispatch_queue])
+    assert sent[:2] == [[f"**SHADOW** is a section of **15. Minions**: {qc.SITE_URL}/#/rules/minions/shadow"],
+                        [f"**TIPS:** is a section of 2 rulebook chapters:\n- **15. Minions**: {qc.SITE_URL}/#/rules/minions/tips\n"
+                         f"- **22. Light**: {qc.SITE_URL}/#/rules/light/tips"]]
+    assert not any("section" in str(c) for c in sent[2] + sent[3])
 
 
 def test_guess_points_to_abilities(repo):
