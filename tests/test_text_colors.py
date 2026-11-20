@@ -405,6 +405,25 @@ def test_phrase_icon_finds_its_variant(clone):
     assert not any(layer.text[i] == "[" for i in pe._painted(layer, a, b, []))
 
 
+def test_plain_letters_in_the_icon_font_take_a_colour(clone):
+    """Gasoline's '+' and '/' print in the icon font: a colour paints such a letter; the font's icons and blanks keep
+    theirs."""
+    psd_path, _ = _card(clone, "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd")
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)                       # "-2 ATK -2 SPD\rCan't affect [dark:sticker]"
+    text = layer.text
+    minus, blank, icon = text.index("-2 SPD"), text.index(" [dark"), text.index("[dark")
+    for i in (minus, blank):
+        layer.set_span_style(i, i + 1, Font="stoogedings-Regular")
+    before = {i: pe._hex(f) for s, e, f in pe.run_fills(layer) for i in range(s, e)}
+    colors = [{"field": "ability", "phrase": "-2 SPD", "color": "#20a0ff"},
+              {"field": "ability", "phrase": "Can't affect [dark]", "color": "#ff2200"}]
+    pe.set_colors(psd, colors, str(clone / pe.FONTS_DIR), "Afraid")
+    after = {i: pe._hex(f) for s, e, f in pe.run_fills(pe.ability_layer(psd)) for i in range(s, e)}
+    assert after[minus] == "#20a0ff" and before[minus] != "#20a0ff"
+    assert all(after[i] == before[i] for i in [blank, *range(icon, len(text))])
+
+
 def test_clipped_title_layer_hidden(clone, tmp_path):
     """Cake Mix's cake clipped onto its title: a phrase alone refused with the reason; a whole title's colour hides the
     cake and bakes, its phrase after it too."""
