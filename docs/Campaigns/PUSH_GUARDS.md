@@ -1265,9 +1265,10 @@ without it, `test_workflow_shape` and `test_a_recompression_is_no_new_image_vers
   renamed PNG's copy) are recompressed too. Bot commits stay unguarded, so nothing loops. Replay of the push
   38c55bd3..07589cc7: 16 recompress writes (12 rulebook pages 6.2 MB -> 107-801 KB, 4 cards 8.6-11.6 MB -> 1.8-3.4 MB),
   Discord unchanged. oxipng takes about 4 s a card PNG on the Mac (the Action unmeasured), inside Check. Since
-  2026-11-19 a push run (on) leaves them to a process of its own (`check --recompress later`, nice 19: idle cores beside
-  the check, then after `Decided`); a pushed PNG not banded yet counts as a write to come for "Fixes to land", and Land
-  joins them first (`join_bands`): the same commit, comment and post, `Decided` sooner.
+  2026-11-19 a push run (on) leaves them to a process of its own that the check starts as it ends (`check --recompress
+  later`, nice 19: after `Decided`, beside Normalise; beside the check it slowed it); a pushed PNG not banded yet counts as
+  a write to come for "Fixes to land", and Land joins them first (`join_bands`): the same commit, comment and post,
+  `Decided` sooner.
 - **The batch** (`python -m commands.png_recompress --clone <checkout> [--apply] [--report <json>] [--message <file>]`,
   nothing committed; `--message` writes the commit's text, one `Recompressed` trailer per PNG):
   run on a sparse copy of origin/main a7d1fe56 (scratch `followups/png/tc-batch`): 820 card PNGs, 4.47 GB; 686

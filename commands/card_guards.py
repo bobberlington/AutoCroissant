@@ -934,18 +934,18 @@ def _overlap(source: Source, jobs) -> Iterator[None]:
             pool.shutdown(cancel_futures=True)
 
 
-def _start_bands(out: str, source: Source, jobs: list) -> None:
-    """check --recompress later: the jobs' pushed PNGs (_pngs) recompressed in a process of its own at nice 19 (beside the
-    check on idle cores, then after Decided), started now and left running for join_bands. One that does not start:
-    join_bands makes them."""
+def _start_bands(out: str, source: Source, data: dict) -> None:
+    """check --recompress later, at its end: the plan's pushed PNGs left to join_bands ("recompress") recompressed in a
+    process of its own at nice 19, after Decided (none beside the check: it would slow it), left running for join_bands.
+    One that does not start: join_bands makes them."""
+    items = list(dict.fromkeys((p["sha"], p["old"]) for entry in data["cards"] for p in entry.get("recompress", ())))
+    if not items:
+        return
     out = abspath(out)
     folder = join(out, BANDS_DIR)
     makedirs(folder, exist_ok=True)
-    items = list(dict.fromkeys((sha, old) for job in jobs for sha, old in _pngs(job)))
     with open(join(folder, "items.json"), "w", encoding="utf-8") as fh:
         dump({"clone": abspath(source.clone), "repository": source.repository, "items": items}, fh)
-    if not items:
-        return
     try:
         with open(join(folder, "log"), "wb") as log:
             _bands[out] = Popen(["nice", "-n", "19", executable, "-m", "commands.card_guards", "bands", "--out", out],
@@ -2482,8 +2482,6 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     pooled = len(jobs) >= least and workers != 1
     late = recompress == "later" and not whole_tree
     early = not late and workers != 1 and len(jobs) < (cpu_count() or 1)    # a core to spare: the pushed PNGs beside (_overlap)
-    if late:
-        _start_bands(out, source, jobs)
     with _overlap(source, jobs if early and not pooled else ()), TemporaryDirectory(prefix="guard-fonts-") as fonts:
         context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
         earlier = ()                            # the earlier icon fonts (in fonts)
@@ -2530,6 +2528,8 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     with open(join(out, "discord.json"), "w", encoding="utf-8") as fh:
         dump(data["discord"], fh)
     _write_plan(data, out)
+    if late:
+        _start_bands(out, source, data)
     return data
 
 
