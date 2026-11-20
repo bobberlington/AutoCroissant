@@ -1182,8 +1182,9 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
 
 @pytest.mark.oxipng
 def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeypatch):
-    """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check: the same writes,
-    in the same order, as one by one (workers=1)."""
+    """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check, or after it
+    (--recompress later: counted as writes to come, joined by land): the same writes, in the same order, the same
+    report and summary, as one by one (workers=1)."""
     root, base, alice, bot = cards
     work = tmp_path / "psds"
     big = art("RGB", (300, 450))
@@ -1203,6 +1204,17 @@ def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeyp
     assert writes[0] == writes[1] and early == [False] * 3 + [True] * 3
     assert [(card, [Path(path).name for path, *_ in found]) for card, found in writes[1]] == [
         ("Fat", ["Fat2.png", "Fat.png"]), ("Snack", ["Snack2.png"])]
+    late = tmp_path / "late"
+    data = cg.check(str(root), push, bot, mode="on", out=str(late), workers=0, recompress="later")
+    now = json.loads((tmp_path / "0" / "summary.json").read_text())
+    assert [c["writes"] for c in data["cards"]] == [[], []] and data["summary"] == now     # Fixes to land as before
+    assert "ecompressed" not in (late / "report.md").read_text()
+    cg.join_bands(str(late / "plan.json"))
+    joined = json.loads((late / "plan.json").read_text())["cards"]
+    assert [(c["card"], [(w["path"], w["kind"], w["sha"], w["line"]) for w in c["writes"]]) for c in joined] == writes[0]
+    assert early[6:] == [True] * 3 and not (late / cg.BANDS_DIR).exists() and not cg._bands
+    for name in ("report.md", "summary.json"):
+        assert (late / name).read_text() == (tmp_path / "0" / name).read_text()
 
 
 def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatch):
@@ -1825,7 +1837,8 @@ def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypa
         done, _ = _shell(check, env)
         assert (done.returncode, done.stdout, done.stderr.strip(), summary.read_text()) == (code, "report\n", "warn", "report\n")
         assert (tmp_path / "args").read_text().split() == ["-m", "commands.card_guards", "check", "--clone", "/w", "--repo",
-            "o/cards", "--after", "a" * 40, "--out", "/o", "--mode", "on"] + ["--author", "maker", "--before", "b" * 40] * (event == "push")
+            "o/cards", "--after", "a" * 40, "--out", "/o", "--mode", "on"] + ["--author", "maker", "--before", "b" * 40,
+            "--recompress", "later"] * (event == "push")
     root, mark = tmp_path / "clone", tmp_path / "fonts.ready"
     (root / psd_edit.FONTS_DIR).mkdir(parents=True)
     (root / psd_edit.FONTS_DIR / "a.ttf").write_bytes(b"x")
