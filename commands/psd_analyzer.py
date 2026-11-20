@@ -16,7 +16,7 @@ from global_config import EDITS_PATH
 from commands.card_edits import CardEdits
 from commands.card_history import UNKNOWN_IF, unknown
 from commands.card_models import CardInfo, card_name, get_stats_as_dict, stats_db
-from commands.query_card import BAN_LIST, ban_list_text, card_repo, init_query
+from commands.query_card import BAN_LIST, _day, ban_list_text, card_repo, init_query
 from commands.rulebook import label as chapter_label
 from commands.utils import queue_message, queue_file, queue_long_message
 
@@ -56,12 +56,14 @@ def get_card_aliases(name: Optional[str] = None) -> dict[str, list[str]] | list[
     # Card Edits.json's, on the card whose PNG the entry names (as query_card._add_lookup registers them)
     edits = card_repo._edits
     for key, fields in (edits.cards.items() if edits is not None else ()):
+        aliases = fields.get("aliases")
+        if not aliases:                              # most entries are series or art edits
+            continue
         target = f"{key.replace(' ', '_')}.png"
         path = card_repo.git_files.get(target) or next((v for k, v in card_repo.git_files.items() if k.endswith("/" + target)), None)
         if path:
             have = card_to_aliases.setdefault(splitext(basename(path))[0].replace('_', ' '), [])
-            have += [a for a in fields.get("aliases") or [] if a.lower().replace(' ', '_') not in
-                     {h.lower().replace(' ', '_') for h in have}]
+            have += [a for a in aliases if a.lower().replace(' ', '_') not in {h.lower().replace(' ', '_') for h in have}]
 
     # If specific card requested, return just its aliases
     if name is not None:
@@ -106,9 +108,26 @@ def _format_metadata(card: CardInfo, name: str) -> str:
         problems = [str(p) for p in getattr(card, "problems", None) or []]
         why = [prefix.lower() for prefix, field in UNKNOWN_IF if field == "stats" and any(p.startswith(prefix) for p in problems)]
         metadata["stats"] = f"unknown ({why[0] if why else 'misread'})"
-    lines = [f"{key}: {metadata[key]}" for key in COLUMN_ORDER if key in metadata]
-    lines += [f"{key}: {value}" for key, value in metadata.items() if key not in COLUMN_ORDER]
-    return '\n'.join(lines)
+    return '\n'.join(_field_lines(metadata))
+
+
+def _field_lines(metadata: dict) -> list[str]:
+    """'key: value' lines, COLUMN_ORDER first, then any other keys."""
+    keys = [key for key in COLUMN_ORDER if key in metadata] + [key for key in metadata if key not in COLUMN_ORDER]
+    return [f"{key}: {metadata[key]}" for key in keys]
+
+
+def _export_fields(card: CardInfo, aliases: str) -> list[str]:
+    """The text export's 'key: value' lines: plain lists, every creature on one line, the timestamp's day."""
+    row = _shown(card)
+    row.pop("display_name", None)                     # the card's heading
+    if aliases:
+        row["aliases"] = aliases
+    row["timestamp"] = _day(card.timestamp)
+    if card.creatures:
+        row["creatures"] = '; '.join(_creatures(card))
+    return _field_lines({key: ', '.join(map(str, value)) if isinstance(value, list) else value
+                         for key, value in row.items()})
 
 
 # ========================
@@ -144,19 +163,11 @@ def export_stats_to_file(interaction: Interaction,
         only_ability: Export only ability text
         as_csv: Export as CSV (otherwise text file)
     """
-    filtered_stats = {name: _shown(card) for name, card in stats_db.stats.items()}
-
-    # Get all card aliases using helper function
     card_to_aliases = get_card_aliases()
-
-    # Add aliases to filtered_stats
-    for name in filtered_stats:
-        if name in card_to_aliases:
-            filtered_stats[name]['aliases'] = ', '.join(sorted(card_to_aliases[name]))
-        else:
-            filtered_stats[name]['aliases'] = ''
+    aliases = {name: ', '.join(sorted(card_to_aliases.get(name, []))) for name in stats_db.stats}
 
     if as_csv:
+        filtered_stats = {name: _shown(card) | {'aliases': aliases[name]} for name, card in stats_db.stats.items()}
         for name, row in filtered_stats.items():          # plain text: a title, every creature, lists joined
             card = stats_db.stats[name]
             row['title'] = card.display_name or name
@@ -186,15 +197,15 @@ def export_stats_to_file(interaction: Interaction,
 
     filename = f"{EXPORTED_STATS_NAME}.txt"
 
-    # Sort by type, then alphabetically within type
+    # By type, then each card's printed title
     sorted_cards = sorted(
-        stats_db.stats.items(),
-        key=lambda x: (x[1].card_type, x[0].lower())
+        ((card.display_name or name, name, card) for name, card in stats_db.stats.items()),
+        key=lambda x: (x[2].card_type, x[0].lower(), x[1].lower())
     )
 
     with open(filename, 'w', encoding='utf-8') as f:
         current_type = None
-        for name, card in sorted_cards:
+        for title, name, card in sorted_cards:
             card_type = card.card_type
 
             # Add section header when type changes
@@ -202,21 +213,15 @@ def export_stats_to_file(interaction: Interaction,
                 f.write(f"=== {card_type.upper()} ===\n\n")
                 current_type = card_type
 
-            f.write(f"{name}\n")
-
-            # Add aliases right after name
-            if name in card_to_aliases:
-                aliases_str = ', '.join(sorted(card_to_aliases[name]))
-                f.write(f"Aliases: {aliases_str}\n")
+            f.write(f"{title}\n" if title == name else f"{title} (file: {name})\n")
 
             if only_ability:
+                if aliases[name]:
+                    f.write(f"Aliases: {aliases[name]}\n")
                 if card.ability:
                     f.write(f"{card.ability}\n")
             else:
-                for key, metric in _shown(card).items():
-                    if key == "creatures":
-                        metric = _creatures(card)
-                    f.write((' '.join(map(str, metric)) if isinstance(metric, list) else str(metric)) + '\n')
+                f.write('\n'.join(_export_fields(card, aliases[name])) + '\n')
             f.write('\n')
 
     with open(filename, 'rb') as f:

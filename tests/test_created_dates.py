@@ -204,8 +204,39 @@ def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
     assert rows["Pep Drink"]["created"] == "before 2020"
     pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
     text = open("stats.txt", encoding="utf-8").read()
-    assert "\n2023-10-13\n" in text and "\nUses: ∞\n" in text and "\n7/4/5/6 7/10/4/4\n" in text
-    assert "\nbefore 2020\n" in text and "2020-07-21" not in text
+    assert "\ncreated: 2023-10-13\n" in text and "\nability: Uses: ∞\n" in text
+    assert "\ncreatures: 7/4/5/6; 7/10/4/4\n" in text and "\nTwin Emperors (file: Twins)\n" in text
+    assert "\ncreated: before 2020\n" in text and "2020-07-21" not in text
     monkeypatch.setattr(pa.stats_db, "rulebook", [{"num": 2, "title": "Setting Up", "text": "★★★ Deck\nfrom −9 up"}])
     pa.export_rulebook_to_file(SimpleNamespace())
     assert "2. Setting Up\n★★★ Deck\nfrom −9 up\n" in open("rules.txt", encoding="utf-8").read()
+
+
+def test_text_exports_title_name_fields_and_only_real_aliases(monkeypatch, tmp_path):
+    """Both text exports: each card under its printed title (its file name beside it when they differ), sorted by
+    it; an Aliases line only for a card that has aliases (a Card Edits entry without them gives none); the full
+    export names each field in COLUMN_ORDER, the timestamp as its Pacific day."""
+    import commands.psd_analyzer as pa
+    from commands.card_edits import CardEdits
+    moab = cm.CardInfo(name="PoD08MOAB", card_type="minion", path="Auxiliary/Minions/PoD08MOAB.psd",
+                       timestamp=1794381853.0, ability="Pop.", stars=4, types=["wind", "offensive_minion"],
+                       stats=cm.CardStats(5, 4, 5, 4), display_name="M.O.A.B.")     # 2026-11-11 07:24 UTC
+    totem = cm.CardInfo(name="Air Totem", card_type="minion", path="Auxiliary/Minions/Air_Totem.psd", ability="Gust.")
+    nimbus = cm.CardInfo(name="Nimbus", card_type="minion", path="Auxiliary/Minions/Nimbus.psd", ability="")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(pa, "queue_file", lambda inter, f: None)
+    monkeypatch.setattr(pa.stats_db, "stats", {"PoD08MOAB": moab, "Air Totem": totem, "Nimbus": nimbus})
+    monkeypatch.setattr(qc.card_repo, "git_files", {"pod08moab.png": "Auxiliary/Minions/PoD08MOAB.png",
+                                                    "air_totem.png": "Auxiliary/Minions/Air_Totem.png"})
+    monkeypatch.setattr(qc.card_repo, "_edits", CardEdits.parse(json.dumps({"cards": {
+        "PoD08MOAB": {"aliases": ["moab"]}, "Air Totem": {"series": "World of Warcraft"}}})))
+    pa.export_stats_to_file(SimpleNamespace(), only_ability=True, as_csv=False)
+    assert open("stats.txt", encoding="utf-8").read() == (
+        "=== MINION ===\n\nAir Totem\nGust.\n\nM.O.A.B. (file: PoD08MOAB)\nAliases: moab\nPop.\n\nNimbus\n\n")
+    pa.export_stats_to_file(SimpleNamespace(), as_csv=False)
+    blocks = open("stats.txt", encoding="utf-8").read().split("\n\n")
+    assert blocks[2].split("\n") == [
+        "M.O.A.B. (file: PoD08MOAB)", "aliases: moab", "type: minion", "ability: Pop.", "hp: 5", "def: 4", "atk: 5",
+        "spd: 4", "types: wind, offensive_minion", "path: Auxiliary/Minions/PoD08MOAB.psd", "timestamp: 2026-11-10",
+        "stars: 4"]
+    assert "Aliases" not in blocks[1] and "aliases" not in blocks[1] and blocks[3].startswith("Nimbus\ntype: minion\n")
