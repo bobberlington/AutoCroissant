@@ -621,3 +621,15 @@ out([say({ creatures: [a, { ...a }] }, { creatures: null }), say({ creatures: [a
     assert out[:3] == ["The creature list shows on the website only: each creature's stats print only on a bar per creature."] * 3
     assert out[3] == "The creature list shows on the website only: a bar can't show no value (creature 2's HP)."
     assert out[4:] == ["", "", ""]
+
+
+@pytest.mark.skipif(not has(ASSETS / "parts.js", '"a card shows at least one"'), reason="no under-1 stars rule in this parts.js")
+def test_stars_under_one_are_the_bakes_refusal(tmp_path):
+    """Stars to 0: the bake refuses (psd_edit: 'a card shows at least one'), so the mock-up keeps the printed stars and
+    says so, and a folder card promises no move to '0 Stars/'."""
+    why = "a card shows at least one"
+    assert f'"{why}"' in (Path(__file__).parents[1] / "commands" / "psd_edit.py").read_text(encoding="utf-8")
+    out = node(tmp_path, f"""const P = await import({json.dumps((ASSETS / "parts.js").as_uri())});
+const rec = {{ units: [{{}}], at: {{ 1: [[0, 0]] }}, refused: {{}} }}, path = "Creatures/Kirby/2 Stars/Acro.psd";
+out([P.starsKept(rec, 0), P.starsKept(rec, 1), P.starMove(path, 0), P.starMove(path, 3)?.to, p.mockNote({{ refused: [["stars", P.starsKept(null, 0)]] }})]);""")
+    assert out == [why, None, None, "Creatures/Kirby/3 Stars/", f"The bake would refuse the stars: {why}."]
