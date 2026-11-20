@@ -145,16 +145,17 @@ def _seen(**cards):
 
 
 def test_pre_key_and_the_skip(tmp_path, monkeypatch):
-    """The pre-key follows what the print view reads (code, chapters, the named cards' pictures, every card's name), not
-    the data stamp or other cards' pictures; kept beside the key, it skips Chrome (--full looks in any case, and a key
-    change warns). Another lane's look (--kept) counts for the same pages only."""
+    """The pre-key follows what the print view reads (code, chapters, the named cards and their look-alikes), not the
+    data stamp or other cards' pictures and names (its text renders with links off); kept beside the key, it skips
+    Chrome (--full looks in any case, and a key change warns). Another lane's look (--kept) counts for the same pages
+    only."""
     pre = lambda seen: rulebook_pages.pre_key(seen, ["t"], [])
     base = pre(_seen())
-    same = _seen(kirby={"img": "k2", "hp": 4}, panda={"img": "p2"})            # a picture only linked, another card
+    same = _seen(kirby={"img": "k2", "hp": 4, "name": "Kirbo"}, panda={"img": "p2"})   # a picture only linked, another card
     same["index"] = same["index"].replace("d1", "d2")
     assert pre(same) == base
-    for seen in (_seen(mushroom={"img": "m2"}), _seen(kirby={"name": "Kirbo"}), dict(_seen(), index='<link href="assets/app.js?v=a2">')):
-        assert pre(seen) != base
+    for seen in (_seen(mushroom={"img": "m2"}), _seen(kirby={"name": "Mush-room"}), dict(_seen(), index='<link href="assets/app.js?v=a2">')):
+        assert pre(seen) != base                                                # Mush-room: a look-alike of a ref
     assert rulebook_pages.pre_key(_seen(), ["u"], []) != base
     (tmp_path / "site" / "rulebook").mkdir(parents=True)
     (tmp_path / "site" / "rulebook" / "01-a.md").write_text("# A\n![[Mushroom]] and [[Panda|the panda]]\n", encoding="utf-8")
