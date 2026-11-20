@@ -233,6 +233,20 @@ def test_colour_bake_on_a_real_card(clone, tmp_path):
     assert again.jobs == {} and again.redundant == ["colors"]
 
 
+def test_phrase_colour_after_a_character_past_uffff(clone):
+    """A 🕐 (Cave of the Past's) is two UTF-16 units in the runs: a phrase after it is coloured on its own letters and
+    found done after (no 'still to bake: colors')."""
+    psd = PSDImage.open(_card(clone, FREEZER)[0])
+    pe.ability_layer(psd).set_text("🕐 " + pe.ability_layer(psd).text)
+    one = {"field": "ability", "phrase": "Turns into", "color": "#00bfff"}
+    assert pe.plan_colors(psd, [one], FREEZER) == [(one, "baked")]
+    pe.set_colors(psd, [one], str(clone / pe.FONTS_DIR), FREEZER)
+    layer = pe.ability_layer(psd)
+    start = layer.text.index("Turns into")
+    assert [(a, b) for a, b, f in pe.run_fills(layer) if f and pe._hex(f) == "#00bfff"] == [(start, start + 10)]
+    assert pe.plan_colors(psd, [one], FREEZER) == [(one, "redundant")]
+
+
 def test_colour_on_a_raster_off_the_card(clone, tmp_path):
     """PoD05 Lead Bloon's Ability raster starts left of the card: a word's colour bakes, the letters unmoved."""
     from commands.psd_edit import offline_parser

@@ -1806,13 +1806,28 @@ def image_icons(psd: PSDImage, parser: PSDParser) -> list:
             and layer.has_pixels() and layer.bbox[1] >= mid]
 
 
+def _str_runs(layer):
+    """(paragraph, run, start, end) of layer.typesetting's runs, start/end as str indices: the engine counts UTF-16
+    units, two for a character past U+FFFF (Cave of the Past's 🕐)."""
+    text = layer.text
+    if max(text, default="") <= "\uffff":
+        yield from ((p, run, run.start, run.end) for p in layer.typesetting for run in p.runs)
+        return
+    from psd_tools.api import text_edit
+    from psd_tools.api.typesetting import TypeSetting
+    units = text_edit.utf16_prefix(text)        # read as one letter a unit: no run cut at len(text)
+    wide = TypeSetting("".join(c * (1 + (c > "\uffff")) for c in text), layer.engine_dict, layer.resource_dict)
+    for p in wide:
+        for run in p.runs:
+            yield p, run, text_edit._str_index(units, run.start), text_edit._str_index(units, run.end)
+
+
 def run_fills(layer) -> list:
     """[(start, end, RGB 0..1 or None)] over the layer's text, str indices."""
     out = []
-    for paragraph in layer.typesetting:
-        for run in paragraph.runs:
-            fill = run.style.fill_color
-            out.append((run.start, run.end, tuple(float(v) for v in fill)[-3:] if fill else None))
+    for _, run, a, b in _str_runs(layer):
+        fill = run.style.fill_color
+        out.append((a, b, tuple(float(v) for v in fill)[-3:] if fill else None))
     return out
 
 
@@ -1947,13 +1962,12 @@ def _char_styles(layer) -> tuple:
     """
     text = layer.text
     fills, icons, styles, runs = [None] * len(text), [False] * len(text), [{}] * len(text), [-1] * len(text)
-    for paragraph in layer.typesetting:
-        for run in paragraph.runs:
-            fill = run.style.fill_color
-            fill = tuple(float(v) for v in fill)[-3:] if fill else None
-            icon = run.style.font_name.lower().startswith(ICON_FONT_PREFIX)
-            for i in range(max(run.start, 0), min(run.end, len(text))):
-                fills[i], icons[i], runs[i] = fill, icon, (paragraph.start, run.start)
+    for paragraph, run, a, b in _str_runs(layer):
+        fill = run.style.fill_color
+        fill = tuple(float(v) for v in fill)[-3:] if fill else None
+        icon = run.style.font_name.lower().startswith(ICON_FONT_PREFIX)
+        for i in range(max(a, 0), min(b, len(text))):
+            fills[i], icons[i], runs[i] = fill, icon, (paragraph.start, run.start)
     try:
         fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
         style = layer.engine_dict["StyleRun"]
@@ -2253,7 +2267,7 @@ def header_looks(layer, parts: list, new: str, chart: Optional[dict] = None) -> 
         if j is None:
             continue
         i = next((i for i in letters[j] if i not in status), letters[j][0])
-        run = next((run.style for p in layer.typesetting for run in p.runs if run.start <= i < run.end), None)
+        run = next((run.style for _, run, a, b in _str_runs(layer) if a <= i < b), None)
         like = dict(styles[i])
         for key, name in HEAD_KEYS if run is not None else ():
             like.setdefault(key, getattr(run, name))
@@ -5208,10 +5222,9 @@ def plain_marks(text):
 def _run_fonts(layer) -> list:
     """The PostScript name of each str index's run, the final \\r's too."""
     out = [""] * (len(layer.text) + 1)
-    for paragraph in layer.typesetting:
-        for run in paragraph.runs:
-            for i in range(max(run.start, 0), min(run.end, len(out))):
-                out[i] = run.style.font_name
+    for _, run, a, b in _str_runs(layer):
+        for i in range(max(a, 0), min(b, len(out))):
+            out[i] = run.style.font_name
     return out
 
 
