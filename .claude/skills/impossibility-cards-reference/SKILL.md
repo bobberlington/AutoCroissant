@@ -798,11 +798,12 @@ from before the 10-20 split), and a known field's lone `=` reads as `==` (`serie
 text). `prep_dataframes`
 adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
 gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's own example.
-Since 2026-11-19 a word typed without `'` `’` or `.` also finds it printed with one after a letter followed by a
-letter or a space (`loose`, search.js `loose`; text terms, `ability_hits`, `/query_rulebook` and the website's Cards and
-Rulebook search): `cant` finds can't, `nme shop` N.M.E. shop, `creatures turn` creature's turn; digits never (`05` is
-not 0.5); a word typed with one, and `"quoted"` terms, stay exact. After the last letter only an abbreviation's `.`
-(bold **N.M.E.**, never **turn.**).
+Since 2026-11-19 a word typed without `'` `’` or `.` also finds it printed with one between two letters, and at a
+word's end before the next word a `'` or an abbreviation's `.` (`loose`, search.js `loose`; text terms, `ability_hits`,
+`/query_rulebook` and the website's Cards and Rulebook search): `cant` finds can't, `nme shop` N.M.E. shop,
+`creatures turn` creature's turn; never a sentence's end (`other creature` does not find "other. Creature", `WORD_END`);
+digits never (`05` is not 0.5); a word typed with one, and `"quoted"` terms, stay exact. After the last letter only an
+abbreviation's `.` (bold **N.M.E.**, never **turn.**).
 
 **Evaluation order and gotchas** (verified in code 2026-07-11; 2, 4 and 9 rewritten 2026-10-24):
 

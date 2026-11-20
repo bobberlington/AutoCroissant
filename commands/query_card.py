@@ -60,6 +60,7 @@ BAN_LIST = "Constructed ban list"                        # the website's (cards.
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
 PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
 ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
+WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next word: a ' or ABBR_END, never a sentence's end
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
@@ -84,9 +85,9 @@ def typed(text: str, quotes: bool = False) -> str:
 
 
 def loose(text: str, char=escape, gap: Optional[str] = None) -> str:
-    """text as a regex (search.js loose): a word typed without ' \u2019 or . also finds one printed after a letter
-    followed by a letter or a space (cant: can't, nme shop: N.M.E. shop); digits never (05 is not 0.5); a word typed
-    with one is exact. char: a character's regex; gap: a space run's (else itself)."""
+    """text as a regex (search.js loose): a word typed without ' \u2019 or . also finds one printed between its letters
+    (cant: can't), a ' or an abbreviation's . at its end (nme shop: N.M.E. shop; never 'other. Creature'); digits never
+    (05 is not 0.5); a word typed with one is exact. char: a character's regex; gap: a space run's (else itself)."""
     words, out = split(r"(\s+)", text), []
     for at, word in enumerate(words):
         if at % 2:
@@ -97,8 +98,8 @@ def loose(text: str, char=escape, gap: Optional[str] = None) -> str:
             out.append(char(ch))
             if plain and ch.isalpha():
                 after = word[i + 1:i + 2]
-                out.append(PUNCT + "?" if after.isalpha() or not after and at + 1 < len(words) else
-                           "" if after else ABBR_END)
+                out.append(PUNCT + "?" if after.isalpha() else "" if after else
+                           WORD_END if at + 1 < len(words) else ABBR_END)
     return "".join(out)
 
 
