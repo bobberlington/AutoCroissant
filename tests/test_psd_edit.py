@@ -2786,6 +2786,28 @@ def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monk
     assert not list(tmp_path.iterdir())
 
 
+JACOB = "Creatures/Isaac/3 Stars/Tainted_Jacob.psd"
+STALE_JACOB = "06617167^"   # its PNG kept as pushed (guards, 11-11): the Ability's old lines
+
+
+def test_a_png_that_does_not_show_its_psd_is_refused(clone, parser, chart, tmp_path):
+    """Tainted Jacob's stale PNG (STALE_JACOB, its fonts then): the website's (1CD) badge before line 1 misses the bar
+    under the floor over its changed line, but the layer's own box is past it: refused `parity`, not a second line."""
+    psd, png = _at(clone, tmp_path, STALE_JACOB, JACOB)
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
+    (fonts / "stoogedings.ttf").write_bytes(at_rev(clone, STALE_JACOB, pe.FONTS_DIR + "/stoogedings.ttf"))
+    (fonts / "PixelMplus10 Regular.ttf").write_bytes((clone / pe.FONTS_DIR / "PixelMplus10 Regular.ttf").read_bytes())
+    (box,) = pe.card_parts(PSDImage.open(psd), JACOB, card_name(JACOB), parser)["ability"]
+    jobs = {"parts": {str(box["id"]): {"field": "ability", "text": "(1CD) " + box["text"], "sha": box["sha"]}}}
+    with pytest.raises(pe.Refused) as refused:
+        pe.apply_jobs(psd, png, JACOB, jobs, pe.parse_card(parser, psd, JACOB), parser, str(tmp_path), str(fonts), chart)
+    why = refused.value.why
+    assert refused.value.code == "parity" and why.startswith("the card's PNG does not show its PSD's Ability (baseline bad ")
+    assert float(search(r"bad ([\d.]+)%", why).group(1)) > pe.PARITY_FLOOR
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["at", "fonts"]
+
+
 def test_a_text_edit_is_drawn_once(clone, parser, tmp_path, monkeypatch):
     """The merge and the re-render cut their regions from gate_dirty's render (no render_region): the same bytes and
     measurements as drawing each region."""

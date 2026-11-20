@@ -10497,6 +10497,24 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
     return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
 
 
+def layer_parity(old: PSDImage, png: Image.Image, edit: Edit, icc: bool = True) -> None:
+    """
+    A text edit whose region missed the bar: each edited layer's own box in the card before the edit (baseline, rendered
+    fresh), refused past PARITY_FLOOR. A PNG that does not show its PSD there would get a second line (Tainted Jacob,
+    11-11). A layer the edit added is skipped.
+    """
+    index = _by_id(old)
+    for layer in edit.layers:
+        was = index.get(layer.layer_id)
+        if was is None or _off_canvas(was.bbox, old):
+            continue
+        try:
+            baseline(old, png, clip(tuple(was.bbox), old.width, old.height), icc)
+        except Refused as refused:
+            raise Refused("parity", f"the card's PNG does not show its PSD's {was.name} ({refused.why}): export the PNG "
+                                    "in Photoshop") from refused
+
+
 # The soft notes (owner 2026-11-07: non-issues): a bake's own remarks on a card that baked, told nowhere
 SOFT_NOTE = re_compile(r"^overflow: |^types: .*spot.*: check it$|^[a-z]+: cells by place|deleted: the edit changes"
                        r"|: also printed by ")
@@ -12028,6 +12046,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         start = perf_counter()
         try:
             base, parity[edit.field] = baseline(old, png, edit.region, icc, first)
+            if edit.field in (*TEXT_FIELDS, "colors") and not _within_bar(parity[edit.field]):
+                layer_parity(old, png, edit, icc)
         except Refused as refused:
             refused.field = edit.field if edit.field in PARTIAL_FIELDS else None
             raise
