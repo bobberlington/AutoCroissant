@@ -28,6 +28,8 @@ CLOT = "3f7040af67a5f605e0220b79051da3d0f9b43e57"       # Clot_Gold.psd (TC 96c3
 BYC = "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd"   # its title on four layers alone in a group with a Gradient Overlay
 AUTOPSY = "Auxiliary/Items/Autopsy_Report.psd"        # its title printed again in its Evidence box (parts' follow)
 EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"     # two copies on its title, a few px aside: its red and cyan
+SNAKE = "Auxiliary/Items/Snake.psd"                     # its Ability's fork render past LAYOUT_OFF, its lines the card's
+MONKEY = "14d42952d7b978fd5902d23f2d956f8b0cb828e7"     # Monkey_D_Letion.psd (TC 854b03a8): 'as' on line 4, the fork's 3
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
          "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
          "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
@@ -122,6 +124,22 @@ def test_an_icons_drawing_keeps_the_layout(clone, monkeypatch):
     monkeypatch.setattr(text, "render", undrawn)
     assert len(icons) == 2 and kept and cs._ink_off(layer, faces, {"glyphs": []}) > cp.LAYOUT_OFF
     assert cp.layout(layer, fonts) == kept
+
+
+def test_a_layout_past_layout_off_kept_when_its_lines_are_the_cards(clone):
+    """Past LAYOUT_OFF a layout is kept when each line is the stored pixels' (Snake's Ability, 5 lines), not when a word
+    sits on another line (Monkey D Letion's Ability: the mock-up's splices drew 'aseeng' from it)."""
+    from psd_tools.composite.text.geometry import text_geometry
+    from conftest import card_blob
+    import commands.card_standards as cs
+    fonts = str(clone / "MDW/Fonts")
+    snake, monkey = (psd_edit.ability_layer(PSDImage.open(f)) for f in (clone / SNAKE, io.BytesIO(card_blob(clone, MONKEY))))
+    for layer in (snake, monkey):
+        faces = psd_edit.font_map(fonts, layer)
+        assert cs._ink_off(layer, faces, text_geometry(layer, faces)) > cp.LAYOUT_OFF
+    lay = cp.layout(snake, fonts)
+    assert lay["text"].replace("\x03", "\r").strip() == snake.text.replace("\x03", "\r").strip() and len(lay["lines"]) == 5
+    assert cp.layout(monkey, fonts) is None
 
 
 def test_a_tagged_cards_other_pictures_titles(clone):
