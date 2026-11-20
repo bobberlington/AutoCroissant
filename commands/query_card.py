@@ -17,7 +17,7 @@ from typing import Optional
 from unicodedata import normalize
 from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
-from re import compile, escape, IGNORECASE
+from re import compile, escape, IGNORECASE, search, split
 from urllib.parse import quote
 
 from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZONE
@@ -58,6 +58,8 @@ URL_MAX = 512                                            # Discord's longest lin
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
+PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
+ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
@@ -79,6 +81,25 @@ def typed(text: str, quotes: bool = False) -> str:
     too (/query_ability's syntax; the rulebook prints curly ones)."""
     text = straight(text).replace("\u2018", "'")
     return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
+
+
+def loose(text: str, char=escape, gap: Optional[str] = None) -> str:
+    """text as a regex (search.js loose): a word typed without ' \u2019 or . also finds one printed after a letter
+    followed by a letter or a space (cant: can't, nme shop: N.M.E. shop); digits never (05 is not 0.5); a word typed
+    with one is exact. char: a character's regex; gap: a space run's (else itself)."""
+    words, out = split(r"(\s+)", text), []
+    for at, word in enumerate(words):
+        if at % 2:
+            out.append(gap or escape(word))
+            continue
+        plain = not search(PUNCT, word)
+        for i, ch in enumerate(word):
+            out.append(char(ch))
+            if plain and ch.isalpha():
+                after = word[i + 1:i + 2]
+                out.append(PUNCT + "?" if after.isalpha() or not after and at + 1 < len(words) else
+                           "" if after else ABBR_END)
+    return "".join(out)
 
 
 def squash(text: str) -> str:
@@ -538,12 +559,13 @@ class CardRepository:
 
     @staticmethod
     def _text_pattern(text: str) -> str:
-        """A regex for a text term: the text, each SYNONYMS word also finding its other (damage DMG, SP star points...)."""
+        """A regex for a text term: the text (loose: cant finds can't), each SYNONYMS word also finding its other (damage
+        DMG, SP star points...)."""
         parts = SYNONYM_WORDS.split(text)
         out = []
         for i, part in enumerate(parts):
             if i % 2 == 0:
-                out.append(escape(part))
+                out.append(loose(part))
                 continue
             other = SYNONYMS[part]
             other = r"\b" + other + r"\b" if len(other) < len(part) else other      # dmg as a word, not in "admg"
@@ -709,7 +731,7 @@ class CardRepository:
         Search rulebook entries for matching text.
 
         Args:
-            search_text: Text to search for (case-insensitive; a straight or curly " finds either)
+            search_text: Text to search for (case-insensitive; a straight or curly " finds either; loose)
 
         Returns:
             DataFrame of matching rulebook entries
@@ -720,7 +742,7 @@ class CardRepository:
         words = search_text.translate(BOOK_QUOTES).split()
         if not words:
             return pages
-        pattern = r"\s+".join(escape(w) for w in words)           # any spaces or line breaks between the words
+        pattern = loose(" ".join(words), gap=r"\s+")              # any spaces or line breaks between the words; nme N.M.E.
         return pages[pages["ability"].str.translate(BOOK_QUOTES).str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
@@ -1685,24 +1707,25 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
         [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
         most lines, then by name, the ban list last; a match across a line break: that passage
     """
-    found, low = [], text.translate(BOOK_QUOTES).lower()      # either quotes find both
-    start = compile(r"(?<![a-z])" + _book_pattern(text), IGNORECASE)   # no letter just before: "ring", not "during"
+    found, pattern = [], compile(_book_pattern(text), IGNORECASE)      # either quotes find both; nme N.M.E.
+    start = compile(r"(?<![a-z])" + pattern.pattern, IGNORECASE)   # no letter just before: "ring", not "during"
     for name, ability in pages["ability"].items():
         lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
-        lines = [line for line in lines if low in line.translate(BOOK_QUOTES).lower()]
+        lines = [line for line in lines if pattern.search(line)]
         if not lines:                                # the text runs over a line break
             lines = [" ".join(str(ability).split())]
-        found.append((name, [_cut(line, low) for line in lines]))
+        found.append((name, [_cut(line, text) for line in lines]))
     found.sort(key=lambda page: (page[0] == BAN_LIST, -sum(bool(start.search(line)) for line in page[1]), -len(page[1]),
                                  str(page[0]).lower()))      # the ban list after the chapters
     return found
 
 
-def _cut(line: str, low: str) -> str:
-    """line, or SNIPPET characters of it around the first match (low: folded), a [token] at an edge kept whole."""
+def _cut(line: str, text: str) -> str:
+    """line, or SNIPPET characters of it around text's first match (_book_pattern), a [token] at an edge kept whole."""
     if len(line) <= SNIPPET:
         return line
-    at = max(line.translate(BOOK_QUOTES).lower().find(low), 0)
+    found = compile(_book_pattern(text), IGNORECASE).search(line)
+    at = found.start() if found else 0
     start = max(0, min(at - SNIPPET // 3, len(line) - SNIPPET))
     end = start + SNIPPET
     for token in TOKEN_PATTERN.finditer(line):            # an icon cut in two: its emoji lost
@@ -1714,8 +1737,8 @@ def _cut(line: str, low: str) -> str:
 
 
 def _book_pattern(text: str) -> str:
-    """text as a regex, its " (straight or curly) finding either printed quote."""
-    return "".join('["\u201c\u201d]' if ch == '"' else escape(ch) for ch in text.translate(BOOK_QUOTES))
+    """text as a regex (loose), its " (straight or curly) finding either printed quote."""
+    return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch))
 
 
 def _bold(line: str, text: str) -> str:

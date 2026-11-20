@@ -41,7 +41,8 @@ card_commands = {
                                              "\n  created>=2025, 2023-10 or 2021-06-01; values with & or | in quotes"
                                              "\n  damage/DMG, defense/DEF, speed/SPD, health/HP, star points/SP,"
                                              "\n  primary field/PF, counter damage/CDMG find each other"
-                                             "\n  hollow knight, moms knife: a series' or subseries' cards, names without punctuation",
+                                             "\n  hollow knight, moms knife: a series' or subseries' cards, names without punctuation"
+                                             "\n  cant, nme: can't, N.M.E. too (a word typed without ' or .; /query_rulebook too)",
 }
 
 stats_commands = {
