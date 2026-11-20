@@ -5,6 +5,7 @@ versions' "Text then" and the Recently updated feed; and every date the site sho
 whatever the viewer's zone. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
+import re
 from os import environ
 from subprocess import run as run_process
 
@@ -104,3 +105,12 @@ def test_compare_texts_load_with_the_versions_list():
     app = (ASSETS / "app.js").read_text(encoding="utf-8")
     fill = app[app.index("const fillVersions = () => {"):app.index("const heavyPaths = ")]
     assert fill.index("versionsHtml(c, versionsOpen(c.id))") < fill.index("if (c.hv && !c.history) loadHistory().catch(() => {});")
+
+
+def test_card_text_icons_keep_their_size_beside_pictures():
+    """r54: Image versions', Compare's and Recently updated's picture rules take only their pictures (a box's own img,
+    a .ver-pic pane's), never the ability's icons beside them (img.tok, a .tokv's img: img.tok's 1.35em)."""
+    css = re.sub(r"/\*.*?\*/", "", (ASSETS / "style.css").read_text(encoding="utf-8"), flags=re.S)
+    sels = {s.strip() for head in re.findall(r"([^{};]+)\{", css) for s in head.split(",")}
+    boxes = {s for s in sels if re.search(r"\.(ver-compare|compare|feed)(?![\w-])", s) and re.search(r"(?<![\w.#-])img(?![\w-])", s)}
+    assert {".feed .item > img", ".compare .col > img", ".ver-compare figure > img", ".ver-compare .ver-pic img"} == boxes
