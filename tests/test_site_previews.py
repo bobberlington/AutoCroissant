@@ -293,6 +293,16 @@ out([run(false), run(true), run("badges")]);""")
     assert out == [["icon"], ["mask rgb(200,10,10)", "canvas"], ["icon"]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "kind = OVERLAY, t = null"), reason="no own effects in this mockup.js")
+def test_a_layer_sharing_its_path_has_its_own_overlay(tmp_path):
+    """Twin Emperors' 5 Ability layers share a path whose effects are a label's Gradient Overlay: a layer's own
+    effects (psd_details VERSION 12) answer for it, else the path's; a group's overlay still counts."""
+    out = node(tmp_path, """const at = "Text/Ability", rec = { effects: { "Text": ["Stroke"], [at]: ["GradientOverlay"] } };
+out([m.oneColour(rec, at, undefined, { layer: at, effects: [] }), m.oneColour(rec, at, undefined, { layer: at, effects: ["GradientOverlay"] }),
+  m.oneColour(rec, at, undefined, { layer: at }), m.oneColour(rec, at), m.oneColour({ effects: { "Text": ["ColorOverlay"] } }, at, undefined, { layer: at, effects: [] })]);""")
+    assert out == [False, True, True, True, True]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "const iconEm"), reason="no icon glyph shapes in this mockup.js")
 def test_an_icon_swap_keeps_the_line_at_the_glyphs_shape(tmp_path):
     """A typed icon steps as its stoogedings glyph (its picture's width over height, 1 em tall or 1.4 wide, 0.04 em each
