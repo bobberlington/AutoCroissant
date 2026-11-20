@@ -588,3 +588,32 @@ def test_tts_checks_take_ac_main_unless_told(tmp_path, monkeypatch):
     assert got("b", "commands/x.py") == b"main 2" and got("b", "commands/tts_save.py") == b"main"
     monkeypatch.setattr(env, "BOT", str(ac))
     assert env.copy_bot(str(tmp_path / "c")) == str(ac) and got("c", "commands/tts_save.py") == b"tree"
+
+
+def test_tts_checks_run_a_part_again_on_bash_eintr(tmp_path, monkeypatch):
+    """run_all: a card_sync_steps part that failed printing macOS bash 3.2's EINTR runs once more, both outputs kept;
+    another failure, or another check with it, does not."""
+    path = SITE_SRC / "TTS" / "checks" / "run_all.py"
+    if not path.is_file():
+        pytest.skip(f"no {path} (AC_SITE_SRC lacks TTS/checks)")
+    monkeypatch.syspath_prepend(str(path.parent))                # run_all's own insert goes with it
+    spec = importlib.util.spec_from_file_location("run_all", path)
+    ra = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ra)
+    eintr = "FAIL data gate\nbash: line 55: echo: write error: Interrupted system call\n"
+    results = []
+
+    def fake(cmd, **kw):
+        code, out = results.pop(0)
+        return SimpleNamespace(returncode=code, stdout=out, stderr="")
+    monkeypatch.setattr(ra, "subprocess", SimpleNamespace(run=fake, TimeoutExpired=TimeoutError))
+    monkeypatch.setattr(ra, "OUT", str(tmp_path))
+    part = ("card_sync_steps.py", "plans", "gate")
+    results[:] = [(1, eintr), (0, "all passed\n")]
+    code, text, _, note = ra.run(part, "save.json")
+    assert (code, note, results) == (0, ", run again: bash EINTR", [])
+    assert (tmp_path / "card_sync_steps_plans.txt").read_text() == text and eintr in text and text.endswith("all passed\n")
+    for check, first in ((part, "FAIL data gate: go=false\n"), (("lua_mock.py",), eintr)):
+        results[:] = [(1, first), (0, "")]
+        code, _, _, note = ra.run(check, "save.json")
+        assert (code, note, len(results)) == (1, "", 1)
