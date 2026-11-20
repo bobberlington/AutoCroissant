@@ -66,7 +66,7 @@ AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
             "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned",
-            "morgue", "thumb_tag")                       # populate_files builds aside, swaps in
+            "morgue", "thumb_tag", "tops")               # populate_files builds aside, swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 UNFINISHED = "MDW/Unfinished/"                           # cards not finished: not in play
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
@@ -191,6 +191,7 @@ class CardRepository:
     def __post_init__(self):
         self.git_files: dict[str, str] = {}
         self.card_keys: list[str] = []                   # git_files keys of card PNGs: what guesses pick from
+        self.tops: frozenset = frozenset()               # the tree's top folders, lowercase (creatures, mdw, n.m.e)
         self.blobs: dict[str, str] = {}                  # png path -> blob sha, for commit-pinned links
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self.banlist: dict = {}                          # the website's Constructed ban list (cards.json)
@@ -257,6 +258,7 @@ class CardRepository:
         new._populate_edit_names()
         new._populate_titles()
         new.card_keys = [k for k, p in new.git_files.items() if not p.startswith(NOT_CARDS)]
+        new.tops = frozenset(p.split("/", 1)[0].lower().replace(" ", "_") for p in new.git_files.values())
         new._populate_renames()
         if site:
             new._populate_site_ids()
@@ -1009,9 +1011,14 @@ class CardRepository:
         renamed = self._renamed.get(key)
         if renamed:
             return (renamed[0], "renamed", renamed[1])
-        name = key[key.rfind("/") + 1:]
-        if name != key and name[0] not in "_.":                 # a typed path (Creatures/Pizza.png): its file name
-            return self.lookup(name)
+        cut, top = key.rfind("/"), key[:key.find("/")]
+        if cut > 0 and key[cut + 1] not in "_." and (top in self.tops or query.strip().lower().endswith(".png")):
+            found, how, old = self.lookup(key[cut + 1:])       # a typed path (Creatures/Pizza.png): its file name
+            path = self.git_files.get(found, "") if found else ""
+            if found and self._normalize_card_name(path).startswith(key[:cut + 1]):    # in the typed folder: as found
+                return (found, how, old)
+            if found and not path.startswith(NOT_CARDS):         # another folder: a guess, never an icon
+                return (found, "guess", "")
         found = self.closest(key, self.card_keys)
         return (found, "guess", "") if found else (None, "", "")
 
@@ -1118,8 +1125,8 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
-        hint, more = _in_abilities(query)
-        queue_message(interaction, "No card found!" + hint, links=more)
+        said, more = _ability_note(query)
+        queue_message(interaction, "No card found!" + said, links=more)
         return
     note, more = None, None
     if how == "renamed":
@@ -1130,15 +1137,15 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     gone = _out_of_play(closest)                        # The Morgue, MDW/Unfinished: never as if in play
     if gone:
         note = f"{note or f'**{_label(closest)}**'} {gone}"
-    if how == "guess":
-        hint, more = _in_abilities(query)
-        note += hint
+    if how == "guess":                                  # maybe ability text: /query_ability's cards too
+        said, more = _ability_note(query)
+        note += said
     _post_card(interaction, closest, note=note, more=more)
 
 
-def _in_abilities(query: str) -> tuple:
-    """(' · N cards have "query" in their ability: /query_ability query', its website button) for a guess or a miss
-    whose text is in abilities, else ("", None)."""
+def _ability_note(query: str) -> tuple:
+    """(' · N cards have "query" in their ability: /query_ability query', its website button) when cards' abilities hold
+    query; else ("", None)."""
     hits = card_repo.ability_hits(query)
     if not hits:
         return "", None
@@ -1146,7 +1153,7 @@ def _in_abilities(query: str) -> tuple:
     shown = text if len(text) <= 60 else text[:59].rsplit(" ", 1)[0] + "…"      # a button label holds 80
     said = escape_markdown(shown)
     return (f" · {hits} card{'s have' if hits > 1 else ' has'} \"{said}\" in {'their' if hits > 1 else 'its'} "
-            f"ability: /query_ability {said}", [(f'Cards with "{shown}"', search_link("cards", text))])
+            f"ability: /query_ability {said}"), [(f'Cards with "{shown}"', search_link("cards", text))]
 
 
 def _out_of_play(key: str) -> str:
