@@ -816,8 +816,15 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes], 
     and RECOMPRESS_BYTES smaller (our thresholds): a write of its own kind, resting on that PNG alone and never told on
     Discord. A failure is a comment note, never the card's error (which Discord would tell). One _overlap started (its
     blob sha) is left to _collect, which puts it where it goes here. before() gives the file it replaces (_prior).
-    --recompress later: left to join_bands, which puts it here (result.pending)."""
+    --recompress later: left to join_bands, which puts it here (result.pending), unless it is banded or too small to
+    save RECOMPRESS_BYTES (recompress gives none)."""
     if _late and sha:
+        try:
+            data = read()
+            if png_export.banded(data) or len(data) <= png_export.RECOMPRESS_BYTES:
+                return
+        except Exception:                       # join_bands notes it
+            print(format_exc(), file=stderr)
         result.pending.append({"path": path, "sha": sha, "old": result.job.olds.get(path, ""), "at": len(result.writes),
                                "noted": len(result.notes)})
         return
@@ -931,11 +938,12 @@ def _start_bands(out: str, source: Source, jobs: list) -> None:
     """check --recompress later: the jobs' pushed PNGs (_pngs) recompressed in a process of its own at nice 19 (beside the
     check on idle cores, then after Decided), started now and left running for join_bands. One that does not start:
     join_bands makes them."""
+    out = abspath(out)
     folder = join(out, BANDS_DIR)
     makedirs(folder, exist_ok=True)
     items = list(dict.fromkeys((sha, old) for job in jobs for sha, old in _pngs(job)))
     with open(join(folder, "items.json"), "w", encoding="utf-8") as fh:
-        dump({"clone": source.clone, "repository": source.repository, "items": items}, fh)
+        dump({"clone": abspath(source.clone), "repository": source.repository, "items": items}, fh)
     if not items:
         return
     try:
@@ -1014,7 +1022,7 @@ def join_bands(plan_path: str, wait: float = BANDS_WAIT) -> None:
     does (one it did not make is made here: _made); plan.json, summary.json and report.md written again. Never raises:
     a failure lands the plan without them.
     """
-    out = dirname(plan_path)
+    out = dirname(abspath(plan_path))
     folder = join(out, BANDS_DIR)
     try:
         with open(plan_path, encoding="utf-8") as fh:
@@ -1048,6 +1056,11 @@ def join_bands(plan_path: str, wait: float = BANDS_WAIT) -> None:
         print(format_exc(), file=stderr)
     finally:
         _end_bands(out, folder)
+        try:
+            with open(join(folder, "log"), encoding="utf-8", errors="replace") as fh:
+                stderr.write(fh.read())         # its tracebacks, if any
+        except OSError:
+            pass
         rmtree(folder, ignore_errors=True)
 
 
@@ -3054,6 +3067,7 @@ __all__ = [
     'convert_plan',
     'convertible',
     'housekeeping',
+    'join_bands',
     'links_index',
     'Change',
     'EARLIER_WALK',
