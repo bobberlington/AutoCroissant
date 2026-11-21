@@ -249,11 +249,16 @@ def test_a_printed_title_it_was_renamed_from_is_the_current_card(db, monkeypatch
 # ========================
 def _png_clone(tmp_path, monkeypatch, path, times):
     """A bare clone of a card repo whose PNG at path changed at each of times; the bot's history clone."""
+    return _clone(tmp_path, monkeypatch, [(at, {path: b"png %d" % i}) for i, at in enumerate(times)])
+
+
+def _clone(tmp_path, monkeypatch, steps):
+    """A bare clone of a card repo, a commit per (time, {path: bytes, or None: deleted}); the bot's history clone."""
     import os
     import subprocess
     import commands.repo_history as rh
     repo, shas = tmp_path / "cards", []
-    (repo / os.path.dirname(path)).mkdir(parents=True)
+    repo.mkdir()
 
     def git(*args, at=None):
         stamp = {} if at is None else {"GIT_AUTHOR_DATE": f"@{int(at)} +0000", "GIT_COMMITTER_DATE": f"@{int(at)} +0000"}
@@ -261,10 +266,15 @@ def _png_clone(tmp_path, monkeypatch, path, times):
                               env={**os.environ, "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x",
                                    "GIT_COMMITTER_NAME": "a", "GIT_COMMITTER_EMAIL": "a@x", **stamp}).stdout
     git("init", "-q", "-b", "main")
-    for i, at in enumerate(times):
-        (repo / path).write_bytes(b"png %d" % i)
+    for at, files in steps:
+        for path, data in files.items():
+            if data is None:
+                (repo / path).unlink()
+            else:
+                (repo / path).parent.mkdir(parents=True, exist_ok=True)
+                (repo / path).write_bytes(data)
         git("add", "-A")
-        git("commit", "-q", "-m", f"png {i}", at=at)
+        git("commit", "-q", "-m", "png", at=at)
         shas.append(git("rev-parse", "HEAD").strip())
     subprocess.run(["git", "clone", "-q", "--bare", str(repo), str(tmp_path / "history.git")], check=True,
                    capture_output=True)
@@ -301,7 +311,6 @@ def test_the_image_of_that_day(db, tmp_path, monkeypatch):
     assert rh.commit_before(qc.card_repo.repository, f"{BETHANY}.png", _at(2026, 10, 23))[0] == second
 
 
-
 def test_a_day_before_its_versions_posts_that_days_picture(db, tmp_path, monkeypatch):
     """Halo's PNG was in the repo before its oldest stored version: that day's PNG (pinned) and its Card page, not just
     'no stored version' (11-19); after a case-only rename (11-11's name batch), the PNG beside its oldest version."""
@@ -329,3 +338,23 @@ def test_a_day_before_any_picture_keeps_the_sentence_with_its_page(db, tmp_path,
     assert [(s["content"], s.get("links")) for s in _ask("ZOEY!!!!!", "2025-06-01")] == [
         (f"**ZOEY!!!!!** as of 2025-06-01 {HEAD}no stored version is that old; the oldest is from 2026-01-30 "
          "(date approximate).", None)]
+
+
+def test_a_day_before_its_versions_never_posts_a_missing_file(db, tmp_path, monkeypatch):
+    """Slugcat (11-20): its PNG today was deleted (the card moved, 7f1cc313) before its oldest version and came back
+    later. Each day posts the file there that day, never one deleted by then; other callers keep the older picture."""
+    import commands.repo_history as rh
+    from urllib.parse import quote
+    today, moved = "Creatures/Isaac/3 Stars/Tainted_Bethany.png", f"{BETHANY}.png"
+    monkeypatch.setitem(qc.card_repo.git_files, "tainted_bethany.png", today)
+    shas = _clone(tmp_path, monkeypatch, [(_at(2025, 6, 1), {today: b"0"}), (_at(2025, 8, 1), {today: None}),
+                                          (_at(2025, 10, 1), {today: b"2"}), (_at(2025, 12, 1), {today: None, moved: b"3"}),
+                                          (_at(2026, 10, 22), {today: b"4", moved: None})])
+    url = lambda i, path: f"https://raw.githubusercontent.com/{qc.card_repo.repository}/{shas[i]}/{quote(path)}"
+    assert _texts("Tainted Bethany", "2025-07-01")[1] == url(0, today)
+    assert _texts("Tainted Bethany", "2025-10-15")[1] == url(2, today)
+    assert _texts("Tainted Bethany", "2025-12-15")[1] == url(3, moved)
+    assert _texts("Tainted Bethany", "2025-09-01") == [f"**Tainted Bethany** as of 2025-09-01 {HEAD}no stored version is "
+                                                      "that old; the oldest is from 2026-01-30 (date approximate)."]
+    assert rh.commit_before(qc.card_repo.repository, today, _at(2025, 9, 2))[0] == shas[0]
+    assert rh.commit_before(qc.card_repo.repository, today, _at(2025, 9, 2), present=True) is None

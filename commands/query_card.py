@@ -1601,8 +1601,9 @@ def _pngs_beside(psd: Optional[str]) -> list:
 
 def _before_versions(interaction: Interaction, head: str, key: Optional[str], first, end: float, own: bool) -> None:
     """
-    as_of before the oldest stored version: the card's picture that day from the card repo (its PNG today, else one
-    beside its oldest version: a renamed file) with its Card page, else the sentence, its Created date and the Card page.
+    as_of before the oldest stored version: the card's picture that day from the card repo (the PNG beside its oldest
+    version, else today's PNG; never a file missing that day) with its Card page, else the sentence, its Created date
+    and the Card page.
     Archived cards (no key): the sentence alone.
 
     Args:
@@ -1617,10 +1618,10 @@ def _before_versions(interaction: Interaction, head: str, key: Optional[str], fi
     if key is None:
         queue_message(interaction, f"{head}no stored version is that old; {oldest}.")
         return
-    pngs = [card_repo.git_files.get(key)] + (_pngs_beside(first.path) if own and first.path else [])
-    pngs = list(dict.fromkeys(p for p in pngs if p))
+    pngs = (_pngs_beside(first.path) if own and first.path else []) + [card_repo.git_files.get(key)]
+    pngs = list(dict.fromkeys(p for p in pngs if p))     # its oldest version's first: today's may be a moved-back file
     for png in pngs:
-        found = commit_before(card_repo.repository, png, end)
+        found = commit_before(card_repo.repository, png, end, present=True)
         if found is not None:                            # that day's PNG, never today's: the data is not that old
             queue_message(interaction, f"{head}no stored card data is that old; {oldest}. "
                                        f"Its picture that day (from {_day(found[1])}):")

@@ -1053,8 +1053,9 @@ A duplicate's change is listed under its original.
 - **Which version.** Pick the version with `from ≤ t < to`, or the current card when `t ≥` the last version's `to`.
   - Before the first stored version: "no stored version is that old; the oldest is from <date>" (old_stats may not hold the
     card's first version, so "not made yet" would overclaim). Since 2026-11-19 a live card instead posts its picture of
-    that day from the card repo (its PNG, else the one beside its oldest version) with its Card page, saying "no stored
-    card data is that old"; with no PNG that old, the sentence gains its Created date and the Card page.
+    that day from the card repo (the PNG beside its oldest version, else its PNG today; never a file deleted by then:
+    `commit_before(present=True)`) with its Card page, saying "no stored card data is that old"; with no PNG that old,
+    the sentence gains its Created date and the Card page.
   - When archived and `t ≥ archived.at`: "archived on <date> (PSD deleted in <commit>)", showing the last version. A tag
     with no `at` counts as archived after its last version only.
 - **The image** of that day (2026-10-23): the newest commit of the card's PNG before the end of the day, from the bot's

@@ -279,10 +279,13 @@ def raw_url_at(repository: str, path: str, ref: str) -> str:
     return f"{RAW_BASE}{repository}/{ref}/{quote(path, safe='/')}"
 
 
-def commit_before(repository: str, path: str, end: float) -> Optional[tuple]:
+def commit_before(repository: str, path: str, end: float, present: bool = False) -> Optional[tuple]:
     """
     The newest commit on the card branch that changed path before end (/query as_of's image of that day), from the
     history clone (rev-list over its trees: no blob is read, none fetched).
+
+    Args:
+        present: None when path's newest change before end deleted it (it was not there that day)
 
     Returns:
         (commit sha, its committer time, whether a later commit changed path), or None: no commit that old, another
@@ -296,8 +299,11 @@ def commit_before(repository: str, path: str, end: float) -> Optional[tuple]:
         print(f"Repo history: no commit of {path} looked up ({e})")
         return None
     for i in range(0, len(rows) - 1, 2):
-        if float(rows[i]) < end and _has(rows[i + 1], path):      # not the commit that deleted it
-            return (rows[i + 1], float(rows[i]), i > 0)
+        if float(rows[i]) < end:
+            if _has(rows[i + 1], path):                 # not the commit that deleted it
+                return (rows[i + 1], float(rows[i]), i > 0)
+            if present:                                 # deleted: missing that day
+                return None
     return None
 
 
