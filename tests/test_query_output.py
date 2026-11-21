@@ -24,7 +24,7 @@ def repo(monkeypatch):
 
 def _search(repo, n):
     names = [f"Items/Card {i}" for i in range(n)]
-    repo.ability_search_engine = lambda ability: DataFrame({"ability": ["fire"] * n}, index=names)
+    repo.ability_search_engine = lambda ability, **_: DataFrame({"ability": ["fire"] * n}, index=names)
     qc.query_ability(utils.make_simple_fake_interaction(1), "Fire", -1)
     return [kw["content"] for _, kw in utils.dispatch_queue], [kw for _, kw in utils.dispatch_queue]
 
@@ -94,7 +94,7 @@ def test_grids_go_as_the_website(repo, monkeypatch):
     seen = []
     monkeypatch.setattr(cg, "grids", lambda cards: seen.extend(cards) or [b"jpg"])
     repo.git_files = {"ant_queen.png": "Items/Ant_Queen.png"}
-    repo.ability_search_engine = lambda ability: DataFrame(
+    repo.ability_search_engine = lambda ability, **_: DataFrame(
         {"ability": ["fire"] * 3, "display_name": ["Zap", None, "Fire Ant"]}, index=["Bolt", "apple", "Ant Queen"])
     qc.query_ability(utils.make_simple_fake_interaction(1), "fire-ANT")
     assert [(caption, url) for caption, url, *_ in seen] == [

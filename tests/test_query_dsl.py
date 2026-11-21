@@ -118,10 +118,15 @@ def test_website_synonyms_are_the_bots():
     assert dict(re.findall(r'"?([a-z][a-z ]*)"?: "([a-z ]+)"', table)) == qc.SYNONYMS
 
 
-def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
+def test_plain_terms_find_series_and_bare_names(tmp_path):
     """A plain term also finds a series' or subseries' cards and a name typed without its punctuation, series== and
     series~ a subseries too, a known field's lone = is ==, a name typed with & finds its cards (& inside quotes is
-    text), alias== any one alias and a 'single-quoted' term is whole words too, on the bot and the website."""
+    text), alias== any one alias and a 'single-quoted' term is whole words too, on the bot and the website. A term no
+    card has finds the series whose name holds its whole words (apostrophes kept), each saying so alike; never a part
+    of a name typed with & or |."""
+    cards = CARDS + [dict(name="The Bagel", type="item", series="mario", subseries="Mama Luigi", ability="Heal 1."),
+                     dict(name="Mirra", type="creature", subseries="Kirby & The Amazing Mirror", ability="Split.")]
+    repo = _repo(cards)
     rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
             ("moms knife", {"Mom's Knife"}), ("msk", set()),           # 3 letters or fewer: a whole name only
             ("kirby's return to dream land", {"King Dedede"}), ("series==kirby's return to dream land", {"King Dedede"}),
@@ -131,10 +136,19 @@ def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
             ("alias==galaxia knight", {"Meta Knight"}),
             ("'damage' & !'die'", {"Fire Bomb"}), ("‘can't affect’", {"Burning"}),   # 'single' quotes: "double"
             ("'s", {"Mom's Knife"}), ("'kirby'", {"Kirby", "Meta Knight", "King Dedede"}),   # still a series
-            ("'moms knife'", {"Mom's Knife"})]
-    for query, cards in rows:
-        assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
-    assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
+            ("'moms knife'", {"Mom's Knife"}), ("binding", {"Mom's Knife"}), ("superstar", {"Power Ring"}),
+            ("dream land | fire", {"King Dedede", "Fire Bomb", "Burning"}), ("kirby's", {"King Dedede"}),
+            ("kirbys", set()), ("dream & hp<5", {"King Dedede"}),   # whole words, apostrophe kept; per term
+            ("kirby & the amazing mirror", {"Mirra"}), ("luigi", {"Power Ring", "The Bagel"})]
+    for query, found in rows:
+        assert _shown(repo, repo.ability_search_engine(query).index) == found, query
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [found for _, found in rows]
+    queries = ["dream land | fire", "mario & luigi", "kirby & the amazing mirror"]
+    notes = [[] for _ in queries]
+    for query, got in zip(queries, notes):
+        repo.ability_search_engine(query, notes=got)
+    assert [[qc.series_note(n) for n in got] for got in notes] == _website(tmp_path, queries, cards, notes=True) == [
+        ["No card's text has \u201cdream land\u201d: the subseries Kirby's Return to Dream Land"], [], []]
 
 
 def test_any_creature_meets_a_stat(repo, tmp_path):
@@ -147,8 +161,9 @@ def test_any_creature_meets_a_stat(repo, tmp_path):
     assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
 
 
-def _website(tmp_path, queries, cards=CARDS) -> list:
-    """search.js on cards as cards.json has them: each query's card names."""
+def _website(tmp_path, queries, cards=CARDS, notes=False) -> list:
+    """search.js on cards as cards.json has them (app.js filterCards): each query's card names, or notes: its series
+    fallback notes."""
     stats = lambda x: dict(zip(("hp", "def", "atk", "spd"), x))
     keys = ("name", "aliases", "ability", "type", "subtype", "types", "series", "subseries", "hp", "atk", "spd", "stars")
     shaped = [{**{k: c.get(k) for k in keys}, "def": c.get("defense"),
@@ -156,11 +171,12 @@ def _website(tmp_path, queries, cards=CARDS) -> list:
     script = tmp_path / "search.mjs"
     script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
 const cards = {json.dumps(shaped)};
-process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => cards.filter(S.compile(q)).map(c => c.name))));""",
+process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => {{ const p = S.compile(q, cards);
+  return {"(p.notes || []).map(S.seriesNote)" if notes else "cards.filter(p).map(c => c.name)"}; }})));""",
                       encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
-    return [set(names) for names in json.loads(done.stdout)]
+    return json.loads(done.stdout) if notes else [set(names) for names in json.loads(done.stdout)]
 
 
 # the 9 items printing two item-type symbols (data 903e6fd1): kind, subtype (folder or left-most icon), icons
