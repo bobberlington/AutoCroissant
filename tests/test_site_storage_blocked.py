@@ -53,7 +53,7 @@ const S = { ready: true, selected: new Set(), byId: new Map([["the-lich-king", {
 const actions = { close: () => { log.push("close"); modal.hidden = true; }, "random-from-list": () => log.push("random") };
 const parseHash = () => ({ name: "card", arg: "the-lich-king" }), editing = () => false, escField = () => false;
 const toggleDeck = () => log.push("deck"), showDialog = h => { dialog = h; }, qInput = { focus: () => log.push("search"), select() {} };
-""" + re.search(r"^const pref = .*$", app, re.M)[0] + "\n" + keys + handler + r"""
+""" + re.search(r"^const pref = .*$", app, re.M)[0] + "\n" + re.search(r"^function appReadOnly\(\).*$", app, re.M)[0] + "\n" + keys + handler + r"""
 const press = key => keydown({ key, metaKey: false, ctrlKey: false, altKey: false, preventDefault() {} });
 const r = { on: (press("r"), press("d"), log.splice(0)), tipsOn: { ...tips } };
 showKeys(); r.box = /data-action="char-keys" checked/.test(dialog);
@@ -61,9 +61,12 @@ actions["char-keys"]({ checked: false }); showKeys();
 r.unchecked = !/char-keys" checked/.test(dialog); r.note = !note.hidden; r.hints = hints; r.tipsOff = { ...tips };
 press("r"); press("d"); press("/"); r.off = log.splice(0);
 press("ArrowRight"); r.arrow = location.hash; press("Escape"); r.esc = log.splice(0);
+r.e = [dialog.includes("Edit the card"), dialog.includes(" e 1")]; globalThis.cardApp = { readOnly: true }; showKeys();   // the read-only app: no e
+r.appE = [dialog.includes("Edit the card"), dialog.includes(" e 1"), dialog.includes("x 1–6")];
 process.stdout.write(JSON.stringify(r));
 """)
     assert out["on"] == ["random", "deck"] and out["box"]                       # on by default (storage blocked: no value)
     assert out["unchecked"] and out["note"] and out["hints"] and out["off"] == []
     assert out["arrow"] == "#/card/next" and out["esc"] == ["close"]
+    assert out["e"] == [True, True] and out["appE"] == [False, False, True]
     assert out["tipsOn"] == html and out["tipsOff"] == {"#q": "Search cards…", "#random": "Random card", "#keys": "Keyboard shortcuts"}
