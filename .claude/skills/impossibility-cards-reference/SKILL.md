@@ -733,10 +733,11 @@ guess or a Types/Stars icon (`_series`, 2026-11-19: "**Hollow Knight** is a seri
 A Morgue card (a PNG cards.json `morgue` lists: its "Card page" too) or one under MDW/Unfinished/ gets a line above
 the picture (`_out_of_play`, 2026-11-12): "**White Palace** is retired: in MDW/The Morgue since 2026-10-22, out of
 play." / "**Bill Cipher** is unfinished (MDW/Unfinished/6 Stars): not in play.", plus the archive's `archived_text`.
-After the series, a Morgue card lost before the repo (cards.json `morgue` with `lost`, no PNG, no `live`; NAME_NORM
-aside, unless a live name, alias or old name reads so: `lost_card`) answers before a guess with its picture, page and
-app.js's words (`_post_lost`, 2026-11-20: "**Computer Virus 2.0** is in The Morgue: Joke card · first posted
-2020-07-21 in #port; out of play."; logs `Search Morgue:`). The autocomplete never offers one, as retired cards.
+After the series and sections, a Morgue card lost before the repo (cards.json `morgue` with `lost`, no PNG, no
+`live`; NAME_NORM aside, unless a live name, alias or old name reads so: `lost_card`) answers before a guess with its
+picture, page and app.js's words (`_post_lost`, 2026-11-20: "**Computer Virus 2.0** is in The Morgue: Joke card ·
+first posted 2020-07-21 in #port; out of play."; logs `Search Morgue:`). The autocomplete never offers one, as
+retired cards.
 Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names; their squeezed
 text and letter pairs precomputed): today's substring ranking, then names holding the text without spaces and
 `_ - . ' ’ ! ? , : ™ ® ©` ("Moms Knife", "WX 78"), and when nothing matches (3+ letters) up to 5 near spellings
