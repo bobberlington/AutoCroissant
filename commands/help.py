@@ -32,7 +32,8 @@ card_commands = {
     "/query <query> [as_of]":                "Posts a card by name, title or alias (closest match if none; a rulebook chapter or section's title links it); as_of: the card on a date.",
     "/website":                              "Links the card website.",
     "/query_ability <query> [limit] [howmany]": "Posts the cards matching text or conditions (syntax below); howmany: just the count.",
-    "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter and section (the ban list too); a section's title brings its rules.",
+    "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter and section (the ban list too); "
+                                             "a section's title brings its rules; multi hit also finds multi-hit.",
     "/sync_emojis [refresh] [prune]":        "Uploads the icons in Types/ as the bot's emojis (admin).",
     "Query syntax":                          "\n  \"exact text\" or 'exact text'  !not  a | b  a & b  has:alias"
                                              "\n  hp>5  def<=10  atk==3  spd>=7  stars<6  total>=25"

@@ -63,6 +63,8 @@ TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE
 PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
 ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
 WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next word: a ' or ABBR_END, never a sentence's end
+JOIN = "[.'\u2019-]"                                     # the rulebook's PUNCT (loose hyphen): a '-' too
+HYPHEN = r"(?<![.'\u2019])-"                              # or a lone '-' as two words' gap, just after a letter
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
@@ -86,21 +88,24 @@ def typed(text: str, quotes: bool = False) -> str:
     return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
 
 
-def loose(text: str, char=escape, gap: Optional[str] = None) -> str:
+def loose(text: str, char=escape, gap: Optional[str] = None, hyphen: bool = False) -> str:
     """text as a regex (search.js loose): a word typed without ' \u2019 or . also finds one printed between its letters
     (cant: can't), a ' or an abbreviation's . at its end (nme shop: N.M.E. shop; never 'other. Creature'); digits never
-    (05 is not 0.5); a word typed with one is exact. char: a character's regex; gap: a space run's (else itself)."""
-    words, out = split(r"(\s+)", text), []
+    (05 is not 0.5); a word typed with one is exact. char: a character's regex; gap: a space run's (else itself);
+    hyphen (the rulebook's): - too, and a lone - between two words' letters (multihit, multi hit: multi-hit)."""
+    punct, words, out = JOIN if hyphen else PUNCT, split(r"(\s+)", text), []
     for at, word in enumerate(words):
         if at % 2:
-            out.append(gap or escape(word))
+            space = gap or escape(word)
+            joined = hyphen and words[at - 1][-1:].isalpha() and words[at + 1][:1].isalpha()
+            out.append(f"(?:{space}|{HYPHEN})" if joined else space)
             continue
-        plain = not search(PUNCT, word)
+        plain = not search(punct, word)
         for i, ch in enumerate(word):
             out.append(char(ch))
             if plain and ch.isalpha():
                 after = word[i + 1:i + 2]
-                out.append(PUNCT + "?" if after.isalpha() else "" if after else
+                out.append(punct + "?" if after.isalpha() else "" if after else
                            WORD_END if at + 1 < len(words) else ABBR_END)
     return "".join(out)
 
@@ -754,7 +759,7 @@ class CardRepository:
         if not all(words):
             return pages
         # any spaces or line breaks between the words; nme N.M.E.
-        pattern = "|".join(loose(" ".join(w), gap=r"\s+") for w in words)
+        pattern = "|".join(loose(" ".join(w), gap=r"\s+", hyphen=True) for w in words)
         return pages[pages["ability"].str.translate(BOOK_QUOTES).str.contains(pattern, na=False, case=False)]
 
     def _populate_edit_names(self) -> None:
@@ -2027,7 +2032,8 @@ def _book_pattern(text) -> str:
     """text as a regex (loose), its " (straight or curly) finding either printed quote; a tuple: any of its texts."""
     if isinstance(text, tuple):
         return "|".join(_book_pattern(t) for t in text)
-    return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch))
+    return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch),
+                 hyphen=True)
 
 
 def _bold(line: str, text: str) -> str:
