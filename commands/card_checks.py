@@ -36,13 +36,14 @@ from glob import glob
 from io import BytesIO
 from json import dumps, load as json_load, loads
 from os import environ
-from os.path import basename, exists, join, splitext
+from os.path import basename, dirname, exists, join, splitext
 from re import IGNORECASE, fullmatch, sub
 from shutil import rmtree
 from sys import argv
 from tempfile import mkdtemp
 from time import perf_counter
 from typing import Callable, Optional
+from weakref import finalize
 
 import numpy as np
 from PIL import Image
@@ -572,13 +573,16 @@ def look_notes(psd: PSDImage, raw: bytes) -> list:
 # ========================
 @dataclass
 class Context:
-    """What every card's check shares: the tree, the parser, the fonts, the status chart and the templates."""
+    """What every card's check shares: the tree, the parser, the fonts, the status chart, the templates and the type
+    probe's icons."""
     snapshot: Snapshot
     parser: object
     fonts: str
     colors: list = field(default_factory=list)
     templates: dict = field(default_factory=dict)
     plates: dict = field(default_factory=dict)  # {PSD path: its published plates file's blob} (plate_blobs)
+    work: str = ""                              # the run's folder (run() removes it), else one of its own (types())
+    typed: list = field(default_factory=list)  # types()'s folder, once
 
     def chart(self) -> Optional[dict]:
         """status_fills() of the status chart, once."""
@@ -587,6 +591,15 @@ class Context:
             self.colors.append(psd_edit.status_fills(PSDImage.open(BytesIO(self.snapshot.fetch(self.snapshot.sha(path)))))
                                if path in self.snapshot.tree else None)
         return self.colors[0]
+
+    def types(self) -> str:
+        """The Types/ folder of card_plates.PROBE_TYPES' icons (blobs_of lists them), fetched once."""
+        if not self.typed:
+            if not self.work:                   # gone with the Context
+                self.work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
+                finalize(self, rmtree, self.work, True)
+            self.typed.append(card_bake.types_icons(self.snapshot, self.work, self.parser, list(card_plates.PROBE_TYPES)))
+        return self.typed[0]
 
     def template(self, path: str) -> PSDImage:
         """A template, opened once (fetched when the clone lacks it, as the bake's)."""
@@ -741,6 +754,7 @@ def check_card(ctx: Context, rel: str) -> dict:
             plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old)
             plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old)
             plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
+            plate = card_plates.with_probe(plate, psd, raw, image, parsed, ctx.parser, rel, ctx.types(), old)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
     notes = [OLD_NOTE] if style == "old" else []
@@ -1022,12 +1036,14 @@ def plate_blobs(snapshot: Snapshot, rels: list, branch: dict, checks: dict) -> d
 
 def blobs_of(snapshot: Snapshot, rels: list, plates: Optional[dict] = None) -> list:
     """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart and manifest (a card read as
-    it lands waits for none at the end), then each card's PSD, PNG, numbered PNGs, duplicates and published plates file
-    (plates: plate_blobs)."""
+    it lands waits for none at the end) and the type probe's Types/ icons (Context.types), then each card's PSD, PNG,
+    numbered PNGs, duplicates and published plates file (plates: plate_blobs)."""
     if not rels:
         return []
     plates = plates or {}
     shas = [snapshot.sha(path) for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
+    shas += [snapshot.sha(path) for path in snapshot.tree if dirname(path) == card_bake.TYPES_DIR
+             and splitext(basename(path))[0].lower() in card_plates.PROBE_TYPES and path.lower().endswith(".png")]
     for rel in rels:
         png, numbered = snapshot.png_for(rel)
         shas += [snapshot.sha(path) for path in [rel, png, *numbered, *snapshot.dup_pictures().get(rel, [])] if path]
@@ -1073,11 +1089,11 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
 _worker: list = []
 
 
-def _start(repository: str, clone: str, head: str, plates: dict) -> None:
+def _start(repository: str, clone: str, head: str, plates: dict, work: str) -> None:
     token_from_env()                            # a blob the clone lacks comes by REST
     card_bake.exit_with_parent()
     _worker[:] = [context(repository, clone, head)]
-    _worker[0].plates = plates
+    _worker[0].plates, _worker[0].work = plates, work
 
 
 def _one(rel: str) -> tuple:
@@ -1095,6 +1111,7 @@ def run(rels: list, repository: str, clone: str, head: str, workers: int, minute
     (every SAVE_EVERY s and at the end: a record's plate is ~18 KB). plates: plate_blobs'."""
     snapshot = local_snapshot(repository, clone, head)
     found, started, saved = {}, perf_counter(), perf_counter()
+    work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)    # the workers' Types/
 
     def save() -> None:
         nonlocal saved
@@ -1104,7 +1121,7 @@ def run(rels: list, repository: str, clone: str, head: str, workers: int, minute
         saved = perf_counter()
 
     try:
-        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, plates or {})) as pool:
+        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, plates or {}, work)) as pool:
             jobs = [pool.submit(_one, rel) for rel in rels]
             for n, job in enumerate(as_completed(jobs), 1):
                 rel, record, seconds = job.result()
@@ -1121,6 +1138,7 @@ def run(rels: list, repository: str, clone: str, head: str, workers: int, minute
                     break
     finally:
         save()
+        rmtree(work, ignore_errors=True)
     return found
 
 
