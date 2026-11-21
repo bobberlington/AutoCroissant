@@ -631,16 +631,20 @@ class CardRepository:
                 raise QueryError(NO_TERM)
         return parts
 
-    def _named(self, found: DataFrame, text: str) -> DataFrame:
-        """found and the cards a name, alias, old name or (sub)series is text, squashed (search.js named): typed with &
-        or | ('Kirby & The Amazing Mirror', 'Mario & Luigi'), its cards too; not with quotes or a !term."""
+    def _whole(self, text: str) -> Optional[tuple]:
+        """The cards and second pictures a name, alias, old name or (sub)series is text, squashed (search.js named): typed
+        with & or | ('Kirby & The Amazing Mirror', 'Mario & Luigi'); None if none, or with quotes or a !term."""
         if '"' in text or NOT_TERM.search(text):
-            return found
+            return None
         hit = self._plain_matches(text, whole=True)
         pics = self._plain_matches(text, pictures=True, whole=True)
-        if not hit.any() and not pics.any():
+        return (hit, pics) if hit.any() or pics.any() else None
+
+    def _named(self, found: DataFrame, whole: Optional[tuple]) -> DataFrame:
+        """found and whole's cards (_whole), once each."""
+        if whole is None:
             return found
-        more = concat([self.cards_dff[hit], self._hay[7][pics]])
+        more = concat([self.cards_dff[whole[0]], self._hay[7][whole[1]]])
         return concat([found, more[~more.index.isin(found.index)]])
 
     def _by_series(self, text: str, notes: Optional[list]) -> Optional[DataFrame]:
@@ -665,7 +669,8 @@ class CardRepository:
                 hit |= df[column].isin(names).values
         return df[hit]
 
-    def ability_search_engine(self, ability: str, near: bool = True, notes: Optional[list] = None) -> DataFrame:
+    def ability_search_engine(self, ability: str, near: bool = True, notes: Optional[list] = None,
+                              by_series: bool = True) -> DataFrame:
         """
         Search for cards by ability text or column values.
 
@@ -686,6 +691,7 @@ class CardRepository:
             near: a text term no card has finds the closest abilities (attrs near); inside &, | and ! it finds nothing,
                 as on the website
             notes: gets (term, series, subseries) for each text term no card has that finds series' cards by words
+            by_series: such a term may find series' cards by words (off in a name typed with & or |: 'mario & luigi')
 
         Returns:
             DataFrame of matching cards
@@ -695,23 +701,28 @@ class CardRepository:
         # Handle OR queries
         queries = self._terms(ability, "|")
         if len(queries) > 1:
-            results = [self.ability_search_engine(q, near=False, notes=notes) for q in queries]
+            whole = self._whole(ability)
+            by_series = by_series and whole is None
+            results = [self.ability_search_engine(q, near=False, notes=notes, by_series=by_series) for q in queries]
             combined = concat(results)
             combined = combined[~combined.index.duplicated(keep='first')]
-            return self._named(combined, ability)
+            return self._named(combined, whole)
 
         # Handle AND queries
         queries = self._terms(queries[0], "&")
         if len(queries) > 1:
-            result = self.ability_search_engine(queries[0], near=False, notes=notes)
+            whole = self._whole(ability)
+            by_series = by_series and whole is None
+            result = self.ability_search_engine(queries[0], near=False, notes=notes, by_series=by_series)
             for q in queries[1:]:
-                result = result[result.index.isin(self.ability_search_engine(q, near=False, notes=notes).index)]
-            return self._named(result, ability)
+                part = self.ability_search_engine(q, near=False, notes=notes, by_series=by_series)
+                result = result[result.index.isin(part.index)]
+            return self._named(result, whole)
         ability = queries[0]                            # 'fire |' is 'fire'
 
         # NOT: any term, conditions too (!type==creature)
         if ability.startswith("!"):
-            inner = self.ability_search_engine(ability[1:].strip(), near=False, notes=notes)
+            inner = self.ability_search_engine(ability[1:].strip(), near=False, notes=notes, by_series=by_series)
             return self.cards_dff[~self.cards_dff.index.isin(inner.index)]
 
         if ability.lower() == "has:alias":               # search.js FLAGS
@@ -735,7 +746,7 @@ class CardRepository:
             pattern = f"(?:{whole(ability[1:-1])})|(?:{pattern})"
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
-        if not len(exact_matches):
+        if not len(exact_matches) and by_series:
             series = self._by_series(ability, notes)
             exact_matches = exact_matches if series is None else series
         if len(exact_matches) or not near:
