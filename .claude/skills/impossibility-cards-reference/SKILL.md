@@ -821,7 +821,10 @@ word's end before the next word a `'` or an abbreviation's `.` (`loose`, search.
 `/query_rulebook` and the website's Cards and Rulebook search): `cant` finds can't, `nme shop` N.M.E. shop,
 `creatures turn` creature's turn; never a sentence's end (`other creature` does not find "other. Creature", `WORD_END`);
 digits never (`05` is not 0.5); a word typed with one, and `"quoted"` terms, stay exact. After the last letter only an
-abbreviation's `.` (bold **N.M.E.**, never **turn.**).
+abbreviation's `.` (bold **N.M.E.**, never **turn.**). The rulebook search only (`loose(hyphen=True)`: `/query_rulebook`,
+app.js `bookRe`; not card search) also takes a `-` between two letters, and between two typed words a lone `-` with a letter
+on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negation-immune); never a spaced or run-on
+`-` (`them out` does not find "them. - Out"), never beside a digit (`15`, `1 5` never 1-5).
 
 **Evaluation order and gotchas** (verified in code 2026-07-11; 2, 4 and 9 rewritten 2026-10-24):
 
