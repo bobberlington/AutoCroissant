@@ -445,9 +445,12 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    draws no badge of ("(2 points)") takes the body style, as do letters typed in place of a whole badge or token
    ("[unknown]" made "Unknown", "(1CD)" made "Once per turn:" or "(abc)": edit_styles, 2026-11-13); letters left in the
    icon font that it draws no badge of (a badge cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
-   `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font has no glyph
-   for is set in Myriad Pro, that character alone (`missing_glyphs`, `MGP_FONT`: Photoshop 2023's Missing Glyph
-   Protection, r51), and only one Myriad Pro lacks too is a box (gid 0, `no_glyph`) told `font`; a typed em or en dash,
+   `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font can't draw (no
+   glyph, or an empty one: Belisa plumilla manual's ':') is set, that character alone, in the font the layer prints it
+   in, else the font another shown layer prints it in, else Myriad Pro (`glyph_fonts`, `MGP_FONT`: Photoshop 2023's
+   Missing Glyph Protection; owner D15, 2026-11-17: an edit never erases one); letters typed after a stray run (one
+   setting only characters the body font can't draw) take the body font, characters only the stray font draws stay in
+   it (The Structure's digits); only one no font draws is a box or a gap (`no_glyph`) told `font`; a typed em or en dash,
    ellipsis or curly double quote its font lacks is set plain first (- ... ", `plain_typed`; kept where the font has
    it; the read-back gates compare them as plain: owner D13, 2026-11-15). A `[token]` the website draws as an
    icon that the font prints as letters (`unlettered_icons`: text.js takes the base before the first colon, `norm()`ed,
