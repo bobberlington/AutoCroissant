@@ -6,8 +6,9 @@ VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own sta
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
 6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
 lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11; a type layer's own effects
-where layers share its path, and faux bold, fb, and its groups' Strokes stacked, outline: VERSION 12). One record per
-card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
+where layers share its path, and faux bold, fb, and its groups' Strokes stacked, outline: VERSION 12; letters in another
+font, fr: VERSION 13). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the
+Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -45,7 +46,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 12                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"
+VERSION = 13                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"; 13: text "fr"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -205,7 +206,8 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
     not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
     not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set;
     "lead", the line pitch the bake sets a new line at (its runs' largest leading); "fb" when most of them are faux
-    bold. {} when rotated."""
+    bold; "fr", [[start, end, font]] over the engine's text (the plates'): runs with a letter or digit in a font not
+    lf's or the icon font (the bake keeps a word's own font). {} when rotated."""
     from psd_tools.composite.text.layout import frame, leading
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
@@ -244,6 +246,18 @@ def _set(layer, font: Optional[str] = None, head: frozenset = frozenset()) -> di
             out["lf"] = lf
         if 2 * bold > sum(letters.values()):
             out["fb"] = True
+        fr = []
+        for run in model.runs:
+            f = str(run.style.font)
+            if f == lf or icon(run.style) or not model.text[run.start:run.end].strip():
+                continue
+            if fr and fr[-1][1:] == [run.start, f]:
+                fr[-1][1] = run.end
+            else:
+                fr.append([run.start, run.end, f])
+        fr = [r for r in fr if any(c.isalnum() for c in model.text[r[0]:r[1]])]   # a '.', '™' or BOM alone: left out
+        if fr:
+            out["fr"] = fr
         badges = []
         for a, b in psd_edit.badge_spans(model.text):
             styles = [r.style for r in model.runs if r.start < b and a < r.end]
@@ -821,6 +835,11 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["header"] = _guard(_header, psd, rel, name, vocab, parser, card)
     record["tree"] = _guard(_tree, psd)
     record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), card, templates)
+    parts = record["parts"] if isinstance(record["parts"], dict) else {}
+    ids = {p.get("id") for role in ("title", "ability") for p in parts.get(role) or () if isinstance(p, dict)}
+    for t in record["text"] if isinstance(record["text"], list) else ():
+        if t.get("id") not in ids:
+            t.pop("fr", None)                   # the mock-up's splice: titles and Abilities only
     return record
 
 

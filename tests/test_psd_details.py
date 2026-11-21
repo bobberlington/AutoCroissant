@@ -76,7 +76,8 @@ def test_record_shape_and_size(records, clone):
 
 def test_how_text_is_set(clone):
     """The mock-up's wrap (VERSION 5): Wendy's Ability is set 2.34 times wider than tall, Isma's tracked -20. VERSION 6:
-    each badge's [em, track] (null: not in the icon font; Wendy's 1CD tracked 418), Chef Saltbaker's letters' font."""
+    each badge's [em, track] (null: not in the icon font; Wendy's 1CD tracked 418), Chef Saltbaker's letters' font.
+    VERSION 13: his ingredients' own font (fr)."""
     from psd_tools import PSDImage
     got = {}
     for rel, lid in (("Creatures/DST/3 Stars/Wendy.psd", 417), ("Creatures/Hollow Knight/4 Stars/Isma.psd", 417),
@@ -87,6 +88,10 @@ def test_how_text_is_set(clone):
     assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0, "lead": 80.64,     # a 0.1 degree turn: still set
                                "badges": [[0.814, 0], [0.814, 345], None, [0.814, 0]]}
     assert got["Chef_Saltbaker.psd"]["lf"] == "CupheadMemphis-Medium"                # first run MyriadPro-Regular
+    fr, text = got["Chef_Saltbaker.psd"]["fr"], layer.text                           # layer: his, the last
+    assert [text[a:b].strip() for a, b, _ in fr] == ["Gnome Berries\rDesert Limes", "2 points", "Icy Sugar Cubes", "2 points",
+                                                     "Pinapple Mint", "4 points", "Distillery Dough"]
+    assert {f for *_, f in fr} == {"Chailce-Noggin-Regular"}
 
 
 def test_stroke_is_the_layers_or_its_groups(records, clone):
