@@ -14,7 +14,7 @@ from threading import Lock
 from requests import get
 from requests.exceptions import RequestException
 from typing import Optional
-from unicodedata import normalize
+from unicodedata import category, normalize
 from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE, search, split
@@ -79,6 +79,8 @@ NO_MENTIONS = AllowedMentions.none()                     # replies quote the typ
 SERIES_THE = compile(r"^\s*the\s+", IGNORECASE)         # a series typed without its leading The (search.js squashed)
 SERIES_NUMBER = compile(r"\s+(?:[ivx]+|\d+)$", IGNORECASE)   # or its closing number: Dark Souls III, Pikmin 2
 SERIES_PARTS = compile(r"[:/]+")                         # or one part: Undertale/Deltarune, YIIK: A Postmodern RPG
+SERIES_STOP = frozenset(("the", "of", "and", "at", "a", "an", "in", "to", "vs", "series"))   # search.js STOP
+DIGITS = compile(r"[0-9]+\Z")                          # a number word: series_words keeps it
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -122,6 +124,30 @@ def series_names(series) -> frozenset:
     names = {squash(v) for part in (series, *SERIES_PARTS.split(series))
              for v in (part, SERIES_NUMBER.sub("", SERIES_THE.sub("", part)))}
     return frozenset(names - {""})
+
+
+def series_words(text) -> tuple:
+    """text's words as the series fallback compares them (search.js seriesWords): case and accents aside, apostrophes
+    kept ('dont' is not Don't Starve), stopwords and words under 3 letters left out, numbers kept ("freddy's 2")."""
+    if not isinstance(text, str):
+        return ()
+    text = "".join(ch if ch.isalnum() or ch == "'" else " " for ch in normalize("NFD", typed(text)).lower()
+                   if not category(ch).startswith("M"))
+    return tuple(w for w in (w.strip("'") for w in text.split())
+                 if (len(w) > 2 or DIGITS.match(w)) and w not in SERIES_STOP)
+
+
+def _holds(words: tuple, run: tuple) -> bool:
+    """Whether run is a run of words."""
+    return any(words[i:i + len(run)] == run for i in range(len(words) - len(run) + 1))
+
+
+def series_note(note: tuple) -> str:
+    """A series fallback's note (search.js seriesNote): No card's text has “x”: the series A and B."""
+    text, ser, sub = note
+    both = lambda xs: xs[0] if len(xs) < 2 else ", ".join(xs[:-1]) + " and " + xs[-1]
+    return f"No card's text has \u201c{text}\u201d: " + " and ".join(
+        f"the {kind} {both(xs)}" for kind, xs in (("series", ser), ("subseries", sub)) if xs)
 
 
 def ban_list_text(banlist: dict) -> str:
@@ -617,7 +643,29 @@ class CardRepository:
         more = concat([self.cards_dff[hit], self._hay[7][pics]])
         return concat([found, more[~more.index.isin(found.index)]])
 
-    def ability_search_engine(self, ability: str, near: bool = True) -> DataFrame:
+    def _by_series(self, text: str, notes: Optional[list]) -> Optional[DataFrame]:
+        """A plain term no card has, as whole words of series' or subseries' names ('spongebob', 'five nights'): their
+        cards, noting (text, series, subseries) in notes (search.js bySeries); else None."""
+        run, df = series_words(text), self.cards_dff
+        if all(DIGITS.match(w) for w in run):            # a word, not only numbers
+            return None
+        found = lambda c: sorted(v for v in (df[c].dropna().unique() if c in df else ())
+                                 if isinstance(v, str) and _holds(series_words(v), run))
+        ser = found("series")
+        sub = [v for v in found("subseries")                # none a found series already holds
+               if v not in ser and (df["subseries"].eq(v) & ~df["series"].isin(ser)).any()]
+        if not ser and not sub:
+            return None
+        if notes is not None:
+            notes.append((text, ser, sub))
+        names = {*ser, *sub}
+        hit = zeros(len(df), dtype=bool)
+        for column in ("series", "subseries"):
+            if column in df:
+                hit |= df[column].isin(names).values
+        return df[hit]
+
+    def ability_search_engine(self, ability: str, near: bool = True, notes: Optional[list] = None) -> DataFrame:
         """
         Search for cards by ability text or column values.
 
@@ -637,6 +685,7 @@ class CardRepository:
             ability: Search query string
             near: a text term no card has finds the closest abilities (attrs near); inside &, | and ! it finds nothing,
                 as on the website
+            notes: gets (term, series, subseries) for each text term no card has that finds series' cards by words
 
         Returns:
             DataFrame of matching cards
@@ -646,7 +695,7 @@ class CardRepository:
         # Handle OR queries
         queries = self._terms(ability, "|")
         if len(queries) > 1:
-            results = [self.ability_search_engine(q, near=False) for q in queries]
+            results = [self.ability_search_engine(q, near=False, notes=notes) for q in queries]
             combined = concat(results)
             combined = combined[~combined.index.duplicated(keep='first')]
             return self._named(combined, ability)
@@ -654,15 +703,15 @@ class CardRepository:
         # Handle AND queries
         queries = self._terms(queries[0], "&")
         if len(queries) > 1:
-            result = self.ability_search_engine(queries[0], near=False)
+            result = self.ability_search_engine(queries[0], near=False, notes=notes)
             for q in queries[1:]:
-                result = result[result.index.isin(self.ability_search_engine(q, near=False).index)]
+                result = result[result.index.isin(self.ability_search_engine(q, near=False, notes=notes).index)]
             return self._named(result, ability)
         ability = queries[0]                            # 'fire |' is 'fire'
 
         # NOT: any term, conditions too (!type==creature)
         if ability.startswith("!"):
-            inner = self.ability_search_engine(ability[1:].strip(), near=False)
+            inner = self.ability_search_engine(ability[1:].strip(), near=False, notes=notes)
             return self.cards_dff[~self.cards_dff.index.isin(inner.index)]
 
         if ability.lower() == "has:alias":               # search.js FLAGS
@@ -686,6 +735,9 @@ class CardRepository:
             pattern = f"(?:{whole(ability[1:-1])})|(?:{pattern})"
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
+        if not len(exact_matches):
+            series = self._by_series(ability, notes)
+            exact_matches = exact_matches if series is None else series
         if len(exact_matches) or not near:
             return exact_matches
         # nothing has the text: near-whole abilities (a pasted ability with a typo), closest first
@@ -1719,6 +1771,8 @@ def query_ability(interaction: Interaction,
         return
 
     found = f"Found {total_results} result{'s' * (total_results != 1)} for '{ability}'!"
+    if results.attrs.get("series"):                       # a term no card has: series' cards by its words
+        found = "".join(f"{series_note(n)}.\n" for n in results.attrs["series"]) + found
     if results.attrs.get("near"):                         # no card has the text: the closest abilities
         found = f"No card has the text '{ability}'; " + (f"{total_results} cards have a similar ability, closest first:"
                                                            if total_results > 1 else "1 card has a similar ability:")
@@ -1808,7 +1862,10 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
     if results is None:
         return
     n = len(results)
-    if results.attrs.get("near"):
+    if results.attrs.get("series"):
+        queue_message(interaction, "".join(f"{series_note(x)}.\n" for x in results.attrs["series"])
+                      + f"Found {n} card{'s' * (n != 1)} matching '{ability}'.")
+    elif results.attrs.get("near"):
         queue_message(interaction, f"No card has '{ability}'; {n} card{'s have' if n > 1 else ' has'} a similar ability.")
     else:
         queue_message(interaction, f"Found {n} card{'s' * (n != 1)} matching '{ability}'.")
@@ -1816,14 +1873,17 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
 
 def _search(interaction: Interaction, ability: str) -> Optional[DataFrame]:
     """/query_ability's search; a query it can't run is answered here (None). Misses are logged, for aliases."""
+    notes = []
     try:
-        results = card_repo.ability_search_engine(ability.strip().lower())
+        results = card_repo.ability_search_engine(ability.strip().lower(), notes=notes)
     except QueryError as e:
         print(f"Search error: /query_ability {ability!r}")
         queue_message(interaction, str(e))
         return None
     if results.empty:
         print(f"Search miss: /query_ability {ability!r}")
+    elif notes:                                           # each term found by series' words (series_note)
+        results.attrs = {**results.attrs, "series": notes}
     return results
 
 
