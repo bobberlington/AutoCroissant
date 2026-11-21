@@ -548,14 +548,19 @@ def test_every_dialog_has_a_name():
 def test_the_page_under_a_dialog_goes_inert_after_its_paint():
     """An open dialog hides the page under it from screen readers at once (aria-hidden) and makes it inert just after
     its paint, or at once at a key, a tap or a focus under it (2026-11-20: the whole page's restyle slowed each open
-    and close; Cmd+A and find must still skip it); a close clears inert before focus goes back."""
+    and close; Cmd+A and find must still skip it); a close clears inert before focus goes back, and a view drawn
+    before the seal clears it first (11-21: the profile editor opened from a dialog must get its focus), and so does a
+    mouse move after a close (a press on an inert view goes through it: the click was lost)."""
     app = (STYLE_CSS.parent / "app.js").read_text(encoding="utf-8")
     seal = app[app.index("function seal() {"):app.index("function shut() {")]
     shut = app[app.index("function shut() {"):app.index("\nshut();")]
     assert "view]" not in shut and 'view.ariaHidden = open ? "true" : null' in shut
     assert "requestAnimationFrame(() => setTimeout(() => sealing && seal()))" in shut
-    assert "view.inert = open" in seal and seal.index("view.inert = open") < seal.index(".focus(")
+    assert "view.inert = open" in app[app.index("function inertNow() {"):app.index("function seal() {")]
+    assert seal.index("inertNow()") < seal.index(".focus(")
+    assert re.search(r"function renderView\(r, hash\) \{\n  if \(sealing\) inertNow\(\);", app)
     assert 'for (const t of ["keydown", "pointerdown"]) document.addEventListener(t, () => sealing && seal(), true)' in app
+    assert 'document.addEventListener("pointermove", () => { if (sealing && modal.hidden) seal(); }, true)' in app
     assert re.search(r'view\.addEventListener\("focusin", e => \{ if \(!modal\.hidden\) \{ seal\(\);', app)
 
 
