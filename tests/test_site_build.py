@@ -413,7 +413,10 @@ def test_web_fonts_say_which_typed_characters_they_lack(bs, tmp_path, monkeypatc
     fix = first["Fix-Regular"]
     assert first == again and sorted(reads) == ["MDW/Fonts/a.ttf", "MDW/Fonts/a.ttf", "MDW/Fonts/b.ttf"]
     assert fix["file"] == "MDW/Fonts/a.ttf" and fix["notdef"] == [500]   # an empty .notdef: the bake leaves a gap
-    assert "A" not in fix["lacks"] and {"+", ".", "\u2014", "\u2026"} <= set(fix["lacks"])
+    assert "A" not in fix["lacks"] and {"+", ".", "\u2014", "\u2026"} <= set(fix["lacks"]) and "empty" not in fix
+    if getattr(bs, "GAPS_VERSION", 1) >= 2:     # drawn empty (Belisa plumilla manual's): the bake sets another font
+        blank = Path(build_font(str(tmp_path / "c.ttf"), "Gap-Regular", "Gap", "Regular", blank=":%")).read_bytes()
+        assert bs.font_gaps(blank)[0][2] == "%:"
 
 
 def test_parser_notes_answered_as_the_bot_does(bs):

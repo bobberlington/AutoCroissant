@@ -388,13 +388,14 @@ class ChecksGitHub:
         return sum("/git/blobs/" in u for u in self.calls)
 
 
-def build_font(path: str, ps: str, family: str, style: str, cff: bool = False) -> str:
-    """A fixture font (the fork's tests/psd_tools/composite/text/conftest.py recipe, cut down)."""
+def build_font(path: str, ps: str, family: str, style: str, cff: bool = False, blank: str = "") -> str:
+    """A fixture font (the fork's tests/psd_tools/composite/text/conftest.py recipe, cut down); blank: characters it
+    maps to glyphs with no outline."""
     from fontTools import fontBuilder
-    names = [".notdef", "space", "A"]
+    names = [".notdef", "space", "A"] + [f"blank{i}" for i in range(len(blank))]
     fb = fontBuilder.FontBuilder(1000, isTTF=not cff)
     fb.setupGlyphOrder(names)
-    fb.setupCharacterMap({32: "space", 65: "A"})
+    fb.setupCharacterMap({32: "space", 65: "A", **{ord(c): f"blank{i}" for i, c in enumerate(blank)}})
     if cff:
         from fontTools.pens.t2CharStringPen import T2CharStringPen
         charstrings = {}
