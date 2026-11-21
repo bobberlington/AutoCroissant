@@ -3350,3 +3350,13 @@ def test_a_rewritten_paragraph_keeps_its_own_colour(clone):
     assert colour[0] != colour[1]
     assert {fill for a, b, fill, _ in styles if a >= second} == {colour[1]}
     assert {fill for a, b, fill, _ in styles if b <= second} == {colour[0]}
+
+
+def test_no_module_defines_a_name_twice():
+    """A second top-level def of a name replaces the first for the whole module (r40-1: a memo helper named _offset
+    replaced the comp states' own, and every layer-comp bar bake crashed)."""
+    import ast
+    for path in sorted((Path(pe.__file__).parent).glob("*.py")):
+        names = Counter(node.name for node in ast.parse(path.read_text(encoding="utf-8")).body
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+        assert not [name for name, n in names.items() if n > 1], path.name
