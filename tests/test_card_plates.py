@@ -306,6 +306,24 @@ def test_a_failed_later_encode_leaves_the_plate_as_before_it(capsys):
     assert capsys.readouterr().out.count("X.psd: no plate: MemoryError: big") == 2
 
 
+def test_the_render_record_set_aside():
+    """record_aside: no facts inside (the steps check_card runs after the stars render as before them); the facts
+    again after, but not after an error (as when those steps raised first)."""
+    class Doc:
+        pass
+    psd, facts = Doc(), {"icc": [1.0, 9]}
+    psd_edit._LOOKS[psd] = facts
+    with psd_edit.record_aside(psd):
+        assert psd not in psd_edit._LOOKS
+    assert psd_edit._LOOKS[psd] is facts
+    try:
+        with psd_edit.record_aside(psd):
+            raise ValueError
+    except ValueError:
+        pass
+    assert psd not in psd_edit._LOOKS
+
+
 def test_a_published_sheet_with_the_same_pixels_is_kept(monkeypatch):
     """bar_sheet keeps old's WebP when its pixels are the new sheet's (colours under alpha 0 aside), without an encode;
     another pixel, an AVIF or an unreadable one is encoded again."""

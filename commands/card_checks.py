@@ -749,10 +749,20 @@ def check_card(ctx: Context, rel: str) -> dict:
     if image is not None and parts is not None:
         try:
             old = _published(ctx, rel)
-            plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn), raw,
-                                       psd_edit._card_name(parsed), ctx.chart)
-            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old, later=True)
-            plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old, later=True)
+            try:                                # the stars first: their sheet encodes while the rest is drawn
+                stars, missed = card_plates.with_stars(None, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old,
+                                                       later=True), None
+            except Exception as error:          # noqa: BLE001 - met where the stars were
+                stars, missed = None, error
+            with psd_edit.record_aside(psd):    # the rest as before: the stars' render record not yet
+                plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn), raw,
+                                           psd_edit._card_name(parsed), ctx.chart)
+                plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old,
+                                              later=True)
+            if missed is not None:
+                raise missed
+            if stars:
+                plate = {**(plate or stars), "icons": stars["icons"]}
             plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
             plate = card_plates.with_probe(plate, psd, raw, image, parsed, ctx.parser, rel, ctx.types(), old)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check

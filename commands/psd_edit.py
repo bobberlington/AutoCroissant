@@ -10239,6 +10239,16 @@ def use_record(psd: PSDImage, rel: str, facts: Optional[dict] = None) -> PSDImag
     return psd
 
 
+@contextmanager
+def record_aside(psd: PSDImage):
+    """psd renders inside as before any use_record (its facts set aside), them again after (not after an error): a
+    step run early leaves the others' renders as they were (card_checks' stars)."""
+    facts = _LOOKS.pop(psd, None)
+    yield psd
+    if facts is not None:
+        _LOOKS[psd] = facts
+
+
 def raster_key(layer) -> str:
     """A short digest of a layer's stored pixels: a text fact holds while Photoshop's raster does."""
     digest = blake2b(digest_size=6)
@@ -13011,6 +13021,7 @@ __all__ = [
     'strip',
     'text_choices',
     'use_record',
+    'record_aside',
     'set_icons',
     'set_creatures',
     'creature_bar',
