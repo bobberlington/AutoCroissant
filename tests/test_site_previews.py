@@ -135,7 +135,7 @@ def test_the_editor_takes_the_lanes_hand_over(tmp_path, miss):
 globalThis.setTimeout = (fn, ms) => { q.push([T + ms, fn]); return q.length; }; globalThis.clearTimeout = () => {};
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
 const mem = new Map(); globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
-globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible" }; URL.createObjectURL = () => "blob:x";
+globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible", addEventListener() {} }; URL.createObjectURL = () => "blob:x";
 const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text), h = Buffer.alloc(30), c = Buffer.alloc(46), e = Buffer.alloc(22);
   h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
@@ -196,7 +196,7 @@ def test_the_lane_reads_the_next_card(tmp_path):
 const was = { card: "c0", request: "ed-00000001", at: T - 60000, hash: "h", state: "baked", base: { blob: "aaaaaaaa" }, from: 101, fromAt: T - 50000, fromHead: "c".repeat(40) };
 const mem = new Map([[p.KEY, JSON.stringify({ c0: [was] })]]);
 globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
-globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible" };
+globalThis.window = { addEventListener() {} }; globalThis.document = { visibilityState: "visible", addEventListener() {} };
 const { createHash } = await import("node:crypto"), refs = [];
 const github = async (path, o = {}) => {
   if (path.includes("/statuses/")) refs.push([o.method, o.body.description, path.split("/statuses/")[1]]);
@@ -214,18 +214,24 @@ out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
     assert out["lane"] == 101 and len(refs) == 2 and RUNG.fullmatch(refs[1][1]) and refs[1][2] == "c" * 40   # the press's doorbell
 
 
-@pytest.mark.skipif(not has(PREVIEW_JS, "takeLock(null, TAB)"), reason="a press doesn't take the check in this preview.js")
-def test_the_pressing_tab_shows_its_hand_over(tmp_path):
-    """Two tabs, one localStorage, storage events to the other: press 1 in tab B (B then holds the check, 75 s from its
-    last), press 2 in tab A 40 s later. A takes the check at the press and shows the lane's hand-over (listed 5.06 s on,
-    run 44465651236) about 5.5 s after it, not from the branch at 16 s; B stops checking (one round at most)."""
+@pytest.mark.skipif(not has(PREVIEW_JS, "function claim("), reason="the tab in front doesn't take the check in this preview.js")
+def test_the_tab_in_front_shows_the_hand_over(tmp_path):
+    """Two tabs, one localStorage, storage events to the other, each its own visibility. Press 1 (cold) in B, the person
+    moves to A 2 s later: A takes the check and shows the run's hand-over (listed 12.2 s on), B waits for the branch.
+    Back in B, press 2 (warm) takes the check from A; the person moves to A 1 s later: A reads the lane's hand-over
+    (5.06 s on, run 44465651236) itself, about 5.5 s after the press; B stops checking. One toast each, in A."""
     out = node(tmp_path, """const { AsyncLocalStorage } = await import("node:async_hooks"), tab = new AsyncLocalStorage();
-let T = 1e12; const q = []; Date.now = () => T;
-globalThis.setTimeout = (fn, ms = 0) => { const t = tab.getStore(); q.push([T + ms, () => tab.run(t, fn)]); return q.length; }; globalThis.clearTimeout = () => {};
+let T = 1e12, n = 0; const q = []; Date.now = () => T;
+globalThis.setTimeout = (fn, ms = 0) => { const t = tab.getStore(), id = ++n; q.push([T + ms, () => tab.run(t, fn), id]); return id; };
+globalThis.clearTimeout = id => { const i = q.findIndex(x => x[2] === id); if (i >= 0) q.splice(i, 1); };
 const run = async until => { while (q.length) { q.sort((a, b) => a[0] - b[0]); if (q[0][0] > until) break; const [at, fn] = q.shift(); T = Math.max(T, at); await fn(); for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); } T = Math.max(T, until); };
-const mem = new Map(), tabs = [], tell = (key, newValue) => { const me = tab.getStore(); for (const t of tabs) if (t !== me) q.push([T + 2, () => tab.run(t, () => t.on.forEach(f => f({ key, newValue })))]); };
+const mem = new Map(), tabs = [], on = (t, type) => t.on.filter(x => x[0] === type).map(x => x[1]);
+const tell = (key, newValue) => { const me = tab.getStore(); for (const t of tabs) if (t !== me) q.push([T + 2, () => tab.run(t, () => on(t, "storage").forEach(f => f({ key, newValue }))), 0]); };
 globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => { mem.set(k, String(v)); tell(k, String(v)); }, removeItem: k => { mem.delete(k); tell(k, null); } };
-globalThis.document = { visibilityState: "visible" }; URL.createObjectURL = () => "blob:x";
+const listen = (type, f) => tab.getStore().on.push([type, f]);
+globalThis.window = { addEventListener: listen }; globalThis.document = { get visibilityState() { return tab.getStore().vis; }, addEventListener: listen };
+URL.createObjectURL = () => "blob:x";
+const show = who => { for (const t of tabs) { t.vis = t === who ? "visible" : "hidden"; tab.run(t, () => on(t, "visibilitychange").forEach(f => f())); } };
 const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text), h = Buffer.alloc(30), c = Buffer.alloc(46), e = Buffer.alloc(22);
   h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
@@ -233,30 +239,35 @@ const { createHash } = await import("node:crypto"), presses = [];
 const result = r => JSON.stringify({ request: r, state: "baked", files: {}, base: { commit: "c".repeat(40) } }), none = () => { const e = new Error("GitHub 404"); e.status = 404; throw e; };
 const github = me => async (path, o = {}) => {
   if (path.endsWith("/git/blobs")) { const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\\0`), raw])).digest("hex") }; }
-  if (o.method === "POST") { if (!path.includes("/statuses/")) presses.push({ ...o.body.inputs, at: T }); return null; }
+  if (o.method === "POST") { if (!path.includes("/statuses/")) presses.push({ ...o.body.inputs, at: T, run: 101 + presses.length }); return null; }
   me.gets.push(T);
-  const age = r => { const x = presses.find(x => x.request === r); return x ? T - x.at : -1; };
-  if (path.includes("/contents/")) { const x = presses.find(x => path.includes(x.request)); return x && age(x.request) >= (x.lane ? 16000 : 15000) ? result(x.request) : none(); }
-  if (path.includes("/workflows/")) return { workflow_runs: [{ id: 101, display_title: "Card preview " + presses[0].request, html_url: "https://github.com/o/r/actions/runs/101", status: "in_progress", run_started_at: new Date(presses[0].at).toISOString() }] };
+  const age = x => T - x.at;
+  if (path.includes("/contents/")) { const x = presses.find(x => path.includes(x.request)); return x && age(x) >= (x.lane ? 16000 : 15000) ? result(x.request) : none(); }
+  if (path.includes("/workflows/")) return { workflow_runs: presses.map(x => ({ id: x.run, display_title: "Card preview " + x.request, html_url: "https://github.com/o/r/actions/runs/" + x.run, status: "in_progress", run_started_at: new Date(x.at).toISOString() })) };
   const z = path.split("/zip/")[1];
   if (z) return zip(result(z));
-  const name = path.split("name=")[1], own = name === "card-preview" ? presses[0].request : name.slice(13);
-  return { artifacts: path.includes("/runs/101/") && age(own) >= (name === "card-preview" ? 12200 : 5060) ? [{ name, archive_download_url: "https://api.github.com/zip/" + own }] : [] };
+  const name = path.split("name=")[1], run = +path.split("/runs/")[1].split("/")[0];
+  const x = name === "card-preview" ? presses.find(x => x.run === run && age(x) >= 12200) : presses.find(x => x.request === name.slice(13) && String(x.lane).startsWith(run + "-") && age(x) >= 5060);
+  return { artifacts: x ? [{ name, archive_download_url: "https://api.github.com/zip/" + x.request }] : [] };
 };
-const open = name => { const t = { name, on: [], gets: [] }; tabs.push(t);
-  globalThis.window = { addEventListener: (type, f) => { if (type === "storage") t.on.push(f); } };
-  t.pv = tab.run(t, () => p.createPreviews({ S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github: github(t) }, toast() {}, badges() {} }));
+const open = name => { const t = { name, on: [], gets: [], toasts: [], vis: "hidden" }; tabs.push(t);
+  t.pv = tab.run(t, () => p.createPreviews({ S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github: github(t) }, toast: m => t.toasts.push(m), badges() {} }));
   return t; };
-const B = open("B"), A = open("A"), card = id => ({ id, key: id, name: id });
-await tab.run(B, () => B.pv.start(card("c0"), { hp: 8 })); await run(T + 40000);
-const t1 = T;
-await tab.run(A, () => A.pv.start(card("c1"), { hp: 7 })); await run(t1 + 6000);
-const at6 = [A, B].map(t => t.pv.entries("c1")[0].state);
+const B = open("B"), A = open("A"), card = id => ({ id, key: id, name: id }), states = id => [A, B].map(t => t.pv.entries(id)[0].state);
+show(B); const t0 = T;
+await tab.run(B, () => B.pv.start(card("c0"), { hp: 8 })); await run(t0 + 2000); show(A); await run(t0 + 14000);
+const p1 = { at14: states("c0"), shown: A.pv.entries("c0")[0].fromAt - t0, bGets: B.gets.filter(x => x > t0 + 2000).length };
+await run(t0 + 39000); show(B); const t1 = t0 + 40000; await run(t1);
+await tab.run(B, () => B.pv.start(card("c1"), { hp: 7 })); await run(t1 + 1000); show(A); await run(t1 + 6000);
+const p2 = { lane: presses[1].lane ?? null, at6: states("c1"), shown: A.pv.entries("c1")[0].fromAt - t1 };
 await run(t1 + 30000);
-out({ lane: presses[1].lane ?? null, at6, shown: A.pv.entries("c1")[0].fromAt - t1, after: [A, B].map(t => t.pv.entries("c1")[0].state), bGets: B.gets.filter(x => x >= t1).length });""")
-    assert out["lane"] and out["lane"].startswith("101-")             # press 2 named press 1's run as its lane
-    assert out["at6"] == ["baked", "running"] and 5000 < out["shown"] <= 6000   # A shows it; B waits for the branch
-    assert out["after"] == ["baked", "baked"] and out["bGets"] <= 2
+out({ p1, p2: { ...p2, after: states("c1"), bGets: B.gets.filter(x => x > t1 + 1000).length }, toasts: [A.toasts, B.toasts].map(l => l.filter(m => !m.startsWith("Preview started"))) });""")
+    p1, p2 = out["p1"], out["p2"]
+    assert p1["at14"] == ["baked", "running"] and 12200 < p1["shown"] <= 14000 and p1["bGets"] == 0   # A shows it, B stopped
+    assert p2["lane"] and p2["lane"].startswith("101-")                 # press 2 named press 1's run as its lane
+    assert p2["at6"] == ["baked", "running"] and 5000 < p2["shown"] <= 6000   # A read the lane's hand-over itself
+    assert p2["after"] == ["baked", "baked"] and p2["bGets"] <= 1
+    assert out["toasts"] == [["Preview ready: c0", "Preview ready: c1"], []]
 
 
 def test_tokens_wrap_and_fit(tmp_path):
