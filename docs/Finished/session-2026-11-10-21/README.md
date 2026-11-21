@@ -376,13 +376,13 @@ a real gain. Results (full lists: accepted.md and rejected.md):
 
 - **Early save (r60-1, 11-20).** Not shipped in wave 1: it adds a save commit and post where the owner had not
   approved one. Shipped only after the owner's yes (11-21).
-- **AWS warm-up (r60-2, 11-20/21).** Not shipped in wave 1: its gain was never measured. It was proved on a fork
-  scratch branch (never a test branch on TTSCardMaker; 11-21 05:55, `final-1120/r60-2-prove/`): on AWS runners the
-  cold minus warm median was +4.92 s at the venv check (10 cold, 8 warm, p=0.017); on Azure +0.06 s (p=0.343). The
+- **AWS warm-up (r60-2, 11-20/21).** Not shipped in wave 1: its gain was never measured. It was proved on a fork scratch
+  branch (never a test branch on TTSCardMaker; 11-21 05:55, `final-1120/r60-2-prove/`): on AWS runners the cold minus
+  warm median was +4.92 s by the end of the venv check (10 cold, 8 warm, p=0.017); on Azure +0.06 s (p=0.343). The
   builder's verdict was ship. Wave 2a's verifier repeated the proof (180 probes, 19 on AWS): +2.95 s at the median
-  (p=0.0006), +3.7 to +4.1 s with both proofs pooled, and about 1 job in 5 runs on AWS. Real, but smaller than built
-  and above the 11-16 research bar only on its narrowest reading, so it was not shipped (owner 11-21 ~01:50: ship
-  nothing doubtful). It waits in the plan with these numbers; its TC branch is in the wrap-up bundle.
+  (p=0.0006), +3.7 to +4.1 s with both proofs pooled, and about 1 job in 5 runs on AWS. Real, but smaller than built and
+  above the 11-16 research bar only on its narrowest reading, so it was not shipped (owner 11-21 ~01:50: ship nothing
+  doubtful). It waits in the plan with these numbers; its TC branch is in the wrap-up bundle.
 - **x13 (11-20/21).** Not merged on its old checks: they fell in the shared-port window. Verified again first;
   passed and landed in wave 2a.
 - **x28 (11-20).** Its optional autocomplete half was left out: the two judges split on it.
@@ -452,22 +452,21 @@ a real gain. Results (full lists: accepted.md and rejected.md):
 ## Left
 
 All in `docs/NEXT_SESSION_PLAN.md`. Headlines: research again (about 8 rounds a lane, ship every 4, then finish
-everything found); the D15 rest, owner-directed 11-17 ~00:30 and still open (the bake keeps a character the line's
-font can't draw in the font the card prints it in; built as r51-1 and retried as x31, it failed review both times:
-Minecraft Panda's '∞' run keeps its own baseline shift and size, so a typed '2' drops; branches AC fa13c489 / TC
-d20c1105, now in the wrap-up bundles); the fork's dead-code items (G8); fork r15-2 (colour glyphs in Smooth and Sharp
-text; its AC unblock r18-0 landed 11-16 as 2f7e22fe in actbake's research3 ship 1, so it waits only for a fork
-release, after a check of The Great Papyrus); D24 (a build number in the stoogedings name) at the next font build;
-r60-2, the AWS warm-up (proved, not shipped; numbers in the plan); ship items proven only by later events (the early
-save r60-1 by the next guarded push that re-exports a PNG, with its watch item (d); Croissant's next guarded push for
-the earlier push-lane items; x12 by the next Card checks run; x33 by the next bake moving an effect-layer line; x20 by
-the next Preview image press; the next psd_details VERSION bump; the next bakes of named cards); two timing tests
-flaky under `taskpolicy -b` at high load; Beholster's name flag; the phone editor's title box cutting long titles;
-x25's Navigation API (Safari before 26.2 and Firefox before 147 keep the old behaviour); x23's known limits; the 11-20
-test leak's try/finally (its loop already ends after 60 s); the wrap-up cleanup's leftovers (two TC packs of unknown
-origin, the Desktop AC and fork checkouts behind main); CardBrowser's first trial and its follow-ups;
-`~/Documents/Tools/firstrepo.git` to an external disk and the old pre-wipe clone in `~/Downloads` (the owner's calls);
-the owner's TTS and website checks; the jetson's held davey 0.2.0.
+everything found); the D15 rest, owner-directed 11-17 ~00:30 and still open (the bake keeps a character the line's font
+can't draw in the font the card prints it in; built as r51-1 and retried as x31, it failed review both times: Minecraft
+Panda's '∞' run keeps its own baseline shift and size, so a typed '2' drops; branches AC fa13c489 / TC d20c1105, now in
+the wrap-up bundles); the fork's dead-code items (G8); fork r15-2 (colour glyphs in Smooth and Sharp text; its AC
+unblock r18-0 landed 11-16 as 2f7e22fe in actbake's research3 ship 1, so it waits only for a fork release, after a check
+of The Great Papyrus); D24 (a build number in the stoogedings name) at the next font build; r60-2, the AWS warm-up
+(proved, not shipped; numbers in the plan); ship items proven only by later events (the early save r60-1 by the next
+guarded push that re-exports a PNG, with its watch item (d); Croissant's next guarded push for the earlier push-lane
+items; x12 by the next Card checks run; x33 by the next bake moving an effect-layer line; x20 by the next Preview image
+press; the next bakes of named cards); two timing tests flaky under `taskpolicy -b` at high load; Beholster's name flag;
+the phone editor's title box cutting long titles; x25's Navigation API (Safari before 26.2 and Firefox before 147 keep
+the old behaviour); x23's known limits; the 11-20 test leak's try/finally (its loop already ends after 60 s); the
+wrap-up cleanup's leftovers (two TC packs of unknown origin, the Desktop AC and fork checkouts behind main);
+CardBrowser's first trial and its follow-ups; `~/Documents/Tools/firstrepo.git` to an external disk and the old pre-wipe
+clone in `~/Downloads` (the owner's calls); the owner's TTS and website checks; the jetson's held davey 0.2.0.
 
 ## Files here
 

@@ -41,15 +41,16 @@ x19, x20, x22, x24, x29 and the early save r60-1) at 09:23, AC f0f4c7c1, TC 0911
 x40, x41) at 10:54, AC 0d2de792 (deployed), TC f769e0fc + save 33c6ce3c; wave 2b actbake (x12, x23, x33, x34, x38) at
 12:27, AC ea0db694, TC 0cb95c33. Only r60-2 was left out:
 
-- [ ] **AWS warm-up** (actbake r60-2, finish item n=4; proved, not shipped): card jobs on GitHub's AWS runners read
-      node and Python into memory in the background first. The builder's proof on the fork's origin (11-21): the venv
-      check at 8.52 s cold against 3.60 s warmed on AWS (+4.92 s, medians of 10 and 8 probes, p=0.017); no change on
-      Azure. Wave 2a's verifier ran its own proof (180 probes, 19 on AWS): first step to venv checked 6.61 -> 3.66 s,
-      +2.95 s at the median (p=0.0006, 95% CI 2.2-5.2 s); both proofs pooled (37 AWS probes) +3.7 to +4.1 s; Azure
-      3.04 -> 3.22 s (noise). About 1 job in 5 runs on AWS (25 of 142 real jobs 11-19 to 11-21; Card data 3 of 19).
-      Not shipped: the gain is real but smaller than built and clears the 11-16 research bar only on its narrowest
-      reading (owner 11-21 ~01:50: when unsure, ship nothing doubtful). Nothing regressed. Decide it against the bar
-      with these numbers. TC abb071f5 (`work/actbake-1110-r60-2` in the TC bundle; its AC side has no commits).
+- [ ] **AWS warm-up** (actbake r60-2, finish item n=4; proved, not shipped): card jobs on GitHub's AWS runners read node
+      and Python into memory in the background first. The builder's proof on the fork's origin (11-21): first step to
+      the end of the venv check, network wait included, 8.52 s cold against 3.60 s warmed on AWS (+4.92 s, medians of 10
+      and 8 probes, p=0.017; the venv check step alone 1.67 -> 0.06 s); no change on Azure. Wave 2a's verifier ran its
+      own proof (180 probes, 19 on AWS): first step to venv checked 6.61 -> 3.66 s, +2.95 s at the median (p=0.0006, 95%
+      CI 2.2-5.2 s); both proofs pooled (37 AWS probes) +3.7 to +4.1 s; Azure 3.04 -> 3.22 s (noise). About 1 job in 5
+      runs on AWS (25 of 142 real jobs 11-19 to 11-21; Card data 3 of 19). Not shipped: the gain is real but smaller
+      than built and clears the 11-16 research bar only on its narrowest reading (owner 11-21 ~01:50: when unsure, ship
+      nothing doubtful). Nothing regressed. Decide it against the bar with these numbers. TC abb071f5
+      (`work/actbake-1110-r60-2` in the TC bundle; its AC side has no commits).
 - [ ] **Early save, watch item (d)** (r60-1, landed in wave 2a: TC d01f81cd, notes (a)-(c) fixed in 79d79682, checks
       0911ce04): the guards' Land onto a main that a Card sync save has already moved has never run on a real push.
       The early save is proven only by the next guarded push that re-exports a PNG: watch Land retrying, the
@@ -74,8 +75,8 @@ fork's `work/research-1110`) was deleted at the wrap-up cleanup (11-21) after be
       fonts, sizes or shifts on one line). Fix: per-letter style in psd_details, or no shortcut when a layer has more
       than one font. AC c6e4ec99, TC d05bf5c0.
 - [ ] x26: Rulebook and Stats icons load as they come near (-22% bytes on the Rulebook's first open). Not kept: icons
-      show blank for 0.3-0.7 s in rulebook search results and same-book jumps. Reviewer's suggestion: ship 494d9cba's
-      wake() alone, without the lazy icons. AC e7e6e3ee, TC 494d9cba.
+      show blank in rulebook search results (0.3-0.7 s) and same-book jumps (up to 1.44 s on a 3G phone). Reviewer's
+      suggestion: ship 494d9cba's wake() alone, without the lazy icons. AC e7e6e3ee, TC 494d9cba.
 - [ ] x27: Bake: a re-edited Ability is fitted against the card maker's own text. Not kept: the stored ink (about
       10 KB a verdict) breaks Card sync's merge of bake records on Linux (one jq argument over 128 KB) once about 13
       Ability bakes wait. Fix: pass the verdicts as files (`--slurpfile`), test a 200 KB artifact, ship it with the AC
@@ -100,14 +101,19 @@ Dropped by the judges and never built: x3, x7, x8 and x11 (all done since) and x
       draw). The third: retry parts (a) and (b) without the dy move (76 better, 0 worse when the reviewer measured
       them). AC a35ce841, TC ae380cfa.
 
-Rejected in the rounds and not retried (`rejected.md` section 1 of the report has all 21). These 13 had their gain
-reproduced and were turned down only for a named regression; for the other 8 the gain was not reproduced or did not
-hold up, or the change broke a site contract (r15-3). Two judges first: some may be done since.
+Rejected in the rounds and not retried (`rejected.md` section 1 of the report has all 21). These 15 were turned down
+for a named regression: 13 had their gain reproduced; r7-2's pixel scores reproduce, but its regression is in the very
+edits it targets. For the other 6 the gain was not reproduced or did not hold up, or the change broke a site contract
+(r15-3). Two judges first: some may be done since.
 
 - [ ] actbake r1-1: a redrawn Ability sits on the old text's own baseline, measured per font. Regression: a shrunk new
       text sits on the old, larger baseline (pushed down, once off the card). AC 137bdd7e, TC bd3d3fcc.
 - [ ] actbake r2-1: an Ability shrinks only when it needs more lines than the old text. Regression: Life Link's text
       runs off the card again; Sans, Poorly Drawn Cabbage and Mangle worse. TC adf4f5e5.
+- [ ] actbake r7-2: in the one line an Ability edit changes, the mock-up keeps the card's own letters around the change
+      and draws only the changed ones (one-number edits: wrong px median 3656 -> 318). Regression: about 1 one-number
+      edit in 5 shows bits of the old digit or the wrong text, which the pixel score counts as better. AC 168c2502,
+      TC 25695371.
 - [ ] actbake r23-0: Card sync's Commit main stops waiting for the Rulebook PDF (TTS save 12-21% sooner, modelled
       from logs). Regression: its new PDF step starts before the book fonts are in the checkout. AC 4db5c3ce, TC
       040ea6f2.
@@ -137,6 +143,9 @@ hold up, or the change broke a site contract (r15-3). Two judges first: some may
       TC 2cfa5dd6.
 - [ ] cards r25-0: grid tiles load one screen ahead, not Chrome's ~1250 px (first screen -17 to -23%). Regression:
       more blank tiles while scrolling on slow networks. AC 2f5642a1, TC ea7d3d01.
+- [ ] cards r44-2: a Stats chart's table is drawn on its first Table press, not built hidden on every visit (10,746 of
+      16,861 elements; load -9%, filter changes -10% on a phone). Regression: it shows the wrong table (Series while
+      Subseries is pressed). AC 3017ef00, TC f12a757e (branches deleted; the Desktop clones still hold both commits).
 
 The research4 backlog (28 ideas, `scratch/s1110/research4/args.json`) is all built and judged; r54-1 above is the only
 one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already covered on main and n=6 by r60-3.
@@ -178,9 +187,9 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
       it is found.
 - [x] **Desktop TC promisor duplicates**: the wrap-up deduped pack-185d66d5, 4080ec91, 239227ea and c94ca1fd (clean
       dry runs, `fsck --connectivity-only` passed) and removed a 0.91 GiB tmp pack: TC packs 32.3 -> 28.2 GiB.
-- [ ] **Two TC packs of unknown origin**: pack-333ff011 (8.47 GiB, 2,266 objects / 6.3 GiB found nowhere else) and
-      pack-8cfce261 (0.98 GiB, all 191 objects found nowhere else). Kept: their dry runs were not clean. Find what
-      they hold, at a quiet time, before dropping anything.
+- [ ] **Two TC packs of unknown origin**: pack-333ff011 (8.47 GiB; its dry run keeps 2,266 of 3,351 objects, 6.2 GiB:
+      the commits and trees plus what is found nowhere else) and pack-8cfce261 (0.98 GiB; it keeps all 191 objects).
+      Kept: their dry runs were not clean. Find what they hold, at a quiet time, before dropping anything.
 - [ ] Wrap-up leftovers (11-21 cleanup, `~/Documents/Tools/wt/scratch/s1110/wrap/run-1121/`):
       - The Desktop AC clone was not fast-forwarded (hard rule): see "Where to start".
       - The fork's Desktop clone `~/Documents/Tools/psd-tools` was not fast-forwarded either: da069245
@@ -234,7 +243,7 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
 - [ ] The next bake whose Ability edit moves an effect-layer line: x33 keeps the line's look.
 - [ ] The next Preview image press on the website: x20's 250 ms hand-over checks. x34's caption ("The text runs past
       its place on the card.") was not found by string in the live chunks; it and x23 rest on the prepare's checks.
-- [ ] The next psd_details VERSION bump: unchanged re-reads no longer count toward gate G4.
+- [x] A psd_details VERSION bump passes gate G4: the 11 -> 13 re-read (wave 2a, Card sync 44928841136) passed it.
 - [ ] The next named-cards Card sync dispatch: its site build and Card checks start with its data job.
 - [ ] The next runner Python patch: the cached venv is re-pointed, not rebuilt.
 - [ ] The next website edit that bakes: one Card sync, not a second one taking over the after-bake job.
@@ -495,11 +504,12 @@ call).
 
 ## Not chosen
 
-Answered no by the owner: 24 first-screen tiles, an opaque top bar (11-04); editor ideas, idea 14's orphaned-FX check,
-a TTS Workshop uploader, Google indexing (11-10); TTS JPEG copies (11-07); the merge guard (11-12: not unless it happens
-again); old names from Discord as aliases (11-13); the 152-card Strong-type text redraw (11-13: later bakes redo it);
-a startup check, admin alert or next-post check for the forum votes (11-16); linking 'die', 'defeated' and 'kill' in
+Answered no by the owner: 24 first-screen tiles, an opaque top bar (11-04); editor ideas, idea 14's orphaned-FX check, a
+TTS Workshop uploader, Google indexing (11-10); TTS JPEG copies (11-07); the merge guard (11-12: not unless it happens
+again); old names from Discord as aliases (11-13); the 152-card Strong-type text redraw (11-13: later bakes redo it); a
+startup check, admin alert or next-post check for the forum votes (11-16); linking 'die', 'defeated' and 'kill' in
 search (D20); the comp-bar zero-row picture speed-up (11-21); a local bake in CardBrowser and a "use my local folder"
-site feature (11-20). Research ideas accepted and rejected this session: titles in the report (don't re-propose). Older:
-the `dropped` lists of `opt-round3/plan.json`, `opt-round4/plan.json`, `opt-1104/round2-plan.json`,
-`~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b); parked ideas: `docs/Finished/session-2026-10-24/README.md`.
+site feature (11-20). Research ideas accepted and rejected this session: titles in the report's `accepted.md` and
+`rejected.md` (don't re-propose). Older: the `dropped` lists of `opt-round3/plan.json`, `opt-round4/plan.json`,
+`opt-1104/round2-plan.json`, `~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b); parked ideas:
+`docs/Finished/session-2026-10-24/README.md`.
