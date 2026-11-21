@@ -2903,7 +2903,7 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
     Args:
         plan: plan_fx()
         text: The text to set
-        kept: kept_chars() of the old text and text
+        kept: kept_moved() of the old text and text
         spans: status_word_spans() over text (for a "status" layer)
 
     Returns:
@@ -3134,8 +3134,8 @@ def _kept(plan: FxPlan, ranges: list, band: Optional[tuple], kept: list) -> bool
 def held_words(plans: list, kept: list, alive: list) -> list:
     """
     Edit.held: (its name now, kept_spans() of its old ranges) per "styled" or "own" FX layer the rebuild left in the
-    card (alive: the FX layers after it). By layer, not name: a renamed layer may take a deleted one's name ("2T#2"
-    -> "2T#1" when the first "2T" left).
+    card (kept: kept_moved(); alive: the FX layers after it). By layer, not name: a renamed layer may take a deleted
+    one's name ("2T#2" -> "2T#1" when the first "2T" left).
     """
     ids = {id(fx) for fx in alive}
     return [(plan.layer.name, kept_spans(plan.ranges, kept)) for plan in plans if plan.kind in ANCHORED and id(plan.layer) in ids]
