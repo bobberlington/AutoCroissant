@@ -408,6 +408,30 @@ out([at("After attacking, destroy this creature."), at("heal 2 now"), at("(1CD) 
     assert out == [120, 114.4, 123.5, 126.8, None, 110]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function ownWrap"), reason="no ownWrap in this mockup.js")
+def test_a_rewrapped_ability_moves_the_cards_own_words(tmp_path):
+    """ownWrap: a shorter or deleted word pulls the next line's first word up where the bake's greedy wrap puts it; kept
+    words are the card's ink moved (cut half-way to their neighbours'), only the typed word drawn. A frame that does not
+    give the card's own lines, a break within 1 px of a typed word's, or a blank paragraph (wrap() drops one at the
+    changed range's ends): null (the old way)."""
+    out = node(tmp_path, """
+const card = (was, spans) => { const x = new Map(), ink = new Map();
+  const lines = spans.map(([s, e, base, para]) => { for (let i = s; i < e; i++) { x.set(i, 5 * (i - s)); if (was[i] !== " ") ink.set(i, [5 * (i - s), 5 * (i - s) + 4]); }
+    return { s, e, base, left: 0, right: 5 * (e - s), top: base - 8, bottom: base + 2, just: 0, para }; });
+  return { was, lines, x, ink }; };
+const one = card("aaa bbb ccc ddd eee", [[0, 11, 20, 0], [12, 19, 32, 0]]), two = card("aaa bbb ccc ddd eee\\nfff", [[0, 11, 20, 0], [12, 19, 32, 0], [20, 23, 44, 1]]);
+const run = (c, now, frame = [0, 68]) => { const R = { ...c, frame }, ow = m.ownWrap(R, m.geoPlan(R, now), now, m.tokenize(now, {}),
+    { measure: (s, z) => s.length * z * 0.5, z: 10, fx: [], icons: {}, step: 12, B: [[10, 23], [23, 36], [36, 49]], x0: 0, x1: 100 });
+  return ow && [ow.dy, ow.moves.map(([r, dx, dy]) => [r[0], r[2], dx, dy]), ow.paints.map(([l, o]) => [l[0].pieces.map(p => p.text).join(""), o.at(), o.base])]; };
+out([run(one, "aaa q ccc ddd eee"), run(one, "aaa ccc ddd eee", [0, 62]), run(one, "aaa q ccc ddd eee", [0, 66]), run(one, "aaa q ccc ddd eee", [0, 100]),
+  run(two, "aaa bbb ccc ddd eee\\nfgf"), run(two, "aaa q ccc ddd eee\\n\\nfff"), run(two, "aaa bbb ccc ddd eee\\n\\nfgf"), run(one, "aaa q ccc ddd eee\\n\\nfff")]);""")
+    assert out[0] == [0, [[0, 17, 0, 0], [37, 59, -10, 0], [0, 17, 50, -12], [17, 39, -20, 0]], [["q", 20, 20]]]
+    assert out[1] == [0, [[0, 17, 0, 0], [37, 59, -20, 0], [0, 17, 40, -12], [17, 39, -20, 0]], []]
+    assert out[2] is None and out[3] is None
+    assert out[4] == [0, [], [["fgf", 0, 44]]]
+    assert out[5:] == [None, None, None]   # a blank line after, before, inside the change
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
