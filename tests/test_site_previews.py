@@ -245,17 +245,31 @@ out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+")), show(m
     assert out[5] == "The ability's font has no '+': the bake prints a box there. The title's font has no '.': the bake leaves a gap there."
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "MGP_FONT"), reason="no Myriad Pro fallback in this mockup.js")
-def test_typed_letters_the_font_lacks_fall_back_to_myriad_pro(tmp_path):
-    """r51: with Myriad Pro (mgp: its lacks), a typed letter the font lacks stays for the family's Myriad fallback, as
-    the bake sets it (psd_edit.missing_glyphs); a D13 mark plain first, the plain one in Myriad too; a box only for what
-    Myriad lacks too."""
+@pytest.mark.skipif(not has(MOCKUP_JS, "function glyphFont"), reason="no picked fonts in this mockup.js")
+def test_typed_letters_the_font_cant_draw_take_the_font_the_bake_picks(tmp_path):
+    """Owner D15 rest: a typed letter its font lacks or draws empty (fonts.json lacks, empty) is drawn in the font the
+    bake sets it in (psd_edit.glyph_fonts): the one the run it is typed into prints in, else its layer's (details'
+    faces), else another shown layer's, else Myriad Pro; with no pick a box (lacked) or as the font draws it (empty); a
+    kept one in the font its layer prints it in. The text keeps its letters (a colour alone still matches the card)."""
     out = node(tmp_path, """
-const D = String.fromCharCode(0x2014);
-const show = r => [[...r.text].map(c => (c.charCodeAt(0) >= 0xfdd0 ? `<${m.glyphRuns(c)[0]}>` : c)).join(""), r.boxes];
-out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+", "")), show(m.glyphPlan("Heal 1/2 " + D, "Heal", "/-" + D, "")),
-  show(m.glyphPlan("Heal 2~", "Heal", "~", "~"))]);""")
-    assert out == [["(WOF) +1 Heal (+1 DEF).", ""], ["Heal 1/2 <->", ""], ["Heal 2<1>", "~"]]
+const map = { B: { file: "b", lacks: "+", empty: ":%" }, E: { file: "e" }, A: { file: "a", lacks: "+" }, C: { file: "c" },
+  H: { file: "h" }, M: { file: "m", lacks: "0123456789" }, I: { file: "i" }, "MyriadPro-Regular": { file: "m" } };
+const ab = { layer: "Text/Ability", id: 1, text: "On death: [fire] 5", lf: "B", faces: [["B", "5Oadehnt"], ["E", ":"], ["A", ":"]] };
+const rec = { text: [ab, { layer: "Text/Hidden", id: 3, text: "+", font: "E", visible: false }, { layer: "Text/Name", id: 2, text: "A+B", font: "C" }] };
+const plan = (t, o, lacks, empty, layer, picks = true) => { const r = m.glyphPlan(t, o, lacks, picks ? (s, from) => m.glyphFont(rec, layer, s[0], map, false, from) : null,
+  empty, c => m.glyphFont(rec, layer, c, map, true)); return [r.text, r.boxes, Object.fromEntries(r.fonts)]; };
+const show = r => [[...r[0]].map(c => (c.charCodeAt(0) >= 0xfdd0 ? `<${m.glyphRuns(c)[0]}>` : c)).join(""), r[1], r[2]];
+out([[":", "+", "%", "["].map(c => m.glyphFont(rec, ab, c, map)), m.glyphFont(rec, ab, "%", { ...map, "MyriadPro-Regular": undefined }),
+  plan("On death: gain +1, 5%.", "On death gain 1, 5.", "+", ":%", ab), show(plan("Gain: +1.", "Gain 1.", "+", ":", ab, false)),
+  plan("+25% Base", "+25% Base", "", "%", { lf: "B", faces: [["B", "+25Baes"], ["H", "%"]] }),
+  plan("by 3 bar", "by 1 bar", "0123456789", "", { lf: "M", faces: [["M", "abry"], ["I", "1"]] }),
+  m.glyphRuns("a+b\ufdd3", new Map([["+", "F"], [".", "G"]]))]);""")
+    assert out[0] == ["E", "C", "MyriadPro-Regular", "MyriadPro-Regular"] and out[1] == ""
+    assert out[2] == ["On death: gain +1, 5%.", "", {":": "E", "+": "C", "%": "MyriadPro-Regular"}]
+    assert out[3] == ["Gain: <1>1.", "+", {}]
+    assert out[4] == ["+25% Base", "", {"%": "H"}]            # kept: Battle Spear's Chiller '%'; a colour alone matches
+    assert out[5] == ["by 3 bar", "", {"3": "I"}]             # typed into the digits' run: The Structure's IRONMAN
+    assert out[6] == ["a", {"s": "+", "fam": "F"}, "b", {"s": "...", "fam": "G"}]
 
 
 @pytest.mark.skipif(not has(MOCKUP_JS, "function lineSplices"), reason="no lineSplices in this mockup.js")
