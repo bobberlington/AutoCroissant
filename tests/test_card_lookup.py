@@ -353,7 +353,8 @@ def test_lost_morgue_cards_answer_as_such(repo, monkeypatch):
         entry("Chestnut The Forbidden One", "chestnut", first="2020-10-14", firstCh="ideas-discussion"),
         entry("Void Sentinel", "void-sentinel", lost="played", first="2020-07-27", firstCh="update-01-port", pic=raw),
         entry("M'uru", "m-uru", lost="played", inGit=True, pic=None), entry("Magolor", "magolor-2"),
-        entry("Sacrifice", "sacrifice"), entry("Mario", "mario"), entry("Rope", "rope-morgue", live="rope")]}
+        entry("Sacrifice", "sacrifice"), entry("Mario", "mario"), entry("Rope", "rope-morgue", live="rope"),
+        entry("Spider Queen", "spider-queen", lost="idea", first="2019-05-10", firstCh="general-discussion")]}
     monkeypatch.setattr(qc, "get", lambda *a, **k: SimpleNamespace(status_code=200, headers={}, json=lambda: site,
                                                                    raise_for_status=lambda: None))
     typed = ("forbidden one", "chestnut the forbiden", "void", "muru", "mario")
@@ -369,6 +370,9 @@ def test_lost_morgue_cards_answer_as_such(repo, monkeypatch):
              "in #update-01-port; out of play.", "Void Sentinel", raw, page % "void-sentinel"),
             ("MURU", "**M'uru** is in The Morgue: Played, lost before this repo; out of play.", "M'uru", None,
              page % "m-uru"),
+            ("spider queen", "**Spider Queen** is in The Morgue: Idea, never played · first posted 2019-05-10 in "
+             "#general-discussion; out of play.", "Spider Queen", f"{qc.SITE_URL}/history/_morgue/spider-queen/O.webp",
+             page % "spider-queen"),
             ("Magolor", None, "Magolor", "https://img/magolor.png", None),
             ("Sacrifice", "**Erasure** (renamed from Sacrifice)", "Erasure", "https://img/erasure.png", None),
             ("Rope", None, "Rope", "https://img/rope.png", None),

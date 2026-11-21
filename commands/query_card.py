@@ -1285,7 +1285,8 @@ def _out_of_play(key: str) -> str:
 def _post_lost(interaction: Interaction, entry: dict) -> None:
     """A Morgue card lost before the repo: its picture and page, in the website's words (app.js card facts)."""
     name, pic = entry["name"], str(entry.get("pic") or "")
-    fact = ("Joke card" if entry.get("lost") != "played" else
+    lost = entry.get("lost")
+    fact = ("Idea, never played" if lost == "idea" else "Joke card" if lost != "played" else
             "Played, lost before this repo" if entry.get("inGit") else "Played, lost before git")
     if entry.get("first"):
         fact += f" · {'in the old repo' if entry.get('firstOld') else 'first posted'} {entry['first']}"
