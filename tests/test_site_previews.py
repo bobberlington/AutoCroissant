@@ -626,10 +626,15 @@ out([say({ creatures: [a, { ...a }] }, { creatures: null }), say({ creatures: [a
 @pytest.mark.skipif(not has(ASSETS / "parts.js", '"a card shows at least one"'), reason="no under-1 stars rule in this parts.js")
 def test_stars_under_one_are_the_bakes_refusal(tmp_path):
     """Stars to 0: the bake refuses (psd_edit: 'a card shows at least one'), so the mock-up keeps the printed stars and
-    says so, and a folder card promises no move to '0 Stars/'."""
-    why = "a card shows at least one"
-    assert f'"{why}"' in (Path(__file__).parents[1] / "commands" / "psd_edit.py").read_text(encoding="utf-8")
+    says so, and a folder card promises no move to '0 Stars/'. A buff (no stars: psd_details' '*') keeps its own
+    reason, checked first in _plan_stars; any other '*' reason still gives way at 0."""
+    why, buff = "a card shows at least one", "the parser reads no stars on this card"
+    src = (Path(__file__).parents[1] / "commands" / "psd_edit.py").read_text(encoding="utf-8")
+    assert f'"{why}"' in src and f'"{buff}"' in src
     out = node(tmp_path, f"""const P = await import({json.dumps((ASSETS / "parts.js").as_uri())});
 const rec = {{ units: [{{}}], at: {{ 1: [[0, 0]] }}, refused: {{}} }}, path = "Creatures/Kirby/2 Stars/Acro.psd";
-out([P.starsKept(rec, 0), P.starsKept(rec, 1), P.starMove(path, 0), P.starMove(path, 3)?.to, p.mockNote({{ refused: [["stars", P.starsKept(null, 0)]] }})]);""")
-    assert out == [why, None, None, "Creatures/Kirby/3 Stars/", f"The bake would refuse the stars: {why}."]
+const vigor = {{ units: [], at: {{}}, refused: {{ "*": {json.dumps(buff)} }} }}, odd = {{ units: [], at: {{}}, refused: {{ "*": 'no group named "Stars" draws them' }} }};
+out([P.starsKept(rec, 0), P.starsKept(rec, 1), P.starMove(path, 0), P.starMove(path, 3)?.to, p.mockNote({{ refused: [["stars", P.starsKept(null, 0)]] }}),
+  P.starsKept(vigor, 0), p.mockNote({{ refused: [["stars", P.starsKept(vigor, 0)]] }}), P.starsKept(odd, 0), !!P.starMove(path, 0, [], true)]);""")
+    assert out == [why, None, None, "Creatures/Kirby/3 Stars/", f"The bake would refuse the stars: {why}.",
+                   buff, "The bake would refuse the stars: this card has none.", why, True]
