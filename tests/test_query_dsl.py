@@ -470,7 +470,8 @@ process.stdout.write(JSON.stringify([await press(true, enter), await press(false
 def test_words_typed_without_punctuation(tmp_path, monkeypatch):
     """A word typed without ' or . also finds it printed with them after a letter (cant: can't, nme: N.M.E.), never a
     sentence's end between two words; digits never (05 is not 0.5); quoted or typed with them: exact. Cards and
-    rulebook, the bot and the website alike."""
+    rulebook, the bot and the website alike; the rulebook's a - too, a lone one between two words' letters (multihit,
+    multi hit: multi-hit; never 'them. - Out', 15 never 1-5)."""
     from pandas import DataFrame
     cards = [dict(name="Gag", type="debuff", ability="Can't attack."), dict(name="Tilt", type="item", ability="A cant."),
              dict(name="Shop", type="item", ability="Buy an N.M.E. shop item."),
@@ -484,24 +485,29 @@ def test_words_typed_without_punctuation(tmp_path, monkeypatch):
     assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
     assert repo.ability_hits("cant") == 2
     book = {"4. Table": "4. N.M.E. Items for the N.M.E. Shop.\nThe next turn.", "5. Shops": "N.M.E SHOP\nIt can't fit 0.5.",
-            "6. Bans": "NME stock", "7. Fights": "A creature. Attacks hit the owners' foes."}
+            "6. Bans": "NME stock", "7. Fights": "A creature. Attacks hit the owners' foes.",
+            "8. Hits": "Multi-hit: MULTI-HIT.\nNegation-immune, face-down.\nRoll 1-5 on them. - Out."}
     repo.rulebook_dff = DataFrame({"ability": list(book.values())}, index=list(book))
     lines = lambda q: qc.rulebook_lines(repo.rulebook_search_engine(q), q)
     assert lines("nme") == [("4. Table", [("", ["4. N.M.E. Items for the N.M.E. Shop."])], 1), ("5. Shops", [("", ["N.M.E SHOP"])], 1),
                             ("6. Bans", [("", ["NME stock"])], 1)]       # the lines, not the whole chapter
-    queries = ["nme", "nme shop", "cant", "05", "turn", "creature attacks", "owners foes"]
+    queries = ["nme", "nme shop", "cant", "05", "turn", "creature attacks", "owners foes", "multihit", "multi hit",
+               "negation immune", "facedown", "them out", "15", "1 5"]
     bot = [[n for n, *_ in lines(q)] for q in queries]
     assert bot == [["4. Table", "5. Shops", "6. Bans"], ["4. Table", "5. Shops"], ["5. Shops"], [], ["4. Table"], [],
-                   ["7. Fights"]]
+                   ["7. Fights"]] + [["8. Hits"]] * 4 + [[]] * 3
+    assert lines("multi hit") == [("8. Hits", [("", ["Multi-hit: MULTI-HIT."])], 1)]
     shown = "4. N.M.E. Items for the N.M.E. Shop. The next turn."
     bolded = [qc._bold(shown, q) for q in ("nme", "nme shop", "turn")]
     assert bolded == ["4. **N.M.E.** Items for the **N.M.E.** Shop. The next turn.",
                       "4. N.M.E. Items for the **N.M.E. Shop**. The next turn.",
                       "4. N.M.E. Items for the N.M.E. Shop. The next **turn**."]   # an abbreviation's last '.' only
+    hits = "Multi-hit: MULTI-HIT. Face-down."
+    assert qc._bold(hits, "multi hit") == "**Multi-hit**: **MULTI-HIT**. Face-down."
     site = _app_book(tmp_path, f"""const book = {json.dumps(book)};
 process.stdout.write(JSON.stringify([{json.dumps(queries)}.map(q => Object.keys(book).filter(n => bookRe(bookFold(q)).test(bookFold(book[n])))),
-  ["nme", "nme shop", "turn"].map(q => marks({json.dumps(shown)}, q))]));""")
-    assert site == [bot, [["N.M.E.", "N.M.E."], ["N.M.E. Shop"], ["turn"]]]
+  ["nme", "nme shop", "turn"].map(q => marks({json.dumps(shown)}, q)), ["multi hit", "facedown"].map(q => marks({json.dumps(hits)}, q))]));""")
+    assert site == [bot, [["N.M.E.", "N.M.E."], ["N.M.E. Shop"], ["turn"]], [["Multi-hit", "MULTI-HIT"], ["Face-down"]]]
 
 
 def test_replies_ping_nobody(monkeypatch):
