@@ -1823,6 +1823,23 @@ def test_a_moved_line_keeps_its_fx_layer(clone, chart):
     assert fx.bbox[1] < top - 100 and held.sum() > 2000 and np.array_equal(ours[held], base[held])
 
 
+HYDRANT = "ca501fe209e861144453ade45476c662d293db66"   # The Hydrant: 'Ability FX: Blazing' on its last line
+
+
+def test_a_moved_fx_line_is_cut_again_silently(clone, chart, tmp_path):
+    """A layer that moved with its line is cut again with no note: The Hydrant's last line moved to the top with
+    ' Twice.' typed at its end keeps Blazing there, not 'cut again: it held pixels outside its words'."""
+    path = tmp_path / "The_Hydrant.psd"
+    path.write_bytes(card_blob(clone, HYDRANT))
+    psd = PSDImage.open(str(path))
+    layer = pe.ability_layer(psd)
+    lines = layer.text.split("\r")
+    text = "\n".join([lines[-1] + " Twice."] + lines[:-1])
+    edit = pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
+    fx, = pe.fx_layers(psd, layer)
+    assert not edit.notes and not edit.dropped and fx.name == "Ability FX: Blazing" and fx.bbox[1] < 1702 - 300
+
+
 def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style,
     sized and shifted to its text (owner 2026-10-25: the pill 1.35 times the capital height, its middle on theirs; Mini

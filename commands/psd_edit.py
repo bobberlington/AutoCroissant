@@ -6413,7 +6413,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     reach = [(union_box([old_bbox, bbox]), fx_pad(layer))]
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in old_fx]
     beyond = check() if which == "ability" and not copy else None
-    rebuilt, dropped, covered, notes, restyled = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets,
+    order = kept_chars(old_text, text) if plans else []     # in order: a moved line's layer is cut again, not kept
+    rebuilt, dropped, covered, notes, restyled = (_rebuild_fx(psd, layer, text, plans, band, order, fonts, engine, targets,
                                                           words) if plans else ([], [], [], [], []))
     if beyond:                                  # told, not refused (owner 2026-10-23: refuse only gross breakage)
         notes = [*notes, f"ability: {beyond}; check the card"]
