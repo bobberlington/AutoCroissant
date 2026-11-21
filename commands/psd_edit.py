@@ -110,7 +110,7 @@ SHOWN_PLAIN = r"(?::(?:%s))?" % "|".join(TEXT_COLOURED + GLOWS)   # variants the
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 PLAIN_MARKS = {"\u2014": "-", "\u2013": "-", "\u2026": "...", "\u201c": '"', "\u201d": '"'}   # typed: plain where its
 #   font has no glyph for it (owner D13, 2026-11-15)
-MGP_FONT = "MyriadPro-Regular"  # a typed character its font lacks is set in it, as Photoshop's Missing Glyph Protection
+MGP_FONT = "MyriadPro-Regular"  # glyph_fonts' last pick: Photoshop 2023's Missing Glyph Protection stand-in
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
@@ -769,9 +769,13 @@ def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel
     text = keep_ends(old_text, straight(text).replace("\r\n", "\n").rstrip("\n").replace("\n", "\r"))
     text = plain_typed(title, None, old_text, text, fonts_dir)
     fonts = font_map(fonts_dir)
+    parts = edit_parts(old_text, text, *_edit_range(old_text, text))
+    printed, old_runs = printed_fonts(title), _run_fonts(title)
     try:
         before = capture(title, fonts)
         title.set_text(text, keep="runs")
+        glyph_fonts(inner, title, [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0], fonts, (),
+                    printed, retyped(old_text, text, parts, old_runs))     # a typed letter its font can't draw (D15)
         title.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
     except MissingFontError as error:
         raise Refused("font", str(error))
@@ -5217,17 +5221,117 @@ def _lit_copy(psd: PSDImage, stat: str, group, cells: dict, k: int, pitch: float
 
 def no_glyph(layer, text: str, changed: list, fonts) -> list:
     """
-    The characters of the changed ranges of text (set on the layer) whose font has no glyph for them (.notdef, gid 0):
-    the engine draws a box ("5★" in the body font: review 2026-10-23; MGP_FONT lacks it too), and a re-parse reads
-    them as typed.
+    The characters of the changed ranges of text (set on the layer) whose font has no glyph for them (.notdef, gid 0:
+    the engine draws a box, "5★" in the body font: review 2026-10-23; MGP_FONT lacks it too) or an empty one (nothing
+    drawn; _inked), and a re-parse reads them as typed.
     """
     from psd_tools.composite.text.layout import layout
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
     offset = max(model.text.find(text), 0)
     return [text[glyph.cluster - offset] for glyph in layout(model, fonts).glyphs
-            if glyph.gid == 0 and any(a <= glyph.cluster - offset < b for a, b in changed)
-            and text[glyph.cluster - offset] not in " \t\r\x03"]
+            if any(a <= glyph.cluster - offset < b for a, b in changed) and text[glyph.cluster - offset] not in " \t\r\x03"
+            and (glyph.gid == 0 or not _inked(glyph.face, glyph.gid, text[glyph.cluster - offset]))]
+
+
+_INKED: dict = {}           # _inked's answers: (face key, gid) -> bool
+
+
+def _inked(face, gid: Optional[int], c: str) -> bool:
+    """Whether glyph gid of face draws c: any glyph for whitespace or an unprintable, or in an SVG font; else one with an
+    outline (Belisa plumilla manual's ':' and '%' have none)."""
+    if gid is None or gid == 0:
+        return False
+    if c.isspace() or not c.isprintable() or face.metrics.has_svg:
+        return True
+    key = (face.key, gid)
+    if key not in _INKED:
+        box = face.hb.get_glyph_extents(gid)
+        _INKED[key] = box is not None and bool(box.width or box.height)
+    return _INKED[key]
+
+
+def _draws(fonts, font: str, c: str, ok: bool = False) -> bool:
+    """Whether the face font resolves to draws c (_inked); ok: only a face that resolves as OK_FONTS (MDW/Fonts')."""
+    from psd_tools.composite.text import MissingFontError
+    try:
+        found = fonts.resolve(font)
+    except MissingFontError:
+        return False
+    face = found.face
+    return face is not None and (not ok or found.how in OK_FONTS) and _inked(face, face.hb.get_nominal_glyph(ord(c)), c)
+
+
+def printed_fonts(layer, skip=()) -> list:
+    """[(font, the characters set in it)] over the layer's text, the icon font and whitespace left out, most letters
+    first (a tie: the first set); skip: str indices left out."""
+    count, chars = Counter(), {}
+    for i, (c, font) in enumerate(zip(layer.text, _run_fonts(layer))):
+        if i in skip or not font or c.isspace() or not c.isprintable() or font.lower().startswith(ICON_FONT_PREFIX):
+            continue
+        count[font] += 1
+        chars.setdefault(font, set()).add(c)
+    return [(font, chars[font]) for font, _ in count.most_common()]
+
+
+def retyped(old: str, new: str, parts: list, fonts: list) -> dict:
+    """{new str index: its old font} for each character a changed part of edit_parts types again where it was (the same
+    character, aligned within the part); fonts: the old text's _run_fonts."""
+    out = {}
+    for a0, a1, b0, b1, kept in parts:
+        for i, j, n in SequenceMatcher(None, old[a0:a1], new[b0:b1], autojunk=False).get_matching_blocks() if not kept else ():
+            out.update({b0 + j + k: fonts[a0 + i + k] for k in range(n)})
+    return out
+
+
+def glyph_fonts(psd: PSDImage, layer, changed: list, fonts, skip=(), before: Optional[list] = None,
+                again: Optional[dict] = None) -> list:
+    """
+    Each typed character of the changed ranges (set on the layer) its run's font can't draw (_draws: no glyph, or an
+    empty one) set in a font that draws it (owner D15 rest, 2026-11-17: an edit never erases one): its own old font where
+    the edit types it again in place (again: retyped's), else the font the layer prints it in (before: its
+    printed_fonts before the edit; else its kept letters'), else the font another visible type layer of the card prints
+    it in (most letters first), else MGP_FONT (Photoshop 2023's Missing Glyph Protection); OK_FONTS faces only, never
+    the icon font. Only Font changes: size, colour and the rest stay. A typed letter the body font (the most letters')
+    draws first takes it where a stray run passed its font on, one setting only characters the body can't draw (a line
+    typed after Holo Defense API's Myriad '.'); one only the stray font draws stays in it (The Structure's IRONMAN
+    digits). skip: str indices left alone (typed icons and badges). Returns [(index, font)] set, each font added to the
+    layer's FontSet.
+    """
+    text, typed = layer.text, {i for a, b in changed for i in range(a, min(b, len(layer.text)))}
+    own = printed_fonts(layer, typed) if before is None else before
+    body = own[0][0] if own else None
+    stray = {font for font, chars in own[1:] if not any(_draws(fonts, body, c) for c in chars)}
+    now = _run_fonts(layer)
+    back = [i for i in sorted(typed) if i not in skip and now[i] in stray and not text[i].isspace()
+            and _draws(fonts, body, text[i])]
+    for a, b in _stretches(back):
+        layer.set_span_style(a, b, Font=body)
+    if back:
+        now = _run_fonts(layer)
+    todo = [i for i in sorted(typed) if i not in skip and now[i] and text[i].isprintable() and not text[i].isspace()
+            and not now[i].lower().startswith(ICON_FONT_PREFIX) and not _draws(fonts, now[i], text[i])]
+    if not todo:
+        return []
+    others, out = None, []
+    for i in todo:
+        c, was = text[i], (again or {}).get(i)
+        font = was if was and not was.lower().startswith(ICON_FONT_PREFIX) and _draws(fonts, was, c, True) else None
+        font = font or next((f for f, chars in own if c in chars and _draws(fonts, f, c, True)), None)
+        if font is None:
+            if others is None:
+                others = [pair for other in psd.descendants() if other is not layer and _is_text_layer(other)
+                          and other.is_visible() for pair in printed_fonts(other)]
+            font = next((f for f, chars in others if c in chars and _draws(fonts, f, c, True)), None)
+        font = font or (MGP_FONT if _draws(fonts, MGP_FONT, c, True) else None)
+        if font is not None:
+            out.append((i, font))
+    for font in dict.fromkeys(font for _, font in out):
+        with open(fonts.resolve(font).path, "rb") as fh:
+            layer.add_font(font, font_type=0 if fh.read(4) == b"OTTO" else 1)     # CFF or TrueType
+        for a, b in _stretches([i for i, f in out if f == font]):
+            layer.set_span_style(a, b, Font=font)
+    return out
 
 
 def plain_marks(text):
@@ -5247,27 +5351,14 @@ def _run_fonts(layer) -> list:
 
 
 def _lacks(fonts, font: str, mark: str) -> bool:
-    """Whether the face font resolves to (a stand-in too) has no glyph for mark in its cmap."""
+    """Whether the face font resolves to (a stand-in too) has no glyph for mark in its cmap, or an empty one (_inked:
+    Belisa plumilla manual's dashes, ellipsis and curly quotes)."""
     from psd_tools.composite.text import MissingFontError
     try:
         face = fonts.resolve(font).face
     except MissingFontError:
         return False
-    return face is not None and face.hb.get_nominal_glyph(ord(mark)) is None
-
-
-def missing_glyphs(layer, text: str, changed: list, skip: set, fonts) -> list:
-    """
-    [(start, end)] of the changed characters (not skip's, nor blank) their run's font lacks and MGP_FONT, supplied,
-    has: Photoshop 2023 sets each such typed character in it alone (r51: '+', '/', '2' on 15 cards), not a box.
-    """
-    hit = fonts.find(MGP_FONT)
-    if hit is None or hit[2] not in OK_FONTS:
-        return []
-    runs = _run_fonts(layer)
-    return _stretches([i for a, b in changed for i in range(a, b) if i not in skip and not text[i].isspace()
-                       and text[i] != "\x03" and runs[i] and runs[i] != MGP_FONT and _lacks(fonts, runs[i], text[i])
-                       and not _lacks(fonts, MGP_FONT, text[i])])
+    return face is not None and not _inked(face, face.hb.get_nominal_glyph(ord(mark)), mark)
 
 
 def plain_typed(layer, which: Optional[str], old_text: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> str:
@@ -6154,9 +6245,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     typed or kept, takes the icon font's Stylistic Alternates (set_alternates; owner 2026-10-25). Told too: another typed
     badge or token under the Ability's overlay (any opacity) or blending (Pin Light) (_tinted), a [type] token
     on a card with image icons in its gaps (image_icons), letters the icon font draws plainly (typed, or left by
-    deleting: "(GCD)"), a typed character its font has no glyph for (a dash, ellipsis or curly double quote is set
-    plain first: plain_typed, owner D13; then one Myriad Pro has is set in it: missing_glyphs; else no_glyph's box),
-    a timing badge typed in a title
+    deleting: "(GCD)"), a typed character no font draws (a dash, ellipsis or curly double quote is set plain first:
+    plain_typed, owner D13; one its font can't draw is set in the card's font for it or Myriad Pro: glyph_fonts, owner
+    D15; else no_glyph's box), a timing badge typed in a title
     (plain words, as the website shows it). Typed badges and tokens are unstretched (unstretch). An icon character
     typed ("★") is set in the icon font as a token. An FX layer in no chart status's style (Fire Staff's Smoldering
     stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that an FX layer's words have no pixels.
@@ -6281,6 +6372,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         room = np.zeros_like(room)
         room[y0:y1, x0:x1, 3] = 255
     off_before = _ink_off_canvas(layer, psd.width, psd.height)
+    printed, old_runs = printed_fonts(layer), _run_fonts(layer)    # glyph_fonts': the card's own font for each one
     splice_text(layer, text, parts)
     glyphs = {i for a, b in drawn for i in range(a, b)}
     if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
@@ -6340,12 +6432,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                     layer.set_span_style(c, d, fill=plan.fill)
     if which == "ability":                      # one-colour badges and stickers under an overlay (owner 2026-10-25)
         set_alternates(layer, alternate_spans(text, drawn, _char_styles(layer)[1]) if one_colour(layer) else [], changed)
-    lacking = missing_glyphs(layer, text, changed, glyphs, fonts)
-    if lacking:                                 # no box: Myriad Pro, as Photoshop types it (r51)
-        layer.add_font(MGP_FONT, font_type=0)
-        faces = list(dict.fromkeys(faces + [MGP_FONT]))
-        for a, b in lacking:
-            layer.set_span_style(a, b, Font=MGP_FONT)
+    picked = glyph_fonts(psd, layer, changed, fonts, glyphs, printed, retyped(old_text, text, parts, old_runs))
+    faces = list(dict.fromkeys(faces + [font for _, font in picked]))   # a typed letter its font can't draw (D15)
 
     def draw():
         if bend:
@@ -13097,6 +13185,8 @@ __all__ = [
     'kept_spans',
     'new_fx',
     'no_glyph',
+    'glyph_fonts',
+    'printed_fonts',
     'layer_records',
     'layout_fonts',
     'fonts_in',
