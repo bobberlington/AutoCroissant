@@ -751,8 +751,8 @@ def check_card(ctx: Context, rel: str) -> dict:
             old = _published(ctx, rel)
             plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn), raw,
                                        psd_edit._card_name(parsed), ctx.chart)
-            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old)
-            plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old)
+            plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old, later=True)
+            plate = card_plates.with_stars(plate, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old, later=True)
             plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
             plate = card_plates.with_probe(plate, psd, raw, image, parsed, ctx.parser, rel, ctx.types(), old)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
@@ -779,6 +779,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     for path in dups:                           # a picture: drawn (owner 11-09); nothing redraws the others (owner 11-07)
         if path not in drawn and png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
             notes.append(DUP_NOTE.format(name=basename(path)))
+    plate = card_plates.settled(plate, rel)     # the sheets' encodes ran meanwhile
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads, "notes": notes,
             "bars": CUSTOM_NOTES[why] if style == "custom" else None,
             "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate, **room}

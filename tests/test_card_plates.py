@@ -8,6 +8,7 @@ import dataclasses
 import io
 import json
 import subprocess
+from concurrent.futures import Future
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -234,7 +235,7 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     assert list(changes) == ["def"] and list(changes["def"]) == [9] and changes["def"][9][:2] == entry[:2]
     assert all(np.array_equal(a, b) for a, b in zip(changes["def"][9][2:], entry[2:]))
     sheet = cp.bar_sheet(changes, parsed["card"])
-    assert cp.with_bars(None, psd, raw, png, parsed, parser, PUZZLED, "custom")["bars"] == sheet
+    assert cp.settled(cp.with_bars(None, psd, raw, png, parsed, parser, PUZZLED, "custom", later=True))["bars"] == sheet
     x, y, w, h, sx, sy = sheet["cuts"][sheet["bars"]["def"]["to"]["9"]]
     cut = np.asarray(Image.open(io.BytesIO(base64.b64decode(sheet["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w]
     shown, want = np.asarray(cp.view(png).convert("RGBA")).copy(), np.asarray(cp.view(ours).convert("RGBA"))
@@ -250,7 +251,7 @@ def test_bar_pictures_are_the_bakes(clone, tmp_path, monkeypatch):
     assert img.shape == (300, 80, 4) and [c[4:] for c in two["cuts"]] == [[0, 0], [40, 0]]
     assert all(np.array_equal(img[:, 40 * v:40 * v + 40, :3], tall[v][..., :3]) for v in (0, 1))
     monkeypatch.setattr(cp, "BAR_BYTES", 0)
-    lossy = cp.bar_sheet(changes, parsed["card"])
+    lossy = cp.settled({"bars": cp.bar_sheet(changes, parsed["card"], later=True)})["bars"]     # AVIF in the thread too
     alpha = np.asarray(Image.open(io.BytesIO(base64.b64decode(lossy["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w, 3]
     assert lossy["img"].startswith("data:image/avif") and lossy["cuts"] == sheet["cuts"] and np.array_equal(alpha >= 128, held)
 
@@ -291,6 +292,18 @@ def test_type_probe_is_the_bakes(clone, parser, tmp_path):
         x, y, w, h = q["at"]
         ours = Image.open(io.BytesIO(base64.b64decode(q["img"].split(",", 1)[1]))).convert("RGB")
         assert np.array_equal(np.asarray(ours), np.asarray(shown.crop((x, y, x + w, y + h))))
+
+
+def test_a_failed_later_encode_leaves_the_plate_as_before_it(capsys):
+    """settled: the sheet whose encode failed and the parts after it drop (check_card's try left them out then); a
+    plate of only that sheet: None."""
+    done, failed = Future(), Future()
+    done.set_result("data:x")
+    failed.set_exception(MemoryError("big"))
+    plate = {"v": 1, "w": 9, "crops": [{}], "img": "a", "bars": {"img": done}, "icons": {"img": failed}, "under": {}}
+    assert cp.settled(plate, "X.psd") == {"v": 1, "w": 9, "crops": [{}], "img": "a", "bars": {"img": "data:x"}}
+    assert cp.settled({"v": 1, "w": 9, "crops": [], "icons": {"img": failed}}, "X.psd") is None
+    assert capsys.readouterr().out.count("X.psd: no plate: MemoryError: big") == 2
 
 
 def test_a_published_sheet_with_the_same_pixels_is_kept(monkeypatch):

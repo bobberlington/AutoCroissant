@@ -531,6 +531,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `TYPE_PROBE` | (("fire", "electric"), ("water", "ice")) | type probe (the plate's `typeProbe`, 2026-11-20): one types edit adding a warm and a cool type (a pair's second on a card printing its first; one edit each when the pair is refused or stepped down), the bake's made icons in the view; their Types/ PNGs are in `blobs_of`'s shared list (one git fetch, `Context.types()` once a run, no REST read a card) |
 | `BAR_BYTES`, `BAR_AVIF` | 192000, 50 | a lossless WebP bar sheet past this goes AVIF at the site's 720 px image quality |
 | `BAR_SIDE` | 16383 | the bar sheet's cuts stack in columns of at most this height (WebP's largest side) |
+| `BAR_THREADS` | 2 | Card checks' bar and stars sheets encode in this many threads while the card's other checks go on (`settled` waits before the record; 2026-11-20) |
 | `SURE` | 1.2 | `mock_misses`' margin on the mock-up's own row finder (mockup.js; the live thumbs needed 1.15) |
 | `TEXTURES`, `BAND` | pixel, smart-object, shape and fill kinds; 4 | letter looks (the plate's `letters`, 2026-11-17): a title or Ability with one of these clipped onto it or a group above it (adjustments alone: none, Clot Gold) gets the card drawn with its letters an opaque band of their colour, the card's width by its box and a quarter of its height past it; the mock-up fills typed letters of that colour with it (Earth Totem's stone, Yin Yarn's knit; 13 cards) |
 
