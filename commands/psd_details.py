@@ -7,8 +7,8 @@ VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own sta
 6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
 lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11; a type layer's own effects
 where layers share its path, and faux bold, fb, and its groups' Strokes stacked, outline: VERSION 12; letters in another
-font, fr: VERSION 13). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the
-Card sync Action's build); its
+font, fr: VERSION 13; the fonts its characters are set in, faces: VERSION 14). One record per card PSD, keyed by its git
+blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -46,7 +46,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 13                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"; 13: text "fr"
+VERSION = 14                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"; 13: text "fr"; 14: text "faces"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -390,7 +390,8 @@ def _text(texts: list, layers: list = ()) -> list:
     A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke), and
     "outline" (_outline) when its groups' Strokes stack on it; its shadows and glows: "fx" (_text_fx); its header lines'
     text, "heads" (psd_edit.heads: a line typed under one takes the next line's look); its own "effects" (_names) when
-    another of layers has its path (the record's keep one)."""
+    another of layers has its path (the record's keep one); the fonts its characters are set in,
+    "faces" (_faces), when more than one."""
     shared = {p for p, n in Counter(layer_path(x) for x in layers).items() if n > 1}
     out = []
     for layer in texts:
@@ -442,6 +443,12 @@ def _text(texts: list, layers: list = ()) -> list:
             out[-1]["heads"] = heads
         if out[-1]["layer"] in shared:
             out[-1]["effects"] = _names(layer)
+        try:
+            faces = _faces(layer)
+        except Exception:                       # the mock-up takes its font for every character
+            faces = None
+        if faces:
+            out[-1]["faces"] = faces
     return out
 
 
@@ -452,6 +459,13 @@ def _names(layer) -> list:
         return [type(e).__name__ + ("" if on and e.enabled else " (off)") for e in layer.effects]
     except Exception:                       # an effects block psd-tools can't read
         return ["unreadable"]
+
+
+def _faces(layer) -> Optional[list]:
+    """[[font, its characters]] of the type layer (psd_edit.printed_fonts, most letters first), None in one font (the
+    icon font aside): the mock-up sets a typed character its font can't draw as the bake does (glyph_fonts)."""
+    printed = psd_edit.printed_fonts(layer)
+    return [[font, "".join(sorted(chars))] for font, chars in printed] if len(printed) > 1 else None
 
 
 def _effects(layers: list) -> dict:
