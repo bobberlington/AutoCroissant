@@ -43,7 +43,8 @@ card_commands = {
                                              "\n  damage/DMG, defense/DEF, speed/SPD, health/HP, star points/SP,"
                                              "\n  primary field/PF, counter damage/CDMG find each other"
                                              "\n  hollow knight, moms knife: a series' or subseries' cards, names without punctuation"
-                                             "\n  cant, nme: can't, N.M.E. too (a word typed without ' or .; /query_rulebook too)",
+                                             "\n  cant, nme: can't, N.M.E. too (a word typed without ' or .; /query_rulebook too)"
+                                             "\n  spongebob, five nights: a series by words of its name, when no card's text has them",
 }
 
 stats_commands = {
