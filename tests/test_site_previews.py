@@ -450,6 +450,29 @@ out([run(one, "aaa q ccc ddd eee"), run(one, "aaa ccc ddd eee", [0, 62]), run(on
     assert out[5:] == [None, None, None]   # a blank line after, before, inside the change
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function geoRoom"), reason="no geoRoom in this mockup.js")
+def test_a_growing_ability_measures_its_room_on_the_cards_lines(tmp_path):
+    """geoRoom: the new lines on the card's own baselines (the first gone line's, its step), the lines after moved down by
+    the added lines, the floor the inked lines' lowest bottom; a blank line is no ink (low: the lowest inked baseline)."""
+    out = node(tmp_path, """
+const was = "Hit a foe.\\nHeal 2.\\n", now = "Hit a foe.\\nHeal 2. Gain 1 DEF.\\n", line = (s, e, para, base, ink) => ({ s, e, para, base, top: base - ink, bottom: base + (ink && 5), left: 0, right: 60, just: 0 });
+const R = { was, lines: [line(0, 10, 0, 25, 20), line(11, 18, 1, 65, 20), line(19, 19, -1, 105, 0)], x: new Map([...was].map((_, i) => [i, i])), frame: [0, 60] };
+const G = m.geoRoom(R, m.geoPlan(R, now), m.tokenize(now, {}), now, 10, (s, z) => s.length * z * 0.5, 40, {});
+out([G.floor, G.step, G.paint.map(p => [p.base, p.lines.length]), G.low, G.deep]);""")
+    assert out == [70, 40, [[65, 2], [145, 1]], 105, 145]
+
+
+@pytest.mark.skipif(not has(MOCKUP_JS, "function geoRoom"), reason="no geoRoom in this mockup.js")
+def test_a_plates_emoji_counts_as_two_letters(tmp_path):
+    """The plate's indexes are code points (Python's); the website's text counts an emoji as 2: the lines after it and
+    its letters' pens still start where they do (Cave of the Past's clock)."""
+    out = node(tmp_path, """
+const c = { text: "A \\u{1F550} clock.\\rNext line.", lines: [[0, 10, 20, 0, 50, 5, 25, 0], [11, 21, 60, 0, 50, 45, 65, 0]], glyphs: [[0, 0], [2, 5], [4, 12], [11, 0]] };
+const R = m.recordLayout(c, "A \\u{1F550} clock.\\nNext line.", 1);
+out([R.lines.map(l => [l.s, l.e, l.para]), [...R.x.keys()]]);""")
+    assert out == [[[0, 11, 0], [12, 22, 1]], [0, 2, 5, 12]]
+
+
 def test_an_added_ability_goes_where_the_bake_puts_it(tmp_path):
     """card_checks' room as the site's details addRoom (owner 2026-11-13): "+ability" drawn in its box, not the template's
     over the bars; none on a card with no room (the bake refuses it); no fact yet: the template's box."""
