@@ -66,8 +66,8 @@ WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next wo
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
-            "_renamed", "choices", "site_ids", "_site_etag", "banlist", "banned",
-            "morgue", "thumb_tag", "tops")               # populate_files builds aside, swaps in
+            "_renamed", "choices", "_live", "site_ids", "_site_etag", "banlist", "banned",
+            "morgue", "lost", "thumb_tag", "tops")       # populate_files builds aside, swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 UNFINISHED = "MDW/Unfinished/"                           # cards not finished: not in play
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
@@ -198,6 +198,8 @@ class CardRepository:
         self.banlist: dict = {}                          # the website's Constructed ban list (cards.json)
         self.banned: dict[str, str] = {}                 # website card id -> ban reason (duplicate pictures too)
         self.morgue: dict[str, Optional[float]] = {}     # retired cards (cards.json morgue): png path -> retired stamp
+        self.lost: dict[str, dict] = {}                  # the Morgue's cards with no PNG: NAME_NORM name -> entry
+        self._live: frozenset = frozenset()              # autocomplete's names, NAME_NORM: they beat a lost one
         self.thumb_tag = ""                              # cards.json thumbs["360"]: the website's card pictures (grids)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
         self._tree_etag = ""
@@ -851,6 +853,7 @@ class CardRepository:
             if not self.git_files.get(key, "").startswith(NOT_CARDS):     # retired, unfinished: not offered
                 add(old, f"{old} (now {now})")
         rows = []
+        self._live = frozenset(NAME_NORM.sub("", value.lower()) for _, value in found.values())
         for shown, value in found.values():                     # card: one per PNG for the near matches
             key = self._normalize_card_name(value)
             card = self.git_files.get(key) or self.git_files.get(self._renamed.get(key, ("",))[0]) or key
@@ -943,6 +946,10 @@ class CardRepository:
             if c.get("png"):
                 ids.setdefault(basename(c["png"]).lower(), (c["id"], c.get("color") or ""))
         self.site_ids, self.morgue = ids, {c["png"]: c.get("retired") for c in morgue if c.get("png")}
+        self.lost = {}
+        for c in morgue:                                     # lost before the repo (in-jokes: their live card answers)
+            if c.get("lost") and c.get("name") and not c.get("png") and not c.get("live"):
+                self.lost.setdefault(NAME_NORM.sub("", typed(c["name"]).lower()), c)
         self.thumb_tag = tag
         self.banlist, self.banned = banlist, banned
 
@@ -1023,6 +1030,12 @@ class CardRepository:
                 return (found, "guess", "")
         found = self.closest(key, self.card_keys)
         return (found, "guess", "") if found else (None, "", "")
+
+    def lost_card(self, query: str) -> Optional[dict]:
+        """The Morgue entry (cards.json) of a card lost before the repo named query (NAME_NORM aside), unless a live
+        card, alias or old name reads so too."""
+        key = NAME_NORM.sub("", typed(query).lower())
+        return self.lost.get(key) if key not in self._live else None
 
     def closest(self, key: str, keys: list) -> Optional[str]:
         """
@@ -1134,6 +1147,11 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
                                     f"**{title}** is a section of {len(links)} rulebook chapters:\n"
                                     + "\n".join(f"- **{n}**: {u}" for n, u in links)) + said, links=more)
         return
+    lost = None if how in ("exact", "renamed") else card_repo.lost_card(query)
+    if lost:                                            # The Morgue's, before a guess
+        print(f"Search Morgue: /query {query!r} -> {lost['name']}")
+        _post_lost(interaction, lost)
+        return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
         said, more = _ability_note(query)
@@ -1187,6 +1205,23 @@ def _out_of_play(key: str) -> str:
         text = f"is unfinished ({dirname(path)}): not in play."
     said = archived_text(tag) if tag else ""
     return f"{text} {said[:1].upper()}{said[1:]}." if said else text
+
+
+def _post_lost(interaction: Interaction, entry: dict) -> None:
+    """A Morgue card lost before the repo: its picture and page, in the website's words (app.js card facts)."""
+    name, pic = entry["name"], str(entry.get("pic") or "")
+    fact = ("Joke card" if entry.get("lost") != "played" else
+            "Played, lost before this repo" if entry.get("inGit") else "Played, lost before git")
+    if entry.get("first"):
+        fact += f" · {'in the old repo' if entry.get('firstOld') else 'first posted'} {entry['first']}"
+    if entry.get("firstCh"):
+        fact += f" in #{entry['firstCh']}"
+    page = f"{SITE_URL}/c/{quote(str(entry['id']))}/" if entry.get("id") else None
+    embed = Embed(title=name[:256], url=page)
+    if pic:                                             # a URL (the history branch's) or a path on the site
+        embed.set_image(url=pic if pic.startswith(("https://", "http://")) else f"{SITE_URL}/{quote(pic, safe='/%')}")
+    queue_message(interaction, f"**{escape_markdown(name)}** is in The Morgue: {escape_markdown(fact)}; out of play.",
+                  embed=embed, links=[("Card page", page)] if page else None)
 
 
 def _chapter(query: str) -> Optional[dict]:

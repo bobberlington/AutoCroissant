@@ -312,3 +312,48 @@ def test_folders_and_paths(repo):
     assert [(kw["content"], kw["links"]) for _, kw in utils.dispatch_queue] == [(
         'No card found! · 1 card has "creatures and stats" in its ability: /query_ability creatures and stats',
         [('Cards with "creatures and stats"', f"{qc.SITE_URL}/#/cards?q=creatures%20and%20stats")])]
+
+
+def test_lost_morgue_cards_answer_as_such(repo, monkeypatch):
+    """A Morgue card lost before the repo (cards.json morgue, no PNG): its picture, page and the website's words, before
+    a guess; a live card's name or typo, a renamed card's old name, a series and an in-joke's live card win; the
+    autocomplete never offers one (as retired cards)."""
+    entry = lambda name, i, **kw: {"id": i, "name": name, "png": None, "lost": "joke",
+                                   "pic": f"history/_morgue/{i}/O.webp", **kw}
+    raw = "https://raw.githubusercontent.com/r/h/abc/_morgue/void-sentinel/P.webp"      # history branch-hosted
+    site = {"cards": [], "morgue": [
+        entry("Chestnut The Forbidden One", "chestnut", first="2020-10-14", firstCh="ideas-discussion"),
+        entry("Void Sentinel", "void-sentinel", lost="played", first="2020-07-27", firstCh="update-01-port", pic=raw),
+        entry("M'uru", "m-uru", lost="played", inGit=True, pic=None), entry("Magolor", "magolor-2"),
+        entry("Sacrifice", "sacrifice"), entry("Mario", "mario"), entry("Rope", "rope-morgue", live="rope")]}
+    monkeypatch.setattr(qc, "get", lambda *a, **k: SimpleNamespace(status_code=200, headers={}, json=lambda: site,
+                                                                   raise_for_status=lambda: None))
+    typed = ("forbidden one", "chestnut the forbiden", "void", "muru", "mario")
+    offered = {text: repo.name_choices(text, chapters=True) for text in typed}
+    repo._populate_site_ids()
+    repo.cards_dff = DataFrame({"ability": [""], "series": ["Mario"]}, index=["Grodus"])
+    page = f"{qc.SITE_URL}/c/%s/"
+    for query, content, title, image, link in [
+            ("chestnut the forbidden one", "**Chestnut The Forbidden One** is in The Morgue: Joke card · first posted "
+             "2020-10-14 in #ideas-discussion; out of play.", "Chestnut The Forbidden One",
+             f"{qc.SITE_URL}/history/_morgue/chestnut/O.webp", page % "chestnut"),
+            ("void sentinel", "**Void Sentinel** is in The Morgue: Played, lost before git · first posted 2020-07-27 "
+             "in #update-01-port; out of play.", "Void Sentinel", raw, page % "void-sentinel"),
+            ("MURU", "**M'uru** is in The Morgue: Played, lost before this repo; out of play.", "M'uru", None,
+             page % "m-uru"),
+            ("Magolor", None, "Magolor", "https://img/magolor.png", None),
+            ("Sacrifice", "**Erasure** (renamed from Sacrifice)", "Erasure", "https://img/erasure.png", None),
+            ("Rope", None, "Rope", "https://img/rope.png", None),
+            ("magolr", "Closest match: **Magolor**", "Magolor", "https://img/magolor.png", None)]:
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        [(_, kw)] = utils.dispatch_queue
+        embed = kw["embed"]
+        assert (kw["content"], embed.title, embed.image.url, embed.url, kw.get("links")) == \
+            (content, title, image, link, [("Card page", link)] if link else None), query
+    utils.dispatch_queue.clear()
+    qc.query_name(utils.make_simple_fake_interaction(1), "mario")
+    assert utils.dispatch_queue[0][1]["content"] == "**Mario** is a series: 1 card"
+    assert {text: repo.name_choices(text, chapters=True) for text in typed} == offered
+    assert offered["chestnut the forbiden"] and offered["muru"] == []
+    utils.dispatch_queue.clear()
