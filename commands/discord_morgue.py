@@ -493,6 +493,8 @@ def _build(paths: Paths, known: dict, log: Callable = print) -> dict:
         (candidates if x["status"] == CANDIDATE else ideas if x["status"] == IDEA else others).append(entry)
     for found in (candidates, ideas, others):
         found.sort(key=lambda e: (dc.BEFORE_SORT if e["first"].get("day") else e["first"]["date"] or "9", e["id"]))
+    for e in ideas + [e for e in others if e["status"] != "morgue"]:    # a 'yes' lists them: after the candidates'
+        e["slug"] = unique_slug(e["name"], used)
     thumbs(paths, candidates + ideas + others, rows)
     taken = [{"picture": p["id"], "entry": e["id"], **p["taken"]} for e in candidates + ideas + others
              for p in e["pictures"] if p.get("taken")]

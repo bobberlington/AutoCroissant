@@ -298,11 +298,13 @@ def created_proposals(created: dict) -> dict:
 
 def morgue_entries(morgue: dict, ideas: list, rulings: dict) -> list:
     """[(entry, 'candidate' | 'mdw')]: the Morgue list with the review page's answers (timeline_review.morgue_list):
-    the candidates not answered 'no', the ideas and the rest answered 'yes'; the MDW Morgue cards' Discord pictures."""
+    the candidates not answered 'no', the ideas and the rest answered 'yes' (kind: an idea's 'idea', the rest's
+    'played' with a played post, else 'joke'); the MDW Morgue cards' Discord pictures."""
     said = lambda e: (rulings.get(f"morgue:{e['id']}") or {}).get("choice")
     out = [(e, "candidate") for e in morgue.get("candidates") or () if said(e) != "no"]
-    out += [(e, "candidate") for e in [*ideas, *(e for e in morgue.get("not_candidates") or ()
-                                                if e.get("status") != "morgue")] if said(e) == "yes"]
+    out += [({**e, "kind": e.get("kind") or "idea"}, "candidate") for e in ideas if said(e) == "yes"]
+    out += [({**e, "kind": e.get("kind") or ("played" if e.get("played") else "joke")}, "candidate")
+            for e in morgue.get("not_candidates") or () if e.get("status") != "morgue" and said(e) == "yes"]
     return out + [(e, "mdw") for e in morgue.get("not_candidates") or () if e.get("status") == "morgue"]
 
 

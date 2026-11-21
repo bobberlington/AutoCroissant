@@ -424,7 +424,8 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    physical card photo, Q6), `<card id>/timeline.json` (entries oldest first: discord, text, old repo; only sure fields,
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
    wide (the website's card view), `_morgue/<slug>/` the same (the Morgue list with the review page's answers: a
-   candidate answered 'no' off it, an idea or the rest answered 'yes' on it; an entry's changelog marks, data only; its
+   candidate answered 'no' off it, an idea or the rest answered 'yes' on it, with a slug of its own after the
+   candidates' and the kind 'idea', the rest's 'played' with a played post, else 'joke', 11-21; an entry's changelog marks, data only; its
    old and first repo versions as 'old repo'/'first repo' entries: an MDW Morgue card's rows by its name, a lost
    old-repo card's rows, the first repo's files linked by name or by eye, `derived/morgue/eye.json` `first_files`:
    Wickerbottom's Book1..5; a picture row when the file has no rows: date, mapped author, subject; a candidate's list
@@ -454,7 +455,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
    version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
-   joke and lost cards from Discord (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
+   joke and lost cards from Discord and the ideas the owner put on it ("Idea, never played", 11-21) (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
    first posts as Pacific days; a played one with a file in an older repo, `git_file`, "lost before this repo", not
    "before git"; its tiles, table rows and tips show its list copy, `lpic`, the dialog and compare its webp), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card

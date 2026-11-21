@@ -231,8 +231,8 @@ def test_a_first_psd_s_row_and_created():
 
 def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
     """The review page's Morgue answers reach the preview (a candidate answered 'no' is off the list, an idea or a
-    not-candidate answered 'yes' on it; the MDW cards as before), and a changelog line given to a Morgue entry (owner
-    D9: 'morgue:<id>') is that entry's mark, data only."""
+    not-candidate answered 'yes' on it, kind 'idea', else 'played' or 'joke'; the MDW cards as before), and a
+    changelog line given to a Morgue entry (owner D9: 'morgue:<id>') is that entry's mark, data only."""
     morgue = {"candidates": [{"id": "LC-1"}, {"id": "LC-2"}],
               "not_candidates": [{"id": "LC-3", "status": "renamed"}, {"id": "LC-4", "status": "morgue"}]}
     rulings = {"morgue:LC-1": {"choice": "no"}, "morgue:LC-3": {"choice": "yes"}, "morgue:LC-5": {"choice": "yes"},
@@ -240,6 +240,9 @@ def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
     got = dp.morgue_entries(morgue, [{"id": "LC-5"}, {"id": "LC-6"}], rulings)
     assert [(e["id"], kind) for e, kind in got] == [("LC-2", "candidate"), ("LC-5", "candidate"),
                                                      ("LC-3", "candidate"), ("LC-4", "mdw")]
+    assert [e.get("kind") for e, _ in got] == [None, "idea", "joke", None]          # a listed idea, a listed rest
+    played = {**morgue, "not_candidates": [{"id": "LC-3", "status": "unfinished", "played": [{"channel": "port"}]}]}
+    assert [e["kind"] for e, _ in dp.morgue_entries(played, [], rulings) if e["id"] == "LC-3"] == ["played"]
     facts = [{"id": "f1", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "kind": "ability changed",
               "date": "2019-03-22T06:33:53+00:00", "channel": "general-discussion", "line": "9:doc4"},
              {"id": "f2", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "field": "stars", "to": 4,

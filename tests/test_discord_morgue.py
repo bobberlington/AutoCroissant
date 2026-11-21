@@ -168,6 +168,10 @@ def test_candidates_ideas_and_the_cards_that_are_not(tmp_path):
     assert counts["twins_open"] == [dv.group_id(sha(10))]                       # a twin not ruled on: review
     slugs = [e["slug"] for e in data["candidates"]]
     assert len(set(slugs)) == len(slugs) and not set(slugs) & {"fang", "zero-two", "electro-probe", "developper"}
+    more = [e["slug"] for e in ideas + data["not_candidates"] if e["status"] != "morgue"]    # a 'yes' lists them
+    assert len(more) == len(ideas) + sum(e["status"] != "morgue" for e in data["not_candidates"]) and \
+        len(set(slugs + more)) == len(slugs + more) and not any("slug" in e for e in data["not_candidates"]
+                                                                if e["status"] == "morgue")
     others = {e["id"]: e for e in data["not_candidates"]}
     assert others[dv.group_id(sha(4))]["status"] == "morgue" and others[dv.group_id(sha(5))]["card"] == \
         "electro-probe" and others[dv.group_id(sha(8))]["status"] == "merged"
