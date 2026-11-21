@@ -328,7 +328,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    Perpetua: 246 of 5,210 px), so the mask takes the raster's own ink one pixel around the key's that is no other glyph's
    (the complement key's, grown a pixel; `_phrase_mask`): the Photoshop cut footprint exactly on The Radiance, Mini
    Doomer, Goofy, Star Cannon and Gasoline. A layer none of whose glyphs was redrawn (the band misses its box) whose phrases
-   cover the same kept characters (`kept_chars`, `_kept`) keeps its record whole, unless it holds pixels its words' cut does
+   cover the same kept characters (`kept_chars`, in order: a moved line's layer is cut again; `_kept`) keeps its record
+   whole, unless it holds pixels its words' cut does
    not (`_holds`: the B1 batch's leaked badge pills, std-batch2 FX.md), then it is cut again clean. A phrase gone from the
    text leaves the name (the parser flags a name the text lacks; the report says why: "(1GCD) left the ability", "the
    ability has 1 Frozen In Time now"); a layer with none left is deleted; a non-badge layer whose words now fall in a
