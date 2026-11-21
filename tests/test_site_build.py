@@ -545,6 +545,20 @@ def test_every_dialog_has_a_name():
     assert show.count('"dialog-title"') == 2                            # the tag's aria-labelledby and the heading's id
 
 
+def test_the_page_under_a_dialog_goes_inert_after_its_paint():
+    """An open dialog hides the page under it from screen readers at once (aria-hidden) and makes it inert just after
+    its paint, or at once at a key, a tap or a focus under it (2026-11-20: the whole page's restyle slowed each open
+    and close; Cmd+A and find must still skip it); a close clears inert before focus goes back."""
+    app = (STYLE_CSS.parent / "app.js").read_text(encoding="utf-8")
+    seal = app[app.index("function seal() {"):app.index("function shut() {")]
+    shut = app[app.index("function shut() {"):app.index("\nshut();")]
+    assert "view]" not in shut and 'view.ariaHidden = open ? "true" : null' in shut
+    assert "requestAnimationFrame(() => setTimeout(() => sealing && seal()))" in shut
+    assert "view.inert = open" in seal and seal.index("view.inert = open") < seal.index(".focus(")
+    assert 'for (const t of ["keydown", "pointerdown"]) document.addEventListener(t, () => sealing && seal(), true)' in app
+    assert re.search(r'view\.addEventListener\("focusin", e => \{ if \(!modal\.hidden\) \{ seal\(\);', app)
+
+
 def _contrast(a: str, b: str) -> float:
     """WCAG contrast ratio of two #rgb / #rrggbb colours."""
     def lum(h):
