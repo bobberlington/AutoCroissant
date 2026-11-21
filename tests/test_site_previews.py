@@ -266,6 +266,22 @@ out(["Gain 1 (3 points) now.", "Gain 1 (1 point) now."].map(fit));""")
     assert out == [[7, 100, 0], [7, 90, -10]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "mOf = j => R.fr"), reason="no second-font runs in this mockup.js")
+def test_letters_typed_into_a_second_fonts_run(tmp_path):
+    """psd_details fr: a digit typed into a line set in another font is spliced at the line's size, measured in that
+    font (without fr: shrunk to make the main font fit); a line with a few letters in it measures each run in its own font."""
+    out = node(tmp_path, """
+const lf = (t, z) => [...t].length * z / 2, f2 = (t, z) => [...t].length * z / 3.4; lf.hx = f2.hx = 1;
+const plate = (text, w) => { let x = 10; const g = [...text].map((ch, i) => { const a = x; x += w(i); return ch === " " ? [i, a] : [i, a, a + 1, x - 1]; });
+  return { text, lines: [[0, text.length, 100, 10, x, 80, 105, 0]], glyphs: g, frame: [0, 300] }; };
+const fit = (text, w, fr, now) => { const R = m.recordLayout(plate(text, w), text, 1), sp = m.geoPlan(R, now).splice;
+  if (fr) R.fr = [[...fr, "f2", f2]];
+  const f = m.spliceFit(R, sp, { measure: lf, z: 20, font: fr ? R.fr[0] : null }); return f && [+f.z.toFixed(2), +f.k.toFixed(2), +f.hx.toFixed(2)]; };
+const cost = "Cost: 4 Points", mixed = "Lose 1 bar.", w2 = 20 / 3.4;
+out([fit(cost, () => w2, null, "Cost: 5 Points"), fit(cost, () => w2, [0, 14], "Cost: 5 Points"), fit(mixed, i => (i === 5 ? w2 : 10), [5, 6], "Lose 2 bar.")]);""")
+    assert out == [[11.76, 0.59, 1], [20, 1, 1], [20, 1, 1]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function paintLines"), reason="no exported paintLines in this mockup.js")
 def test_a_redrawn_pill_keeps_the_layers_stroke(tmp_path):
     """A badge painted again on a layer with a Stroke is outlined in its colour at its width under the pill (as the card
