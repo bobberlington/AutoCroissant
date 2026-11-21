@@ -293,7 +293,8 @@ def test_rulebook_lines(monkeypatch):
 
 def test_rulebook_timing_tag_finds_its_x_row(monkeypatch):
     """/query_rulebook: a numbered timing tag the book never prints whole ((2PG); 2pg is not (2PGT)'s) quotes its X row,
-    saying so; a printed one ((1PG)) its row's lines first, then its own; no row in the book ((1/2CD)): as before."""
+    saying so; a printed one ((1PG)) its row's lines first, then its own (with sections: the row's sections and lines
+    first, a heading holding the tag too); no row in the book ((1/2CD)): as before."""
     import commands.utils as utils
     from pandas import DataFrame
     repo = qc.CardRepository()
@@ -317,11 +318,15 @@ def test_rulebook_timing_tag_finds_its_x_row(monkeypatch):
     assert qc.x_row("-1/3cd", ["(XCD)"]) == ("(-1/3CD)", "(Y/XCD)", "Y = -1 and X = 3", False) and qc.x_row(
         "(2PGT)", []) == ("(2PGT)", "(XPGT)", "X = 2", False) and qc.x_row("-3cd", []) is None
     assert qc.x_row("1pg", ["(AAT)(1PG)"])[3] and not qc.x_row("2pg", ["(2PGT) | Now"])[3]
+    pages = DataFrame({"ability": ["Tags\n(1CD) in the panel.\nCOOLDOWN (1CD)\n(1CD) first\n(XCD) | Cooldown"],
+                       "title": ["Tags"], "sections": [[[2, 5, "COOLDOWN (1CD)", "cooldown-1cd"]]]}, index=["23. Timing Tags"])
+    assert qc.rulebook_lines(pages, ("(XCD)", "(1CD)")) == [("23. Timing Tags", [
+        ("COOLDOWN (1CD)", ["(XCD) | Cooldown", "(1CD) first"]), ("", ["(1CD) in the panel."])], 4)]
 
 
 def test_rulebook_printed_timing_tags_say_what_they_mean(monkeypatch):
     """The real book: (1CD), (1GCD), (1PG), (2U) and (3PG) (178 cards) quote their X row's meaning line first in 23. Timing
-    Tags, then their own lines, in one message; (2PG), never printed, its row alone as before."""
+    Tags (its section first), then their own lines, in one message; (2PG), never printed, its row alone as before."""
     import commands.utils as utils
     from pandas import DataFrame
     from commands import rulebook
@@ -329,7 +334,8 @@ def test_rulebook_printed_timing_tags_say_what_they_mean(monkeypatch):
     book = rulebook.chapters({f"{RULEBOOK_SRC}/{p.name}": p.read_text(encoding="utf-8")
                               for p in (SITE_SRC / "site" / "rulebook").glob("*.md")})
     repo = qc.CardRepository()
-    repo.rulebook_dff = DataFrame({"ability": [c["text"] for c in book]}, index=[rulebook.label(c) for c in book])
+    repo.rulebook_dff = DataFrame({"ability": [c["text"] for c in book], "title": [c["title"] for c in book],
+                                   "sections": [c.get("sections") for c in book]}, index=[rulebook.label(c) for c in book])
     monkeypatch.setattr(qc, "card_repo", repo)
     monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
     rows = {"(1CD)": "(XCD)", "(1GCD)": "(XGCD)", "(1PG)": "(XPG)", "(2U)": "(XU)", "(3PG)": "(XPG)", "(2PG)": "(XPG)"}
@@ -344,7 +350,8 @@ def test_rulebook_printed_timing_tags_say_what_they_mean(monkeypatch):
         said = (f"'{tag}' is not printed in the rulebook; its row {row}, with X = {tag[1]}, is" if tag == "(2PG)" else
                 f"'{tag}' (its row {row}, with X = {tag[1]}) is")
         assert reply.startswith(said) and (f"**{tag}**" in reply) == (tag != "(2PG)"), reply
-        assert reply.split("**23. Timing Tags**\n- ")[1].startswith(meaning.replace(row, f"**{row}**", 1)), reply
+        first = reply.split("**23. Timing Tags", 1)[1].split("**\n- ", 1)[1]     # its first section's first line
+        assert first.startswith(meaning.replace(row, f"**{row}**", 1)), reply
 
 
 def _app_book(tmp_path, tail: str):

@@ -1798,10 +1798,10 @@ def x_row(text: str, book) -> Optional[tuple]:
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:
     """
-    The lines of each page holding text (any case; a tuple: any of its texts, the first one's sections first), cut to
-    SNIPPET around it, under their sections (db/rulebook.json's; the ban list and an older file: all under the page). A
-    section titled text, or whose title alone in it holds it: its first lines (OPENING characters), then its later lines
-    holding text. The page's own title is not a line; when only it holds the text, the page's first lines.
+    The lines of each page holding text (any case; a tuple: any of its texts, the first one's sections and lines first),
+    cut to SNIPPET around it, under their sections (db/rulebook.json's; the ban list and an older file: all under the
+    page). A section titled text, or whose title alone in it holds it: its first lines (OPENING characters), then its
+    later lines holding text. The page's own title is not a line; when only it holds the text, the page's first lines.
 
     Returns:
         [(page name, [(section title or "", [lines])], lines holding text)], the most lines with the text at a word start
@@ -1822,7 +1822,7 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
             found.append((name, [("", [_cut(line, text) for line in held])], held))
             continue
         own = int(bool(rows) and rows[0] == title)   # the page's "# Title" line
-        groups = _section_groups(rows, secs, [i for i in hits if i >= own], text, pattern, own)
+        groups = _section_groups(rows, secs, [i for i in hits if i >= own], text, pattern, own, lead)
         if not groups:                               # the text runs over a line break
             groups = [("", [_cut(" ".join(str(ability).split()), text)])]
         held = [rows[i] for i in hits if i >= own] or [rows[i] for i in hits] or groups[0][1]
@@ -1832,9 +1832,10 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
     return [(name, groups, len(held)) for name, groups, held in found]
 
 
-def _section_groups(rows: list, secs: list, hits: list, text: str, pattern, own: int) -> list:
-    """rulebook_lines' [(section title or "", [lines])] for a page's rows: hits under their sections, in book order; a
-    section titled text, or whose title alone in it holds it: _opening, its later hits, "…" where lines are left out."""
+def _section_groups(rows: list, secs: list, hits: list, text, pattern, own: int, lead=None) -> list:
+    """rulebook_lines' [(section title or "", [lines])] for a page's rows: hits under their sections, in book order (lead's
+    sections and lines first); a section titled text (a tuple: its last), or whose title alone in it holds it: _opening,
+    its later hits, "…" where lines are left out."""
     of = {i: k for k, (s, e, *_) in enumerate(secs) for i in range(s, e)}     # nested: the innermost
     starts = {s: k for k, (s, *_) in enumerate(secs)}
     if not hits and own and pattern.search(rows[0]):  # only the page's title: its first section, or the lines before one
@@ -1852,15 +1853,16 @@ def _section_groups(rows: list, secs: list, hits: list, text: str, pattern, own:
         if not runs or runs[-1][0] != k:
             runs.append((k, []))
         runs[-1][1].append(i)
-    groups = []
+    groups, typed_key = [], _title_key(text[-1] if isinstance(text, tuple) else text)
+    ordered = (lambda run: sorted(run, key=lambda i: not lead.search(rows[i]))) if lead else (lambda run: run)
     for k, run in runs:
         if k is None:
-            groups.append(("", [_cut(rows[i], text) for i in run]))
+            groups.append(("", [_cut(rows[i], text) for i in ordered(run)]))
             continue
         head, end, title, _ = secs[k]
         later = [i for i in run if i != head]        # a title: the group's heading, not a line
-        if k in opened or head not in run or (later and _title_key(title) != _title_key(text)):
-            groups.append((title, [_cut(rows[i], text) for i in later]))
+        if k in opened or head not in run or (later and _title_key(title) != typed_key):
+            groups.append((title, [_cut(rows[i], text) for i in ordered(later)]))
             continue
         opened.add(k)                                # titled text, or its title alone holds it: its first lines
         lines, seen = _opening(rows[head + 1:end], text, pattern)
@@ -1870,6 +1872,9 @@ def _section_groups(rows: list, secs: list, hits: list, text: str, pattern, own:
             lines.append("…")
         lines += [_cut(rows[i], text) for i in later]
         groups.append((title, lines + ["…"] * _rest(rows, later[-1] + 1 if later else past, end)))
+    if lead:                                         # a printed timing tag: its row's sections first
+        held = [any(lead.search(rows[i]) for i in run) for _, run in runs]
+        groups = [g for _, g in sorted(zip(held, groups), key=lambda pair: not pair[0])]
     return groups
 
 
