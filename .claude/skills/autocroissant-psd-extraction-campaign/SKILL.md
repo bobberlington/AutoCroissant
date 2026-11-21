@@ -13,7 +13,7 @@ per-card exclusion lists**. None is left: the 21 hardcoded names of `ABILITY_EXC
 last reader, the guards' R3 waiver, had no card left to waive) and the 5 `EXCESSIVE_STAT_EXCLUSIONS` on 2026-10-21,
 replaced by the website's per-card `allow_high_stats`. The traversal bug that made local-mode
 `/update_stats` dangerous was fixed on 2026-10-19 (Phase 0). The campaign removes the remaining
-props without breaking the ~812 PSDs that parse correctly today (818 cards with the alt-art rows, 2026-10-23).
+props without breaking the 769 PSDs that parse correctly today (777 cards, 2026-11-21; 812 PSDs on 2026-10-23).
 
 **New lever since 2026-10-19: the stoogedings icon font.** A card whose inline icons are typed as
 `[fire]` tokens in the font needs no gap guessing at all; the parser reads the tokens directly
@@ -45,7 +45,7 @@ Glossary (used throughout):
 | gap | A run of 3+ spaces in ability text (`_gap_pattern`, psd_parser.py:348 as of 2026-10-23) where a type icon visually sits |
 | icon | Any visible layer with pixels whose lowercased name is in `all_types` (psd_parser.py:627; `all_types` is populated from TTSCardMaker `Types/` — pixel or smartobject kind both count) |
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
-| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:24, 411). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
+| midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:28, 711). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
 | injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:1007) |
 | leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:1045); since 2026-11-09 only icons within 80 px of an Ability layer's box are kept (`_in_span`, the first bbox-anchored step) |
 | sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |

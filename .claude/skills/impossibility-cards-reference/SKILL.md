@@ -238,7 +238,7 @@ aliases for icon-font tokens (§4.1).
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon (the rule-page exception
 of 2026-10-25 removed 2026-11-04) (psd_parser.py:742-747). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
-(psd_parser.py:25, 486):
+(psd_parser.py:28, 711):
 
 - bbox top `y < card_mid_y` (upper half, the corner badges) → appended to `card.types`
   (in raw traversal order, NOT sorted);
@@ -328,7 +328,7 @@ Constants:
 
 | Constant | Value | Where |
 |---|---|---|
-| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:25 |
+| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:28 |
 | gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:420 |
 | row grouping threshold | 40 px | psd_parser.py:1185 |
 | prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:1218 |
@@ -784,7 +784,7 @@ only (`breakfast` lists A Snack2 itself; never by ability or a condition: counte
 | Syntax | Meaning | Example |
 |---|---|---|
 | bare text | substring of name, printed title, website names/aliases, old names, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
-| `"quoted text"` or `'quoted text'` | word-boundary-ish regex match on the same text (single quotes too since 2026-11-20: AC c275f8fa, the website alike, TC f64102b9) | `"draw 2"`, `'heal 2'` |
+| `"quoted text"` or `'quoted text'` | word-boundary-ish regex match on the same text (single quotes too since 2026-11-21: AC c275f8fa, the website alike, TC f64102b9) | `"draw 2"`, `'heal 2'` |
 | `!expr` | NOT — any term, conditions too | `!die`, `!type==creature` |
 | `a & b` | AND (index intersection) | `type==creature & hp>7` |
 | `a \| b` | OR (index union, deduplicated) | `hp>9 \| spd>9` |
@@ -807,7 +807,7 @@ AC cb6442f6; the website's search, Cards range filter and Stats bars alike, TC f
 table keep creature 1.
 
 A plain term no card's text holds that is a run of whole words of a series' or subseries' name lists those cards
-with a note (`_by_series`, `series_note`, 2026-11-20, AC 835f78af; the website alike, TC 04633c51): `spongebob`, `five
+with a note (`_by_series`, `series_note`, 2026-11-21, AC 835f78af; the website alike, TC 04633c51): `spongebob`, `five
 nights` -> "No card's text has “spongebob”: the series SpongeBob SquarePants". Words compare case and accents aside,
 stopwords and words under 3 letters left out, numbers kept (`series_words`); never inside a typed card name (93aba1b3);
 in an OR or NOT each term falls back on its own (`!spongebob` drops that series' cards).

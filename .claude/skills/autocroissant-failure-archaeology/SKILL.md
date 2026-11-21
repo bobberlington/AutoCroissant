@@ -5,7 +5,7 @@ description: "The record of AutoCroissant's settled investigations, dead ends, r
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30) **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era) and **2026-11-21** (10.38-10.43). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30), **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era) and **2026-11-21** (10.38-10.43). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -981,7 +981,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   run-name is not evaluated yet; the full title at about 3.9 s), so the lane could not tell which press was its own.
 - **Evidence**: AC 3df37d59, TC 84c976f5 (the reverts); the D22 probe after them: press 2 warm 8.43 s vs cold 24.67 s.
 - **Status**: reverted; the lane finds presses by a commit status the website posts ('preview lane', 2026-11-18, no
-  refs). Don't re-propose suites without a suite whose title names its request.
+  refs). Don't re-propose finding presses by check suites without a suite whose title names its request.
 
 ### 10.41 The TTS save read the data before its own run's (2026-11-19)
 
@@ -1022,7 +1022,8 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   with its reason in the session report (docs/Finished/session-2026-11-10-21/, research findings).
 - **Not kept, numbers for next time**: r60-2, Card data's AWS warm-up: on AWS runners the first step to the venv check
   went 6.61 s -> 3.66 s (median +2.95 s, p=0.0006; 19 of 180 probes landed on AWS), Azure none (3.04 -> 3.22 s); it
-  clears the 11-16 bar only on its narrowest reading. Branch kept for the next session's list.
+  clears the 11-16 bar only on its narrowest reading. Branch deleted at wrap-up: its TC commit abb071f5 is in the
+  wrap bundle s1110/bundles/tc-unlanded-1121.bundle (session scratch); the AC branch had no commits of its own.
 
 ## How to add an entry
 
