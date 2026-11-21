@@ -730,6 +730,12 @@ link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rule
 After the chapter, a series' or subseries' name as a search term takes it (`series_names`: no leading The or closing
 number, one part of "A: B" / "A/B") gets its card count and an 'Its cards on the website' search button instead of a
 guess or a Types/Stars icon (`_series`, 2026-11-19: "**Hollow Knight** is a series: 68 cards"; logs `Search series:`).
+After the series, a section's title and a lost Morgue card (below), a text no card's choice holds that starts a word
+of a chapter's title (3+ letters; hyphens and underscores as spaces; the shortest title) gets that chapter too, with
+the ability pointer a guess had (`_offered_chapter`, 2026-11-20: 'shop' 5. Shops, 'type' 14. Item Types, 'item' over
+MDW/Assets/Holders/Item.png).
+Not inside a word or with spaces removed: 'emty' stays Empty's guess, 'ions' a miss; 'minion' guesses Minion
+Dematerializer (a card holds it).
 A Morgue card (a PNG cards.json `morgue` lists: its "Card page" too) or one under MDW/Unfinished/ gets a line above
 the picture (`_out_of_play`, 2026-11-12): "**White Palace** is retired: in MDW/The Morgue since 2026-10-22, out of
 play." / "**Bill Cipher** is unfinished (MDW/Unfinished/6 Stars): not in play.", plus the archive's `archived_text`.

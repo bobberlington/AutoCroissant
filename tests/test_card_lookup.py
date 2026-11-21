@@ -168,9 +168,10 @@ def test_curly_apostrophes(repo):
 
 
 def test_guesses_cards_only(repo, monkeypatch):
-    """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title or label, its
-    chapter (before a Types/ icon); a section's title that is no card's or icon's, its section; the autocomplete lists
-    chapters for /query only."""
+    """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title or label, or the
+    start of a word of its title no card name holds ('minion', with a guess's ability pointer; not 'minons', 'inion'),
+    its chapter (before a Types/ icon); a section's title that is no card's or icon's, its section; the autocomplete
+    lists chapters for /query only."""
     monkeypatch.setattr(cm.stats_db, "rulebook", [
         {"id": "minions", "num": "15", "title": "Minions", "text": "", "sections": [[2, 4, "SHADOW", "shadow"], [4, 6, "TIPS:", "tips"]]},
         {"id": "light", "num": "22", "title": "Light", "text": "", "sections": [[2, 4, "🕐TIPS", "tips"], [4, 6, "ROPE", "rope"],
@@ -188,6 +189,16 @@ def test_guesses_cards_only(repo, monkeypatch):
         qc.query_name(utils.make_simple_fake_interaction(1), query)
         assert [kw["content"] for _, kw in utils.dispatch_queue] == [
             f"**15. Minions** is a rulebook chapter: {qc.SITE_URL}/#/rules/minions"], query
+    repo.cards_dff = DataFrame({"ability": ["summon a minion."]}, index=["Rope"])
+    utils.dispatch_queue.clear()
+    qc.query_name(utils.make_simple_fake_interaction(1), "minion")               # a word's start: a guess's pointer too
+    assert [(kw["content"], kw.get("links")) for _, kw in utils.dispatch_queue] == [(
+        f'**15. Minions** is a rulebook chapter: {qc.SITE_URL}/#/rules/minions · 1 card has "minion" in its ability: '
+        "/query_ability minion", [('Cards with "minion"', f"{qc.SITE_URL}/#/cards?q=minion")])]
+    for query in ("minons", "inion"):                                            # a typo, inside a word: no chapter
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        assert "rulebook chapter" not in str(utils.dispatch_queue), query
     utils.dispatch_queue.clear()
     qc.query_name(utils.make_simple_fake_interaction(1), "light")                # Types/Light.png: the chapter
     assert [kw["content"] for _, kw in utils.dispatch_queue] == [

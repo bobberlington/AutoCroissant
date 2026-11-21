@@ -1131,8 +1131,7 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     card = how in ("exact", "renamed") and not card_repo.git_files.get(closest, "").startswith(NOT_CARDS)
     chapter = None if card else _chapter(query)      # a chapter before a type icon (Negation)
     if chapter:                                         # a chapter's title, not a card's: the chapter, not a guess
-        print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
-        queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {SITE_URL}/#/rules/{chapter['id']}")
+        _post_chapter(interaction, query, chapter)
         return
     series = None if card else _series(query)          # a series' name: its cards, not a guess or a star icon
     if series:
@@ -1154,6 +1153,10 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     if lost:                                            # The Morgue's, before a guess
         print(f"Search Morgue: /query {query!r} -> {lost['name']}")
         _post_lost(interaction, lost)
+        return
+    chapter = None if card else _offered_chapter(query)    # a word of its title no card name holds ('shop')
+    if chapter:
+        _post_chapter(interaction, query, chapter, *_ability_note(query))      # the pointer a guess had
         return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
@@ -1243,6 +1246,25 @@ def _sections(query: str) -> list:
             if _title_key(title) == text:
                 found.setdefault((c["id"], slug), (c, title, slug))
     return list(found.values())
+
+
+def _offered_chapter(query: str) -> Optional[dict]:
+    """The chapter with a word of its title starting with query (3+ letters; hyphens as spaces; the shortest title)
+    when no card name holds it ('shop': 5. Shops), or None: no match inside a word ('emty' stays Empty's guess)."""
+    text = " ".join(typed(query).lower().replace("_", " ").replace("-", " ").split())
+    typed_as = " ".join(typed(query).lower().replace("_", " ").split())            # as the autocomplete reads it
+    if len(text) < 3 or any(text in c[0] or typed_as in c[0] for c in card_repo.choices if not c[6]):
+        return None
+    titles = ((" " + c["title"].lower().replace("-", " "), c) for c in stats_db.rulebook)
+    found = [(len(t), c) for t, c in titles if " " + text in t]
+    return min(found, key=lambda f: f[0])[1] if found else None
+
+
+def _post_chapter(interaction: Interaction, query: str, chapter: dict, said: str = "", more: Optional[list] = None):
+    """'**15. Minions** is a rulebook chapter: <its page>', then said (more: its buttons)."""
+    print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
+    page = f"{SITE_URL}/#/rules/{chapter['id']}"
+    queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {page}{said}", links=more)
 
 
 def series_known(df: DataFrame) -> dict:
