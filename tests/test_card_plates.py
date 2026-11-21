@@ -273,6 +273,26 @@ def test_star_pictures_are_the_bakes(clone, tmp_path):
     assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
 
 
+def test_type_probe_is_the_bakes(clone, parser, tmp_path):
+    """The type probe is the bake's PNG of Fire and Water added in one edit (apply_jobs, Types/), at the site's view
+    over each made icon."""
+    rel = "Auxiliary/Minions/Mini_Doomer.psd"           # Wind, Defensive Minion, Light
+    raw = (clone / rel).read_bytes()
+    psd, png = PSDImage.open(io.BytesIO(raw)), Image.open(clone / rel.replace(".psd", ".png"))
+    png.load()
+    parsed = psd_edit.parse_card(parser, str(clone / rel), rel, psd)
+    probe = cp.type_probe(psd, raw, png, parsed, parser, rel, str(clone / "Types"))
+    baked = psd_edit.apply_jobs(str(clone / rel), str(clone / rel.replace(".psd", ".png")), rel,
+                                {"types": parsed["card"]["types"] + ["fire", "water"]}, parsed, parser, str(tmp_path),
+                                str(clone / "MDW/Fonts"), types_dir=str(clone / "Types"), psd=psd)
+    shown = cp.view(Image.open(baked.png_path)).convert("RGB")
+    assert probe["vw"] == cp.VIEW_W and [q["name"] for q in probe["probes"]] == ["fire", "water"]
+    for q in probe["probes"]:
+        x, y, w, h = q["at"]
+        ours = Image.open(io.BytesIO(base64.b64decode(q["img"].split(",", 1)[1]))).convert("RGB")
+        assert np.array_equal(np.asarray(ours), np.asarray(shown.crop((x, y, x + w, y + h))))
+
+
 def test_a_published_sheet_with_the_same_pixels_is_kept(monkeypatch):
     """bar_sheet keeps old's WebP when its pixels are the new sheet's (colours under alpha 0 aside), without an encode;
     another pixel, an AVIF or an unreadable one is encoded again."""

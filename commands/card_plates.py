@@ -10,8 +10,10 @@ of it (its lines and letters, layout()) when that is the stored pixels'. A card 
 cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it takes, at that view,
 which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own stars at every count,
 pasted in place of the mock-up's erased and redrawn ones; a card with header type icons gets "under" (with_under): the
-card without them, shown where a types edit takes one away. A title under a clipped texture or an adjustment layer (an
-Ability under an adjustment) gets "tints": the bake's own pictures of it in 9 colours, mixed for a whole-field colour.
+card without them, shown where a types edit takes one away, and "typeProbe" (with_probe): the bake's own drawing of
+type icons of two hues it makes there, whose look the mock-up's new icons take. A title under a clipped texture or an
+adjustment layer (an Ability under an adjustment) gets "tints": the bake's own pictures of it in 9 colours, mixed for a
+whole-field colour.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] <run results.json> ...
 """
@@ -582,6 +584,8 @@ WEBP_URL = "data:image/webp;base64,"
 REACH = 3                                   # LANCZOS's reach in view rows
 EDGE = REACH + 1                            # view rows at a crop's cut whose clipped reach isn't view()'s
 UNDER_GROW = 2                              # view px the under mask reaches past the icons' ink (LANCZOS's rim)
+TYPE_PROBE = (("fire", "electric"), ("water", "ice"))   # type_probe's warm and cool type: a pair's second on a card
+PROBE_TYPES = tuple(name for pair in TYPE_PROBE for name in pair)   # printing its first
 
 
 def _view_mode(image: Image.Image) -> str:
@@ -1081,6 +1085,84 @@ def with_under(plate: Optional[dict], psd: PSDImage, png: Image.Image, parser, n
                       "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}}
 
 
+def _made(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, types_dir: str, names: list,
+          icc: bool) -> list:
+    """[(type, the made icon's ink box, the PNG after)] of a lone types edit adding names, as the bake makes it
+    (star_value's steps: classify, plan_types, set_icons, gate_dirty, baseline, the merge); [] when it refuses, steps an
+    icon down or shows a hidden icon of the card's for one."""
+    value = list(parsed["card"].get("types") or []) + names
+    try:
+        if "types" not in psd_edit.classify(parsed, {"types": value}, psd, parser).jobs:
+            return []
+        new = psd_edit.edit_copy(psd, raw)
+        plan = psd_edit.plan_types(new, parsed, value, parser, None, types_dir)
+        edit = psd_edit.set_icons(new, plan, types_dir, rel)
+        made = [done[1] for done in plan.done if done[0] == "made"]
+        if len(made) != len(names) or edit.notes:
+            return []
+        with psd_edit.render_cache(shared=True):
+            first = psd_edit.gate_dirty(psd, new, [edit], icon=True)
+            base, measured = psd_edit.baseline(psd, png, edit.region, icc, first)
+            render = psd_edit.render_region(new, edit.region, icc, measured["text"], psd_edit.edited_ids([edit]))
+        merged, replaced = psd_edit.merge_png(png, base, render, edit.region)
+    except Exception:                           # noqa: BLE001 - refused or the bake's error: none
+        return []
+    if not replaced.any():
+        return []
+    return [(psd_edit.canonical_type(parser, layer.name), psd_edit._core(layer) or tuple(layer.bbox), merged)
+            for layer in made]
+
+
+def type_probe(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, types_dir: str,
+               old: Optional[dict] = None) -> Optional[dict]:
+    """
+    The looks the bake gives type icons it makes on this card, for the mock-up's new icons: {"vw": the view's width,
+    "probes": per type of TYPE_PROBE (a warm and a cool hue: a look the mock-up fits must draw both, never one's alone)
+    {"name", "core": the made icon's ink box (PSD px), "at": [x, y, w, h] (view px), "img": a data URL of the view
+    there}}, from one types edit adding both, else one edit each (_made); a type the bake refuses, steps down or shows
+    a hidden icon of the card's for is left out; None for none, a card without types or a tagged PSD. old: the
+    published typeProbe, an img kept where its pixels are these (no encode).
+    """
+    have = list(parsed["card"].get("types") or [])
+    if not have or png.size != psd.size or len(variants_of(psd)) > 1 or psd_edit.story_style_drift(psd, kerning=False):
+        return None
+    printed = {psd_edit.canonical_type(parser, one) for one in have}
+    names = [name for name in (next((one for one in pair if one not in printed), "") for pair in TYPE_PROBE) if name]
+    psd_edit.use_record(psd, rel)
+    icc = psd_edit.export_icc(psd, png)
+    made = _made(psd, raw, png, parsed, parser, rel, types_dir, names, icc) if len(names) > 1 else []
+    if not made:                                # the pair refused, moved or stepped down: one edit each
+        made = [one for name in names for one in _made(psd, raw, png, parsed, parser, rel, types_dir, [name], icc)]
+    out, views, kept = [], {}, (old or {}).get("probes") or []
+    for name, core, merged in made:
+        if id(merged) not in views:
+            views[id(merged)] = view(merged)
+        shown = views[id(merged)]
+        k = shown.width / psd.width
+        x0, y0 = max(0, floor(core[0] * k) - 1), max(0, floor(core[1] * k) - 1)
+        x1, y1 = min(shown.width, ceil(core[2] * k) + 1), min(shown.height, ceil(core[3] * k) + 1)
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            continue
+        probe = {"name": name, "core": [int(v) for v in core], "at": [x0, y0, x1 - x0, y1 - y0]}
+        cut = np.asarray(shown.crop((x0, y0, x1, y1)).convert("RGB").convert("RGBA"))
+        same = next((one for one in kept if {**one, "img": ""} == {**probe, "img": ""} and _same(one, cut)), None)
+        if same is None:
+            buf = BytesIO()
+            Image.fromarray(cut[..., :3]).save(buf, "WEBP", lossless=True, quality=100, method=6)
+        out.append({**probe, "img": same["img"] if same else WEBP_URL + b64encode(buf.getvalue()).decode()})
+    return {"vw": shown.width, "probes": out} if out else None
+
+
+def with_probe(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
+               types_dir: str, old: Optional[dict] = None) -> Optional[dict]:
+    """The plates file with its "typeProbe" (type_probe); plate as it was without one. old: the card's published
+    plates file."""
+    probe = type_probe(psd, raw, png, parsed, parser, rel, types_dir, (old or {}).get("typeProbe"))
+    if probe is None:
+        return plate
+    return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "typeProbe": probe}
+
+
 # ========================
 # The plates branch
 # ========================
@@ -1210,6 +1292,8 @@ __all__ = [
     'BAR_TOP',
     'BRANCH',
     'PROBES',
+    'PROBE_TYPES',
+    'TYPE_PROBE',
     'Unpublished',
     'VERSION',
     'VIEW_W',
@@ -1234,8 +1318,10 @@ __all__ = [
     'star_value',
     'textured',
     'tint_looks',
+    'type_probe',
     'view',
     'with_bars',
+    'with_probe',
     'with_stars',
     'with_under',
 ]
