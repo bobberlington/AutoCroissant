@@ -299,8 +299,8 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
   content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is
   `num_changed`; `card_data.update` (the bot's legacy sweep, 2026-10-22 to 2026-10-25) gated the prune by
-  `can_prune(build)` and the save by `num_changed > 0 or ...`; it went at step 10. Today `can_prune` (card_data.py:1221)
-  is called by the Card sync build (`build`, :1721); `_process_files_from_response` prints `num_changed` and
+  `can_prune(build)` and the save by `num_changed > 0 or ...`; it went at step 10. Today `can_prune` (card_data.py:1223)
+  is called by the Card sync build (`build`, :1727); `_process_files_from_response` prints `num_changed` and
   `num_moved` and returns nothing since 2026-11-12.)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
@@ -308,6 +308,14 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
   cards (the `else: num_new += 1`, including `cards:`/`force_update` re-parses) — "new + re-parsed", not "new" — and
   `_process_files_from_response` returned `num_new + num_moved`. Only the increment sites told you that. The counter is
   now `num_changed` (commands/card_data.py since 2026-10-22).
+
+**The card repo's history** (`~/Desktop/TTSCardMaker`: blobless, full history since 2026-11-10): set
+`GIT_NO_LAZY_FETCH=1` on every git call there. `git log --raw` and `log --format` need no blobs; `-S`/`-G`, `show` or
+`diff` of a file need them: list the ids first and fetch them in ONE batched call (`git -c
+fetch.negotiationAlgorithm=noop fetch --no-tags --no-write-fetch-head --filter=blob:none --stdin origin < ids`), never
+one `show` at a time (a lazy-fetch storm ran the Mac out of memory on 2026-10-25). Never partial-clone it locally.
+Card history before the 2023-11-05 wipe: `~/Documents/Tools/firstrepo.git` (read-only; the old heads under
+`refs/old/*`, self-contained since 2026-11-17; the owner may move it to an external disk).
 
 **Conclusive result:** you can name the introducing (and, if applicable, removing) commit, quote
 the exact changed line from `git show <hash>:<file>`, and your story survives reading the
@@ -605,3 +613,6 @@ baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, an
 2026-10-25 (grid): Recipe 5: /query_ability grids.
 
 2026-11-11 (docs check): Recipe 3's gates now live in the Card sync build (`card_data.update` went at step 10); Recipe 6: `record_versions` / `date_archive`, diff_stats and inspect_card_data read JSON only.
+
+2026-11-21 (wrap-1121): Recipe 3 bisects the blobless card clone (GIT_NO_LAZY_FETCH, one batched blob fetch) and names
+the first repo's store for history before the 2023-11-05 wipe. Checked at AC ea0db694, TC 0cb95c33.

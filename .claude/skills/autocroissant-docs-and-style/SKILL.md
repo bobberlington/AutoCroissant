@@ -35,7 +35,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (99 lines as of 2026-11-09) is five module-level dicts, a
+`commands/help.py` (101 lines as of 2026-11-21) is five module-level dicts, a
 router function, and `__all__`. The style rules in section 5 apply to it too.
 
 ### 2.1 The five dicts
@@ -48,8 +48,8 @@ the five dicts' own now.
 | `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20; `/forum_votes` 2026-11-09) | `general` (also the fallback) |
 | `text_commands` | 24 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
 | `card_commands` | 31 | 6 keys = 5 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query syntax"` pseudo-entry | `card` |
-| `stats_commands` | 44 | 5 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25; `/view_old_metadata` deleted 2026-11-12) | `stats` |
-| `music_commands` | 53 | 16 (`/volume` deleted 2026-11-12) | `music` |
+| `stats_commands` | 50 | 5 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25; `/view_old_metadata` deleted 2026-11-12) | `stats` |
+| `music_commands` | 59 | 16 (`/volume` deleted 2026-11-12) | `music` |
 
 Total: 43 keys, 42 real commands documented (2026-11-12; 47 from 2026-11-09, with `/forum_votes`) (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
 
@@ -66,20 +66,20 @@ picker shows each option's hint (main.py's describe strings). The `"Query syntax
 
 ### 2.3 How print_help routes
 
-`print_help(interaction, help_wanted)` (help.py:136-154) is a plain if/elif
+`print_help(interaction, help_wanted)` (help.py:78-93) is a plain if/elif
 chain: `"text"` → text_commands, `"card"` → card_commands, `"music"` →
-music_commands, `"stats"` → stats_commands (help.py:144-145), and **anything
-else falls through to general_commands** (else at help.py:146-147). The
+music_commands, `"stats"` → stats_commands (help.py:86-87), and **anything
+else falls through to general_commands** (else at help.py:88-89). The
 `"general"` choice works only via the fallback (there is no explicit
 `elif help_wanted == "general"`). The slash command's Choice list
-(main.py:141-145) offers exactly: text, card, music, stats, general.
+(main.py:197-203) offers exactly: text, card, music, stats, general.
 
-Rendering: entries are concatenated as `f"{cmd}\n{desc}\n\n"` inside a
-` ``` ` code fence and sent with `queue_long_message` (split at the 1950-char BREAK_LEN, one
+Rendering: one `f"{cmd}: {desc}"` line per entry inside a ` ``` ` code fence (help.py:91), sent with
+`queue_long_message` (split at the 1950-char BREAK_LEN, one
 `queue_message` per part) — never a direct await (see section 5.6).
 
 Adding a category = three edits in lockstep: new dict in help.py, new `elif` in
-`print_help`, new `Choice` in main.py:140-146 — plus updating `/help`'s own
+`print_help`, new `Choice` in main.py:197-203 — plus updating `/help`'s own
 signature key (skipping it left `stats` out of `/help`'s entry until 2026-10-20).
 
 ### 2.4 THE CHECKLIST (the rule this skill exists to enforce)
@@ -110,7 +110,7 @@ The four missing entries (`/view_old_metadata`, deleted 2026-11-12, `/list_guild
 and `/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
 asserts help.py covers exactly the registered commands. Nothing in help.py refers to a nonexistent command.
 **Extraction trap**: do NOT grep for bare `name=` — `Choice(name=...)`
-lines (e.g. main.py:141-145) will pollute the list. Use the anchored pattern:
+lines (e.g. main.py:198-202) will pollute the list. Use the anchored pattern:
 
 ```bash
 grep -oE '@tree\.command\(name="[^"]+"' main.py | sed 's/@tree.command(name="//;s/"//' | sort > /tmp/main_cmds.txt
@@ -134,7 +134,7 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 Derived from the live registrations (47 on 2026-10-25); follow these when writing new ones.
 Re-find line numbers by quoting the example text. The cleanest recent end-to-end example is
-`/sync_emojis` (main.py:714-726 + its help.py entry): admin marker in both surfaces, defaults
+`/sync_emojis` (main.py:583 + its help.py entry): admin marker in both surfaces, defaults
 stated in every describe string. Discord caps a command description and each describe string at 100 characters.
 
 | Convention | Real example (verified 2026-10-20) |
@@ -142,10 +142,10 @@ stated in every describe string. Discord caps a command description and each des
 | State the default, in the string | `'Should we output the file as a csv? Default = True.'` (/export_cards); `'How many recent messages to search (-1 = all). Default = 100.'` (/purge) |
 | State units and scale | `"Delay added to the first run (s/m/h/d/w, e.g. 30m or 1d). Default = none."` (/set_reminder's `offset`) |
 | Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (every `lacks_admin`-gated command carries it; the list is autocroissant-config-and-flags' gate table; `tests/test_admin_gates.py` checks both surfaces) |
-| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146) |
+| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:197-203) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
 | "Leave blank to view" pattern for getter/setter commands | `"Turn the votes on or off. Default = unchanged."` (/forum_votes: with no options it shows its settings; /set_ratio and /set_repo had the shape until 2026-11-12) |
-| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:694, 734, 752-753): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
+| Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:563, 603, 621-622): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
 | Sentence case, trailing period | pervasive; keep it |
 
 New admin commands put the "(admin only)" marker in BOTH places (`/stop_bot`, `/pull`, `/push` (removed 2026-10-25) and `/update`
@@ -163,28 +163,29 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
 
 1. **Imports** — `from x import y` block; then a blank line; then `import config`,
    `from global_config import ...`, `from commands.utils import ...`.
-2. Logger/warnings silencing if needed (psd_parser.py:17, music_player.py:24).
+2. Logger/warnings silencing if needed (psd_parser.py:22, music_player.py:24).
 3. **`# Configuration` banner + CONSTANTS** — UPPER_SNAKE constants; config.py
    fields read via `getattr(config, "field", default)` so a sparse config.py
-   never crashes an import (github_api.py:17, utils.py:19).
+   never crashes an import (github_api.py:24, utils.py:17).
 4. **Dataclasses / classes** (`@dataclass` heavily used; Enum where apt).
 5. **Helper functions** (private-ish; `_underscore` names inside classes).
 6. **Public API functions** — the sync functions main.py wraps as commands
    (banner named "Public API Functions", "Discord Command Functions", "Music
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
-   (`stats_db = StatsDatabase()` at card_models.py:228 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:990-991).
-8. **`# Module Exports` banner + `__all__`** — every command module ends with
+   (`stats_db = StatsDatabase()` at card_models.py:343 and `init_psd` at the end of psd_analyzer.py;
+   `card_repo = CardRepository()` + `init_query` at query_card.py:2121-2122).
+8. **`# Module Exports` banner + `__all__`** — every bot command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
-   with one standing exception: utils.py, the shared toolbox, has none.
+   except utils.py (the shared toolbox), backup and card_grid; 16 card-side modules (the timelines tools,
+   ability_place, era_bars, ...) have none either (2026-11-21).
 
 Sanctioned variants (don't "normalize" them): analytics.py keeps its globals in a
-`# Global State` section near the top (analytics.py:59) and adds topical banners between
+`# Global State` section near the top (analytics.py:72) and adds topical banners between
 Configuration and Public API (`Time Parsing`, `Command Parsing`, `Storage`, `Scheduler`);
 music_player.py puts `state = MusicState()` immediately after its dataclass
 (music_player.py:44) and has no bottom init section. main.py uses a different banner style —
-`####################` boxes per command category (e.g. main.py:132-134) — keep
+`####################` boxes per command category (e.g. main.py:189-191) — keep
 that style in main.py only.
 
 Section banner format everywhere else, exactly 24 `=`:
@@ -197,21 +198,22 @@ Section banner format everywhere else, exactly 24 `=`:
 
 ### 5.2 Import style
 
-`from x import y` named imports are the house rule: 207 from-import lines vs 7
-plain `import` lines repo-wide (2026-10-20 census, after the code-health pass; the 7 are `import config` ×2 —
+`from x import y` named imports are the house rule: 987 from-import lines vs 66 plain `import` lines in main.py,
+global_config.py and commands/ on 2026-11-21 (the plain ones mostly card code's `import commands.psd_edit as psd_edit`
+style aliases and `import numpy as np`). The 2026-10-20 census (after the code-health pass) was 207 vs 7; the 7 are `import config` ×2 —
 music_player and utils; github_api reads it in a try/except — `import pandas as pd`, `import logging`,
 tts_save's `import commands.repo_history as repo_history`, and setup.py's `shutil`/`sys` (setup.py went 2026-11-11)).
-Even pickle is imported as `from pickle import load, dump` (card_models.py:10;
-query_card.py:6 imports only `load`). The deliberate exception: `import config` as a module, so
+The standard library comes in by name too (`from dataclasses import dataclass, field`, card_models.py:7). The
+deliberate exception: `import config` as a module, so
 optional secret fields can be read with `getattr(config, "X", default)`. Follow
 both halves of that pattern.
 
 ### 5.3 Docstrings
 
 Triple-quoted. One-liners for simple functions
-(`"""Send a message to the last active channel."""`, music_player.py:89).
+(`"""Send a message to the last active channel."""`, music_player.py:90).
 Args/Returns sections for anything with non-obvious parameters — real shapes:
-`get_card_url` has `Args:` and `Returns:` blocks (query_card.py:830-834); `update_bot`
+`get_card_url` has `Args:` and `Returns:` blocks (query_card.py:1128-1131); `update_bot`
 has an `Args:` block (update_bot.py:120-122). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
@@ -224,25 +226,25 @@ It was the rule in the 10 modules setup.py compiled: analytics, card_edits, card
 music_player, psd_analyzer, psd_parser, query_card (repo_traverser until 2026-10-25). Until 2026-10-23 they built with
 `wraparound=False`, where negative indexing was undefined behavior, and a past `bboxes[-1]` was
 mechanically purged for exactly this reason (commit dd800bc; the mechanical
-purge's semantic slip became the removeprefix local-path bug, fixed 2026-10-19). Current
-census (2026-10-20): 21 `x[len(x) - 1]` occurrences, **zero** negative indexes in
+purge's semantic slip became the removeprefix local-path bug, fixed 2026-10-19). The
+2026-10-20 census: 21 `x[len(x) - 1]` occurrences, **zero** negative indexes in
 commands/ or main.py (the 2026-10-19 icon-font code uses `piece[1:len(piece) - 1]` and
-`name[:MAX_NAME_LEN - len(NO_SUFFIX)]`, staying inside the rule). A second compiled-module
+`name[:MAX_NAME_LEN - len(NO_SUFFIX)]`, staying inside the rule); on 2026-11-21, with the card code grown, 96 and 119. A second compiled-module
 rule (Cython 3.3: declare an annotated variable once) went with the build. Why the idiom is not swept away either:
 `autocroissant-change-control` non-negotiable 1.
 
 ### 5.5 f-strings
 
-Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:151;
-`f"Synced commands to guild: {guild.name} ({guild.id})"` main.py:103). No
+Standard for all interpolation (`f"{cmd}: {desc}"` help.py:91;
+`f"Synced commands to guild: {guild.name} ({guild.id})"` main.py:114). No
 `%` or `.format()` in new code.
 
 ### 5.6 queue_* discipline in command functions
 
 Worker functions are **sync** and never await Discord directly; they call
 `queue_message` / `queue_file` / `queue_edit` / `queue_command`
-(commands/utils.py:36-60) and main.py's queue loops do the actual sends.
-`print_help` (help.py:136-154) is the minimal canonical example: sync def,
+(commands/utils.py:66-101) and main.py's queue loops do the actual sends.
+`print_help` (help.py:78-93) is the minimal canonical example: sync def,
 takes `Interaction`, ends in `queue_long_message`. The whole execution model and
 why violating it deadlocks or drops messages: `autocroissant-architecture-contract`.
 
@@ -251,7 +253,7 @@ why violating it deadlocks or drops messages: `autocroissant-architecture-contra
 Modern built-in generics and unions: `dict[str, str]`, `deque[str]`,
 `Optional[VoiceClient]` (music_player.py:41; the code-health pass replaced `X | None` with
 `Optional[X]` on 2026-10-20), `Optional[...]` in slash signatures. Annotate public API signatures; module constants get annotations
-when non-obvious (`GIT_TOKEN: str = getattr(...)`, github_api.py:17).
+when non-obvious (`GIT_TOKEN: str = getattr(...)`, github_api.py:24).
 
 ## 6. Templates
 
@@ -387,8 +389,8 @@ neighboring fact, check this map and link instead.
 | autocroissant-psd-extraction-campaign | The executable extraction-improvement campaign |
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |
-| autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause |
-| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges and their ring, manifest, codepoints, rebuild, renderer facts), a font rollout (card_sweep, the batch pushes; 2026-11-05), the status effect cards' Krabby Patty standard (§1.12, 2026-11-09), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml's history, §2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
+| autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause, research rounds (finders, builders, skeptics; the owner's bar) |
+| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges and their ring, manifest, codepoints, rebuild, renderer facts), a font rollout (card_sweep, the batch pushes; 2026-11-05), the status effect cards' Krabby Patty standard (§1.12, 2026-11-09), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml's history, §2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype, the card timelines on the website (the `history` branch), the desktop app's site hook (`window.cardApp`, read-only) |
 | impossibility-simulator-rules (added 2026-10-20) | How the game is played: rulebook rules, timing tags, damage arithmetic, status effects, glossary, known rulebook gaps |
 | autocroissant-docs-and-style (THIS) | help.py/describe formats + sync checklist + drift audit; house code style; skill-library meta-rules; templates |
 
@@ -432,50 +434,50 @@ Re-run before trusting; line numbers drift. Expected values in comments are the
 
 ```bash
 # Five dicts + router exist; help.py length
-grep -nE '^(general|text|card|stats|music)_commands = \{|^def print_help' commands/help.py   # lines 6,29,42,79,112,136
-wc -l commands/help.py                                                                       # 162
+grep -nE '^(general|text|card|stats|music)_commands = \{|^def print_help' commands/help.py   # lines 7,24,31,50,59,78
+wc -l commands/help.py                                                                       # 101
 
 # print_help routes "stats"; else-fallback is general
-grep -n -A1 'help_wanted == "stats"' commands/help.py        # 144-145 → stats_commands
+grep -n -A1 'help_wanted == "stats"' commands/help.py        # 86-87 → stats_commands
 
 # Slash choices for /help include stats (Choice noise is exactly why extraction is anchored)
-grep -n 'Choice(name="stats"' main.py                        # 144
+grep -n 'Choice(name="stats"' main.py                        # 201
 
-# Registered-vs-documented drift audit (expect 47 vs 47; 0 missing, §3.1)
-grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 47
-grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 47
+# Registered-vs-documented drift audit (expect 42 vs 42; 0 missing, §3.1)
+grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 42
+grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 42
 # full diff procedure: §3.1 comm commands
 
 # D1 fixed: only /update force_reset mentions a hard reset
-grep -n 'hard reset' commands/help.py main.py                # help.py:13 and main.py:199 (/update force_reset) only
+grep -n 'hard reset' commands/help.py main.py                # main.py:240 (/update force_reset) only
 # D2 fixed: both say default False
-grep -n 'only_ability' commands/help.py main.py              # help.py:95 "(default: False)", main.py:418 "Default = False.", main.py:422 "= False"
+grep -n 'only_ability' commands/help.py main.py              # help.py:54 (signature only), main.py:378 "Default = False.", main.py:382 "= False"
 
 # /help entry lists every category (fixed 2026-10-20)
-grep -n '"/help <' commands/help.py                          # 7: text/card/music/stats/general
+grep -n '"/help <' commands/help.py                          # 8 (the categories are the Choice list)
 
 # Module skeleton: banners in the exemplar modules
 grep -n -A1 '^# ========================$' commands/psd_analyzer.py commands/query_card.py commands/type_emojis.py commands/music_player.py | grep -v '^\-\-$'
 
 # Singletons + init functions
-grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # card_models:227, query_card:796, music_player:44
+grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # card_models:343, query_card:2121, music_player:44
 
 # __all__ ends every command module except utils.py
-grep -L '__all__' commands/*.py                              # only commands/utils.py
+grep -L '__all__' commands/*.py                              # 19: utils, backup, card_grid + 16 card-side (2026-11-21)
 
 # Import-style census (from-imports should dwarf plain imports)
-grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^from '    # 207 on 2026-10-20 (with setup.py)
-grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^import '  # 7 on 2026-10-20 (with setup.py)
+grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^from '    # 987 on 2026-11-21
+grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^import '  # 66 on 2026-11-21
 
 # len-1 idiom census; negative-index ban holds
-grep -rnE '\[len\([a-z_]+\) - 1\]' commands/ main.py | wc -l # 21
-grep -rnE '\[-1\]|\[-2\]' commands/*.py main.py | wc -l      # 0
+grep -rnE '\[len\([a-z_]+\) - 1\]' commands/ main.py | wc -l # 96 (2026-11-21)
+grep -rnE '\[-1\]|\[-2\]' commands/*.py main.py | wc -l      # 119 (fine since 2026-11-11)
 
 # Nothing compiled (the len-1 idiom's reason gone, 2026-11-11)
 ls setup.py                                                  # No such file
 
 # queue_* wrappers
-grep -n 'def queue_' commands/utils.py                       # defs at 36,41,47,53,58,63: queue_any/message/file/edit/command/long_message
+grep -n 'def queue_' commands/utils.py                       # defs at 66,72,78,84,90,96: queue_any/message/file/edit/command/long_message
 
 # Skill inventory matches the §7.3 ownership map (17 dirs on main as of 2026-10-20)
 ls .claude/skills/ | wc -l                                    # 17
@@ -483,7 +485,7 @@ ls .claude/skills/ | wc -l                                    # 17
 
 Maintenance rules for this file: when a §3 drift instance is fixed, delete its
 row and re-run the audit; when a command is added, re-run the §3.1 diff and
-update the counts (47/47) and dict-entry table; when an 18th skill appears, add
+update the counts (42/42) and dict-entry table; when an 18th skill appears, add
 its ownership row in §7.3. Refresh the date stamps whenever you touch this file.
 
 2026-10-21: help.py's /query_ability entry describes the grouped output (155 lines; 157 with the /fonts entry); help.py and main.py line numbers re-pointed (review: admin-gate examples, guild_id/channel_id, pickle import).
@@ -517,3 +519,8 @@ lines re-pointed (help.py 99 lines).
 cythonized; the new-module reminder names the bot's import closure; the setup.py census lines.
 
 2026-11-12 (asks-1112, owner G4): /volume, /set_ratio, /set_repo, /view_old_metadata and /frankenstein deleted (help.py and main.py together): 42 commands; §4's examples that quoted them re-pointed.
+
+2026-11-21 (wrap-1121): help.py (101 lines; /query_rulebook and the series line added 2026-11-21) and main.py line
+numbers re-pointed (§2, §3.1, §4, §5); §2.3's rendering is one `key: value` line per entry; §5.1-§5.4 censuses
+re-run (__all__ exceptions, 987/66 imports, the pickle import example gone); the ownership map's research-methodology
+and ttscardmaker-companion rows; provenance expectations re-read. Checked at AC ea0db694, TC 0cb95c33.

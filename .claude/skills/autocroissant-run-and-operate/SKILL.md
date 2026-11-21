@@ -123,7 +123,16 @@ complete` in the new process's journal (`_PID=` its MainPID; a Traceback from it
 prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or install stops before the restart).
 `--bot ojwikibot` does the same for ~/Documents/OJWikibot, with its own `setup.py build_ext --inplace` while that
 repo has a `setup.py` (its session deletes it). Later lines, not checked: `Repo history: ...` and `Type emojis:
-... ready`. Standing rules (memory jetson-server):
+... ready`. Every deploy (both bots) first takes `flock -w 900` on `~/opt/ojw-sync/state/deploy.lock` (OJWikibot's game
+sync deploys too, 2026-11-12): it may wait minutes; let it (after 15 minutes it fails by itself), never kill it or
+remove the lock. Standing rules (memory jetson-server):
+
+- **Restart the jetson (the machine) only with** `ssh jetson sudo sync`, then `~/.local/bin/jetson-powercycle cycle` on
+  the Mac (Shelly plug; owner 2026-11-10), and only with the owner's go. Never `sudo reboot` or `poweroff`: one hung the
+  board and the LAN's DNS (its AdGuard) for an hour.
+- **Deploy only when the push changed a file the bot loads** (the 21-module closure, autocroissant-architecture-contract;
+  main.py, global_config.py, requirements-bot.txt). Card-side modules reach TTSCardMaker's Actions from main by
+  themselves.
 
 - **Push main and deploy in one sitting.** /pull or /update bring the new code too since nothing is compiled, but install
   nothing: a `requirements-bot.txt` change needs the deploy. (2026-10-22/23: a pull beside stale `.so` files failed at
@@ -250,7 +259,13 @@ Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role
 
 - **Automatic: TTSCardMaker's Card sync Action** (`.github/workflows/card-sync.yml`, its "TTS save" step, since the
   cutover 2026-10-24): one updater run per Card sync run with work, the save committed in Card sync's one main commit M
-  (section 12; docs/Campaigns/DATA_BUILD_ACTION.md §6). tts-save.yml, described next as it ran until then, is deleted
+  (section 12; docs/Campaigns/DATA_BUILD_ACTION.md §6). Guarded pushes (P-2, owner 2026-10-25, amended twice): a push
+  whose guards have fixes to land saves in the run their landing starts; when every fix keeps each card picture (the
+  check job's "Pictures kept") the push's own lane saves at their Decided, alone, and that run re-pins after the landing
+  (owner 2026-11-19); since 2026-11-21 (owner, TC d01f81cd, 79d79682) a push's lane whose own data commit comes before
+  that Decided saves at once, fixes or not (its names are that commit's), and with fixes stops there. Each amendment
+  accepts one more save commit and #github-updates post on such pushes (the save may show the pushed picture until the
+  follow-up). Not yet proven live: the early save (the next guarded push whose guards re-export a PNG). tts-save.yml, described next as it ran until then, is deleted
   (ttscardmaker-companion §2.6 keeps its history). Until 2026-10-24 `.github/workflows/tts-save.yml` ran daily at 11:41 UTC when its inputs changed since the last successful run (a PNG, `TTS/decks.json`,
   `site/Card Edits.json`, the save, or the card browser's names: a hash of cards.json's png -> name map, cached per set
   the updater ran with; TTSCardMaker 075e6c43, 2026-10-22), or
@@ -339,16 +354,33 @@ network, a truncated tree) is one error line.
   Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these). On TTSCardMaker 07589cc7
   (2026-10-22) only Computer Virus has notes (812 PSDs); the test reads the three fixed cards' old versions from the clone's history.
 
+### Card checks (TTSCardMaker card-checks.yml, 2026-11-07; AutoCroissant commands/card_checks.py, card_plates.py)
+
+The automatic card flags, off Card sync's path: **hand** (the picture says other than the data, old-style bars, a stat
+edit that can't bake), **bars** (special bars), **name** (website name, printed title and file name disagree), plus
+each card's plate on the `plates` branch (the website's mock-up). Card sync starts it at a data job's start (it waits
+for that job's Commit data); only PSDs or PNGs without a result are read, so a fixed card clears on its next push;
+daily at 06:41 UTC (owner D18); a dispatch with `cards` re-checks those, `all` the whole tree in eight shards. Results
+in `db/card_checks.json` on `data` (its own commits; gate G6 lets them by); the website shows them. No Discord, no
+commit comment, no block. 2026-11-21 (whole tree, run 44929248646): 769 records, 0 hand, 33 bars, 1 name (Beholster
+prints "The Beholster", file Beholster.psd; there since 2026-11-20, left for the owner).
+
+### Card timelines (2026-11-17)
+
+Built and published by hand on the Mac (`python -m commands.discord_preview build`, `check`, then
+`python scripts/history_branch.py --push`); no workflow. Data flow: autocroissant-architecture-contract (d); design and
+status: docs/Future/CARD_TIMELINE.md.
+
 ### PSD details (psd_details.json, added 2026-10-21; the data behind the website's card Details dropdown, plan item 23)
 
 commands/psd_details.py (stock psd-tools; no Discord or config imports, like font_check) gathers one record per card PSD:
 fonts of the visible type layers with their layers and a `supplied` flag (MDW/Fonts has the face; null when no index was at hand),
-every type layer's text (200 chars), font, size, colour and visibility, effects per layer (`(off)` when disabled), smart objects,
+every type layer's text (2000 characters, `TEXT_CHARS`), font, size, colour and visibility, effects per layer (`(off)` when disabled), smart objects,
 canvas (size, mode, depth, ICC description), type-icon style (images / tokens / mixed / none), the stat-row encoding per stat
 (template / two-row / pixel / other / none), `FX:` and overlay word layers, the title layer the parser reads (2026-10-23: a
 root `Name`, a layer named after the card or the one named after its own text is no deviation) and the Ability layers with the ledger's cheap deviations, and a
 compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
-in the card data's `db/psd_details.json` (`{"version": 1, "cards": {sha: record}}`, one card per line so diffs stay per
+in the card data's `db/psd_details.json` (`{"version": 13, "cards": {sha: record}}` on 2026-11-21, the VERSIONs: autocroissant-config-and-flags; one card per line so diffs stay per
 card; the AutoCroissant root file it was until 2026-10-25 is in git history).
 
 - **In the build** (`card_data`, the Card sync Action): after each re-parsed card's parse, `_details` reads the same open
@@ -932,3 +964,8 @@ action), /fonts from the manifest's fonts report, the handoff and /update withou
 2026-11-12 (asks-1112, owner G4): /frankenstein, /view_old_metadata, /volume, /set_ratio and /set_repo deleted: card_sync.READERS lists 7 commands; the card list and emojis always follow the card repo.
 
 2026-11-12 (asks-1112, owner G5): `site/Card Ratings.json` is data only (`python -m commands.tts_ratings` deleted).
+
+2026-11-21 (wrap-1121): deploy.sh's OJWikibot lock, the jetson's power cycle (never sudo reboot) and deploy-only-for-bot
+files as standing rules; the TTS save's guarded-push lanes (P-2 amended 2026-11-19 and 2026-11-21: the early save);
+psd_details text 2000 characters and version 13; a Card checks subsection (flags, schedule, shards, today's counts) and
+a card timelines pointer. Checked at AC ea0db694, TC 0cb95c33.

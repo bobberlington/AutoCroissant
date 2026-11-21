@@ -47,6 +47,8 @@ was this repo's pickles, written by the jetson's `/update_stats` and moved by `/
 | Card sync refused (red run, "Gate refusals" in its summary) | the run's summary and artifact (the would-be db/) | A gate (G1 floor, G2 archive ceiling, G4 same-blob re-parses, G5 quality, G3 round trip, G6 another writer) caught a change | `diff_stats.py origin/data <artifact>/db` | Review, then dispatch with the gate's input (`allow_archive`, `full`, `cards`) or fix the cause (DATA_BUILD_ACTION.md §13) |
 | Query results stale right after a sync | Did `populate_files`/`prep_dataframes` run? A sync queues them (`card_sync._follow_ups`) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
 | /query finds no card at all after a restart | stdout: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" | GitHub was down or rate-limited at startup (3 tries, 1 s and 2 s apart); right after a start the last good list is empty | The line names the HTTP status or error | Wait for GitHub, then `/update_stats` (it refreshes the card list) or restart |
+| Card sync red at its data push: 403 "Permission denied to github-actions[bot]" | the run's log | GitHub, once (2026-11-15, run 43799339543; the workflow has Contents: write) | A re-run of the failed job passes | Re-run it; the failure alert went to the standards channel once (marker in the head commit's comments) |
+| The TTS save says an old card name right after a cards dispatch | Which data commit the save's lane read | The Bake and save lane cloned `data` before its own run's data commit (2026-11-19, Grapes, run 44565900401) | The run's data commit time vs the lane's clone | Fixed: the save takes its run's data names, and a newer data commit that moves names makes the save again (AC fccbfa96, TC 31cc6f7c); else one Card sync for the card |
 
 ---
 
@@ -195,6 +197,7 @@ commands/update_bot.py:
 | Update said "Restarting bot!" but the bot never came back | `systemctl status autocroissant` on the jetson | `restart_bot` re-execs main.py with the same interpreter (`execl(executable, executable, *argv)`, update_bot.py:26-27; the startup.sh branch was removed 2026-10-25, 2a79ed6e). If the pull brought NEW dependencies (a `requirements-bot.txt` change), the boot dies on ImportError | The service journal shows the traceback | Deploy with the jetson-deploy skill (it installs `requirements-bot.txt`: `~/venvs/autocroissant/bin/python -m pip install --only-binary :all: -r requirements-bot.txt`; **autocroissant-build-and-env**), then `sudo systemctl restart autocroissant` |
 | "Warning: All local changes have been discarded!" | Did someone pass `force_reset:True`? | `git_reset_hard` ran - local code changes are GONE, replaced by origin/main (the card data is untouched: `card_data/` is gitignored) | `git reflog` on the box | Damage control via **autocroissant-change-control** |
 | "/pull did a hard reset?!" | It did not | `git_pull` contains no reset - fetch + merge/rebase only (the description said "hard reset" until 2026-10-20, C1) | Read update_bot.py `git_pull` | Only `/update force_reset:True` resets |
+| deploy.sh says nothing for minutes | It waits on `~/opt/ojw-sync/state/deploy.lock` (OJWikibot's game sync deploys too, 2026-11-12) | Another deploy holds the lock | — | Let it wait (`flock -w 900`: after 15 minutes it fails by itself); never kill it or remove the lock |
 
 ---
 
@@ -255,6 +258,16 @@ part (`journalctl -u autocroissant | grep "Forum votes"` on the jetson).
 | "post N is locked: its steps wait until it is unlocked" | The post | A person locked it (not archived, no Closed) | Unlock it: its overdue steps run at the next pass |
 | Each post has 2 of every 👍 👎 :abstain: from the bots, or "👍 and 👎, tied (1 each)" with no real votes | Which bots reacted | A second bot identity runs the votes in the server | Turn the votes off on that machine (run-and-operate §13) |
 | "✗ Forum votes are off: forum_votes.json can't be read" | The file | A hand edit broke it; left untouched on purpose | Fix it or move it aside, restart |
+
+---
+
+## 12. The jetson (the machine) and the test suite
+
+| Symptom | First check | Likely cause | Fix / pointer |
+|---|---|---|---|
+| The jetson does not answer (ssh hangs, the bot is down, the LAN's DNS fails) | ping it; nothing else | A hung board (2026-11-10: a `sudo reboot` hung it and its AdGuard took the LAN's DNS down for an hour) | Ask the owner first. Then `ssh jetson sudo sync` if it answers and `~/.local/bin/jetson-powercycle cycle` on the Mac (Shelly plug). Never `sudo reboot` or `poweroff` there |
+| Python or bash processes left after a suite run | `ps -o pid,ppid,etime -p <pid>` on your own runs only (never print other processes' command lines: they hold tokens) | Pool workers whose run was killed (fixed 2026-11-12: `card_bake.exit_with_parent` in every card pool's initializer); a test's background loop (tests/test_card_guards.py: 2026-11-16, three loops 2 h 15 min old; 2026-11-20, one about 26 hours) | Kill those exact PIDs; a test stops its background jobs in try/finally (autocroissant-validation-and-qa) |
+| Two timing tests fail under heavy load, pass alone | Re-run them niced, without background QoS | `test_card_preview::test_the_lanes_next_cards` and `test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time` flake under `taskpolicy -b` at load 40-60 (2026-11-21) | Not a regression; listed for the next session |
 
 ---
 
@@ -390,3 +403,7 @@ card_models.py and repo_traverser.py citation re-pointed at 2ada357.
 the jetson's deploy installs requirements-bot.txt and removes leftover .so files); yt-dlp's fix is its pin.
 
 2026-11-12 (asks-1112, owner G4): the `/volume` row went with the command; /set_repo (deleted) left the emoji rows; opencv is no bot package (/frankenstein deleted).
+
+2026-11-21 (wrap-1121): §1 rows for Card sync's one-off 403 at its data push and the TTS save reading older data names
+(fixed); §8 deploy.sh waiting on the OJWikibot deploy lock; §12 the jetson's power cycle (never sudo reboot), processes
+left after a suite run, the two load-flaky timing tests. Checked at AC ea0db694, TC 0cb95c33.

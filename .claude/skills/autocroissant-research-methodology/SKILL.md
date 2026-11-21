@@ -229,11 +229,10 @@ retirement                          — dated entry in autocroissant-failure-arc
 
 **Honesty note:** this repo has NO feature-flag system, no experiment framework, no A/B
 anything. The entire experiment mechanism is (a) a `getattr(config, "field", default)` read —
-the live pattern in commands/ (2026-10-20: music_player.py:37/54/61,
-utils.py:19, github_api.py:17; re-find with `git grep -n 'getattr(config' -- '*.py'`)
-— plus (b) runtime `/set_*` commands that do NOT persist across
-restart (autocroissant-config-and-flags). That is enough for a hobby project. Do not add
-ceremony beyond it.
+the live pattern in commands/ (2026-11-21: music_player.py:37/54/62,
+utils.py:17, github_api.py:24, card_sync.py:37; re-find with `git grep -n 'getattr(config' -- '*.py'`).
+That is the whole mechanism (the runtime `/set_*` commands went 2026-11-12; autocroissant-config-and-flags). That is
+enough for a hobby project. Do not add ceremony beyond it.
 
 ### Retirement is a SUCCESS outcome
 
@@ -295,13 +294,43 @@ one sentence; anything heavier (issue tracker, templates) is ceremony this proje
 - **The >2-special-cases rule:** if your fix needs a third special case, the mechanism is
   probably wrong — return to section 1 and re-enumerate observations. Precedent: collapsing
   needed its first exception within an hour (d6d1278) and a second-order bug fix the same
-  afternoon (c7b3191) before being abandoned (3bbaa2b). Standing warning: the 23-card exclusion
-  list is the fossil record of accumulated special cases, and the owner's stated ambition
-  ("perfect extraction") is to DELETE it — never grow an exclusion list just to keep a
-  mechanism alive.
+  afternoon (c7b3191) before being abandoned (3bbaa2b). Standing warning: the exclusion lists were the
+  fossil record of accumulated special cases, and the owner's "perfect extraction" ambition deleted them (none since
+  2026-11-09) — never grow an exclusion list again just to keep a mechanism alive.
 - **Stopping is not concluding.** A stopped investigation states what is known, what is ruled
   out, and what the next cheap experiment would be — it does not round "I ran out of evening"
   up to "it's probably X". Unproven ideas stay labeled open/candidate.
+
+## 7. Research rounds (multi-agent workflows; session 2026-11-10..21)
+
+How the session's research ran (lanes cards and actbake: 360 ideas kept, 62 rejected, each verdict by an independent
+reviewer; the psd-tools fork lane ran its own rounds until dry). The acceptance procedure for each change stays autocroissant-validation-and-qa's.
+
+- **A round per lane**: finders propose (what, evidence, risk); a builder builds each on its own branch and worktree; a
+  fresh skeptic reproduces the gain and hunts regressions; kept ones merge into `work/<lane>`. Ship every 4 rounds.
+- **The owner's bar (2026-11-16)**: only what a person would notice: a wrong card, picture, mock-up, preview or bot
+  answer fixed (name them), a real failure or flaky red fixed (name the runs), or at least 5 s or 10% off something a
+  person waits for. Small trims and refactors are not proposed.
+- **Drawings**: looks the same by eye (owner 2026-11-13). No sweep only for parity; no rejection for a sub-visible
+  Photoshop difference.
+- **Dry**: a finder with nothing returns an EMPTY list (notes beside it). Never a 'NO BUILD' / 'NO CHANGE' record: those
+  were built as empty branches, kept the lanes from going dry and ran a workflow into its 1000-agent cap (2026-11-16).
+  Filter such titles in code. Dry = two empty rounds in a row; cap the rounds per run.
+- **Never twice**: accepted and rejected titles are not proposed again (the lists: docs/NEXT_SESSION_PLAN.md).
+- **One more try**: a rejected idea whose reviewer saw a real gain gets two judges first (still needed, no owner ruling
+  against it, fixable), then a rebuild with the objection fixed and a fresh skeptic (2026-11-20: 41 such rejects, 34
+  retried, 28 kept and landed; failure-archaeology 10.43).
+- **Overlaps**: two ideas that overlap: merge the second only if it fixes a case the first doesn't, proven on the merged
+  tip (f6 vs r60-3, 2026-11-20).
+- **Contaminated evidence**: evidence another agent may have touched (a shared browser, a debug port) is run again
+  before it counts (x13's Chrome results, 2026-11-20).
+- **Unattended**: an uncertain call goes to two independent judges; both certain and agreeing = apply; else the most
+  conservative choice that publishes nothing, listed in the session report. Printed card wording always waits for the
+  owner.
+- **Workflows**: never resume a multi-lane workflow after editing its caps; never message a workflow agent (it starts a
+  second copy); pass long lists through a file, never a sliced string.
+- **Budget** (owner, 2026-11-21): about 8 rounds per lane, ship every 4, then stop and finish everything found.
+- **Speed claims on the website** are measured live (a phone, cold, n >= 5) before shipping.
 
 ## Provenance and maintenance
 
@@ -324,7 +353,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | Feb-8 saga: 7 code commits 04:34:51→19:12:52, collapsing added 1c26747, removed 3bbaa2b | `git log --format='%h %ad %s' --date=iso 532b34f..4bcee6b` (exactly the Feb-8 commits) and `git show 3bbaa2b` |
 | First collapsing exception (`\s{2,}`→`[ \t]{2,}`) in d6d1278 | `git show d6d1278 -- commands/psd_analyzer.py` |
 | MISMATCH validator added fed8a83, removed 081b1fd | `git log -S 'WHITESPACE MISMATCH' --format='%h %ad %s' --date=short` (returns exactly those two commits) |
-| No exclusion lists (since 2026-11-09; 21 names before) | `git grep -c '_EXCLUSIONS' -- commands/` (card_history.py's comment only) |
+| No exclusion lists (since 2026-11-09; 21 names before) | `git grep -c '_EXCLUSIONS' -- commands/` (nothing on 2026-11-21) |
 | MDW classify branch (`ability: None`, was :282) and EXCLUDE_FOLDERS (was :31) | `grep -n -e '"MDW"' commands/psd_parser.py; grep -n 'EXCLUDE_FOLDERS =' commands/card_data.py` |
 | getattr(config, ..., default) is the only flag mechanism | `grep -rn 'getattr(config' commands/ main.py` |
 | Retirements: Text_Export.jsx (7fc6f63), descriptions.pkl (bb58387), requirements-linux* (3f9a96d) | `git log --all --diff-filter=D --format='%h %ad %s' --date=short -- '*Text_Export.jsx' descriptions.pkl 'requirements-linux*'` |
@@ -356,3 +385,7 @@ Maintenance rules:
 2026-10-23 (docs drift): the Lich King expectation reads as the font-token case and Nebulous Precipice joins counter-case 3 for the gap path; ABILITY_EXCLUSIONS lines re-pointed; problem baselines 0 pickled / 1 full.
 
 2026-11-01 (chapters): counter-cases 5 and 6 and the re-verify row follow the PSDs to `MDW/Old Rules/` and `MDW/Assets/`.
+
+2026-11-21 (wrap-1121): §7 research rounds (the owner's bar, dry rounds, one more try for real-gain rejects, the
+budget); the flag mechanism without runtime `/set_*` commands (getattr sites re-pointed); the exclusion-list warning in
+the past tense. Checked at AC ea0db694, TC 0cb95c33.

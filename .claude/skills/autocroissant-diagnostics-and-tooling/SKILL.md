@@ -687,6 +687,8 @@ Not part of the five, and not read-only in the same sense (most need a sandbox c
 | Whole-corpus parser gate | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` (table below; venv interpreter) | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
 | Profiling and benches | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/import_ns.py` (sandbox root as first argument) | Import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
 | Skill line-ref check | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/grepcheck.py` runs every quoted grep; `provcheck.py` checks the line numbers after them | Stale `file:line` references after code moves |
+| Repo growth (2026-11-11, owner) | `python scripts/repo_growth.py CLONE [WEEKS]` or `CLONE BASE..HEAD` | What main's history adds a week by writer and file type, or what a range adds before a sweep's push; read-only, never a fetch |
+| Card timelines tools (2026-11-13..19) | `scripts/history_branch.py`, `apply_rulings.py`, `oldgit_*.py`, `era_readers.py`, `timeline_text.py` (+ its Swift OCR reader) | Build and publish the `history` branch, apply the owner's answers, read the first repo; by hand on the Mac (docs/Future/CARD_TIMELINE.md) |
 
 ### Optimization-pass scripts
 
@@ -842,3 +844,6 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-11-11 (nocython): the stale-.so note for old checkouts only (no setup.py clean).
 
 2026-11-12 (asks-1112, owner: keep gap_trace and fix it): gap_trace.py passes the parser's titles, header and psd to `_process_layer`, joins `[3]` with `_rows`/`_labels`/`_join_parts` and counts `[5]` on `_inject_type_names`' lines, calls `_process_abilities` with the raw icons, and prints a DRIFT line when `[6]` differs from `parser.parse()`; the walk-through moved to Twin Emperors (no card injects from an icon layer now). Checked on Twin Emperors, Bulborb Larva, Tomato, Nebulous Precipice, The Lich King, Tainted Lazarus, Irithyll, Dark Bramble, Michael's Blessing, Warcraftian Hunter and Pile Of Swords: no DRIFT.
+
+2026-11-21 (wrap-1121): the measurement table names AC `scripts/` by-hand tools (repo_growth.py, the card timelines'
+scripts). Checked at AC ea0db694, TC 0cb95c33.

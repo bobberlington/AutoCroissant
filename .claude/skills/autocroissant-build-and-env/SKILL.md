@@ -41,9 +41,9 @@ Three layered files since 2026-10-23 (owner: "three layered files, one pin"):
 | File | Holds | Installed by |
 |---|---|---|
 | `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests (`pyoxipng` behind a marker from 2026-10-24 until 2026-10-25: the Actions run the oxipng CLI since) | `requirements.txt`; the card Actions on Python 3.14 (card-guards' jobs, card-sync's one venv, card-preview), offline from one wheel cache entry keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
-| `requirements-bot.txt` | The bot's packages and their dependencies, pinned `==` from the jetson's `pip freeze` of 2026-11-11 without the card toolchain (the fork, scipy, fontTools, uharfbuzz, freetype-py, aggdraw) and Cython, setuptools, wheel (29 lines; davey 0.1.7: 0.2 breaks voice). `tests/test_bot_env.py` walks main.py's import closure, lazy imports included, and fails if it reaches the toolchain or imports a package with no pin here | the jetson (`pip install --only-binary :all: -r requirements-bot.txt`, every deploy); the Mac through requirements.txt |
+| `requirements-bot.txt` | The bot's packages and their dependencies, pinned `==` from the jetson's `pip freeze` of 2026-11-11 without the card toolchain (the fork, scipy, fontTools, uharfbuzz, freetype-py, aggdraw) and Cython, setuptools, wheel (28 pins since 2026-11-12, opencv-python gone with /frankenstein; davey 0.1.7: 0.2 breaks voice). `tests/test_bot_env.py` walks main.py's import closure, lazy imports included, and fails if it reaches the toolchain or imports a package with no pin here | the jetson (`pip install --only-binary :all: -r requirements-bot.txt`, every deploy); the Mac through requirements.txt |
 | `requirements.txt` | `-r requirements-cards.txt`, `-r requirements-bot.txt` | a dev machine |
-| `requirements-dev.txt` | `-r requirements.txt`, then pytest and pyyaml (the workflow tests import it); `pyobjc-framework-Vision` went with `commands/discord_match.py` on 2026-10-25 | a dev machine |
+| `requirements-dev.txt` | `-r requirements.txt`, then pytest and pyyaml (the workflow tests import it); no OCR package: `commands/discord_match.py` (back on main since 2026-11-17 with the card timelines, AC 3c2b03a1) reads text with macOS Vision when `pyobjc-framework-Vision` and `pyobjc-framework-Quartz` are installed by hand, else `--no-ocr`; `scripts/timeline_text.py` builds its Swift reader (`timeline_text_ocr.swift`) with `swiftc` | a dev machine |
 
 uharfbuzz and freetype-py come with psd-tools' `[text]` extra, scipy and aggdraw with `[composite]`. `.gitignore`
 ignores `*.txt` and re-includes `requirements-dev.txt`, `requirements-cards.txt` and `requirements-bot.txt`;
@@ -173,10 +173,11 @@ Then:
    `TOKEN` (the Discord bot token). Field names and what each does:
    **autocroissant-config-and-flags**. Never commit this file.
 2. Smoke test (section c). Music playback also needs ffmpeg (section 1).
-3. Offline suite: `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (pytest-xdist from requirements-dev.txt; 618 tests on 2026-10-25, about a
-   minute; needs no config.py, network or Discord; PSD tests skip without `~/Desktop/TTSCardMaker`; the suite needs the fork
-   venv and stops without it, 2026-11-10).
-   Owner: **autocroissant-validation-and-qa** §1 row 1c.
+3. Offline suite (the full command and today's count: **autocroissant-validation-and-qa** §1 row 1c). It needs the fork
+   venv (`~/.venvs/ac-py314-fork`; it stops without it, 2026-11-10), the card repo clone (`AUTOCROISSANT_LOCAL_DIR`, else
+   `~/Desktop/TTSCardMaker`), `AC_SITE_SRC` at a TTSCardMaker tree as new as the AC tests (else the clone's checkout),
+   `ESBUILD` for the site bundle tests, and on PATH node, jq, coreutils' timeout, git, oxipng and actionlint (`brew
+   install`): conftest stops the run when one is missing (tests/conftest.py `TOOLS`). No config.py, network or Discord.
 
 ### (b) Full host environment (a machine that will actually host the bot)
 
@@ -251,7 +252,7 @@ Line numbers drift; re-verify volatile facts with:
 
 | Fact | Re-verify with |
 |---|---|
-| Package lists (the card stack; the bot's 29 pins, 2026-11-11) | `cat requirements-cards.txt requirements-bot.txt requirements.txt requirements-dev.txt` |
+| Package lists (the card stack; the bot's 28 pins, 2026-11-12) | `cat requirements-cards.txt requirements-bot.txt requirements.txt requirements-dev.txt` |
 | Nothing compiled; the bot's closure free of the toolchain | `ls setup.py` (none); `python -m pytest -q tests/test_bot_env.py` |
 | The jetson's venv | `ssh -q jetson 'readlink ~/venvs/autocroissant; ~/venvs/autocroissant/bin/pip freeze \| grep -ciE "psd-tools\|scipy\|fonttools\|cython"'` (`autocroissant-bot-3.14.10`, 0) |
 | Pillow and PyNaCl declared (they once arrived via psd-tools and PyGithub) | `grep -in "pillow\|PyNaCl" requirements-bot.txt` |
@@ -346,3 +347,7 @@ requirements.txt = cards + bot; the jetson's venv `autocroissant-bot-3.14.10` wi
 yt-dlp pinned; the setup.py re-verify rows replaced.
 
 2026-11-12 (asks-1112, owner G4): /frankenstein deleted, and opencv-python with it (requirements-bot.txt 28 pins); the numpy row names its bot use.
+
+2026-11-21 (wrap-1121): 28 bot pins; discord_match's OCR (Vision by hand, else --no-ocr) back with the card timelines;
+step 3 names what the suite needs (fork venv, clone, AC_SITE_SRC, ESBUILD, the six CLIs), its count lives in
+validation-and-qa row 1c. Checked at AC ea0db694.

@@ -5,7 +5,7 @@ description: "The record of AutoCroissant's settled investigations, dead ends, r
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30) and **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30) **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era) and **2026-11-21** (10.38-10.43). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23); 2026-11-04/05: the ring badge rollout's lessons (10.35)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23); 2026-11-04/05: the ring badge rollout's lessons (10.35); 2026-11-11..21: forum votes, the guards over newer work, check-suite presses, the save's data names, D15's erased characters (OPEN), what the session settled (10.38-10.43)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -953,6 +953,77 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `RUN_AS_CREATOR`, `ALLOW_POSITIONAL` and `FakeUser` stay as OJWikibot twin markers, 10-24 ruling).
 - **Status**: deleted on work/asks-1112 (lane asks-1112); 42 commands. History: `git log -S slash_frankenstein`.
 
+### 10.38 Forum votes counted refused steps as done (2026-11-16)
+
+- **Symptom**: voting ended on 2 proposal posts, but neither was closed or locked.
+- **Root cause**: the bot's role had no Manage Threads in the proposals forum; every tag or lock edit got 403 50001
+  and the code recorded the refused part as done.
+- **Evidence**: AC 0ac2f222 "Forum votes: tags and lock wait for Manage Threads", b00003c5 (review fixes); the jetson's
+  forum_votes.json repaired with the bot stopped (backup forum_votes.json.bak-20261116).
+- **Status**: fixed (tags and lock wait and are retried every pass); the owner gave Manage Threads server-wide on the
+  bot's role. No startup check, admin alert or follow-up check (owner, 11-16: don't propose them).
+
+### 10.39 The guards over a card maker's newer work (2026-11-11)
+
+- **Symptom**: Croissant converted his own cards ("standardization", "killing auto croissant") while our lanes and
+  the push guards did too; the guards rewrote his push.
+- **Evidence**: TC 4047d03e (Card guards on push 78756b52, his "killing auto croissant"); TC 91142142 put his Tyler and
+  Pizza back as he pushed them. CARD_GUARDS went to report at 23:50 and back on at 00:15 (2026-11-12) once he had
+  finished; no per-author pause was built.
+- **Status**: rule since: re-check each card's blob on origin/main right before a push and never overwrite newer
+  Photoshop work (autocroissant-change-control non-negotiable 7). His cards may get minimal fixes like anyone's.
+
+### 10.40 Preview presses found by check suites: reverted (2026-11-18)
+
+- **Symptom**: after research3's actbake ship 3, every warm lane ended at its editor's next press ("a newer press
+  named no lane"); all presses ran cold.
+- **Root cause**: a new run's check suite reads displayTitle 'Card preview' about 2.6 s after the dispatch (the
+  run-name is not evaluated yet; the full title at about 3.9 s), so the lane could not tell which press was its own.
+- **Evidence**: AC 3df37d59, TC 84c976f5 (the reverts); the D22 probe after them: press 2 warm 8.43 s vs cold 24.67 s.
+- **Status**: reverted; the lane finds presses by a commit status the website posts ('preview lane', 2026-11-18, no
+  refs). Don't re-propose suites without a suite whose title names its request.
+
+### 10.41 The TTS save read the data before its own run's (2026-11-19)
+
+- **Symptom**: after a `cards=Grapes` dispatch the bot and the site said 'Grapes' but the TTS save kept 'GRAPES Grapes'
+  (9 Nicknames).
+- **Root cause**: the dispatch's Bake and save job cloned `data` 12 s before the same run's data commit 864851e5, so
+  tts_save used the old names ("No changes"). Likely also held3's Tainted Lazarus dispatch.
+- **Evidence**: run 44565900401; the fix-up Card sync 44580210620 -> TC 8043da0a (exactly the 9 Nicknames).
+- **Status**: fixed: the save takes its run's data names and a newer data commit that moves names makes the save again
+  (AC fccbfa96, TC 31cc6f7c).
+
+### 10.42 Re-setting a character its font can't draw erases it (D15, 2026-11-16)
+
+- **Symptom**: the owner's D15 sweep (stray-font ':' and '.' re-set to the card's ability font) landed on Jack-in-the-Box
+  Zombie only (TC 7fc41858); on four cards the re-set erased the character, in Photoshop too.
+- **Root cause**: Belisa plumilla manual's ':' is an empty glyph (Ancient Fuelweaver, Wickerbottom, Crock Pot);
+  MechanicalFREE has no punctuation or digits (Holo Defense API). Gasoline's literal re-set to Cuphead Memphis (owner
+  11-19) failed the same way (no '+' or '/' there, and a 7th line).
+- **Evidence**: s1110/cardfix-1116-d15/ (session scratch); Gasoline variant E/B, TC f52f4a53 (those glyphs stay in
+  stoogedings; 'Card-sweep: fonts').
+- **Status**: the four cards stay as they are (owner 11-17). The owner's directed bake fix (a typed character the line's
+  font can't draw keeps the font the card prints it in) is still OPEN: built twice and rejected both times (research
+  round 51; retry x31 on 2026-11-21: a stray run's baseline shift and size stayed, e.g. Minecraft Panda's '∞' run).
+  Today a typed character with no glyph is set in Myriad Pro, Photoshop's Missing Glyph Protection (`psd_edit.MGP_FONT`,
+  1402a516); an empty glyph is not caught.
+
+### 10.43 Settled this session, and what stays open (2026-11-10..21)
+
+- **Owner rulings (don't re-propose)**: the 152-card Strong-type text redraw (parity only, 11-13); the guards keep
+  rewriting link paths (D17; r9-0 stays rejected); comp-bar cards at 0 keep the exact mock-up (reject 15, 11-21); Ze'mer's
+  preview flower bits stay (D16); search never links 'die' / 'defeated' / 'kill' (D20, exact words); no startup check
+  for forum permissions (10.38).
+- **Research rejects**: of the rounds' 62 rejected ideas, 41 had a gain the reviewer confirmed; two judges sent 34 of
+  them to one more try (7 dropped: x2, x3, x5, x7, x8, x11, x15) and 28 were rebuilt with the objection fixed, kept by a
+  fresh skeptic and landed in wave 2 (2026-11-21). Not kept after the rebuild: x4 (Dr. Robotnik's Roboticizer
+  apostrophe), x26 (rulebook icons blank in search results), x27 (10 KB verdicts break Card sync's jq merge), x30
+  (focus after closeModal), x31 (10.42), x37 (a press before its dispatch answered). The other 34 stay rejected, each
+  with its reason in the session report (docs/Finished/session-2026-11-10-21/, research findings).
+- **Not kept, numbers for next time**: r60-2, Card data's AWS warm-up: on AWS runners the first step to the venv check
+  went 6.61 s -> 3.66 s (median +2.95 s, p=0.0006; 19 of 180 probes landed on AWS), Azure none (3.04 -> 3.22 s); it
+  clears the 11-16 bar only on its narrowest reading. Branch kept for the next session's list.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
@@ -1034,3 +1105,7 @@ compiled, 21.9-22.0 ms plain for 58 real queries; 70 replayed queries identical)
 re-verify row reads setup.py from before its deletion.
 
 2026-11-12 (asks-1112): Entry 10.37 (five bot commands deleted by the owner's G4 answer).
+
+2026-11-21 (wrap-1121): Entries 10.38 (forum votes' refused steps), 10.39 (the guards over Croissant's newer work), 10.40
+(check-suite presses reverted), 10.41 (the save read older data names), 10.42 (D15's erased characters; the bake fix
+still open), 10.43 (settled by the owner, the research rejects and their retries, r60-2's numbers). Checked at AC ea0db694, TC 0cb95c33.

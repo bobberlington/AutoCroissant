@@ -62,6 +62,7 @@ This table IS the campaign's progress record.
 | 2026-07-11 | 813 | 1 | 5 | 18 | 5 | 20 | 10 | 3/3 |
 | 2026-10-23 | 818 | 0 | 1 | 21 | — | 20 | 10 | 3/3 |
 | 2026-11-09 | 776 | 0 | 0 | 0 | — | 21 | 4 | 10/10 |
+| 2026-11-21 | 777 | 0 | 0 | 0 | — | 21 | 3 | 10/10 |
 | (target) | tracks TTSCardMaker | true content errors only | == stored problems | 0 | 0 | tracked, explained | legit layouts only | N/N, N growing |
 
 The 2026-10-23 row: measured at PICKLE a7c310e with `~/.venvs/ac-py314-fork` (Gates 1c-1e). ABILITY_EXCLUSIONS went
@@ -83,6 +84,16 @@ After it, residual gaps go 4 -> 3 (Michael's Blessing, Pile Of Swords, Warcrafti
 abilities are blank on the card too. OCR of the PNGs (macOS Vision, 763 cards) in both directions finds only art text
 and badge noise. Dry for code: no parser rule. Latent only: `_inject_type_names` still strips a line-ending
 apostrophe (`rstrip(" '\n")`, cdfecea7); no Ability line in live, MDW/Unfinished or Morgue PSDs ends in one.
+
+The 2026-11-21 row: data e111f436 (all 769 PSD records at details v13), AC ea0db694, Gates 1a-1e with the fork venv;
+777 cards (creature 302, item 189, minion 92), 130 archived, newest Beholster; residual gaps Michael's Blessing, Pile Of
+Swords, Warcraftian Hunter (layout gaps); 21 cards have no ability text (19 empty Ability layers on 18 minions were
+deleted on 2026-11-13, TC aae40f87 and siblings; the bake counts an empty one as none, AC 411eb821). `PARSER_VERSION`
+stays 7. The session's parser rules (2026-11-11..19): bars drawn over old ones hide them (460a4881); a tagged layer name
+'<name> #N' names a duplicate picture, hidden tags refused (7bf13cf9, 15a88dbb); a linked star icon outside Stars counts
+(12c94bd9, Hero Cap 3 stars); other creatures' header icons are types (e1b2e716, Tainted Lazarus light + undead); a
+title's case twin prints once (781c9931, Grapes). A fresh parse of every live PSD on 2026-11-19 (768 PSDs, 776 parses):
+0 errors, only Grapes changed.
 
 Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 
@@ -231,7 +242,7 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_car
 git grep -c "_EXCLUSIONS" -- commands/
 ```
 
-**EXPECTED (2026-11-09):** nothing but `commands/card_history.py:1` (a comment on the old stat list). `ABILITY_EXCLUSIONS`
+**EXPECTED (2026-11-21):** nothing (2026-11-09: `commands/card_history.py:1`, a comment on the old stat list). `ABILITY_EXCLUSIONS`
 held 21 names until 2026-11-09 (18 until e4e0a58 on 2026-10-21); the stat list went on 2026-10-21.
 (Cross-check that imports agree with source, with the fork venv:
 `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_parser import CardValidator as V; print(hasattr(V, 'ABILITY_EXCLUSIONS'))"`
@@ -634,8 +645,8 @@ documented in autocroissant-failure-archaeology).
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`
   and for the cleanup line `grep -n "ability_text = sub" commands/psd_parser.py`
 - Exclusion lists none (2026-11-09; 21 on 2026-10-23; 18 + 5 on 2026-07-11): the one grep in Gate 1c.
-- Scoreboard 818 cards / 0 stored problems / distribution / newest card: Gate 1a command.
-- Scoreboard 1 re-validation / 10 residual-gap / 20 empty: Gate 1e command (fork venv).
+- Scoreboard 777 cards / 0 stored problems / distribution / newest card (2026-11-21): Gate 1a command with `--db origin/data --git ~/Desktop/TTSCardMaker`.
+- Scoreboard 0 re-validation / 3 residual-gap / 21 empty (2026-11-21): Gate 1e command (fork venv; without a config.py import `stats_db` from `commands.card_models`, the facade needs one).
 - Goldens 3/3 byte-equal: Gate 1d command. Per-card golden output:
   `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/parse_one.py <psd>` on each
   of the three golden paths.
@@ -685,3 +696,6 @@ is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-po
 left to waive); goal paragraph, a 2026-11-09 scoreboard row, Gate 1c, the target table and the structural candidate.
 
 2026-11-09 (round 8): a round-8 note under the scoreboard (lens dry for code) and the Types/-link wrong path.
+
+2026-11-21 (wrap-1121): a 2026-11-21 scoreboard row (data e111f436: 777 cards, 0/0, 21 empty, 3 residual gaps, goldens
+10/10) and the session's parser rules beside it; Gate 1c's grep finds nothing now. Checked at AC ea0db694, TC 0cb95c33.

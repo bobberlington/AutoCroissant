@@ -18,6 +18,9 @@ description: How AutoCroissant works as a system, plus the start-here map of all
 - AI/diffusion: removed from main 2026-10-20; code and its skill are on branch `archive/ai-generation` ; future ideas → autocroissant-research-frontier
 - "How do I know I'm right" → autocroissant-research-methodology ; help text / style / skill upkeep → autocroissant-docs-and-style
 - The TTSCardMaker side (icon font, Types/ icons, card website, Photoshop scripting) → ttscardmaker-companion
+- Card timelines (the `history` branch, Created dates, the Morgue's lost cards; by hand on the Mac) →
+  ttscardmaker-companion §2 and docs/Future/CARD_TIMELINE.md
+- The desktop app's site hook (`window.cardApp`, read-only) → ttscardmaker-companion §2
 - THIS skill: how the system works + the invariants. Read "The execution model" before writing code.
 
 Facts and line numbers verified 2026-07-11 (HEAD `284d13c`); re-verified 2026-10-20 against
@@ -136,7 +139,7 @@ Mechanics you must know:
 | 1 | **No awaits inside queued sync functions.** Workers are plain `def`; there is no event loop in their thread. | `await` in a `def` is a SyntaxError — so the tempting "fix" is making the worker `async def`. Do that and `to_thread` passes it through unchanged (utils.py:118-120): your "worker" now runs ON the event loop, and its blocking calls (PSD parse, yt-dlp, GitPython) freeze the entire bot — heartbeats, all three queue loops, everything — until it finishes. |
 | 2 | **All Discord output from worker code goes through `queue_message`/`queue_file`/`queue_edit`/`queue_any`/`queue_command`** (utils.py:69-96). | Direct calls from a thread produce never-awaited coroutines (message silently lost) or thread-unsafe loop access. You also forfeit the fallback chain: your send dies permanently at the 15-minute token expiry instead of degrading to `channel.send`, and reminders (which run your command with a FakeInteraction) break because FakeInteraction only implements the queue-facing surface. |
 | 3 | **The three queue loops must be running for ANYTHING to send.** Started once in `on_ready` through `_start()` (main.py:143-144; `_loops()`/`_stop_loops()`/`_start()` at main.py:890-911); a repeat `on_ready` (reconnect) restarts only the loops whose task failed. Deliberately STOPPED through `_stop_loops()` (which also wakes the waiting drains, so the stop is immediate) by `/restart_bot` (main.py:207), `/stop_bot` (main.py:217), `/update` (main.py:242) so no queued output races process replacement; a reconnect does not revive those. | With a loop stopped (or `on_ready` never reached), `queue_*` calls accumulate silently in the deques forever — the bot looks alive and says nothing. This is also why `commands/update_bot.py` is the one module that bypasses the queues entirely: its functions are `async def` awaiting `interaction.followup.send` directly (`git_pull` update_bot.py:33, `update_bot` :119), because during `/update` the dispatch loop is already stopped and queued progress reports would never flush. |
-| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (43 occurrences as of 2026-10-25). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:129-130), which powers reminder command execution (analytics.py `resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command" (a command removed on purpose fails the same way; the "was retired" shim was removed 2026-10-25); rename or remove a slash **parameter** → "`<option>` is not one of its options" (the option-dropping shim, used for /update_stats's `use_local_repo`/`use_local_timestamp`, was removed 2026-10-25); change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
+| 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (39 on 2026-11-21). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:134-135), which powers reminder command execution (analytics.py `resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command" (a command removed on purpose fails the same way; the "was retired" shim was removed 2026-10-25); rename or remove a slash **parameter** → "`<option>` is not one of its options" (the option-dropping shim, used for /update_stats's `use_local_repo`/`use_local_timestamp`, was removed 2026-10-25); change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
 | 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:409, re-exported by psd_analyzer), `card_repo` (query_card.py:990), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:26-30). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); the facade reaches utils: psd_analyzer → query_card → type_emojis → utils. | Any tool importing the facade or main needs a config.py present (the tests supply a fake). The card data needs none: card_db, card_models and card_data import no config (the Card sync Action runs without one), and the diagnostics read db/ JSON through `card_db.read_cards` (the allow-list unpickler went 2026-10-25). config.py is SECRET — never print or read its values. |
 | 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:806-808, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the woken command loop starts it at once, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with the slash shortcuts and the /reminders panel, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.json is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
@@ -257,6 +260,22 @@ and `bot=False`. Its delivery trick is deliberate: `FakeResponse.send_message` d
 the one send that needs no interaction. FakeInteraction rides the error path **by design**; do not
 "clean up" the dispatch loop's `AttributeError` handling without rerouting reminders first.
 
+### (d) Card timelines (by hand on the Mac; 2026-11-13..19)
+
+```
+the Discord archive + the first repo's store (~/Documents/Tools/firstrepo.git; both outside every repo)
+      v
+commands/discord_match, discord_verdicts, discord_chain, discord_morgue -> discord_preview build, check
+      (owner answers: scripts/apply_rulings.py)
+      v
+scripts/history_branch.py --push -> TTSCardMaker's orphan `history` branch (per card: pictures + timeline.json; _morgue/)
+      v
+site.yml's build (HISTORY_DIR = that branch's checkout); pictures load from raw.githubusercontent at the branch's commit
+```
+
+Created dates go in by hand as commits to TTSCardMaker's `site/Card Creation Dates.json` (bb87cb30, 86d446ea:
+Pacific days, 2026-11-17). No workflow and no bot module takes part. Design and status: docs/Future/CARD_TIMELINE.md.
+
 ## Module dependency map
 
 ```
@@ -319,10 +338,14 @@ main.py  (registration + queue loops; imports every commands module)
  '- commands.update_bot    -> repo_history (batch_overrides);
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
-Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them, even lazily: invariant 11):
-psd_parser, psd_details, psd_edit, font_check, psd_remote, card_data's build, card_check,
-card_guards, card_standards, png_export, psd_diff, txt2_repair and tts_save
-(/update_metadata, /mass_replace and /alias are on branch archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
+The bot's closure (main.py's imports, lazy ones too; 21 modules on 2026-11-21): analytics, backup, card_db,
+card_edits, card_grid, card_history, card_models, card_sync, forum_votes, github_api, help, management, music_player,
+psd_analyzer, query_card, reminder_panel, repo_history, rulebook, type_emojis, update_bot, utils. Every other module in
+commands/ (47) is card side: CLIs, TTSCardMaker's Actions and the timelines tools (psd_parser, psd_details, psd_edit,
+card_data, card_bake, card_guards, card_checks, card_plates, card_preview*, tts_save, changelog, the discord_* modules
+...); no bot module imports one, even lazily (invariant 11, tests/test_bot_env.py). A jetson deploy is owed only when a
+push changes one of the 21, main.py, global_config.py or requirements-bot.txt.
+(/update_metadata, /mass_replace and /alias are on branch archive/discord-edits.)
 
 (not in main) branch archive/local-update-stats: archive/local_update_stats.py  (2026-10-20)
      -> commands.psd_analyzer, commands.query_card, global_config   [the archived local /update_stats mode]
@@ -451,8 +474,8 @@ optimization pass.
   as the music downloader does; remember `executor` is a reserved kwarg name.
 - **Retiring a feature (owner's rule, 2026-10-20: archives go on branches)**: delete the code from main and
   commit it to its own branch `archive/<topic>`, made from main in a separate worktree so uncommitted work on
-  main is untouched (`git worktree add /tmp/wt -b archive/<topic> HEAD`, add the file, one commit,
-  `git worktree remove /tmp/wt`). Never merge it. Main carries no `archive/` folder. The archived file's header
+  main is untouched (`git worktree add ~/Documents/Tools/wt/<topic> -b archive/<topic> HEAD`, add the file, one
+  commit, `git worktree remove ~/Documents/Tools/wt/<topic>`; reboots wipe /tmp). Never merge it. Main carries no `archive/` folder. The archived file's header
   says when and why, and docs point at the branch. Example: local mode on branch `archive/local-update-stats`
   (list archive branches with `git branch --list 'archive/*'`). **Dead code with no callers is just deleted**,
   not archived (owner, 2026-10-20). The old reminder argument parser and the unused image helpers were deleted
@@ -495,9 +518,9 @@ Re-find before citing:
 | queue_* helpers | `grep -n "^def queue_" commands/utils.py` (69/75/81/87/93/99) |
 | to_thread coroutine passthrough | `grep -n -e "def to_thread" -e "iscoroutinefunction" commands/utils.py` (116, passthrough 118-120) |
 | run_command + reserved `executor` kwarg | `grep -n "async def run_command" main.py` (716); `grep -rn "executor=executor" commands/music_player.py` |
-| Registration rebind count | `grep -c "= to_thread(" main.py` (43 on 2026-10-25) |
+| Registration rebind count | `grep -c "= to_thread(" main.py` (39 on 2026-11-21) |
 | One sync at a time; no bot module imports the bake | `grep -n "_sync_lock\|_run_lock" commands/card_sync.py`; `grep -ln "card_bake" main.py commands/card_sync.py commands/psd_analyzer.py` (empty) |
-| slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (134) |
+| slash_registry population | `grep -n "slash_registry\[cmd.name\]" main.py` (135) |
 | Reminder resolve/bind/queue | `grep -n "slash_registry.get\|queue_command(_run_reminder_command" commands/analytics.py` |
 | Reminders fire as creator; single-flight | `grep -n "_ReminderUser(\|_check_lock" commands/analytics.py` |
 | FakeInteraction + default bot user id | `grep -n "def make_fake_interaction\|1011264680683110433" commands/utils.py` (160, 174) |
@@ -579,3 +602,7 @@ psd_remote and card_sync's /fonts from the manifest; the outside-the-bot list na
 
 2026-11-12 (asks-1112, owner G4): /frankenstein (module and its cv2 helpers in utils), /volume, /set_ratio, /set_repo and
 /view_old_metadata deleted; the module map loses commands.frankenstein, the facade holds no metadata command.
+
+2026-11-21 (wrap-1121): the map points at the card timelines and the desktop app's site hook; data flow (d) card
+timelines; the bot's closure listed (21 modules; 47 card side) in place of the old outside-the-bot list; rebind count 39;
+archive worktrees under ~/Documents/Tools/wt (reboots wipe /tmp). Checked at AC ea0db694.

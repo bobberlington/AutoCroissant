@@ -784,7 +784,7 @@ only (`breakfast` lists A Snack2 itself; never by ability or a condition: counte
 | Syntax | Meaning | Example |
 |---|---|---|
 | bare text | substring of name, printed title, website names/aliases, old names, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
-| `"quoted text"` | word-boundary-ish regex match on the same text | `"draw 2"` |
+| `"quoted text"` or `'quoted text'` | word-boundary-ish regex match on the same text (single quotes too since 2026-11-20: AC c275f8fa, the website alike, TC f64102b9) | `"draw 2"`, `'heal 2'` |
 | `!expr` | NOT — any term, conditions too | `!die`, `!type==creature` |
 | `a & b` | AND (index intersection) | `type==creature & hp>7` |
 | `a \| b` | OR (index union, deduplicated) | `hp>9 \| spd>9` |
@@ -795,7 +795,22 @@ only (`breakfast` lists A Snack2 itself; never by ability or a condition: counte
 
 Spaces around an operator are fine (`hp > 5`, `type == creature`, `created >= 2025`; 2026-10-23, as the website's
 search). `created` is the card's `site/Card Creation Dates.json` date, or its first upload when the file misses it or
-is later (`CardDates.created`, the website's rule); it is in `/export_cards` and the metadata view too.
+is later (`CardDates.created`, the website's rule); it is in `/export_cards` and the metadata view too. Its days are
+Pacific days, the site's and the bot's clock (owner 2026-11-17; the card timelines' Created commits set and moved
+them, TC bb87cb30, 86d446ea). Pep Drink and Wham Bam Bone are "before 2020" (`"before": 2020` beside their date, from
+a photo of the physical card, owner 2026-11-14): only `created<` / `<=` a later date finds them (`_before`), and
+/query, /query as_of and the exports say "before 2020" (psd_analyzer `_shown`; `CardInfo.to_dict` keeps the date, the
+bake gates compare it).
+
+On a card with several creatures, hp, def, atk, spd and total match when any creature meets them (owner 2026-11-18,
+AC cb6442f6; the website's search, Cards range filter and Stats bars alike, TC fd9646ef, 8ec61019); previews and the
+table keep creature 1.
+
+A plain term no card's text holds that is a run of whole words of a series' or subseries' name lists those cards
+with a note (`_by_series`, `series_note`, 2026-11-20, AC 835f78af; the website alike, TC 04633c51): `spongebob`, `five
+nights` -> "No card's text has “spongebob”: the series SpongeBob SquarePants". Words compare case and accents aside,
+stopwords and words under 3 letters left out, numbers kept (`series_words`); never inside a typed card name (93aba1b3);
+in an OR or NOT each term falls back on its own (`!spongebob` drops that series' cards).
 `site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
@@ -975,3 +990,6 @@ change, sections 4-5 are stale until rewritten.
 2026-11-12 (asks-1112, owner G5/G6): Card Ratings.json data only (`tts_ratings` deleted); the `ability_art` field deleted (`art` keeps reading an older record's one string: Soul of Eden's).
 
 2026-11-15: §7.2 gotcha 10: one result posts as /query does (one embed), 'Found 1 result'.
+
+2026-11-21 (wrap-1121): 'single quotes' as quoted terms; any creature meets a stat; Created as Pacific days and Pep
+Drink / Wham Bam Bone's "before 2020"; the series-words fallback (x40). Checked at AC ea0db694, TC 0cb95c33.

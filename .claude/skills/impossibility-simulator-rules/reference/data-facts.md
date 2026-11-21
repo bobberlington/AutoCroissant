@@ -145,8 +145,10 @@ Ch 05: the N.M.E. shop shows 4 random N.M.E. items; their purchase cost is writt
 | `Auxiliary/Rulebook/` (then; `MDW/Old Rules/Rulebook/` since 2026-10-30) | `rulebook` (then) | 48 PSD+PNG | - | the Photoshop pages 00..22, now history (section 6) |
 | `Auxiliary/Markers/` (then; `MDW/Assets/Markers/` since 2026-10-30) | excluded | 1 PSD (`Green and red.psd`), 10 PNG | - | Green.png/Red.png (the .5 tile faces), health/defense/attack/speed_marker.png and their minus_ versions (stat markers) |
 
-Retired cards: `MDW/The Morgue/` (12 PNGs incl. cardback: Cho'Gath, Developper, Ech, Fire Guardian's Stronghold,
-Grandfather Clock, Pandeity Old, Poison Incantation, Satou, Satou Matsustaka, The Missile, ...); excluded from stats.
+Retired cards: `MDW/The Morgue/` (13 PNGs incl. cardback: Cho'Gath, Developper, Ech, Fire Guardian's Stronghold,
+Grandfather Clock, Pandeity Old, Poison Incantation, Satou, Satou Matsustaka, The Missile, Warcraftian Rouge, White
+Palace); excluded from stats. The website's Morgue page also lists 75 cards lost before the repo (the card timelines,
+2026-11-17).
 On the TTS table 7 of them were the "Deck of Rejects" in the Specific Item Decks bag (both removed 2026-11-06).
 
 ## 2. Type vocabulary (Types/, Types/Stars/, stoogedings.json)
@@ -575,9 +577,12 @@ items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (m
 ## 8. How the bot and the website expose the rules
 
 Bot (AutoCroissant, `main.py` + `commands/query_card.py`):
-- `/query_rulebook search_text [limit]`: plain case-insensitive substring over the chapters (`db/rulebook.json`,
-  `rulebook_dff`); no DSL; the reply quotes the matching lines under their chapter names, the chapters with the most
-  matches first, as written, with `render_type_tokens` (icons as emojis). An empty search asks for a word or phrase.
+- `/query_rulebook search_text [limit]`: the words typed over the chapters and the ban list (`db/rulebook.json`,
+  `rulebook_dff`; any case, a word typed without its `'` or `.` too, a hyphen between two letters, either quotes, whole
+  icons, a timing tag's row; `loose`); no DSL; the reply quotes the matching lines under their chapter and section, the
+  chapters with the most lines holding it at a word start first ("ring" before "during"), then the most lines, the ban
+  list last (`rulebook_lines`), as written, with `render_type_tokens` (icons as emojis); a section's own title brings
+  its rules. An empty search asks for a word or phrase.
 - `/export_rulebook`: a UTF-8 text file of every chapter, in book order, then the ban list (★, −, emojis kept).
 - `/query name`: card image by fuzzy file-name match (works for status effect cards, e.g. "poison", and for Types/ icons).
 - `/query_ability query [limit] [howmany]`: the DSL over every non-rulebook card with ability text. For status effects

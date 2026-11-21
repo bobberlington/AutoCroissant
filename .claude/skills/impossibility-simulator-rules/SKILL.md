@@ -197,8 +197,7 @@ texts and the per-line mapping: `reference/data-facts.md` §4.
   (1CD)(XU) -> (1GCD)(XU)". Its old last rows, "(XPT) -> (XPGT)" and "(EXT) -> (EXGT)", were in the other order, so (XPT) became
   (1CD)(XU) and (EXT) became (XCD).
 - **Time Riddle** (4★ equip, banned in constructed): "Doubles all time-based and (XPG) ability usage, for example: (2CD) -> (1CD)
-  / (1CD) -> (1CD)(2U) / (1PG) -> (2PG) / (1GCD) -> (1GCD)(2U)". Its first line, "Has no effect until 2 lanes have gone.", still
-  counts lanes (Known gaps).
+  / (1CD) -> (1CD)(2U) / (1PG) -> (2PG) / (1GCD) -> (1GCD)(2U)".
 - **Recharge words.** Energy Ritual "fully recharges and restores all usages of all time-based and (XPG) abilities"; Michael
   "(2GCD) Recharge 1 turn of charge to another creature's ability" (was "(E2GT) Refresh another creature's ability usage as though
   another turn has passed"). Older text with the same idea: Cave Of The Past "All 🕐time-based effects and abilities do not
@@ -494,7 +493,9 @@ Assembled from the rulebook's own examples; the joins are this skill's.
 3. **Where the text lives.** `site/rulebook/NN-slug.md` in the card repo, written on the website; the website's Rulebook tab shows them, Card sync
    writes the bot's `db/rulebook.json` and prints `TTS/Rulebook/Rulebook.pdf`. Beside this file: `reference/glossary.md` (every defined term and tag
    by chapter) and `reference/data-facts.md` (the card-data counts behind this file).
-4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the chapters, icons as emojis; `search_text` is required
+4. **The bot.** `/query_rulebook search_text [limit]`: the words typed (any case; a word without its `'` or `.`, a hyphen between two letters,
+   either quotes, whole icons, a timing tag's row), quoted by chapter and section with the ban list too, icons as emojis (details:
+   impossibility-cards-reference); `search_text` is required
    by the slash command (main.py); a whitespace-only search only gets "Give a word or phrase to search the rulebook for.". `/export_rulebook`: all chapters as a
    text file. `/query_ability` searches card text (`type==debuff & stars==3`, `(1gcd)`; DSL in impossibility-cards-reference §7) in the bot's card
    data.
@@ -531,10 +532,7 @@ Toy Chica + Chef Saltbaker (11); "field item" is now "field card" in the chapter
 **Owner rulings 2026-11-01, later (now in 14, 15, 22):** minions are tied to their parent creature (the creature they are on), not their summoner, and a summoner can occasionally summon onto another creature; a defeated parent's minions die unless persistent. A creature's innate abilities and its equip's are separate (Sword of Aeons grants lifesteal; the creature has none innately), and negating a creature does not negate its equipped items.
 
 Tensions left in the text:
-- Cards still counting lanes as turns (card text is not changed by rulebook work): Delicate Flower "3 lane turns", The Last Cabbage Merchant "each time a
-  lane turn ends", Time Riddle "until 2 lanes have gone", Asteroid Field "Every time a lane ends its turn", Forget Me Now "after the current lane ends", NME
-  Salesman "3 lanes' turns must end", Lost Kin "always go first in its lane". Other cards' "lane" is the place (Dimension D, Inner Eye, Mom's Knife).
-- Pair turns are undefined with uneven slots (White Palace). Prime creature (16) and base stats (07) are our wording from Discord discussion, no official text.
+- Prime creature (16) and base stats (07) are our wording from Discord discussion, no official text.
 - Ch 12's pictures show old card text (§3).
 
 Undefined: "tier"; "proc", "instance", "on-hit", "reactively", "innate actions/type"; "cleanse" (card word); "N.M.E."; the "Don't be stupid" rule.
@@ -586,3 +584,8 @@ tags.py, lines.py and mentions.py on its db/stats.json (or on the site's cards.j
 
 2026-10-22: counts re-measured after the cooldown update (TTSCardMaker `73904dbd`). 2026-10-25: scripts read db/stats.json. 2026-11-01: restated from the chapters; the
 verbatim Photoshop extract and its build scripts removed (a copy would drift; they remain in git history). 2026-11-05: §3's ring paragraph (ch 23 "Reading the ring" at TTSCardMaker 0ade8c3d).
+
+2026-11-21 (wrap-1121): two Known gaps entries the owner ruled non-issues (2026-11-10: never recorded or raised) deleted,
+with Time Riddle's pointer to them;
+/query_rulebook is a loose word search by section (here and in data-facts §8); data-facts: the Morgue's 13 PNGs and the
+website's 75 lost cards. Checked at AC ea0db694, TC 0cb95c33.

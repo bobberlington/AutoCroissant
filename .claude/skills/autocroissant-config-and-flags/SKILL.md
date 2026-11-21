@@ -231,7 +231,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `STAR_CORE_ALPHA` (2026-10-20) | `129 / 255.0` (0.5 until 2026-10-26) | opacity at or above which a star layer's pixels count as its core (`_core_of`, `star_pieces`): over half, so a painted 128 shadow is not (Leshy) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `7` (psd_parser.py:25; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes; 7 since 2026-11-09, 8a1787e3) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:207), and retries a PSD that failed under another version (:1346). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
+| `PARSER_VERSION` (2026-10-21) | `7` (psd_parser.py:27; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes; 7 since 2026-11-09, 8a1787e3) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:203), and retries a PSD that failed under another version (:1361). Bump it when a parser change must reach the stored cards: the next run reads every PSD (769 on 2026-11-21) |
 
 ### the card data build: commands/card_data.py (2026-10-22; docs/Campaigns/DATA_BUILD_ACTION.md)
 
@@ -391,7 +391,7 @@ It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `VERSION` | `4` | the details file's `"version"` (2: `parts`; 3: type layers' colour `runs`; 4: `stat_caps`) |
+| `VERSION` | `13` | the details file's `"version"` (2 `parts`, 3 colour `runs`, 4 `stat_caps`, 5 `frame` and `px`, 6 `lf`, `badges`, `just`, 7 `stroke`, 8 text `fx`, 9 `lead`, 10 `heads`, 11 parts' `clip`, 12 text `effects`, `fb` (faux bold), `outline` (stacked Strokes), 13 `fr` (letters in another font)); a bump makes the next Card sync read every record again (budgeted, chained runs; 11 -> 13 on 2026-11-21: data e111f436, all 769 current records v13) |
 | `TEXT_CHARS` | `2000` | characters of text kept per type layer |
 | `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
 | `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |
@@ -519,6 +519,17 @@ The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card'
 (`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job
 only); its pip install is the other card workflows' (card-sync.yml's, card-edits.yml's until 2026-10-24), fork pin and all. Nothing in config.py.
 
+### commands/card_preview_lane.py (2026-11-16, owner D22; card-preview.yml's warm lane)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `LANE_IDLE` | 240 s | the lane ends this long after its last press (owner: about 4 minutes) |
+| `MIN_LEFT` | 60 s | job time a lane needs to take a press |
+| `POLL`; `POLL_SLOW`, `LOW` | 0.3 s; 3 s, 100 | between listings (conditional: a 304 isn't counted); the slow pace while the rate limit left is under LOW |
+| `HAND_WAIT` | 10 s | the first press's hand-over |
+| `MAX_RSS` | 2 GiB | peak memory past which it takes no more presses |
+| `CONTEXT` | `preview lane` | the doorbell: the commit status the website posts for a press (2026-11-18, no refs); `NEXT` statuses name a card its editor started editing (`MAX_NEXT` 20) |
+
 ### commands/card_plates.py (2026-11-11; card-checks.yml's Plates steps; the website's mock-up)
 
 | Constant | Value | Meaning |
@@ -568,6 +579,7 @@ to `LOCAL_REF` `refs/card-plates/head`: a bars/icons sheet whose pixels equal th
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: ONE post per push (the push guards, card check and font check together, new notes only; pings the card makers' role only when a font is missing) and the failure alerts of Card guards and Card sync (one per broken push, marker `<!-- discord-failure-told -->` in the head commit's comments), 2026-11-11 |
 | `card-guards-quiet` | environment, UNUSED since 2026-11-03 (no job names it: owner, no 30-minute wait; deletable in Settings > Environments) (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 | `card-sync-quiet` | environment, UNUSED since 2026-11-03 (no job names it; deletable) (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |
+| schedules | workflow crons | Card sync `17 * * * *` (the hourly safety net; GitHub starts it every 4-10 h), Card checks `41 6 * * *` (owner D18, 2026-11-15), Card browser (site.yml) `0 12 * * *` (daily fallback build). Schedules sit on :00/:30 (owner 2026-10-24); :17 and 06:41 are the owner's two exceptions |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 
@@ -829,3 +841,7 @@ reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone
 2026-11-12 (asks-1112, owner G5/G6): `RATINGS_PATH`: the TTS-session import `tts_ratings` deleted (the file is data only; a card rename moves its entries); `ability_art` gone from card_edits.
 
 2026-11-13 (grid thumbs): card_grid's `THUMB_W` and `AVIF`; grid pictures from the website's thumbs first.
+
+2026-11-21 (wrap-1121): psd_details `VERSION` 13 (12 and 13 landed 2026-11-21, re-read to data e111f436); PARSER_VERSION
+at psd_parser.py:27 and card_data.py:203/:1361, 769 PSDs; card_preview_lane's block; the workflow schedules row.
+Checked at AC ea0db694, TC 0cb95c33.

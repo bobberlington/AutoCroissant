@@ -39,11 +39,12 @@ correct answer *with a citation to the rulebook chapter or card that proves it*.
 
 ### Why the current state falls short
 
-- `/query_rulebook` is a case-insensitive **substring** search over the rulebook's
-  chapters (`rulebook_search_engine`, commands/query_card.py:513 — one `str.contains` call; it
-  posts the matching lines with their chapter names; wrapper `query_rulebook` :1190).
-  Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:436): `|` OR,
+- `/query_rulebook` finds the words typed over the rulebook's chapters and the ban list (any case; a word typed
+  without its `'` or `.`, a hyphen between two letters, either kind of quotes, whole icons, a timing tag's own row;
+  `loose`, commands/query_card.py:93) and quotes the lines by chapter and section (`rulebook_search_engine` :806,
+  `rulebook_lines` :1978, wrapper `query_rulebook` :1901; details: impossibility-cards-reference). Ask it a question and
+  it still matches only the words in it.
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:672): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.
@@ -53,11 +54,11 @@ correct answer *with a citation to the rulebook chapter or card that proves it*.
 
 | Asset | Where | Why it matters |
 |---|---|---|
-| 813 structured cards | `stats.pkl` (765 cards + 48 rule pages; rule pages are not cards since 2026-10-30) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:262) writes `rules.txt` from the website's chapters (`db/rulebook.json`); `/export_rulebook` (main.py:426) | The game's rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:167) writes `stats.csv` with an aliases column; `/export_cards` (main.py:413) | Structured stats + ability text in one table |
-| Type-annotated ability text | `_inject_type_names` (psd_parser.py:1506) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
-| Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
+| 777 structured cards (2026-11-21) | the data branch's `db/stats.json` (the bot's `card_data/`; `stats.pkl` until 2026-10-25) | The knowledge base already exists — no scraping project needed |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:231) writes `rules.txt` from the website's chapters (`db/rulebook.json`); `/export_rulebook` (main.py:389) | The game's rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:155) writes `stats.csv` with an aliases column; `/export_cards` (main.py:376) | Structured stats + ability text in one table |
+| Type-annotated ability text | `_inject_type_names` (psd_parser.py:1644) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
+| Synonym map | the aliases in TTSCardMaker's `site/Card Edits.json` (`aliases.pkl` until 2026-10-25) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
 
 ### First three steps (in this repo)
@@ -357,7 +358,7 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
 | Card count / type distribution (rule pages left the data on 2026-10-30) | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --db origin/data --git ~/Desktop/TTSCardMaker` |
-| Rulebook search is substring | `grep -n "str.contains" commands/query_card.py` (inside `rulebook_search_engine`; def: `grep -n "def rulebook_search_engine" commands/query_card.py`) |
+| Rulebook search (loose words, by section) | `grep -n "def rulebook_search_engine\|^def loose\|^def rulebook_lines" commands/query_card.py` (806, 93, 1978 on 2026-11-21) |
 | Ability DSL location | `grep -n "def ability_search_engine" commands/query_card.py` |
 | Export functions / filenames | `grep -n "def export_" commands/psd_analyzer.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
 | /export, /query registrations | `grep -n 'name="' main.py` (lists every slash-command registration; scan for export_cards, export_rulebook, query_rulebook) |
@@ -392,3 +393,7 @@ changing old questions invalidates every historical score.
 2026-10-25 (step 10): Item 4 marked done (the card data build replaced the pickles-in-git state).
 
 2026-11-01 (chapters): citations and assets name the website's chapters, the only home of the rules.
+
+2026-11-21 (wrap-1121): /query_rulebook is a loose word search by section (no longer substring; hyphens since x39), in
+"Why the current state falls short" and the re-verify table; assets name db/stats.json (777 cards) and Card Edits.json's
+aliases; citations re-pointed. Checked at AC ea0db694, TC 0cb95c33.
