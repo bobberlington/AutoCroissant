@@ -121,14 +121,17 @@ def test_website_synonyms_are_the_bots():
 def test_plain_terms_find_series_and_bare_names(repo, tmp_path):
     """A plain term also finds a series' or subseries' cards and a name typed without its punctuation, series== and
     series~ a subseries too, a known field's lone = is ==, a name typed with & finds its cards (& inside quotes is
-    text) and alias== any one alias, on the bot and the website."""
+    text), alias== any one alias and a 'single-quoted' term is whole words too, on the bot and the website."""
     rows = [("kirby", {"Kirby", "Meta Knight", "King Dedede"}), ("binding of isaac", {"Mom's Knife"}),   # without The
             ("moms knife", {"Mom's Knife"}), ("msk", set()),           # 3 letters or fewer: a whole name only
             ("kirby's return to dream land", {"King Dedede"}), ("series==kirby's return to dream land", {"King Dedede"}),
             ("series~dream", {"King Dedede"}), ("series=undertale", {"sans."}), ("hp = 6", {"Mettaton EX"}),
             ("mario & luigi: superstar saga", {"Power Ring"}), ("mario & luigi", {"Power Ring"}),
             ('subseries~"mario & luigi"', {"Power Ring"}), ("alias==mk", {"Meta Knight"}),   # any one alias
-            ("alias==galaxia knight", {"Meta Knight"})]
+            ("alias==galaxia knight", {"Meta Knight"}),
+            ("'damage' & !'die'", {"Fire Bomb"}), ("‘can't affect’", {"Burning"}),   # 'single' quotes: "double"
+            ("'s", {"Mom's Knife"}), ("'kirby'", {"Kirby", "Meta Knight", "King Dedede"}),   # still a series
+            ("'moms knife'", {"Mom's Knife"})]
     for query, cards in rows:
         assert _shown(repo, repo.ability_search_engine(query).index) == cards, query
     assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]

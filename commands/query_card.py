@@ -620,7 +620,7 @@ class CardRepository:
         - OR queries: "ability1 | ability2"
         - AND queries: "ability1 & ability2"
         - NOT queries: "!ability"
-        - Exact matches: '"exact text"'
+        - Exact matches: '"exact text"' or "'exact text'"
         - Numeric comparisons: "hp>5", "stars<=3", "def==10"
         - String exact match: "type==creature", "subtype==attack"
         - String contains: "type~aux", "series~kirby"
@@ -668,14 +668,17 @@ class CardRepository:
         if stat_result is not None:
             return stat_result
 
-        # Text: names, aliases and ability, a name without its punctuation, a (sub)series (as the website); "quoted" as whole words
+        # Text: names, aliases and ability, a name without its punctuation, a (sub)series (as the website); "quoted" as
+        # whole words; 'quoted' also as whole words, beside what it finds as typed (a series, a name)
         hay = self._haystack()
+        edge = lambda ch: r"\b" if ch.isalnum() or ch == "_" else ""   # a word's edge; a tag's ( and ) are their own
+        whole = lambda term: edge(term[:1]) + escape(term) + edge(term[-1:])
         if len(ability) > 1 and ability.startswith('"') and ability.endswith('"'):
-            term = ability.strip('"')
-            edge = lambda ch: r"\b" if ch.isalnum() or ch == "_" else ""   # a word's edge; a tag's ( and ) are their own
-            pattern = edge(term[:1]) + escape(term) + edge(term[-1:])
+            pattern = whole(ability.strip('"'))
             return self._with_pictures(hay.str.contains(pattern, na=False).values, pattern)
         pattern = self._text_pattern(ability)
+        if len(ability) > 2 and ability[0] == ability[-1] == "'":
+            pattern = f"(?:{whole(ability[1:-1])})|(?:{pattern})"
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
         if len(exact_matches) or not near:

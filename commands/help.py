@@ -34,7 +34,7 @@ card_commands = {
     "/query_ability <query> [limit] [howmany]": "Posts the cards matching text or conditions (syntax below); howmany: just the count.",
     "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter and section (the ban list too); a section's title brings its rules.",
     "/sync_emojis [refresh] [prune]":        "Uploads the icons in Types/ as the bot's emojis (admin).",
-    "Query syntax":                          "\n  \"exact text\"  !not  a | b  a & b  has:alias"
+    "Query syntax":                          "\n  \"exact text\" or 'exact text'  !not  a | b  a & b  has:alias"
                                              "\n  hp>5  def<=10  atk==3  spd>=7  stars<6  total>=25"
                                              "\n  type==creature  series==kirby  subseries~door  alias~clot  (== or = exact, ~ contains)"
                                              "\n  series== and series~ find a subseries too"
