@@ -2,7 +2,7 @@
 The rulebook's TTS PDF: the website's #/rules/print pages (1080x1920, the cover then the chapters cut as the Photoshop
 pages were) printed by Chrome to the card repo's TTS/Rulebook/Rulebook.pdf (real text: searchable and selectable, one
 page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels and its text
-with its icons' and card pictures' names (the TTS save's search). Card
+with its icons' and card pictures' names and its section headings (the TTS save's search). Card
 sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object). The
 pages are drawn in the website's fonts (BOOK_FONTS, the checkout's MDW/Fonts copies, also where the machine has none:
 Card sync's Ubuntu), so their lines break as on the website.
@@ -87,13 +87,16 @@ KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || ""
           'return s.href ? (s.href.startsWith(root) ? s.href.slice(root.length) : s.href) : s.ownerNode?.textContent || ""; }), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
 # each page's text (pages.json "t": the TTS save's search): innerText with its icons as [name] and its card pictures by
-# name (app.js bookWords' words), put in for the read and taken out again (nothing drawn changes)
+# name (app.js bookWords' words), put in for the read and taken out again (nothing drawn changes); and its section
+# headings (pages.json "h", rulebook.js's .rb-tab: db/rulebook.json's sections), emoji out, quotes straight
 TEXT_JS = """(() => { const sheets = [...document.querySelectorAll(".rb-sheets .rb-sheet")];
+  const heads = sheets.map(e => [...new Set([...e.querySelectorAll("h3.rb-tab")].map(h => h.textContent.replace(/[\\u2018\\u2019]/g, "'")
+    .replace(/\\p{Extended_Pictographic}|\\uFE0F/gu, "").replace(/\\s+/g, " ").trim()))].filter(Boolean));
   const added = [...document.querySelectorAll(".rb-sheets .rb-sheet :is(img.tok, img.tokv, .rb-card img)")].filter(i => i.alt.trim())
     .map(i => { const next = i.nextSibling?.nodeType === 3 ? i.nextSibling.data : "";     // "[machine]." kept tight
       const t = document.createTextNode(` ${i.matches(".tok, .tokv") ? `[${i.alt.replaceAll("_", " ")}]` : i.alt}${/^[^\\s\\w]/.test(next) ? "" : " "}`);
       i.after(t); return t; });
-  try { return sheets.map(e => e.innerText.replace(/\\s+/g, " ").trim()); } finally { for (const t of added) t.remove(); } })()"""
+  try { return sheets.map((e, k) => [e.innerText.replace(/\\s+/g, " ").trim(), heads[k]]); } finally { for (const t of added) t.remove(); } })()"""
 UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
 FONTS_DIR = "MDW/Fonts"                        # the card repo's fonts (psd_edit.FONTS_DIR)
 # the rulebook's fonts on the website (style.css: .rb's first, .rb-grid's tables' first): their files in FONTS_DIR
@@ -286,8 +289,8 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
         if key and key == known:                             # nothing they draw changed: no screenshots
             return dict(listed["chapters"]), None, Printer(None, chrome.close), key, page, plain
         texts = run(TEXT_JS)
-        for entry, text in zip(listed["sheets"], texts or []):
-            entry["text"] = text                             # the TTS save's search (Global.lua)
+        for entry, (text, heads) in zip(listed["sheets"], texts or []):
+            entry["text"], entry["heads"] = text, heads      # the TTS save's search (Global.lua)
         shots = []
         for entry, (x, y, w, h) in zip(listed["sheets"], boxes):
             if (round(w), round(h)) != SHEET:
@@ -402,8 +405,8 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "
         {"pages": n, "changed": [page names], "printed": bool}; None when it would print without a pdf_maker
     """
     makedirs(folder, exist_ok=True)
-    pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png), **({"t": entry["text"]} if entry.get("text") else {})}
-             for entry, png in shots]
+    pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png), **({"t": entry["text"]} if entry.get("text") else {}),
+              **({"h": entry["heads"]} if entry.get("heads") else {})} for entry, png in shots]
     listing, pdf = join(folder, PAGES_JSON), join(folder, PDF_FILE)
     old = {}
     if isfile(listing):
@@ -412,9 +415,9 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "", pre: str = "
                 old = loads(fh.read())
         except ValueError:
             old = {}
-    # a page's text too: the save reads pages.json at the PDF's commit (tts_save)
-    before = [(p.get("name"), p.get("sha"), p.get("t")) for p in old.get("pages") or [] if isinstance(p, dict)]
-    changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"], p.get("t"))]
+    # a page's text and headings too: the save reads pages.json at the PDF's commit (tts_save)
+    before = [(p.get("name"), p.get("sha"), p.get("t"), p.get("h")) for p in old.get("pages") or [] if isinstance(p, dict)]
+    changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"], p.get("t"), p.get("h"))]
     need = bool(changed) or len(before) != len(pages) or not isfile(pdf)
     if need and pdf_maker is None:
         return None
