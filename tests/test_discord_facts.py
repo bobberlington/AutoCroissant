@@ -244,6 +244,16 @@ def test_eye_told_short_forms_and_the_february_document(tmp_path):
     got = [(g["facts"], g.get("eye")) for *_, g in F.changelog_lines(str(root), names(), TYPES, chat=False)]
     assert [(f["card"], f["field"], f["by"]) for f in got[0][0]] == [("Iron Golem", "atk", 1)] and got[0][1]
     assert got[1][0] == [] and not got[1][1]                          # only the told line, never a loose match
+    (root / "derived" / "review").mkdir(parents=True)                # owner 11-21: another card's name means it
+    (root / "derived" / "review" / "owner.json").write_text(json.dumps({"lines": {
+        "R1": {"card": "iron-golem", "line": "902:0", "form": "pike"}}}))
+    with (root / "messages" / f"{channel}.jsonl").open("a") as f:
+        f.write(json.dumps({**msg, "id": "902", "content": "Pike: ATK +1"}) + "\n")
+    n = names()
+    n.ids = {"iron-golem": "Iron Golem"}
+    got = [g for *_, g in F.changelog_lines(str(root), n, TYPES, chat=False)][-1]
+    assert [(f["card"], f["field"]) for f in got["facts"]] == [("Iron Golem", "atk")] and not got.get("eye")
+    assert got["given"]["card"] == "Iron Golem" and "Pike" in got["given"]["candidates"]
     import zipfile                                                   # a docx changelog: its heads, no text kept
     doc = root / "attachments" / "6655b62e4972ff.docx"
     doc.parent.mkdir()

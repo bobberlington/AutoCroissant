@@ -83,6 +83,8 @@ WEBP_W, WEBP_Q = 720, 80                   # the website's card view width; qual
 LIST_W, LIST_Q = 360, 52                   # a Morgue entry's list copy: the grid's 360 px AVIF (build_site IMAGE_SIZES)
 LIST_AVIF = {"subsampling": "4:4:4", "speed": 4, "max_threads": 1}   # build_site AVIF, AVIF_SPEED[360]
 LIST_SUFFIX = "-list.avif"                 # beside its webp: <webp stem>-list.avif
+KINDS = ("joke", "played", "idea")         # a Morgue entry's kind_of (build_site history_morgue's lost)
+OWNER = ("derived", "review", "owner.json")                 # morgue_list: the owner's word per Morgue entry
 MAX_PIXELS = 40_000_000                    # a picture past this is shrunk on open (phone photos)
 KINDS_OF = {"name": str, "stars": int, "types": list, "stats": dict, "ability": str}   # another kind: left out
 CHANGE_KEYS = ("name", "stars", "types", "stats", "bal", "buffs", "nerfs", "ability_change", "unknown")
@@ -296,15 +298,22 @@ def created_proposals(created: dict) -> dict:
     return out
 
 
-def morgue_entries(morgue: dict, ideas: list, rulings: dict) -> list:
+def morgue_entries(morgue: dict, ideas: list, rulings: dict, told: Optional[dict] = None) -> list:
     """[(entry, 'candidate' | 'mdw')]: the Morgue list with the review page's answers (timeline_review.morgue_list):
-    the candidates not answered 'no', the ideas and the rest answered 'yes' (kind: an idea's 'idea', the rest's
-    'played' with a played post, else 'joke'); the MDW Morgue cards' Discord pictures."""
+    the candidates not answered 'no', the ideas and the rest answered 'yes'; the MDW Morgue cards' Discord pictures.
+    told: the owner's word per entry (owner.json morgue_list): its kind (an 'idea' only so, owner 11-21 16:54) and
+    once; else a candidate's own kind (Q1, Q2), the rest's 'played' with a played post, else 'joke'."""
     said = lambda e: (rulings.get(f"morgue:{e['id']}") or {}).get("choice")
-    out = [(e, "candidate") for e in morgue.get("candidates") or () if said(e) != "no"]
-    out += [({**e, "kind": e.get("kind") or "idea"}, "candidate") for e in ideas if said(e) == "yes"]
-    out += [({**e, "kind": e.get("kind") or ("played" if e.get("played") else "joke")}, "candidate")
-            for e in morgue.get("not_candidates") or () if e.get("status") != "morgue" and said(e) == "yes"]
+    told = told or {}
+
+    def own(e: dict, kind: Optional[str]) -> dict:
+        mine = told.get(e["id"]) or {}
+        kind = mine["kind"] if mine.get("kind") in KINDS else kind
+        return {**e, **({"kind": kind} if kind else {}), **({"once": list(mine["once"])} if mine.get("once") else {})}
+    rest = lambda e: e.get("kind") or ("played" if e.get("played") else "joke")
+    out = [(own(e, e.get("kind")), "candidate") for e in morgue.get("candidates") or () if said(e) != "no"]
+    out += [(own(e, rest(e)), "candidate") for e in [*ideas, *(e for e in morgue.get("not_candidates") or ()
+                                                            if e.get("status") != "morgue")] if said(e) == "yes"]
     return out + [(e, "mdw") for e in morgue.get("not_candidates") or () if e.get("status") == "morgue"]
 
 
@@ -387,7 +396,8 @@ def morgue_out(entry: dict, files: dict, kind: str, facts: list = (), rows: list
     """(a Morgue entry's published timeline, [(webp name, job)]): its pictures as versions, its old and first repo
     rows (entry_rows; they take the place of its old-repo picture) and its changelog marks, oldest first; its first
     (M'uru's "Before 2020" from a physical card photo, owner Q6, with no day); git_file: the repo that had its
-    file."""
+    file. once (owner.json morgue_list): pictures that are one picture, shown once at the first post (also: the
+    other posts' dates and channels; owner 11-21 16:54, Fireball (Mario))."""
     entries, jobs = [], []
     for r in rows:
         e, job = row_entry(r)
@@ -410,6 +420,12 @@ def morgue_out(entry: dict, files: dict, kind: str, facts: list = (), rows: list
         if kind_of == "discord":
             e["channel"] = p.get("channel")
         entries.append(e)
+    same = sorted((e for e in entries if e["id"] in set(entry.get("once") or ())), key=lambda e: e.get("date") or "9")
+    if len(same) > 1:                              # one picture posted again (the owner's word): shown once, at its
+        gone = {e["image"] for e in same[1:]} - {same[0]["image"]}          # first post; the others' dates kept
+        same[0]["also"] = [{k: e.get(k) for k in ("date", "day", "channel") if e.get(k)} for e in same[1:]]
+        entries = [e for e in entries if e not in same[1:]]
+        jobs = [j for j in jobs if j[0] not in gone]
     entries += morgue_marks(facts, entry)
     entries.sort(key=lambda e: e.get("date") or "9999")
     first = entry.get("first") or {}
@@ -419,7 +435,7 @@ def morgue_out(entry: dict, files: dict, kind: str, facts: list = (), rows: list
                      "source": first.get("source")},
            "entries": entries}
     if entry.get("kind"):
-        out["kind_of"] = entry["kind"]             # joke | played
+        out["kind_of"] = entry["kind"]             # joke | played | idea
     if entry.get("in_joke") and (entry.get("nearest") or {}).get("name"):
         out["live"] = entry["nearest"]["name"]     # an in-joke on its live card too (owner 11-17 ~23:50): linked
     git = "old repo" if entry.get("old_repo") else "first repo" if entry.get("first_repo") else None
@@ -814,7 +830,8 @@ def build(root: str, old_git: str, workers: int = 3, force: bool = False, cards_
         r = loads(line)
         files[r["id"]] = (join(root, r["file"]), tuple(r["box"]) if r.get("box") else None)
     entries = morgue_entries(morgue, (dm.read_json(join(root, *IDEAS), {}) or {}).get("ideas") or [],
-                             (dm.read_json(join(root, *RULINGS), {}) or {}).get("rulings") or {})
+                             (dm.read_json(join(root, *RULINGS), {}) or {}).get("rulings") or {},
+                             (dm.read_json(join(root, *OWNER), {}) or {}).get("morgue_list") or {})
     facts = [f for f in dm.read_jsonl(join(root, *FACTS)) if str(f.get("card") or "").startswith("morgue:")]
     firsts, mdw_gone = mdw_firsts(root, expanduser(cards_repo) if cards_repo else None, commits), {}
     old_rows = morgue_rows(root)

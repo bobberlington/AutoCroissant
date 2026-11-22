@@ -32,7 +32,9 @@ through the old repo's sure renames (derived/oldgit/map.json) or the Discord-era
 Morgue's renamed entries, eye.json 'titled', the owner's owner.json old_names, some with a time limit), or a line's
 short form told by eye (derived/facts/eye_lines.json: line id -> card, form; the general matcher is not loosened), or
 the card a line naming no sure card was given (an 'ambiguous card' line: owner.json lines, over the review page's
-answers; a Morgue entry's 'morgue:<id>'; 'none' leaves it out); never through an alias, and no alias is written.
+answers; a Morgue entry's 'morgue:<id>'; 'none' leaves it out), or a line the owner gave a card it names by another
+name (owner.json lines with a form: read as that card, given; 11-21: two 2020 'Frozen in time' lines are Standstill's);
+never through an alias, and no alias is written.
 The 2019 balance-change lists posted as pictures (CHANGELOG_PICTURES) are read too: OCR'd, each 'Name (Buff/Nerf/
 Rework)' entry a changelog line '<message>:img<n>' (no text kept).
 Facts stop at the card repo's population (2023-11-05 23:15 PST); push notices at the old repo's first commit.
@@ -954,6 +956,8 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True,
         titles = chat_channels(root)
         channels += [(c, "chat") for c in sorted(titles)]
     told = (read_json(join(root, *EYE_LINES), {}) or {}).get("lines") or {}
+    owned = {r["line"]: r for r in ((read_json(join(root, *OWNER_FILE), {}) or {}).get("lines") or {}).values()
+             if r.get("form") and r.get("line") and names.ids.get(r.get("card"))}     # read as the owner's card
     for channel, source in channels:
         for m in messages(root, channel):
             if iso(m["timestamp"]) >= TC_CUT or not human(m) or not (m.get("content") or "").strip():
@@ -966,6 +970,10 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True,
                 if not line.strip():
                     continue
                 eye = told.get(f"{m['id']}:{n}")
+                mine = owned.get(f"{m['id']}:{n}") if source == "changelog" else None
+                if mine:                                        # the owner's: another card's name means this card
+                    named = sorted({k for s in at.find(norm(clean(line))) for k in s["keys"]})
+                    eye = {"card": names.ids[mine["card"]], "form": mine["form"]}
                 if eye and source == "changelog":               # a short form told by eye: the card's name read
                     line = sub(r"(?i)(?<![\w])" + escape(eye["form"]) + r"(?![\w])", lambda _: eye["card"], line, count=1)
                 got = parse_line(line, at, vocabulary, source, carry)
@@ -973,8 +981,10 @@ def changelog_lines(root: str, names: Names, vocabulary: set, chat: bool = True,
                     got = as_given(got, f"{m['id']}:{n}", given or {},
                                    lambda card, line=line, at=at, carry=carry: parse_line(line, at, vocabulary, source,
                                                                                          carry, told=card))
-                if eye and source == "changelog":
+                if eye and source == "changelog" and not mine:
                     got["eye"] = True
+                if mine:
+                    got["given"] = {"candidates": named, "head": None, "card": eye["card"]}
                 carry = got["heading"] or (carry if got.get("carried") or got["why"] == "no card" else None)
                 yield source, channel, m.get("channel_name") or titles.get(channel, (channel,))[0], m, n, line, got
 

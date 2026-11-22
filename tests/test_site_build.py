@@ -699,6 +699,12 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     assert eld["firstOld"] and eld["inGit"] and "firstCh" not in eld and "firstOld" not in joke[0]   # first seen in the old repo
     idea = {**json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text()), "kind_of": "idea"}
     assert bs.history_morgue({"morgue": [("_morgue/joke-card", idea)]}, bs.slugify)[0][0]["lost"] == "idea"   # owner 11-21
+    if '"also"' in open(bs.__file__, encoding="utf-8").read():                   # one picture posted again (11-21)
+        twice = json.loads((tmp_path / "history/_morgue/joke-card/timeline.json").read_text())
+        twice["first"]["date"] = twice["entries"][0]["date"]                          # its first post
+        twice["entries"][0]["also"] = [{"date": "2020-07-14T06:00:00+00:00", "day": "2020-07-14", "channel": "meme-cards"}]
+        assert bs.history_morgue({"morgue": [("_morgue/joke-card", twice)]}, bs.slugify)[0][0]["also"] == [
+            ["2020-07-13", "meme-cards"]] and "also" not in joke[0]                # its Pacific day
     assert "Joke Card" not in _by_name(out["cards.json"]) and _versions(out, joke[0]["id"])["early"][joke[0]["id"]]
     # an MDW Morgue card: its PNG's newest version is the current one; its Discord picture after its first record cut
     palace = next(c for c in out["cards.json"]["morgue"] if c["name"] == "White Palace")

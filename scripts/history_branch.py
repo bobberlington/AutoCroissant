@@ -47,7 +47,8 @@ TIMELINE_KEYS = {"card", "key", "name", "entries", "kind", "stop", "created", "g
                  "git_file", "live", "list"}
 ENTRY_KEYS = {"id", "kind", "date", "day", "badge", "image", "w", "h", "fields", "changes", "minor", "author", "subject",
               "channel", "repo", "posts", "era", "git_look", "change", "file", "confirmed", "confirmed_by", "as",
-              "meme_copy"}                                        # a new key: add it once it is known to hold no message text
+              "meme_copy", "also"}                                # a new key: add it once it is known to hold no message text
+# also: a Morgue picture's other posts (date, day, channel; owner 11-21)
 RAW_KEYS = {"message", "message_id", "messages", "content", "poster", "author_id", "jump_url", "url", "link", "links",
             "mentions", "attachment", "attachments", "note", "notes", "why", "review", "conf", "box", "channel_id",
             "guild_id"}                                           # the archive's and the review page's: never published

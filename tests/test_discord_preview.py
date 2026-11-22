@@ -231,8 +231,9 @@ def test_a_first_psd_s_row_and_created():
 
 def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
     """The review page's Morgue answers reach the preview (a candidate answered 'no' is off the list, an idea or a
-    not-candidate answered 'yes' on it, kind 'idea', else 'played' or 'joke'; the MDW cards as before), and a
-    changelog line given to a Morgue entry (owner D9: 'morgue:<id>') is that entry's mark, data only."""
+    not-candidate answered 'yes' on it, kind 'played' or 'joke' unless the owner's word says (owner.json morgue_list:
+    'idea' only so, 11-21); the MDW cards as before), and a changelog line given to a Morgue entry (owner D9:
+    'morgue:<id>') is that entry's mark, data only."""
     morgue = {"candidates": [{"id": "LC-1"}, {"id": "LC-2"}],
               "not_candidates": [{"id": "LC-3", "status": "renamed"}, {"id": "LC-4", "status": "morgue"}]}
     rulings = {"morgue:LC-1": {"choice": "no"}, "morgue:LC-3": {"choice": "yes"}, "morgue:LC-5": {"choice": "yes"},
@@ -240,9 +241,14 @@ def test_the_morgue_list_follows_the_answers_and_takes_its_marks():
     got = dp.morgue_entries(morgue, [{"id": "LC-5"}, {"id": "LC-6"}], rulings)
     assert [(e["id"], kind) for e, kind in got] == [("LC-2", "candidate"), ("LC-5", "candidate"),
                                                      ("LC-3", "candidate"), ("LC-4", "mdw")]
-    assert [e.get("kind") for e, _ in got] == [None, "idea", "joke", None]          # a listed idea, a listed rest
+    assert [e.get("kind") for e, _ in got] == [None, "joke", "joke", None]          # no idea by its channel
     played = {**morgue, "not_candidates": [{"id": "LC-3", "status": "unfinished", "played": [{"channel": "port"}]}]}
     assert [e["kind"] for e, _ in dp.morgue_entries(played, [], rulings) if e["id"] == "LC-3"] == ["played"]
+    told = {"LC-5": {"kind": "idea"}, "LC-3": {"kind": "joke"}, "LC-2": {"kind": "joke", "once": ["P-1", "P-2"]}}
+    got = dp.morgue_entries({**played, "candidates": [{"id": "LC-2", "kind": "played"}]}, [{"id": "LC-5"}], rulings,
+                            told)
+    assert [(e["id"], e["kind"], e.get("once")) for e, _ in got] == [("LC-2", "joke", ["P-1", "P-2"]),
+                                                                       ("LC-5", "idea", None), ("LC-3", "joke", None)]
     facts = [{"id": "f1", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "kind": "ability changed",
               "date": "2019-03-22T06:33:53+00:00", "channel": "general-discussion", "line": "9:doc4"},
              {"id": "f2", "card": "morgue:LC-2", "source": "changelog", "confidence": "sure", "field": "stars", "to": 4,
@@ -286,6 +292,15 @@ def test_morgue_entries_show_their_old_and_first_repo_versions():
     joke = {"id": "LC-2-joke", "name": "Fang", "slug": "fang-morgue", "in_joke": True, "pictures": [],
             "nearest": {"card": "fang", "name": "Fang", "by": "eye"}}    # owner 11-17 ~23:50: named as its card, linked
     assert dp.morgue_out(joke, {}, "candidate")[0]["live"] == "Fang"
+    post = lambda pid, at, ch: {"id": pid, "source": "discord", "thumb": f"thumbs/{pid}.webp", "date": at, "channel": ch}
+    once = {"id": "LC-3", "name": "Fireball (Mario)", "kind": "joke", "once": ["P-a", "P-b"],
+            "pictures": [post("P-b", "2023-04-05T03:40:19+00:00", "meme-cards"), post("P-c", "2023-05-01T00:00:00+00:00",
+                                                                                       "new-cards"),
+                         post("P-a", "2023-04-05T03:38:26+00:00", "new-cards")]}
+    out, jobs = dp.morgue_out(once, {}, "candidate")                # owner 11-21: one picture, shown once
+    assert [(e["id"], e.get("also")) for e in out["entries"]] == [
+        ("P-a", [{"date": "2023-04-05T03:40:19+00:00", "day": "2023-04-05", "channel": "meme-cards"}]), ("P-c", None)]
+    assert [name for name, _ in jobs] == ["P-c.webp", "P-a.webp"] and out["kind_of"] == "joke"
 
 
 def test_a_check_cut_short_goes_on_where_it_stopped(tmp_path, monkeypatch):

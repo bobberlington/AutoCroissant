@@ -332,7 +332,9 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    card ('ambiguous card', owner D9) takes the card it is given on the review page (a card picker, or none: left out),
    the owner's `owner.json` `lines` over it (2019 'Lightning' = Lightning Bolt, 'Frozen in Time' = Standstill, 2023
    'Dark Matter' = Dark Nebula; 'Computer virus 2.0' = the Morgue's Computer Virus 2.0, `morgue:<entry id>`: its
-   marks go to that entry, never to the live Computer Virus). The 2019 February balance
+   marks go to that entry, never to the live Computer Virus); a `lines` entry with a `form` is a line the owner gave a
+   card it names by another card's name, read as that card (11-21: 'Frozen in time' on 2020-08-06 and 08-17 in
+   #update-02 = Standstill; shown read only). The 2019 February balance
    list (a docx, `CHANGELOG_DOCUMENTS`) is read like the pictures' lists (`<message>:doc<n>`, no text kept). HP/DEF units come from the card's
    sure bar reads near the line (git looks and drafts, the old repo's rows). **Created:**
    the earliest confident appearance (a card-sure picture, the first repo, the old repo, the card repo; "Before
@@ -425,7 +427,10 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    each with its method and confidence; no message text, posters, ids or links) and one webp per version, at most 720 px
    wide (the website's card view), `_morgue/<slug>/` the same (the Morgue list with the review page's answers: a
    candidate answered 'no' off it, an idea or the rest answered 'yes' on it, with a slug of its own after the
-   candidates' and the kind 'idea', the rest's 'played' with a played post, else 'joke', 11-21; an entry's changelog marks, data only; its
+   candidates'; its kind (label) the owner's word per entry, `owner.json` `morgue_list` (11-21 16:54: Spider Queen
+   the only 'idea'), else a candidate's own, the rest's 'played' with a played post, else 'joke'; `once` there:
+   pictures that are one picture, shown once at the first post, the others' dates as its `also` (Fireball (Mario));
+   an entry's changelog marks, data only; its
    old and first repo versions as 'old repo'/'first repo' entries: an MDW Morgue card's rows by its name, a lost
    old-repo card's rows, the first repo's files linked by name or by eye, `derived/morgue/eye.json` `first_files`:
    Wickerbottom's Book1..5; a picture row when the file has no rows: date, mapped author, subject; a candidate's list
@@ -455,7 +460,7 @@ the chain's stats and the Morgue's counts (`photo_missing`), so a lapsed "Before
    as today (its own sure ability as "Text then"), never with a link or Revert, and never at or after the card's first
    version there; their changes and the changelog facts (data only, owner Q4; a type fact's "remove" a removal; a fact
    its confirming version also records counts once, as that version's) join Recorded changes, the trend and the balance charts; the Morgue lists the
-   joke and lost cards from Discord and the ideas the owner put on it ("Idea, never played", 11-21) (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
+   joke and lost cards from Discord and the ideas the owner put on it ("Idea, never played", 11-21; a picture posted again "also posted <day>") (picture only, never in cards[]; never on a live or renamed card's page: `-morgue`;
    first posts as Pacific days; a played one with a file in an older repo, `git_file`, "lost before this repo", not
    "before git"; its tiles, table rows and tips show its list copy, `lpic`, the dialog and compare its webp), and an MDW Morgue card's Discord pictures follow its PNG's newest version (its current
    one, no Revert); the proposed Created dates apply (never later, never over hand; "Before 2020", a physical card
