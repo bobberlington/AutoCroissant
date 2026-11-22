@@ -169,6 +169,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 
 ```
  git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (check, post, finish since 2026-10-24, checks since 2026-11-07;
+                              post and tell folded into check 2026-11-22, section 23;
                               check and checks always run: the card and font checks post at once; with CARD_GUARDS
                               unset/off only the guards' steps skip)
  job check (timeout 40, 150 for all; ends at once, no runner waits for the window)
@@ -660,9 +661,9 @@ not land.**
 | The author pushes again within 30 min | the older run drops the card's writes and its post line (superseded); the newer run owns it: the export is made against the burst anchor when the old PNG shows it, else a G5/G6 refusal retries against it | none |
 | The head moved during land (409/422) | retry from the new head; cards whose blobs moved stay out | none |
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
-| The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
+| The Land step is killed (job timeout, a runner lost) | no settled post: the check job's Follow up and Tell Discord do not run (section 23) and the run-failed message goes out | re-run the check job (its Comment step looks the told mark up) |
 | The environment `card-guards-quiet` has no wait timer (not created yet, or deleted) | GitHub makes the environment on first use, with no rule: the post job starts at once and Land sleeps out the window (the behaviour before 2026-10-24). Deleting it fails every post job waiting in it | create it with section 20's command; delete it only with no push run waiting (section 20), else re-run their failed jobs |
-| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check and checks 40 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 38 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
+| A run cancelled by hand | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 60 minutes, checks 40; GitHub reads a timeout as cancelled; without the list, under 58 minutes since the check's Start), and leaves no failure marker; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
 | The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); a failed POST: Tell Discord's own comment carries the told mark, or it warns that a re-run would post again; a failed edit: the id is already out, so the mark is still set; with nothing to tell, the alert says the push "was checked, but its run failed"; the lookup is tried 3 times, then on a re-run or a dispatch counts as told (never a second post; the step's error says the push may be untold) | re-run once GitHub answers |
 | The card sync does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); its cron catches up | re-run the job (it finds the writes landed and starts it again; review 6), run it by hand, or wait |
 | A re-run (or a landing dispatch) cannot read the branch head | an earlier run may have landed the writes, so none is told as "not made" (Land's `--rerun`): the post keeps the card's other lines, the comment says "Nothing was committed by this run; an earlier run may have landed it" (review 6; a first attempt that cannot read it tells "PNG not made" as before) | re-run once GitHub answers |
@@ -700,6 +701,8 @@ the sleeping step goes.
 - **When:** at Card sync's cutover (its step 8). Until then `card-guards.yml` lands by itself (section 4.5).
 
 ## 12. Workflow sketch (TTSCardMaker `.github/workflows/card-guards.yml`)
+
+The 2026-10-24 layout; the post and tell jobs went into check on 2026-11-22 (section 23).
 
 ```yaml
 name: Card guards
@@ -1618,12 +1621,13 @@ glyf, too long: Photoshop sets it, and its split copy draws 3 pixels up to 17 le
 
 Owner, 2026-11-11 (catalogue s1110/discord-msgs/CATALOGUE.txt, rulings 1, 2 and 7): the standards channel gets ONE post per
 push, telling only what the push made new on a card, and one failure alert per broken push.
-- The post: card-guards.yml's `tell` job (after check, checks and post; whatever `CARD_GUARDS` says) runs
+- The post: card-guards.yml's `tell` job (after check, checks and post; the check job's Tell Discord step since
+  2026-11-22, section 23; whatever `CARD_GUARDS` says) runs
   `commands/standards_post.py` on the runner's own python3 (stdlib only, in `SPARSE_FILES`) over the guards' plan.json and
   landed.json and the two checks' report.json: "<login> pushed <card>: <notes>. [sha8](commit)" a line per card in path
   order (until 2026-11-12 a note two checks told was said once: R6 and the parser's DUPLICATE LAYER IDS were deleted then);
   the role pinged on the first line only when a font is missing; no previews. Once per push: the told mark on any of the
-  bot's commit comments (the guards' comment, else the first check comment the tell job posts).
+  bot's commit comments (the guards' comment, else the first check comment Tell Discord posts).
 - New only, whoever pushed: a guards issue is told when `mark_new` marks it (or the card is new), worded without "(new)";
   a fix the bot could not make as its issue; a card check note or a missing font when the PSD before the push lacked it
   (`font_check.old_blobs`: the path's blob at before, else the same blob anywhere there, so an exact rename tells nothing).
@@ -1634,3 +1638,21 @@ push, telling only what the push made new on a card, and one failure alert per b
   leaves the same, so a push broken in both is told once.
 - Landing order: TTSCardMaker's BOT_FILES gains `/commands/standards_post.py` before AutoCroissant lands (card_guards and
   card_check import it; font_check only inside `discord_payload`, as Card sync and Card checks check font_check out alone).
+
+
+## 23. Follow up and the post in the check job (2026-11-22)
+
+actbake-1122 r4-0: the post and tell jobs are gone; the jobs are check, checks (a push only) and finish.
+- Follow up, Told already and Tell Discord are check job steps right after "Comment on the commit", each under
+  `!cancelled()` (they still run when Land breaks). Told before went: a re-run re-runs the check job, whose Comment step
+  looks the told mark up. "Plan for the post job" is "Plan".
+- "Checks' reports start" (after Landed, a push only, in the background): the checks job's end from the jobs API (every
+  2 s, 10 s after 2 minutes, minute 50 of the job at most), then its card-checks artifact; Tell Discord joins it. With
+  none (that job broke) the post goes out without its notes and is not counted as told whole, as before.
+- The workflow's permissions are `{}` (each job its own); finish needs [check, checks] and reads checks' result and check's
+  `follow` and `told`; its timeout table is check 60, checks 40. Card sync's and the site build's waits (Decided, Landed,
+  Fixes to land, Start Card sync, Follow up by name) never waited for a job's end: unchanged.
+- Measured on the 15 push runs since 2026-11-13: the post 13-26 s sooner on a push that lands fixes, the settled comment
+  7-12 s sooner. Changed edge cases: a check job at its 60-minute timeout runs no Follow up and no post (the failure
+  alert still goes out); a broken bot checkout in check loses the checks' notes from the post too; re-running a failed
+  checks job alone posts nothing.

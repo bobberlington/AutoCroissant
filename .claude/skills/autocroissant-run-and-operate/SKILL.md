@@ -310,7 +310,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   the shared venv cache), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, comments on the commit and puts the fonts the push made missing on a card (its PSD before the push did not ask
-  for them) in the standards channel's one post per push (the tell job, `commands/standards_post.py`, owner 2026-11-11:
+  for them) in the standards channel's one post per push (the check job's Tell Discord, `commands/standards_post.py`, owner 2026-11-11:
   "<login> pushed <card>: the <font> font is not in MDW/Fonts (<layers>), bite this user. [sha8](commit)", role
   546427268751294475 pinged once on the first line, only then). A dispatch with `all` scans every card PSD by blob (~813 downloads).
 - **By hand: `/fonts`** (anyone) reads the fonts report in the card data's manifest (`fonts`: written by the data build
@@ -338,7 +338,7 @@ network, a truncated tree) is one error line.
   whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared venv cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it comments on the commit and its notes the push made new (the PSD before the push lacked them; owner 2026-11-11) go
-  in the standards channel's one post per push (`commands/standards_post.py`, posted by the tell job), no ping. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
+  in the standards channel's one post per push (`commands/standards_post.py`, posted by the check job's Tell Discord), no ping. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, several creatures) also show
   on the website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
   lists no PSD, so it reports nothing.
@@ -503,9 +503,9 @@ card standards (fonts, R7, until 2026-10-24: since then the font check's alone, 
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`; since 2026-11-11 ONE post per push with the card check's and the font check's notes, by the
-tell job: only issues and notes new on a card, the role pinged only for a missing font) and at most one bot commit,
-both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
-the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
+check job's Tell Discord: only issues and notes new on a card, the role pinged only for a missing font) and at most one bot commit,
+both right after the check since 2026-11-03 (owner: no wait, no environment; Follow up and Tell Discord are check job steps since 2026-11-22, the post and tell jobs before; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
+the post job waited in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
 Land sleeps out the rest; no runner sleeps; a PSD saved without
 Maximize Compatibility gets its PNG anyway, nothing told since 2026-11-07 (every save strips the merged image, the
 render record keeps each card's look: psd_edit.use_record); docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
@@ -544,12 +544,12 @@ told (`png_export.KEPT_PX`; owner 2026-11-07: soft notes are no issue), past tha
   "not made" (an earlier run may have landed it); its comment says this run committed nothing.
 - **Failures (2026-11-11):** a broken push run sends one message to the standards channel, "Card guards failed on <login>'s
   push <sha8>: <failed steps> <run link>" (no ping, no preview), unless its post went out whole and told it (a card error,
-  a write that did not land) with the checks job, Follow up and the tell job sound. Once per push, across Card guards and
+  a write that did not land) with the checks job, Follow up and Tell Discord sound. Once per push, across Card guards and
   Card sync: the alert leaves a commit comment holding `<!-- discord-failure-told -->` and posts nothing when one is there
   (no failure streak any more). A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the card sync does not start after the
   bot's commit, the comment and the post say so and the run is red (its cron catches up; a re-run starts it
-  again). Cancelling a run by hand (before the check job's 40-minute timeout, 150 for `all`, or the post job's 75) sends
+  again). Cancelling a run by hand (before the check job's 60-minute timeout, 150 for `all`, or the checks job's 40) sends
   no message.
 - **Loops:** GITHUB_TOKEN pushes start no run (no actor filter since 2026-10-25); inside a range the guards skip the
   files only bot commits changed.
@@ -973,3 +973,6 @@ action), /fonts from the manifest's fonts report, the handoff and /update withou
 files as standing rules; the TTS save's guarded-push lanes (P-2 amended 2026-11-19 and 2026-11-21: the early save);
 psd_details text 2000 characters and version 13; a Card checks subsection (flags, schedule, shards, today's counts) and
 a card timelines pointer. Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-22 (actbake-1122): card guards' Follow up and Tell Discord in the check job (the post and tell jobs gone); the
+cancel-by-hand timeouts (check 60, checks 40).

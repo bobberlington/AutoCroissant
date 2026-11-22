@@ -391,7 +391,7 @@ It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `VERSION` | `13` | the details file's `"version"` (2 `parts`, 3 colour `runs`, 4 `stat_caps`, 5 `frame` and `px`, 6 `lf`, `badges`, `just`, 7 `stroke`, 8 text `fx`, 9 `lead`, 10 `heads`, 11 parts' `clip`, 12 text `effects`, `fb` (faux bold), `outline` (stacked Strokes), 13 `fr` (letters in another font)); a bump makes the next Card sync read every record again (budgeted, chained runs; 11 -> 13 on 2026-11-21: data e111f436, all 769 current records v13) |
+| `VERSION` | `15` | the details file's `"version"` (2 `parts`, 3 colour `runs`, 4 `stat_caps`, 5 `frame` and `px`, 6 `lf`, `badges`, `just`, 7 `stroke`, 8 text `fx`, 9 `lead`, 10 `heads`, 11 parts' `clip`, 12 text `effects`, `fb` (faux bold), `outline` (stacked Strokes), 13 `fr` (letters in another font), 14 `faces` (the fonts its characters are set in), 15 `rim`, `rims` (see-through, centred and gradient Strokes)); a bump makes the next Card sync read every record again (budgeted, chained runs; 11 -> 13 on 2026-11-21: data e111f436, all 769 current records v13; 13 -> 14 on 2026-11-22: data bf790043, all 769 v14) |
 | `TEXT_CHARS` | `2000` | characters of text kept per type layer |
 | `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
 | `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |
@@ -593,7 +593,7 @@ The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card
 fonttools, requests; pyoxipng left it on 2026-10-25: the Actions run the oxipng CLI, 10.2.1 by sha256, from the shared setup). `requirements.txt` (the Mac)
 is `-r requirements-cards.txt` and `-r requirements-bot.txt`, `requirements-dev.txt` starts with `-r requirements.txt`. The
 jetson installs `requirements-bot.txt` alone since 2026-11-11: no fork there. The five card workflows on
-Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
+Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and checks jobs), card-sync.yml (one venv for every stage),
 card-preview.yml (without the oxipng CLI: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
 (now card-guards.yml's check job), check the file out of AutoCroissant and keep it installed in one cached venv (key
 `card-venv-<requirement lines' sha256>-<OS>-<arch>-py<3.14.x>-ox<oxipng>`, the oxipng CLI in it since 2026-11-08; one
@@ -854,4 +854,5 @@ reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone
 at psd_parser.py:27 and card_data.py:203/:1361, 769 PSDs; card_preview_lane's block; the workflow schedules row.
 Checked at AC ea0db694, TC 0cb95c33.
 
-2026-11-22 (actbake-1122): re-pin step 5, one Card checks dispatch after the AutoCroissant push builds the runners' venv.
+2026-11-22 (actbake-1122): re-pin step 5, one Card checks dispatch after the AutoCroissant push builds the runners' venv;
+psd_details `VERSION` 15 (14 `faces`, 15 `rim`/`rims`); card-guards.yml's venv jobs are check and checks.
