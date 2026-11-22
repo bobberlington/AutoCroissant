@@ -505,10 +505,34 @@ def test_fork_smart_filters_redrawn(clone):
         assert np.abs(source[y0:y0 + plain.shape[0], x0:x0 + plain.shape[1]] / 255 - plain).max() <= 1 / 255
 
 
+def _next_change(clone, rel: str, psd, layer, prev: bytes, old: bytes) -> None:
+    """After a trim to prev (psd), the next change of the file (1 px) draws layer's warp where the same change of the
+    untrimmed file old does (the card at LINKED_REV)."""
+    from conftest import at_rev
+    path = f"MDW/Linked/{layer.smart_object.filename}"
+
+    def nudged(data: bytes) -> bytes:
+        rgba, icc = pl._decoded(data, pl.file_type(data, path))
+        ys, xs = np.nonzero(rgba[..., 3] == 255)
+        rgba = rgba.copy()
+        rgba[ys[len(ys) // 2], xs[len(ys) // 2], 0] ^= 1
+        out = BytesIO()
+        Image.fromarray(rgba, "RGBA").save(out, "PNG", **({"icc_profile": icc} if icc else {}))
+        return out.getvalue()
+    fresh = PSDImage.open(BytesIO(at_rev(clone, LINKED_REV, rel)))
+    for card, data in ((psd, prev), (fresh, old)):
+        new = nudged(data)
+        blobs = {pl.git_blob(one): one for one in (data, new)}
+        assert pl.redraw_psd(card, rel, {path: pl.git_blob(new)}, blobs.get,
+                             {path: {pl.git_blob(data): len(data)}})[:2] == (True, True)
+    a, b = (next(one for one in card.descendants() if one.layer_id == layer.layer_id) for card in (psd, fresh))
+    assert _off(_canvas(psd, a.numpy(), a.bbox), _canvas(fresh, b.numpy(), b.bbox)) == 0
+
+
 def test_puppet_warp_redrawn(clone):
     """A Puppet Warp is drawn on the new quad, sampled as the old pixels show (draw_filters runs before they change):
-    The Flash's moss lands near Photoshop's pixels (not without it). A trim (same ink, new size) is refused: its new
-    quad would move the kept warp."""
+    The Flash's moss lands near Photoshop's pixels (not without it). A trim (same ink, new size) is taken, nothing
+    drawn: the fork keeps the warp's map, so the next change lands where it would have."""
     from conftest import at_rev
     psd, moss, picture = _linked(clone, FLASH, "moss_png_by_cimarron29_d6aicfp-pre copy 3")
     stored, corners = _canvas(psd, moss.numpy(), moss.bbox), pl.corners_of(moss)
@@ -527,9 +551,9 @@ def test_puppet_warp_redrawn(clone):
     pad.paste(art, (10, 10))
     blobs = {pl.git_blob(data): data for data in (old, _png(pad))}
     assert pl._puppet(trimmed) and pl.redraw_psd(psd, FLASH, {path: pl.git_blob(_png(pad))}, blobs.get,
-                                                 {path: {pl.git_blob(old): len(old)}}) == (
-        False, False, [pl.NOT_REDRAWN.format(layer=trimmed.name, name=trimmed.smart_object.filename, why="smart filters")])
-    assert np.array_equal(trimmed.numpy(), kept)
+                                                 {path: {pl.git_blob(old): len(old)}}) == (True, False, [])
+    assert np.array_equal(trimmed.numpy(), kept) and pl.why_not_redrawn(trimmed) is None
+    _next_change(clone, FLASH, psd, trimmed, _png(pad), old)
 
 
 DETONATOR = "N.M.E/Remote_Detonator.psd"                      # onfire_edge under a one-quad Perspective Warp
@@ -539,8 +563,9 @@ POLEVAULTER = "Auxiliary/Minions/Polevaulter_Zombie.psd"       # a star under on
 def test_perspective_warp_redrawn(clone):
     """A Perspective Warp (its quad moved since it ran) is drawn again from the linked file: Remote Detonator's fire
     lands on Photoshop's pixels (not without it); from a file of twice the pixels its vertices follow the new quad,
-    where Photoshop's Update put them (r6-0's oracle). A trim (same ink, new size) is refused: its new quad would move
-    the kept warp; so is a quad link_card fits."""
+    where Photoshop's Update put them (r6-0's oracle). A trim (same ink, new size) is taken, nothing drawn: the fork
+    bakes the follow into the vertices, so the next change lands where it would have. A quad link_card fits is
+    refused."""
     from conftest import at_rev
     psd, layer, picture = _linked(clone, DETONATOR, "onfire_edge")
     path = f"MDW/Linked/{layer.smart_object.filename}"
@@ -551,18 +576,20 @@ def test_perspective_warp_redrawn(clone):
         out = BytesIO()
         Image.fromarray(np.ascontiguousarray(pixels), "RGBA").save(out, "PNG", **({"icc_profile": icc} if icc else {}))
         return out.getvalue()
-    pad = png(np.pad(rgba, ((20, 20), (20, 20), (0, 0))))
-    blobs = {pl.git_blob(data): data for data in (old, pad)}
-    assert pl._puppet(layer) and pl.redraw_psd(psd, DETONATOR, {path: pl.git_blob(pad)}, blobs.get,
-                                               {path: {pl.git_blob(old): len(old)}}) == (
-        False, False, [pl.NOT_REDRAWN.format(layer=layer.name, name=layer.smart_object.filename, why="smart filters")])
-    assert np.array_equal(layer.numpy(), kept)
     assert pl._quad_kept(layer, corners) and not pl._quad_kept(layer, [v + 1 for v in corners])
     assert pl.why_not_redrawn(layer) is None
     stored, mode = _canvas(psd, kept, layer.bbox), pe.image_mode(layer, picture)
     plain = _off(_canvas(psd, *pl.draw(picture, corners, mode)), stored)
     pl.redraw(layer, picture, corners, mode)
     assert _off(_canvas(psd, layer.numpy(), layer.bbox), stored) <= 2 and plain > 3000
+
+    psd, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
+    pad = png(np.pad(rgba, ((20, 20), (20, 20), (0, 0))))
+    blobs = {pl.git_blob(data): data for data in (old, pad)}
+    assert pl._puppet(layer) and pl.redraw_psd(psd, DETONATOR, {path: pl.git_blob(pad)}, blobs.get,
+                                               {path: {pl.git_blob(old): len(old)}}) == (True, False, [])
+    assert np.array_equal(layer.numpy(), kept) and pl.why_not_redrawn(layer) is None
+    _next_change(clone, DETONATOR, psd, layer, pad, old)
 
     psd, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
     big = png(np.asarray(Image.fromarray(rgba, "RGBA").resize((rgba.shape[1] * 2, rgba.shape[0] * 2), Image.LANCZOS)))
