@@ -611,14 +611,20 @@ entry: step 1's `gh cache delete`).
 Re-pin:
 1. Push the new fork tag (never move an existing one, never pin a branch: the cache keeps a file's first build;
    delete the entry with `gh cache delete <key> -R MichaelJSr/TTSCardMaker` if one ever moved).
-2. Change the tag in `requirements-cards.txt` (one line) and commit it to AutoCroissant main. The workflows need nothing:
-   they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days). TTSCardMaker's
+2. Change the tag in `requirements-cards.txt` (one line) and commit it to AutoCroissant main. The workflows read it
+   from main, and the new file is a new key (GitHub drops an entry unused for 7 days): step 5 builds it. TTSCardMaker's
    cards-python action builds the wheels with `--uploaded-prior-to <date>` (PyPI as of then): move that date only when
    the fork needs a package or build tool released after it.
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers).
 4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
    1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c`, `cards-20261112d`, `cards-20261113`, `cards-20261113b`, `cards-20261114`, `cards-20261121` and `cards-20261121b`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+5. Right after the AutoCroissant push, build the runners' venv once: `gh workflow run card-checks.yml --ref main -R
+   MichaelJSr/TTSCardMaker -f cards='<the cards the release changes>'` (none: `cards='Mini Doomer'`; no Discord, it
+   commits only flags that are due), then `gh run watch <id> -R MichaelJSr/TTSCardMaker --exit-status` (the id ends
+   the URL the dispatch prints): it must end green. It builds and saves the new `card-venv-<sha>` entry, so the next
+   push, website edit or Preview press restores it. Skipped, the next push's five card jobs each rebuild it (53-60 s):
+   on 2026-11-22 (`cards-20261121b`) push 92e0e248's website deployed at +95 s instead of +38 s.
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
@@ -847,3 +853,5 @@ reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone
 2026-11-21 (wrap-1121): psd_details `VERSION` 13 (12 and 13 landed 2026-11-21, re-read to data e111f436); PARSER_VERSION
 at psd_parser.py:27 and card_data.py:203/:1361, 769 PSDs; card_preview_lane's block; the workflow schedules row.
 Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-22 (actbake-1122): re-pin step 5, one Card checks dispatch after the AutoCroissant push builds the runners' venv.

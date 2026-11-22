@@ -283,6 +283,8 @@ needs its one delta-base blob there, `tc-kept-1121.bundle` needs none).
 - Deploy with the `jetson-deploy` skill when a file the bot loads changed (a static walk from main.py); deploys always
   restart. The deploy lock is shared with OJWikibot: let a deploy wait, never kill or force it. The jetson has a
   bot-only venv since 11-11 (no psd-tools fork, no Cython): a fork release only re-pins `requirements-cards.txt`.
+  Right after that AC push, dispatch one Card checks run on TTSCardMaker main and wait for it to end green (re-pin
+  step 5, `autocroissant-config-and-flags`): it builds the runners' new venv once, not in the next push's five jobs.
   Restart the jetson only with `ssh jetson sudo sync`, then `~/.local/bin/jetson-powercycle cycle` (never `sudo
   reboot`: it hung the board on 11-10 and took the LAN's DNS with it). OJWikibot is the owner's OJWikibot session's
   ground (11-11); `deploy.sh` stays ours.
