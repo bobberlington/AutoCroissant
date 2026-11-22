@@ -392,6 +392,30 @@ def test_merge_png_is_a_pixel_delta():
     assert refused.value.code == "shape"
 
 
+def test_merge_png_carries_the_pngs_offset():
+    """A PNG drawn some levels off the fork around the edit (Pandora's gradient): the pixels a removed icon uncovers take
+    that offset, no ghost; noise or no offset: the plain delta."""
+    base = np.full((60, 60, 4), 255, np.uint8)
+    base[..., :3] = (40, 60, 80)
+    base[20:40, 20:40, :3] = 200                                 # the old icon
+    render = base.copy()
+    render[20:40, 20:40, :3] = (40, 60, 80)                      # removed
+    region = (5, 5, 65, 65)
+
+    def merged(png_region):
+        png = np.zeros((70, 70, 3), np.uint8)
+        png[5:65, 5:65] = png_region[..., :3]
+        out, changed = pe.merge_png(Image.fromarray(png), Image.fromarray(base), Image.fromarray(render), region)
+        assert changed.sum() == 400
+        return [np.asarray(out)[35, 35].tolist(), np.asarray(out)[15, 15].tolist()]
+
+    off = base.astype(np.int16) + (8, 0, -6, 0)
+    assert merged(off.astype(np.uint8)) == [[48, 60, 74], [48, 60, 74]]       # no seam with the PNG's own pixels
+    assert merged(base) == [[40, 60, 80], [40, 60, 80]]
+    noise = off + np.random.default_rng(1).integers(-9, 10, off.shape) * (1, 1, 1, 0)
+    assert merged(noise.astype(np.uint8))[0] == [40, 60, 80]
+
+
 def test_save_png_keeps_the_official_colour_chunks(tmp_path):
     """The merged PNG carries Photoshop's iCCP, gAMA, cHRM and pHYs chunks: only pixels change."""
     from PIL.PngImagePlugin import PngInfo

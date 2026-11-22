@@ -556,6 +556,10 @@ Measured: a toggle's diff stays inside the digits' mask union ((360,1200,1173,12
 diff is the bbox union padded by exactly the `Text` group's 7 px Stroke. Render that viewport with `psd.composite(viewport=...)`
 (baseline `ignore_preview=True`; after an edit `is_updated()` bypasses the preview), paste it over the official PNG, leave every
 other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would each need a re-export: refused in round 1.
+Since 2026-11-22 the pasted pixels take the PNG's offset from the fork when it is one offset in a 12 px band around them
+(a channel's median 3+ levels, every channel's 75th-percentile spread 4 or less; `reveal_offset`, filled by a normalised
+Gaussian): Beholster, Pandora and P.A.N.D.A. Mk F, whose gradients the maker's newer Photoshop draws 6-12 levels off, lost
+the ghost of a removed star or icon. Every other card's merge is byte-identical (census of title, stars and types edits).
 
 ## 7. Ideas 12, 13, 14
 

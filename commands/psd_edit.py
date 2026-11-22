@@ -84,6 +84,13 @@ PARITY_THRESH = 24          # a pixel is bad past this |diff| (psd-research scor
 PARITY_BAD_MAX = 0.5        # % of bad pixels a region may show against the official PNG (past it: a miss, told)
 PARITY_FLOOR = 25.0         # % of bad pixels past which a region's render is broken: refused; a miss under it is told (owner, 2026-10-23)
 PARITY_MEAN_MAX = 2.0       # mean |diff| over the region (owner, 2026-10-22; Mini_Doomer hp row: 0.83, max 2)
+# merge_png's offset: the PNG drawn some levels off the fork around the changed pixels (Beholster, Pandora, P.A.N.D.A.
+# Mk F: the maker's newer Photoshop draws their gradients 6-12 off), carried into them (reveal_offset)
+REVEAL_BAND = 12            # px around the changed pixels where the offset is read
+REVEAL_MIN = 3              # a channel's median offset that counts
+REVEAL_SPREAD = 4           # every channel's 75th percentile |offset - median| within it: one offset, not a difference
+REVEAL_PX = 200             # fewer band pixels: no offset
+REVEAL_SIGMA = 12.0         # px: the offset's smoothing into the changed pixels
 COPY_SEEN = 1               # a copy of the title or ability shows when leaving it out moves a pixel past rounding
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
@@ -11082,7 +11089,8 @@ def own_pixels(replaced: np.ndarray, region: tuple, others: list) -> np.ndarray:
 def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: tuple) -> tuple:
     """
     Delta-merge: inside the region, the official PNG takes the new render's pixels where it differs from the
-    baseline render; every other pixel is left as Photoshop exported it.
+    baseline render (plus the PNG's offset from the fork around them: reveal_offset); every other pixel is left as
+    Photoshop exported it.
 
     Args:
         png: The official PNG (or the merge so far)
@@ -11098,10 +11106,52 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
     x0, y0, x1, y1 = region
     out = np.array(png.convert("RGBA"))
     after = np.asarray(render.convert("RGBA"))
-    changed = _px_differ(np.asarray(base.convert("RGBA")), after)
+    before = np.asarray(base.convert("RGBA"))
+    changed = _px_differ(before, after)
     patch = out[y0:y1, x0:x1]
+    offset = reveal_offset(patch, before, changed)
+    if offset is not None:
+        after = after.copy()
+        fill = changed & (after[..., 3] == 255)
+        after[..., :3][fill] = np.clip(np.rint(after[..., :3][fill] + offset[fill]), 0, 255)
     patch[changed] = after[changed]
     return Image.fromarray(out).convert(png.mode), changed
+
+
+def reveal_offset(png: np.ndarray, base: np.ndarray, changed: np.ndarray) -> Optional[np.ndarray]:
+    """
+    The official PNG's offset from the baseline render (RGB, float32, region-sized) read on the opaque unchanged pixels
+    within REVEAL_BAND px of the changed ones and filled smoothly into them (normalised Gaussian), or None when it is
+    no one offset: no channel's median REVEAL_MIN or more, or a spread past REVEAL_SPREAD. Without it the old icon's
+    ghost stays where a stars or types edit uncovers the background (Beholster, Pandora, P.A.N.D.A. Mk F). A new icon
+    takes it too (a tint of those levels; telling it from the background left a line where a tile edge ran under it).
+    """
+    if not changed.any():
+        return None
+    far = (_px_max(_absdiff(png[..., :3], base[..., :3])) >= REVEAL_MIN) & ~changed
+    if 2 * far.sum() < REVEAL_PX:               # a median that far needs half the band that far
+        return None
+    h, w = changed.shape
+    band = _grown(((0, 0, w, h), changed), REVEAL_BAND)[1][REVEAL_BAND:REVEAL_BAND + h, REVEAL_BAND:REVEAL_BAND + w]
+    band &= ~changed & (png[..., 3] == 255) & (base[..., 3] == 255)
+    count = band.sum()
+    if count < REVEAL_PX or 2 * (far & band).sum() < count:
+        return None
+    offset = png[..., :3].astype(np.float32) - base[..., :3]
+    seen = offset[band]
+    median = np.median(seen, axis=0)
+    if np.abs(median).max() < REVEAL_MIN \
+            or np.percentile(np.abs(seen - median), 75, axis=0).max() > REVEAL_SPREAD:
+        return None
+    from scipy.ndimage import gaussian_filter   # psd-tools[composite]'s; lazy: few merges get here
+    weight = np.zeros(band.shape, np.float32)   # nearer none than the median left out (a white star's clipped pixels)
+    weight[band] = (np.abs(seen - median) <= np.maximum(REVEAL_SPREAD, np.abs(median) / 2)).all(axis=1)
+    total = gaussian_filter(weight, REVEAL_SIGMA)
+    out = np.empty(offset.shape, np.float32)
+    for c in range(3):
+        out[..., c] = gaussian_filter(offset[..., c] * weight, REVEAL_SIGMA) / np.maximum(total, 1e-6)
+    out[total < 1e-3] = median                  # far from every band pixel
+    return out
 
 
 def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
@@ -13491,6 +13541,7 @@ __all__ = [
     'merge_records',
     'set_records',
     'render_region',
+    'reveal_offset',
     'raster_key',
     'run_fills',
     'save_png',
