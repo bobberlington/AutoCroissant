@@ -631,13 +631,16 @@ def test_mosaic_redrawn(clone):
 MOL_D = "Creatures/Monkey D Folder/2 Stars/Mol_D_Truffy.psd"    # its art under a warpCustom, no smart filters
 
 
-def test_custom_warp_redrawn(clone):
+def test_custom_warp_redrawn(clone, monkeypatch):
     """A warpCustom is drawn again by the fork from a changed file of its own size: Mol D Truffy's art lands near
-    Photoshop's pixels (not drawn on its quad alone), quad and warp kept. Another size stays refused."""
+    Photoshop's pixels (not drawn on its quad alone), quad and warp kept. A trim stays refused."""
     from conftest import at_rev
     psd, art, picture = _linked(clone, MOL_D, "Moldy Luffy")
     stored, box, corners = _canvas(psd, art.numpy(), art.bbox), tuple(art.bbox), pl.corners_of(art)
-    assert pl.why_not_redrawn(art) == "a warp" and pl.why_not_redrawn(art, same_size=True) is None
+    assert pl.why_not_redrawn(art) is None
+    with monkeypatch.context() as patch:        # another size: an upright quad only
+        patch.setattr(pl, "upright", lambda corners: False)
+        assert pl.why_not_redrawn(art) == "a warp" and pl.why_not_redrawn(art, same_size=True) is None
     path = f"MDW/Linked/{art.smart_object.filename}"
     old = at_rev(clone, LINKED_REV, path)
     rgba, icc = pl._decoded(old, "jpg")
@@ -657,6 +660,38 @@ def test_custom_warp_redrawn(clone):
     plain = _canvas(psd, *pl.draw(picture, corners, Image.BICUBIC))
     assert tuple(art.bbox) == box and np.allclose(pl.corners_of(art), corners, atol=1e-6) and pl.warped(art)
     assert _off(_canvas(psd, art.numpy(), art.bbox), stored) * 50 < _off(plain, stored)
+
+
+def test_custom_warp_updated_to_another_size(clone):
+    """A file of another size as Photoshop 2023's Update writes it: Mol D Truffy's art at twice the size keeps its mesh,
+    Sz and bounds the new size, its quad snapped (Photoshop's numbers), its pixels near the stored ones. Another ppi
+    stays refused."""
+    from conftest import at_rev
+    psd, art, _ = _linked(clone, MOL_D, "Moldy Luffy")
+    stored = _canvas(psd, art.numpy(), art.bbox)
+    warp = pl.placed_data(art)[b"warp"]
+    mesh = [[float(v) for v in warp[b"customEnvelopeWarp"][b"meshPoints"][key].values] for key in (b"Hrzn", b"Vrtc")]
+    path = f"MDW/Linked/{art.smart_object.filename}"
+    old = at_rev(clone, LINKED_REV, path)
+    rgba, icc = pl._decoded(old, "jpg")
+
+    def png(pixels, dpi=72) -> bytes:
+        out = BytesIO()
+        Image.fromarray(pixels).save(out, "PNG", icc_profile=icc, dpi=(dpi, dpi))
+        return out.getvalue()
+    twice = np.repeat(np.repeat(rgba, 2, 0), 2, 1)
+    blobs = {pl.git_blob(data): data for data in (old, png(twice), png(twice, 300))}
+    seen = {path: {pl.git_blob(old): len(old)}}
+    assert pl.redraw_psd(psd, MOL_D, {path: pl.git_blob(png(twice, 300))}, blobs.get, seen) == (
+        False, False, [pl.NOT_REDRAWN.format(layer=art.name, name=art.smart_object.filename, why="a warp")])
+    assert pl.redraw_psd(psd, MOL_D, {path: pl.git_blob(png(twice))}, blobs.get, seen) == (True, True, [])
+    warp = pl.placed_data(art)[b"warp"]
+    assert pl.corners_of(art) == [-4.0, 0.0, 1204.0, 0.0, 1204.0, 1721.0, -4.0, 1721.0]
+    assert pl._size_of(art) == (1128.0, 1112.0) and pl.warped(art)
+    assert [float(warp[b"bounds"][key]) for key in (b"Left", b"Top ", b"Rght", b"Btom")] == [0.0, 0.0, 1128.0, 1112.0]
+    assert [[float(v) for v in warp[b"customEnvelopeWarp"][b"meshPoints"][key].values]
+            for key in (b"Hrzn", b"Vrtc")] == mesh
+    assert _off(_canvas(psd, art.numpy(), art.bbox), stored) < stored.shape[0] * stored.shape[1] // 100
 
 
 def test_a_painted_mask_refuses_an_invert(clone, monkeypatch):
