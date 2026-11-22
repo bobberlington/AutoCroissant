@@ -510,7 +510,8 @@ class CardRepository:
                 hint = VALUE_HINTS.get(column)
                 raise QueryError(f"{column}{operator} takes a value" + (f": {column}{operator}{hint}." if hint else "."))
             value = value.strip('"')
-            if column in ("alias", "subtype"):           # any one alias or item type (search.js)
+            if column in ("alias", "subtype", "types"):  # any one alias, item type or type (search.js)
+                value = value.replace("_", " ") if column == "types" else value
                 same = (lambda a: a == value) if operator == "==" else (lambda a: value in a)
                 kept = col.map(lambda names: any(same(a.lower()) for a in names)).astype(bool)
             else:
@@ -546,8 +547,10 @@ class CardRepository:
         if column == "subtype":                          # an item's item types, each (Salt: heal, infliction)
             kinds, subs, types = (df[c] if c in df else [None] * len(df) for c in ("type", "subtype", "types"))
             return Series([item_types(*x) for x in zip(kinds, subs, types)], index=df.index, dtype=object)
-        if column == "types" and column in df:           # space-joined, as the website
-            return df["types"].map(lambda v: " ".join(v) if isinstance(v, (list, tuple)) and v else None)
+        if column == "types":                            # the whole list, then each type; _ as a space (search.js)
+            each = df["types"] if "types" in df else [None] * len(df)
+            return Series([[" ".join(v).replace("_", " "), *(t.replace("_", " ") for t in v)]
+                           if isinstance(v, (list, tuple)) and v else [] for v in each], index=df.index, dtype=object)
         return df[column] if column in df else None
 
     def _haystack(self) -> Series:

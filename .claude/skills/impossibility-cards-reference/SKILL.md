@@ -815,8 +815,8 @@ in an OR or NOT each term falls back on its own (`!spongebob` drops that series'
 `site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
-count 0, no stats at all: no total). Text: type, subtype (any one item type), series, subseries, author, types (space-joined as the
-website: `types==fire`, `types~undead`, `types==wind offensive_minion`), name (printed title, else the name), alias
+count 0, no stats at all: no total). Text: type, subtype (any one item type), series, subseries, author, types (any one type or the whole
+list, `_` as a space, as the website: `types==fire`, `types==defensive minion`, `types==wind offensive_minion`), name (printed title, else the name), alias
 (alias/aliases: the website's aliases, i.e. Card Edits.json aliases then the file name, none the shown name; `==`/`~`
 test each one, 2026-11-17), ability, path, created. `has:alias`: cards with an alias (search.js FLAGS). Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
 Synonyms (`SYNONYMS`, the rulebook's Abbreviations; search.js has the same table): damage/DMG, defense/DEF, speed/SPD,

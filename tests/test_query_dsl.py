@@ -161,6 +161,20 @@ def test_any_creature_meets_a_stat(repo, tmp_path):
     assert _website(tmp_path, [q for q, _ in rows]) == [cards for _, cards in rows]
 
 
+def test_types_any_one(tmp_path):
+    """types== and types~ match any one type or the whole list, _ read as a space; the bot and the website alike."""
+    cards = [dict(name="Abyss Watcher", type="creature", types=["fire", "undead"], ability="Burn."),
+             dict(name="Ember", type="creature", types=["fire"], ability="Glow."),
+             dict(name="Wall", type="minion", types=["defensive_minion"], ability="Block.")]
+    rows = [("types==fire", {"Abyss Watcher", "Ember"}), ("types==undead", {"Abyss Watcher"}),
+            ("types==fire undead", {"Abyss Watcher"}), ("types==fire & types==undead", {"Abyss Watcher"}),
+            ("types==defensive minion", {"Wall"}), ("types==defensive_minion", {"Wall"}), ("!types==fire", {"Wall"}),
+            ("types~minion", {"Wall"}), ("types~fire undead", {"Abyss Watcher"})]
+    repo = _repo(cards)
+    assert [set(repo.ability_search_engine(q).index) for q, _ in rows] == [c for _, c in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
+
+
 def _website(tmp_path, queries, cards=CARDS, notes=False) -> list:
     """search.js on cards as cards.json has them (app.js filterCards): each query's card names, or notes: its series
     fallback notes."""
