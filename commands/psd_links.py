@@ -415,6 +415,13 @@ def _quad_kept(layer, quad: Optional[list]) -> bool:
     return quad is None or not _puppet(layer) or bool(np.allclose(quad, corners_of(layer), atol=QUAD_TOL))
 
 
+def _turned_update(layer, size: tuple, boxes: Optional[tuple] = None) -> bool:
+    """A file of a new size (w, h) on a turned quad under a Perspective Warp, no trim (boxes) or warp: Photoshop's
+    Update follows by the affine of three corners (r7-0's oracle), the fork's update_filters writes the warp so."""
+    return not boxes and not warped(layer) and _filter_on(layer, PERSPECTIVE) and not upright(corners_of(layer)) and \
+        tuple(size) != _size_of(layer)
+
+
 def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list) -> None:
     """The layer's FEid item (its smart filters' input, PLAN R7) drawn again: the new picture unfiltered over its quad's
     box and the canvas, as Photoshop caches it. Nothing without one."""
@@ -1543,10 +1550,11 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     new size (a trim): place_trim's quad, raster kept, a Puppet or Perspective Warp's map on the canvas kept (the fork's
     keep_filters); (iii) else drawn again at psd_edit.image_mode, the new file at the old one's scale round the same
     centre, whole pixels when upright and resized (snapped), as Photoshop updates a link (a warp: the fork's
-    update_warp, the mesh kept, the new file in its snapped box). Refused (a warp fork_warp does not draw or, resized,
-    not upright or at another ppi, smart filters redraw does not draw, on the old quad or the new, a trim under a warp
-    or under a Puppet or Perspective Warp the fork cannot keep, a quad the redraw cannot reproduce): the link stays as
-    it is, with a hand note.
+    update_warp, the mesh kept, the new file in its snapped box; a turned quad under a Perspective Warp: the fork's
+    update_filters, the affine of three corners). Refused (a warp fork_warp does not draw or, resized, not upright or at
+    another ppi, smart filters redraw does not draw, on the old quad or the new (a turned Perspective Warp resized: as
+    update_filters writes it, at the file's ppi only), a trim under a warp or under a Puppet or Perspective Warp the
+    fork cannot keep, a quad the redraw cannot reproduce): the link stays as it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1589,16 +1597,20 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
         boxes = (ink_box(old_rgba), ink_box(new_rgba)) if trim else None
         # a trim's new quad would move a warp's mesh; a Puppet or Perspective Warp's map the fork keeps (nothing drawn);
-        # a Mosaic's grid is proven on the canvas only; a warp's Update is proven at its file's ppi only
+        # a Mosaic's grid is proven on the canvas only; a warp's Update is proven at its file's ppi only, a turned
+        # Perspective Warp's too
+        dpi = ppi(new, link.path)
         why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer, size == _size_of(layer)) or
                                                     (trim and _puppet(layer) and
                                                      not _kept(layer, new_quad(layer, size, boxes)) and
                                                      "smart filters") or
                                                     (trim and warped(layer) and "a warp") or
                                                     (warped(layer) and size != _size_of(layer) and
-                                                     not _ppi_kept(layer, ppi(new, link.path)) and "a warp") or
+                                                     not _ppi_kept(layer, dpi) and "a warp") or
                                                     (not (trim and _puppet(layer)) and
-                                                     not filters_on(layer, new_quad(layer, size, boxes), size) and
+                                                     not (layer.smart_object.can_update_filters(*size, dpi)
+                                                          if _turned_update(layer, size, boxes) else
+                                                          filters_on(layer, new_quad(layer, size, boxes), size)) and
                                                      "smart filters")] if w), None)
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
@@ -1612,7 +1624,9 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
             if trim and _puppet(layer):
                 layer.smart_object.keep_filters(quad)
             if not same and not trim and warped(layer) and size != _size_of(layer):    # Sz, bounds: as Update
-                quads[tuple(corners)] = quad = list(layer.smart_object.update_warp(*size, ppi(new, link.path)))
+                quads[tuple(corners)] = quad = list(layer.smart_object.update_warp(*size, dpi))
+            elif not same and _turned_update(layer, size, boxes):                       # PuX, vertices: as Update
+                quads[tuple(corners)] = quad = list(layer.smart_object.update_filters(*size, dpi))
             if not same and not trim:
                 redraw(layer, drawn, quad, image_mode(layer, was, relink=size != _size_of(layer)))
                 pixels = True
@@ -1624,12 +1638,18 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
 
 def new_quad(layer, size: tuple, boxes: Optional[tuple] = None) -> list:
     """The quad redraw_psd gives a placed layer for a file of size (w, h): a trim's (boxes: the old and new ink boxes)
-    by place_trim, a warp's resized its own snapped (Photoshop's Update fills the mesh's box), else the new file at the
-    old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a
-    link."""
+    by place_trim, a warp's resized its own snapped (Photoshop's Update fills the mesh's box), a turned Perspective
+    Warp's resized the affine of the old quad's TL TR BL (Photoshop's Update: a parallelogram round (TR + BL) / 2), else
+    the new file at the old one's scale round the same centre, whole pixels when upright and resized (snapped), as
+    Photoshop updates a link."""
     corners, (w0, h0) = corners_of(layer), _size_of(layer)
     if warped(layer) and not boxes and tuple(size) != (w0, h0):
         return snapped(corners)
+    if _turned_update(layer, size, boxes):
+        (x0, y0, x1, y1, _, _, x3, y3), (w, h) = corners, size
+        u, v = np.array([x1 - x0, y1 - y0]) / w0, np.array([x3 - x0, y3 - y0]) / h0
+        tl = np.array([x1 + x3, y1 + y3]) / 2 - (u * w + v * h) / 2
+        return [float(c) for c in (*tl, *(tl + u * w), *(tl + u * w + v * h), *(tl + v * h))]
     if boxes:
         return place_trim(corners, (w0, h0), size, *boxes)
     dx, dy = (size[0] - w0) / 2, (size[1] - h0) / 2
