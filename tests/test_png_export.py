@@ -374,7 +374,11 @@ def test_g6_a_composite_that_lies(tmp_path):
     new = PSDImage.new("RGB", (60, 90))
     new.append(PixelLayer.frompil(card(), new, "Art"))          # the layers still show the blue square
     path = tmp_path / "liar.psd"
-    new.save(str(path), preview=card(colour=(0, 255, 0)))
+    from psd_tools.api import numpy_io
+    green = np.asarray(card(colour=(0, 255, 0)).convert("RGB"), np.float32) / 255
+    new._record.image_data.set_data(numpy_io.encode_image_data(new, green, np.ones((*green.shape[:2], 1), np.float32)),
+                                    new._record.header)                     # the stored composite, green
+    new.save(str(path), update_preview=False)
     found = pe.export(old, PSDImage.open(str(path)), card())
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_UNSEEN)
 

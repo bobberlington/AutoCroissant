@@ -596,7 +596,6 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     """card_standards.normalise's link step (needs, link) on Delta through a LinkContext, as the guards and the sweep pass
     it: text normal, pictures linked, new files beside it, no merged image; a second normalise writes nothing."""
     import commands.card_standards as cs
-    from types import SimpleNamespace
     from commands.card_guards import LinkContext
     rel = DELTA
     files = {str(p.relative_to(clone)): p.read_bytes() for p in (clone / "Types").rglob("*.png")}
@@ -609,7 +608,13 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     catalogue = pl.assign([(rel, pl.items(psd, types.vocab()))], types, {})
     pl.fallback_names(catalogue, {})
     out = tmp_path / "out.psd"
-    done = cs.normalise(str(clone / rel), str(out), SimpleNamespace(links=LinkContext(tree, catalogue, by_blob.get)), rel)
+    faces = str(clone / "MDW/Fonts")
+
+    def fonts(names):                                   # the faces' folder, as the guards give it
+        return faces
+
+    fonts.links = LinkContext(tree, catalogue, by_blob.get)
+    done = cs.normalise(str(clone / rel), str(out), fonts, rel)
     assert "Isaac" in done and done.files and all(path.startswith("MDW/Linked/Delta - ") for path in done.files)
     assert not done.left and not done.notes
     new = PSDImage.open(out)
@@ -617,7 +622,8 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     assert not new.has_preview() and pl.needs(new) == []
     tree.update({path: pl.git_blob(data) for path, data in done.files.items()})
     by_blob.update({pl.git_blob(data): data for data in done.files.values()})
-    again = cs.normalise(str(out), str(tmp_path / "again.psd"), SimpleNamespace(links=LinkContext(tree, catalogue, by_blob.get)), rel)
+    fonts.links = LinkContext(tree, catalogue, by_blob.get)
+    again = cs.normalise(str(out), str(tmp_path / "again.psd"), fonts, rel)
     assert list(again) == [] and not (tmp_path / "again.psd").exists()
 
 
