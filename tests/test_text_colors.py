@@ -366,6 +366,20 @@ def test_title_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
 
 
+def test_see_through_title_fills(clone):
+    """A title at fill 0% (Bulborb Larva's, drawn by its Inner Glow; The Freezer's set so): a whole title's colour sets
+    the fill to 100% and bakes, a phrase after it too; a phrase alone stays refused."""
+    psd = PSDImage.open(_card(clone, FREEZER)[0])
+    layer = pe.color_layers(psd, "name", "The Freezer")[0]
+    layer.fill_opacity = 0
+    whole, part = {"field": "name", "color": "#ff2200"}, {"field": "name", "phrase": "Freezer", "color": "#00bfff"}
+    assert "its fill at 0% paints over" in pe.plan_colors(psd, [part], "The Freezer")[0][1]
+    assert [how for _, how in pe.plan_colors(psd, [whole, part], "The Freezer")] == ["baked", "baked"]
+    edit = pe.set_colors(psd, [whole, part], str(clone / pe.FONTS_DIR), "The Freezer")
+    assert "colors: title: its fill goes from 0% to 100% for the colour" in edit.notes and layer.fill_opacity == 255
+    assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
+
+
 def test_split_title_part_overlay_goes_off(clone, tmp_path):
     """Crowned Magolor's title on two layers, each with its Gradient Overlay: a colour on all of one turns only that one's
     off and bakes; the other keeps its gradient; part of a word stays refused."""
