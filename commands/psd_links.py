@@ -436,6 +436,12 @@ def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list)
     item.rectangle = (y0, x0, y1, x1)
 
 
+def _kept(layer, quad: list) -> bool:
+    """A trim's quad under a Puppet or Perspective Warp: the fork rewrites the warp to map the canvas as before
+    (SmartObject.keep_filters), the layer's pixels kept."""
+    return layer.smart_object.can_keep_filters(quad)
+
+
 def fork_warp(layer) -> bool:
     """The fork draws the layer's warp on a new picture (SmartObject.can_draw_warp: a warpCustom of 4 x 4 points over
     its whole content) and no smart filters are on it."""
@@ -1534,12 +1540,13 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     C4 on one PSD, per link whose file changed: the size it records is not the file's, or its contentID says it was
     drawn from an older blob of the path (a same-size edit; a link Photoshop made of the file's size is never due, R21).
     Per layer: (i) the drawn-from file's pixels equal the new file's: size, Sz and contentID only; (ii) the same ink at a
-    new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
-    old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a link
-    (a warp: the fork's update_warp, the mesh kept, the new file in its snapped box). Refused (a warp fork_warp does not
-    draw or, resized, not upright or at another ppi, smart filters redraw does not draw, on the old quad or the new, a
-    trim under a Puppet or Perspective Warp or a warp, a quad the redraw cannot reproduce): the link stays as it is, with
-    a hand note.
+    new size (a trim): place_trim's quad, raster kept, a Puppet or Perspective Warp's map on the canvas kept (the fork's
+    keep_filters); (iii) else drawn again at psd_edit.image_mode, the new file at the old one's scale round the same
+    centre, whole pixels when upright and resized (snapped), as Photoshop updates a link (a warp: the fork's
+    update_warp, the mesh kept, the new file in its snapped box). Refused (a warp fork_warp does not draw or, resized,
+    not upright or at another ppi, smart filters redraw does not draw, on the old quad or the new, a trim under a warp
+    or under a Puppet or Perspective Warp the fork cannot keep, a quad the redraw cannot reproduce): the link stays as
+    it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1581,14 +1588,17 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         same = old_rgba is not None and old_rgba.shape == new_rgba.shape and np.array_equal(old_rgba, new_rgba)
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
         boxes = (ink_box(old_rgba), ink_box(new_rgba)) if trim else None
-        # a trim's new quad would move a kept Puppet or Perspective Warp or a warp's mesh; a Mosaic's grid is proven on
-        # the canvas only; a warp's Update is proven at its file's ppi only
+        # a trim's new quad would move a warp's mesh; a Puppet or Perspective Warp's map the fork keeps (nothing drawn);
+        # a Mosaic's grid is proven on the canvas only; a warp's Update is proven at its file's ppi only
         why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer, size == _size_of(layer)) or
-                                                    (trim and _puppet(layer) and "smart filters") or
+                                                    (trim and _puppet(layer) and
+                                                     not _kept(layer, new_quad(layer, size, boxes)) and
+                                                     "smart filters") or
                                                     (trim and warped(layer) and "a warp") or
                                                     (warped(layer) and size != _size_of(layer) and
                                                      not _ppi_kept(layer, ppi(new, link.path)) and "a warp") or
-                                                    (not filters_on(layer, new_quad(layer, size, boxes), size) and
+                                                    (not (trim and _puppet(layer)) and
+                                                     not filters_on(layer, new_quad(layer, size, boxes), size) and
                                                      "smart filters")] if w), None)
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
@@ -1599,6 +1609,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         for layer in layers:
             corners = corners_of(layer)
             quads[tuple(corners)] = quad = corners if same else new_quad(layer, size, boxes)
+            if trim and _puppet(layer):
+                layer.smart_object.keep_filters(quad)
             if not same and not trim and warped(layer) and size != _size_of(layer):    # Sz, bounds: as Update
                 quads[tuple(corners)] = quad = list(layer.smart_object.update_warp(*size, ppi(new, link.path)))
             if not same and not trim:
