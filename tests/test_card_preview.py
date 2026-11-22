@@ -390,8 +390,6 @@ def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
     """card-preview.yml starts the preview while the fonts restore and the reads run: nothing before ready()'s wait
     (READS_ENV's file) reads the records, nor before the first font's (WAIT_ENV's) the fonts, so ones that appear only
     then give the same preview (a name edit: drawn in MDW/Fonts alone, as on the runner)."""
-    from psd_tools.composite.text import fonts as engine_fonts
-    monkeypatch.setattr(engine_fonts, "platform_font_dirs", lambda: [])     # MDW/Fonts alone, as on the runner
     _, now, out = _preview(cards, tmp_path, {"name": "Maxi Doomer"}, name="now")
     late, record = tmp_path / "late", {"Elsewhere/A_Card.psd": {}}
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(late / "fonts"))

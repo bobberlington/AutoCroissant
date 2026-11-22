@@ -1180,7 +1180,7 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         for at in reversed([i for i, c in enumerate(text) if c == APOSTROPHE]):
             text = text[:at] + "'" + text[at + 1:]
             layer.set_text(text)
-        cut = _spliced(path, psd, layer, found, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT),
+        cut = _spliced(path, psd, layer, found, layer.rasterize(fonts=found, keep=keep),
                        fonts, names)
         records |= {psd_edit._record_index(fx) for fx in cut or ()}
         names.append(layer.name.strip())
@@ -1228,8 +1228,7 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
             raise Refused("unsupported-card", f"{layer.name.strip()}: an old glyph was laid out at another width "
                                               "(badge widths')")
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
-        report = layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
-                                 unit="glyph")
+        report = layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)))
         records |= {psd_edit._record_index(fx) for fx in _spliced(path, psd, layer, found, report, fonts, names) or ()}
         records.add(psd_edit._record_index(layer))
         stories.append(psd_edit.story_index(layer))
@@ -1406,7 +1405,7 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
         now = _placed(layer, faces)
-        report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        report = layer.rasterize(fonts=faces, keep=keep)
         relaid = _spliced(path, psd, layer, faces, report, fonts, fitted)
         if relaid is None and ("overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or
                                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))):
@@ -1476,7 +1475,7 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
         psd_edit.follow_kerning(psd, layer)
         keep = capture(layer, found)
         psd_edit.set_alternates(layer, _salt_spans(layer), [])
-        cut = _spliced(path, psd, layer, found, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT),
+        cut = _spliced(path, psd, layer, found, layer.rasterize(fonts=found, keep=keep),
                        fonts, names)
         records |= {psd_edit._record_index(fx) for fx in cut or ()}
         records.add(psd_edit._record_index(layer))
@@ -1531,7 +1530,7 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         if psd_edit.one_colour(layer):          # under an overlay: in one colour, as its other badges (Morpho Knight)
             psd_edit.set_alternates(layer, _salt_spans(layer), [])
         now = _placed(layer, faces)
-        report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        report = layer.rasterize(fonts=faces, keep=keep)
         relaid = _spliced(path, psd, layer, faces, report, fonts, names)
         if relaid is None and ("overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or
                                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))):
@@ -2123,8 +2122,7 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         else:
             _, marks, share = plan
             glyphs = tuple(replace(g, fill=STALE_FILL) if i in marks else g for i, g in enumerate(keep.layout.glyphs))
-            report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
-                                     unit=psd_edit.SPLICE_UNIT)
+            report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)))
             cut = _spliced(path, psd, layer, faces, report, fonts, names, share <= WHOLE_OFF)
         if cut is None:
             cut = _relaid(psd, layer, faces, keep, report, before, fonts, names)
@@ -2676,7 +2674,7 @@ def status_words(path: str, out_path: str, fonts) -> list:
             keep = capture(layer, faces)
             for a, b, status in spans:
                 layer.set_span_style(a, b, fill=status.fill)
-            report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+            report = layer.rasterize(fonts=faces, keep=keep)
             relaid = _spliced(path, psd, layer, faces, report, fonts, out) or []
             offset = engine[0].from_layer(layer).text.find(layer.text)
             cut = [fx for fx, _ in _recut_fx(psd, layer, {i + offset for a, b, _ in spans for i in range(a, b)}, faces)]

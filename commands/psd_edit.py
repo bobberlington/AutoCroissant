@@ -107,7 +107,7 @@ FONTS_WAIT = None           # a preview's: returns once MDW/Fonts is in (it rest
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 UNTOUCHED_LEVELS = 2        # untouched gates: a pixel this close outside the regions looks the same (owner 11-13: PoD12BAD)
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
-OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
+OK_FONTS = ("exact",)                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
 TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colour: the :sticker outline, the :tint silhouette
@@ -168,7 +168,6 @@ FAINT_INK = 0.05            # a colour glyph's pixel past this alpha is its ink 
 COLOUR_TOL = 2 / 255        # two fills' renders agree within this on a colour glyph's pixel (_colour_ink)
 EFFECT_MULTI = {b"dropShadowMulti": b"DrSh", b"innerShadowMulti": b"IrSh", b"solidFillMulti": b"SoFi",
                 b"gradientFillMulti": b"GrFl", b"frameFXMulti": b"FrFX"}    # lfx2's lists of an effect: _style_key
-SPLICE_UNIT = "glyph"       # a text edit redraws its changed glyphs ("line": their lines); Photoshop's raster stays elsewhere
 KEY_SLACK = 2               # px a key render may pass a spliced layer's bbox (Photoshop's ink beside the engine's)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
                          "overlay": {"flags"}, "toggle": {"flags"}, "fx": {"rect", "channels", "name", "blocks"},
@@ -793,7 +792,7 @@ def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel
         title.set_text(text)
         glyph_fonts(inner, title, [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0], fonts, (),
                     printed, retyped(old_text, text, parts, old_runs))     # a typed letter its font can't draw (D15)
-        title.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
+        title.rasterize(fonts=fonts, keep=before)
     except MissingFontError as error:
         raise Refused("font", str(error))
     box = tuple(title.bbox)
@@ -6357,7 +6356,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                    stacked: bool = False, clear: bool = True, was: Optional[list] = None) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
-    glyphs (SPLICE_UNIT), Photoshop's raster staying on the rest.
+    glyphs, Photoshop's raster staying on the rest.
 
     Args:
         psd: The open card (edited in place)
@@ -6625,7 +6624,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     def draw():
         if bend:
             return arc_rasterize(layer, fonts, bend, shift)
-        return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
+        return layer.rasterize(fonts=fonts, keep=before)
     seen = {}
 
     def check() -> Optional[str]:               # kept until the layer's pixels or a layer's box or visibility change
