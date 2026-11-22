@@ -216,10 +216,11 @@ out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
 
 @pytest.mark.skipif(not has(PREVIEW_JS, "function claim("), reason="the tab in front doesn't take the check in this preview.js")
 def test_the_tab_in_front_shows_the_hand_over(tmp_path):
-    """Two tabs, one localStorage, storage events to the other, each its own visibility. Press 1 (cold) in B, the person
-    moves to A 2 s later: A takes the check and shows the run's hand-over (listed 12.2 s on), B waits for the branch.
-    Back in B, press 2 (warm) takes the check from A; the person moves to A 1 s later: A reads the lane's hand-over
-    (5.06 s on, run 44465651236) itself, about 5.5 s after the press; B stops checking. One toast each, in A."""
+    """Two tabs, one localStorage, storage events to the other, each its own visibility; the dispatch answers in 0.3 s.
+    Press 1 (cold) in B, the person moves to A 2 s later: A takes the check and shows the run's hand-over (listed 12.2 s
+    on), B waits for the branch. Back in B, press 2 (warm) takes the check from A; the person moves to A 0.1 s later,
+    before the dispatch answers: A reads the lane's hand-over (5.06 s on, run 44465651236) itself, about 5.5 s after the
+    press; B stops checking. One toast each, in A."""
     out = node(tmp_path, """const { AsyncLocalStorage } = await import("node:async_hooks"), tab = new AsyncLocalStorage();
 let T = 1e12, n = 0; const q = []; Date.now = () => T;
 globalThis.setTimeout = (fn, ms = 0) => { const t = tab.getStore(), id = ++n; q.push([T + ms, () => tab.run(t, fn), id]); return id; };
@@ -239,7 +240,7 @@ const { createHash } = await import("node:crypto"), presses = [];
 const result = r => JSON.stringify({ request: r, state: "baked", files: {}, base: { commit: "c".repeat(40) } }), none = () => { const e = new Error("GitHub 404"); e.status = 404; throw e; };
 const github = me => async (path, o = {}) => {
   if (path.endsWith("/git/blobs")) { const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\\0`), raw])).digest("hex") }; }
-  if (o.method === "POST") { if (!path.includes("/statuses/")) presses.push({ ...o.body.inputs, at: T, run: 101 + presses.length }); return null; }
+  if (o.method === "POST") { const at = T; await new Promise(r => setTimeout(r, 300)); if (!path.includes("/statuses/")) presses.push({ ...o.body.inputs, at, run: 101 + presses.length }); return null; }
   me.gets.push(T);
   const age = x => T - x.at;
   if (path.includes("/contents/")) { const x = presses.find(x => path.includes(x.request)); return x && age(x) >= (x.lane ? 16000 : 15000) ? result(x.request) : none(); }
@@ -248,20 +249,21 @@ const github = me => async (path, o = {}) => {
   if (z) return zip(result(z));
   const name = path.split("name=")[1], run = +path.split("/runs/")[1].split("/")[0];
   const x = name === "card-preview" ? presses.find(x => x.run === run && age(x) >= 12200) : presses.find(x => x.request === name.slice(13) && String(x.lane).startsWith(run + "-") && age(x) >= 5060);
-  return { artifacts: x ? [{ name, archive_download_url: "https://api.github.com/zip/" + x.request }] : [] };
+  const list = { artifacts: x ? [{ name, archive_download_url: "https://api.github.com/zip/" + x.request }] : [] };
+  return o.full ? { data: list, headers: new Headers() } : list;
 };
 const open = name => { const t = { name, on: [], gets: [], toasts: [], vis: "hidden" }; tabs.push(t);
   t.pv = tab.run(t, () => p.createPreviews({ S: { data: { repo: "o/r" } }, editor: { me: { login: "ed" }, scopes: "repo", github: github(t) }, toast: m => t.toasts.push(m), badges() {} }));
   return t; };
 const B = open("B"), A = open("A"), card = id => ({ id, key: id, name: id }), states = id => [A, B].map(t => t.pv.entries(id)[0].state);
 show(B); const t0 = T;
-await tab.run(B, () => B.pv.start(card("c0"), { hp: 8 })); await run(t0 + 2000); show(A); await run(t0 + 14000);
+tab.run(B, () => B.pv.start(card("c0"), { hp: 8 })); await run(t0 + 2000); show(A); await run(t0 + 14000);
 const p1 = { at14: states("c0"), shown: A.pv.entries("c0")[0].fromAt - t0, bGets: B.gets.filter(x => x > t0 + 2000).length };
 await run(t0 + 39000); show(B); const t1 = t0 + 40000; await run(t1);
-await tab.run(B, () => B.pv.start(card("c1"), { hp: 7 })); await run(t1 + 1000); show(A); await run(t1 + 6000);
+tab.run(B, () => B.pv.start(card("c1"), { hp: 7 })); await run(t1 + 100); show(A); await run(t1 + 6000);
 const p2 = { lane: presses[1].lane ?? null, at6: states("c1"), shown: A.pv.entries("c1")[0].fromAt - t1 };
 await run(t1 + 30000);
-out({ p1, p2: { ...p2, after: states("c1"), bGets: B.gets.filter(x => x > t1 + 1000).length }, toasts: [A.toasts, B.toasts].map(l => l.filter(m => !m.startsWith("Preview started"))) });""")
+out({ p1, p2: { ...p2, after: states("c1"), bGets: B.gets.filter(x => x > t1 + 100).length }, toasts: [A.toasts, B.toasts].map(l => l.filter(m => !m.startsWith("Preview started"))) });""")
     p1, p2 = out["p1"], out["p2"]
     assert p1["at14"] == ["baked", "running"] and 12200 < p1["shown"] <= 14000 and p1["bGets"] == 0   # A shows it, B stopped
     assert p2["lane"] and p2["lane"].startswith("101-")                 # press 2 named press 1's run as its lane
