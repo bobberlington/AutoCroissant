@@ -7,8 +7,9 @@ VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own sta
 6; its outline, stroke: VERSION 7; its shadows and glows, fx: VERSION 8; its line pitch, lead: VERSION 9; its header
 lines, heads, lf and px without them: VERSION 10; a part's clipped layer, clip: VERSION 11; a type layer's own effects
 where layers share its path, and faux bold, fb, and its groups' Strokes stacked, outline: VERSION 12; letters in another
-font, fr: VERSION 13; the fonts its characters are set in, faces: VERSION 14). One record per card PSD, keyed by its git
-blob sha, in the card data's db/psd_details.json (the Card sync Action's build); its
+font, fr: VERSION 13; the fonts its characters are set in, faces: VERSION 14; its see-through, centred and gradient
+Strokes, rim and rims: VERSION 15). One record per card PSD, keyed by its git blob sha, in the card data's
+db/psd_details.json (the Card sync Action's build); its
 "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -46,7 +47,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 14                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"; 13: text "fr"; 14: text "faces"
+VERSION = 15                                # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"; 7: "stroke"; 8: text "fx"; 9: "lead"; 10: "heads"; 11: parts' "clip"; 12: text "effects", "fb", "outline"; 13: text "fr"; 14: text "faces"; 15: text "rim", "rims"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -57,6 +58,7 @@ FX_BLENDS = ("normal", "multiply", "screen")   # the blends the mock-up draws
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
 HEADER_STARS = 10                           # star counts the header section lays out (1..10)
 HEADER_ICONS = 8                            # type icons it keeps spots for
+GRADIENT_SPREAD = 60                        # levels a gradient Stroke's stops may be off their mean (plates' "far")
 _parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
 _inks = local()                             # .cache: {id(layer): (layer, ink)} during one gather in this thread, else None
 
@@ -325,6 +327,73 @@ def _outline(layer) -> Optional[list]:
     return [*rings[0][0], _num(sum(w for _, w in rings))]
 
 
+def _mean(e) -> Optional[tuple]:
+    """A linear gradient Stroke's colour: its stops' mean along it (halfway colours between stops, the end ones past
+    them), when it is opaque and no stop is GRADIENT_SPREAD levels off that; else None."""
+    from psd_tools.constants import GradientType
+    grad = e.gradient
+    if (e.type != GradientType.LINEAR or not grad or b"Clrs" not in grad or b"Trns" not in grad
+            or any(float(_value(t[b"Opct"])) != 100 for t in grad[b"Trns"])):
+        return None
+    stops = sorted(((float(_value(s[b"Lctn"])), _rgb(s[b"Clr "])) for s in grad[b"Clrs"]), key=lambda s: s[0])
+    if not stops or any(c is None for _, c in stops):
+        return None
+    span = [(stops[0][0], stops[0][1]), (4096 - stops[-1][0], stops[-1][1]),
+            *((b - a, [(x + y) / 2 for x, y in zip(ca, cb)]) for (a, ca), (b, cb) in zip(stops, stops[1:]))]
+    total = sum(w for w, _ in span)
+    mean = [sum(w * c[k] for w, c in span) / total for k in range(3)] if total > 0 else stops[0][1]
+    if max(abs(c[k] - mean[k]) for _, c in stops for k in range(3)) > GRADIENT_SPREAD:
+        return None
+    return tuple(round(v) for v in mean)
+
+
+def _rgb(colour) -> Optional[tuple]:
+    """(r, g, b) 0-255 of an RGB colour descriptor (Rd/Grn/Bl, or the 0-1 floats), else None."""
+    for keys, k in (((b"Rd  ", b"Grn ", b"Bl  "), 1), ((b"redFloat", b"greenFloat", b"blueFloat"), 255)):
+        if colour and all(key in colour for key in keys):
+            return tuple(max(0, min(255, round(float(_value(colour[key])) * k))) for key in keys)
+    return None
+
+
+def _look(e) -> Optional[tuple]:
+    """((r, g, b), reach, opacity %) of a Normal Stroke, solid RGB or a linear gradient's colour (_mean); else None."""
+    from psd_tools.constants import BlendMode, StrokeFillType
+    if e.blend_mode != BlendMode.NORMAL or not float(e.size) > 0:
+        return None
+    rgb = (_rgb(e.color) if e.fill_type == StrokeFillType.SOLID_COLOR
+           else _mean(e) if e.fill_type == StrokeFillType.GRADIENT else None)
+    return (rgb, _reach(e), float(e.opacity)) if rgb else None
+
+
+def _rims(layer) -> tuple:
+    """(rim, rims), [r, g, b, reach, opacity %] each or None: the type layer's Stroke as "stroke" (its own, else its
+    nearest group's) and its groups' Strokes stacked as "outline", read as the mock-up draws them (_look: see-through,
+    centred or a gradient too). A group strokes its composite, the Strokes inside it included: stacked, the reaching
+    ones in one colour, their reaches summed, at the outermost's opacity when that is 100% or it is the only one
+    (Skullord's 7 px at 44% under 2 px: 9 at 100%)."""
+    from psd_tools.api.effects import Stroke
+    levels, whole = [], True
+    for owner in (layer, *_ancestors(layer)):
+        try:
+            effects = list(owner.effects) if owner.effects.enabled else []
+        except Exception:                       # an effects block psd-tools can't read
+            whole = False
+            break
+        shown = [e for e in effects if isinstance(e, Stroke) and e.enabled and float(e.opacity) > 0]
+        look = _look(shown[0]) if len(shown) == 1 else None
+        if shown and look is None:              # several, or one the mock-up can't draw
+            whole = False
+            break
+        if look:
+            levels.append(look)
+    rim = [*levels[0][0], _num(levels[0][1]), _num(levels[0][2])] if levels and levels[0][1] > 0 else None
+    reaching = [lv for lv in levels if lv[1] > 0]
+    if (not whole or len(levels) < 2 or not reaching or len({rgb for rgb, _, _ in reaching}) != 1
+            or (len(reaching) > 1 and reaching[-1][2] != 100)):
+        return rim, None
+    return rim, [*reaching[0][0], _num(sum(r for _, r, _ in reaching)), _num(reaching[-1][2])]
+
+
 def _num(value: float):
     value = float(value)
     return int(value) if value.is_integer() else round(value, 2)
@@ -388,10 +457,10 @@ def _text_fx(layer) -> Optional[list]:
 def _text(texts: list, layers: list = ()) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
     A layer of several colours has "runs" (_runs); how it is set: _set's keys; its outline: "stroke" (_stroke), and
-    "outline" (_outline) when its groups' Strokes stack on it; its shadows and glows: "fx" (_text_fx); its header lines'
-    text, "heads" (psd_edit.heads: a line typed under one takes the next line's look); its own "effects" (_names) when
-    another of layers has its path (the record's keep one); the fonts its characters are set in,
-    "faces" (_faces), when more than one."""
+    "outline" (_outline) when its groups' Strokes stack on it, "rim" and "rims" (_rims) where those can't say them; its
+    shadows and glows: "fx" (_text_fx); its header lines' text, "heads" (psd_edit.heads: a line typed under one takes
+    the next line's look); its own "effects" (_names) when another of layers has its path (the record's keep one); the
+    fonts its characters are set in, "faces" (_faces), when more than one."""
     shared = {p for p, n in Counter(layer_path(x) for x in layers).items() if n > 1}
     out = []
     for layer in texts:
@@ -432,6 +501,14 @@ def _text(texts: list, layers: list = ()) -> list:
             outline = None
         if outline and outline != stroke:
             out[-1]["outline"] = outline
+        try:
+            rim, rims = _rims(layer)
+        except Exception:                       # stroke and outline alone
+            rim, rims = None, None
+        if rim and not stroke:
+            out[-1]["rim"] = rim
+        if rims and not outline and rims != (rim if not stroke else [*stroke, 100]):
+            out[-1]["rims"] = rims
         try:
             fx = _text_fx(layer)
         except Exception:                       # drawn without them
