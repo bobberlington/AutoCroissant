@@ -756,8 +756,8 @@ def read_name(psd: PSDImage, card: str = "", read=None, rel: str = "") -> Option
 def placed_title(psd: PSDImage, card: str = "", read=None, rel: str = "") -> Optional[tuple]:
     """
     The card's title as a smart object the bake can set (PSDParser.placed_titles, read: a repo path -> its bytes): the
-    one there, linked, upright, its smart filters none or one psd_links.redraw draws (a lone Gaussian or Motion Blur:
-    Gust of Wind's names, owner 2026-11-11). Its tuple, or None.
+    one there, linked, upright, unwarped, its smart filters none or one psd_links.redraw draws (a lone Gaussian or
+    Motion Blur: Gust of Wind's names, owner 2026-11-11). Its tuple, or None.
     """
     if PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card):
         return None
@@ -765,7 +765,8 @@ def placed_title(psd: PSDImage, card: str = "", read=None, rel: str = "") -> Opt
     if len(found) != 1 or not found[0][1]:
         return None
     layer = found[0][0]
-    return found[0] if psd_links.why_not_redrawn(layer) is None and psd_links.upright(corners_of(layer)) else None
+    return found[0] if psd_links.why_not_redrawn(layer) is None and not psd_links.warped(layer) and \
+        psd_links.upright(corners_of(layer)) else None
 
 
 def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel: str, parser=None) -> Edit:
