@@ -3757,6 +3757,22 @@ def stored_mode(layer) -> Optional[int]:
     return Image.NEAREST if near * HARD_CLEAR < cubic else Image.BICUBIC if cubic * HARD_CLEAR < near else None
 
 
+def _unfiltered(layer) -> tuple:
+    """(straight float RGBA, canvas box) of a placed layer as drawn before its smart filters: their FEid source when on
+    and stored (image_mode), else its pixels."""
+    so = layer.smart_object
+    if so.has_enabled_filters:
+        try:
+            found = so.filter_source()
+        except ValueError:
+            found = None
+        if found is not None and found[1].shape[2] == 3:
+            box, color, alpha = found
+            alpha = np.full(color.shape[:2], 255, np.uint8) if alpha is None else alpha
+            return np.dstack([color, alpha]).astype(np.float32) / 255, tuple(box)
+    return layer.numpy(), tuple(layer.bbox)
+
+
 def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) -> int:
     """
     The resampling a placed picture (any image smart object; a bar's is stored_mode) is drawn again with: one of
@@ -3766,9 +3782,10 @@ def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) 
     NEAREST_CLEAR (a turned quad: TURNED_CLEAR) times better than every other (the maker's Photoshop draws nearest);
     else, the same size, the best smooth one (a tie: Photoshop's default), so the stored look stays. A relink (a file
     of another size): nearest when IMAGE_CLEAR times better, else Photoshop's default, Bicubic Automatic (143 of 288
-    relinked layers stored it, 60 nearest; effectsgaps 11-13).
+    relinked layers stored it, 60 nearest; effectsgaps 11-13). A smart-filtered layer is scored on its FEid source (the
+    picture under its filters; its pixels are the filters' result).
     """
-    stored = layer.numpy()
+    stored, box = _unfiltered(layer)
     if drawn is None and layer.smart_object.kind == "data":
         data = layer.smart_object.data
         drawn = picture(layer._psd, data, file_type(data, layer.smart_object.filename))
@@ -3776,8 +3793,8 @@ def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) 
     errors = {}
     if drawn is not None and stored is not None and stored.shape[2] >= 4 and len(corners) == 8:
         xs, ys = corners[0::2], corners[1::2]       # on the canvas, around the stored pixels and every drawing
-        ax0, ay0, ax1, ay1 = union_box([tuple(layer.bbox), (int(np.floor(min(xs))), int(np.floor(min(ys))),
-                                                            int(np.ceil(max(xs))), int(np.ceil(max(ys))))])
+        ax0, ay0, ax1, ay1 = union_box([box, (int(np.floor(min(xs))), int(np.floor(min(ys))),
+                                              int(np.ceil(max(xs))), int(np.ceil(max(ys))))])
         ax0, ay0 = max(ax0, 0), max(ay0, 0)
         ax1, ay1 = max(min(ax1, layer._psd.width), ax0), max(min(ay1, layer._psd.height), ay0)
 
@@ -3788,7 +3805,7 @@ def image_mode(layer, drawn: Optional[np.ndarray] = None, relink: bool = False) 
                 part = rgba[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]
                 out[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] = np.dstack([part[..., :3] * part[..., 3:4], part[..., 3:4]])
             return out
-        own = plane(stored, tuple(layer.bbox))
+        own = plane(stored, box)
         for mode in (PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_AUTO):
             rgba, where = draw(drawn, corners, mode)
             if rgba is None:

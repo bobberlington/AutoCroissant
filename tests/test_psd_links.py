@@ -408,6 +408,20 @@ def test_gaussian_blur_redrawn(clone):
     assert (left, top, right, bottom) == box and np.abs(source / 255 - plain).max() <= 1 / 255
 
 
+LOTHRIC = "Creatures/Souls/5 Stars/Lothric.psd"     # its art under a Gaussian Blur (2.8 px) and a painted filter mask
+LOTHRIC_REV = "ea2fee7ba687e1b5b7e9c075e3a06d2300003551"
+
+
+def test_blurred_layer_resampled_as_its_source(clone):
+    """A smart-filtered layer's resampling is scored on its FEid source, not on its blurred pixels: Lothric's art is
+    Bicubic (8,315 px over 8 off its source; Bilinear, 84,409, won on the blurred pixels)."""
+    from conftest import at_rev
+    psd = PSDImage.open(BytesIO(at_rev(clone, LOTHRIC_REV, LOTHRIC)))
+    layer = next(layer for layer in psd.descendants() if layer.name == "barazoku-art-5")
+    art = pl.picture(psd, at_rev(clone, LOTHRIC_REV, "MDW/Linked/Lorian - barazoku-art-5.jpg"), "jpg")
+    assert pl.why_not_redrawn(layer) is None and pe.image_mode(layer, art) == pl.PS_BICUBIC
+
+
 GUST = "Items/Support/2 Stars/Gust_of_Wind.psd"     # Croissant's names, stars and type icon under Motion Blurs (11-11)
 GUST_REV = "aa8a491f5b1fdb78249f71c4cc95f7f7609425b9"
 
