@@ -16,7 +16,7 @@ SmartObject.link_target), never from the filesystem.
     ppi(data, path) / set_ppi(layers, value)         a file's resolution as Photoshop reads it, the Rslt a link stores
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
-    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (a Gaussian or Motion Blur too)
+    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (its smart filters too)
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
@@ -93,7 +93,7 @@ LOOK = 32                       # look_of: ink box at INK_ALPHA, premultiplied, 
 LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size, no name needed (renamed copies <= 5.7)
 LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
 LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
-BLURS = (b"GsnB", "GsnB", b"MtnB", "MtnB")       # Gaussian and Motion Blur: the smart filters a redraw draws
+BLURS = (b"GsnB", "GsnB", b"MtnB", "MtnB")       # Gaussian and Motion Blur: a filter mask does not refuse them
 # Photoshop 2023's Image Interpolation (Preferences > General): its relink and Update draw a placed layer again with it,
 # not the pick a Free Transform made (probed 11-13). draw() modes past PIL's; PS_AUTO is Photoshop's default.
 PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_SMOOTHER, PS_SHARPER, PS_AUTO = range(10, 16)
@@ -361,21 +361,45 @@ def _on(desc, key: bytes = b"enab") -> bool:
     return bool(getattr(desc.get(key), "value", desc.get(key, True)))
 
 
-def _drawn_filters(layer) -> bool:
-    """One smart filter on, a Gaussian or Motion Blur the fork draws over a new picture (SmartObject.can_draw_filters;
-    a filter mask does not refuse: the composite applies it), its FEid source one the redraw writes again
-    (_filter_source: 8-bit RGBA, no layer-level filter blocks). The other kinds the fork draws wait for their proof."""
+def _plain_source(layer) -> bool:
+    """No filter blocks on the layer's own record and its FEid source (if any) 8-bit RGBA: _filter_source rewrites it."""
     blocks = layer._record.tagged_blocks
     if any(key in blocks for key in (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3, Tag.FILTER_MASK)):
         return False
+    item = layer.smart_object.filter_item
+    return item is None or (item.depth == 8 and layer._psd.pil_mode.rstrip("A") == "RGB" and
+                            all(item.channels[k].is_written for k in (0, 1, 2, -1)))
+
+
+def fork_filters(layer) -> bool:
+    """The fork draws the layer's smart filters on a new picture (SmartObject.can_draw_filters) and its FEid source is
+    plain: none on, or one Gaussian or Motion Blur (a filter mask does not refuse: the composite applies it), Puppet
+    Warp or Invert (proven with the mask off or white)."""
     so = layer.smart_object
-    item = so.filter_item
-    if item is not None and (item.depth != 8 or layer._psd.pil_mode.rstrip("A") != "RGB" or
-                             not all(item.channels[k].is_written for k in (0, 1, 2, -1))):
+    if not _plain_source(layer) or not so.can_draw_filters():
         return False
     fx = so.filters
     found = [one for one in fx.get(b"filterFXList") or [] if _on(one)] if fx is not None and _on(fx) else []
-    return len(found) == 1 and getattr(found[0].get(b"Fltr"), "classID", None) in BLURS and so.can_draw_filters()
+    return not found or getattr(found[0].get(b"Fltr"), "classID", None) in BLURS or not _masked(so)
+
+
+def _masked(so) -> bool:
+    """A filter mask on that hides some of the filters: painted, or black past its rectangle."""
+    if not so.filter_mask_enabled:
+        return False
+    try:
+        mask = so.filter_mask()
+    except ValueError:
+        return True
+    return mask is not None and (not so.filter_mask_extends_white or int(mask[1].min()) < 255)
+
+
+def _puppet(layer) -> bool:
+    """A Puppet Warp on: its mesh follows the layer's quad."""
+    fx = (placed_data(layer) or {}).get(b"filterFX")
+    return bool(fx) and _on(fx) and any(
+        _on(item) and getattr(item.get(b"Fltr"), "classID", None) in (b"rigidTransform", "rigidTransform")
+        for item in fx.get(b"filterFXList") or [] if isinstance(item, Descriptor))
 
 
 def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list) -> None:
@@ -403,7 +427,7 @@ def why_not_redrawn(layer) -> Optional[str]:
     """Why a placed layer's pixels cannot be drawn again from its file, else None."""
     if warped(layer):
         return "a warp"
-    if _filtered(layer) and not _drawn_filters(layer):
+    if _filtered(layer) and not fork_filters(layer):
         return "smart filters"
     corners = corners_of(layer)
     if len(corners) != 8 or abs(_area(corners)) < 1.0:
@@ -627,17 +651,17 @@ def picture(psd: PSDImage, data: bytes, kind: str) -> Optional[np.ndarray]:
 def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A placed layer's pixels drawn again from a file (rgba: its pixels in the card's colours) on corners at mode, its
-    mask and effects kept, its Gaussian or Motion Blur drawn too by the fork (why_not_redrawn's _drawn_filters) over the
-    whole picture, their FEid source the new picture (the link's Trnf and Sz are written by SmartObject.link or relink).
-    Returns the canvas box drawn (old and new pixels').
+    mask and effects kept, its smart filters drawn too by the fork (fork_filters) with their FEid source the new
+    picture (the link's Trnf and Sz are written by SmartObject.link or relink). Returns the canvas box drawn (old and
+    new pixels').
     """
     from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
     before = tuple(layer.bbox)
     out, box = draw(rgba, corners, mode)
-    if _filtered(layer):                        # filters before the source: the fork may read the old one
-        drawn = layer.smart_object.draw_filters(out, box, corners) if out is not None else (None, box)
+    if _filtered(layer):                        # filters before the source: a Puppet Warp samples the old one
+        drawn, where = layer.smart_object.draw_filters(out, box, corners) if out is not None else (None, box)
         _filter_source(layer, out, box, corners)
-        out, box = drawn
+        out, box = (drawn, where) if drawn is not None and drawn.size else (None, (0, 0, 0, 0))
     TypeLayer._store_raster(layer, out if out is not None else np.zeros((0, 0, 4), np.float32), box)
     layer._invalidate_bbox()
     boxes = [b for b in (before, box) if b[2] > b[0] and b[3] > b[1]]
@@ -1466,8 +1490,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     Per layer: (i) the drawn-from file's pixels equal the new file's: size, Sz and contentID only; (ii) the same ink at a
     new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
     old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a link.
-    Refused (a warp, smart filters but one Gaussian or Motion Blur, a quad the redraw cannot reproduce): the link stays
-    as it is, with a hand note.
+    Refused (a warp, smart filters redraw does not draw, a trim under a Puppet Warp, a quad the redraw cannot reproduce):
+    the link stays as it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1508,7 +1532,9 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         size = (new_rgba.shape[1], new_rgba.shape[0])
         same = old_rgba is not None and old_rgba.shape == new_rgba.shape and np.array_equal(old_rgba, new_rgba)
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
-        why = next((w for layer in layers for w in [why_not_redrawn(layer) if not same else None] if w), None)
+        # a trim's new quad would move a kept Puppet Warp's mesh
+        why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer) or
+                                                    (trim and _puppet(layer) and "smart filters")] if w), None)
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
             continue

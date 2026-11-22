@@ -450,7 +450,99 @@ def test_motion_blur_redrawn(clone):
         assert np.array_equal((out * 255 + 0.5).astype(np.uint8), np.round(layer.numpy() * 255).astype(np.uint8))
 
 
-SALTBAKER = "Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd"   # Croissant's bars: knockout groups in smart objects (11-11)
+LINKED_REV = "5f22cef04e85d615b168b7a511184a82b7af49ca"     # the card repo with these pictures linked (11-21)
+TERMINATION = "N.M.E/Termination_Shock.psd"                    # its globe under an Invert smart filter
+MIRROR = "Items/Support/4 Stars/Amazing_Mirror.psd"            # a94: smart filters all off, a painted filter mask
+FLASH = "Creatures/In Sound Mind/4 Stars/The_Flash.psd"        # two pictures under Puppet Warps
+
+
+def _canvas(psd, rgba, box) -> np.ndarray:
+    """Straight RGBA over box on the canvas, premultiplied."""
+    out = np.zeros((psd.height, psd.width, 4), np.float32)
+    x0, y0, x1, y1 = max(box[0], 0), max(box[1], 0), min(box[2], psd.width), min(box[3], psd.height)
+    part = rgba[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]
+    out[y0:y1, x0:x1] = np.dstack([part[..., :3] * part[..., 3:], part[..., 3]])
+    return out
+
+
+def _off(a, b) -> int:
+    """Pixels over 24 levels apart."""
+    return int((np.abs(np.rint(a * 255) - np.rint(b * 255)).max(-1) > 24).sum())
+
+
+def _linked(clone, rel: str, name: str) -> tuple:
+    """(card, its layer named name, the picture it links in the card's colours) at LINKED_REV."""
+    from conftest import at_rev
+    psd = PSDImage.open(BytesIO(at_rev(clone, LINKED_REV, rel)))
+    layer = next(one for one in psd.descendants() if one.kind == "smartobject" and one.name == name)
+    data = at_rev(clone, LINKED_REV, f"MDW/Linked/{layer.smart_object.filename}")
+    return psd, layer, pl.picture(psd, data, pl.file_type(data, layer.smart_object.filename))
+
+
+def test_fork_smart_filters_redrawn(clone):
+    """Smart filters the fork draws are drawn again: Termination Shock's Invert lands near Photoshop's pixels (not
+    without it), its FEid source the new picture uninverted; Amazing Mirror's filters, all off, draw nothing."""
+    from psd_tools.compression import decompress
+    for rel, name in ((TERMINATION, "Continents_from_globe"), (MIRROR, "a94")):
+        psd, layer, picture = _linked(clone, rel, name)
+        assert pl._filtered(layer) and pl.why_not_redrawn(layer) is None
+        stored, corners = _canvas(psd, layer.numpy(), layer.bbox), pl.corners_of(layer)
+        plain, box = pl.draw(picture, corners, Image.BICUBIC)
+        pl.redraw(layer, picture, corners, Image.BICUBIC)
+        if rel == MIRROR:
+            assert tuple(layer.bbox) == box and np.abs(layer.numpy() - plain).max() <= 1 / 255
+            continue
+        assert _off(_canvas(psd, layer.numpy(), layer.bbox), stored) * 20 < _off(_canvas(psd, plain, box), stored)
+        saved = BytesIO()
+        psd.save(saved)
+        item = next(one for one in PSDImage.open(BytesIO(saved.getvalue())).descendants()
+                    if one.name == name).smart_object.filter_item
+        top, left, bottom, right = item.rectangle
+        source = np.dstack([np.frombuffer(decompress(item.channels[k].data, item.channels[k].compression, right - left,
+                                                     bottom - top, 8, 2), np.uint8).reshape(bottom - top, right - left)
+                            for k in (0, 1, 2, -1)])
+        x0, y0 = box[0] - left, box[1] - top
+        assert np.abs(source[y0:y0 + plain.shape[0], x0:x0 + plain.shape[1]] / 255 - plain).max() <= 1 / 255
+
+
+def test_puppet_warp_redrawn(clone):
+    """A Puppet Warp is drawn on the new quad, sampled as the old pixels show (draw_filters runs before they change):
+    The Flash's moss lands near Photoshop's pixels (not without it). A trim (same ink, new size) is refused: its new
+    quad would move the kept warp."""
+    from conftest import at_rev
+    psd, moss, picture = _linked(clone, FLASH, "moss_png_by_cimarron29_d6aicfp-pre copy 3")
+    stored, corners = _canvas(psd, moss.numpy(), moss.bbox), pl.corners_of(moss)
+    assert pl._puppet(moss) and pl.why_not_redrawn(moss) is None
+    plain, box = pl.draw(picture, corners, Image.BICUBIC)
+    want, where = moss.smart_object.draw_filters(plain, box, corners)
+    pl.redraw(moss, picture, corners, Image.BICUBIC)
+    assert tuple(moss.bbox) == where and np.abs(moss.numpy() - want).max() <= 1 / 255
+    assert _off(_canvas(psd, moss.numpy(), moss.bbox), stored) * 5 < _off(_canvas(psd, plain, box), stored)
+
+    trimmed = next(one for one in psd.descendants() if one.kind == "smartobject" and one.name == "pngwing.com copy")
+    path = f"MDW/Linked/{trimmed.smart_object.filename}"
+    old, kept = at_rev(clone, LINKED_REV, path), trimmed.numpy()
+    art = Image.open(BytesIO(old)).convert("RGBA")
+    pad = Image.new("RGBA", (art.width + 20, art.height + 20))
+    pad.paste(art, (10, 10))
+    blobs = {pl.git_blob(data): data for data in (old, _png(pad))}
+    assert pl._puppet(trimmed) and pl.redraw_psd(psd, FLASH, {path: pl.git_blob(_png(pad))}, blobs.get,
+                                                 {path: {pl.git_blob(old): len(old)}}) == (
+        False, False, [pl.NOT_REDRAWN.format(layer=trimmed.name, name=trimmed.smart_object.filename, why="smart filters")])
+    assert np.array_equal(trimmed.numpy(), kept)
+
+
+def test_a_painted_mask_refuses_an_invert(clone, monkeypatch):
+    """An Invert or Puppet Warp is proven with its filter mask off or white: Termination Shock's globe under a painted
+    mask is refused (a blur's is not: test_gaussian_blur_redrawn)."""
+    _, layer, _ = _linked(clone, TERMINATION, "Continents_from_globe")
+    painted = np.full((4, 4), 255, np.uint8)
+    painted[0, 0] = 0
+    monkeypatch.setattr(type(layer.smart_object), "filter_mask", lambda self: ((0, 0, 4, 4), painted))
+    assert pl.why_not_redrawn(layer) == "smart filters"
+
+
+SALTBAKER ="Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd"   # Croissant's bars: knockout groups in smart objects (11-11)
 SALTBAKER_REV = "b3931ee781490fcffcb41cb45462398c96416a59"
 
 
