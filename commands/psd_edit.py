@@ -323,6 +323,7 @@ class IconPlan:
     #                                              star put back (an undo, D14), then moved
     memo: Optional[dict] = None                  # the PSD's stars or types memo it was planned with (icon_memo)
     undo: bool = False                           # the bake's own star or icon moves undone (owner 11-15, D14)
+    before: Optional["IconPlan"] = None          # plan_stars(): a shrink's undo set_icons applies first (_from_maker)
 
 
 @dataclass
@@ -8831,8 +8832,15 @@ def memo_after(psd: PSDImage, plan: IconPlan, blob: str = "") -> Optional[dict]:
     The stars or types memo once set_icons applied plan on psd (D14): the plan's moves, shows, hides and added layers
     on top of the memo it was planned with (else the card maker's, plan.old), a shrink's leaves and blob (the PSD's
     blob sha before the edit: v2); None after an undo, when it split a star or copied text (no undoing those), or
-    shrank one without a blob.
+    shrank one without a blob. A plan laid out from the maker's stars (plan.before: _from_maker): as from the maker's
+    PSD, a shrink again keeping the first shrink's blob.
     """
+    if plan.before is not None:
+        first = plan.before.memo
+        again = any(done[0] == "scaled" for done in plan.done)
+        seed = {"v": 2, "count": first["count"], "moved": {}, "shown": {}, "added": [],
+                "from": deepcopy(first["from"])} if again else None
+        return memo_after(psd, replace(plan, before=None, memo=seed, old=first["count"]), first["from"]["blob"])
     scaled = [done[1] for done in plan.done if done[0] == "scaled"]
     if plan.undo or scaled and not blob or any(done[0] in ("split", "masked") for done in plan.done):
         return None
@@ -8901,7 +8909,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
       Lazarus's dead form) take the same count, laid out turned half round, or neither set is redrawn.
     - back to the card maker's count while the PSD's star memo holds (_memo_holds: no Photoshop save or other change
-      to those layers since): the bake's own moves undone, its added layers deleted (owner 11-15, D14: _undo_stars).
+      to those layers since): the bake's own moves undone, its added layers deleted (owner 11-15, D14: _undo_stars);
+      another count after a shrink (option B): that undo first, then laid out from the maker's stars (_from_maker).
 
     Args:
         psd: The open card (not changed, but split: a layer drawing several stars is split in it)
@@ -8914,14 +8923,56 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
     """
     memo = _memo_holds(psd, "stars", parsed["card"].get("stars"))
-    undo = _undo_stars(psd, memo, parser) if memo is not None and value == memo["count"] else None
-    if undo is not None:                        # back to the maker's count: the bake's own moves undone (D14)
+    back = memo is not None and (value == memo["count"] or bool(memo.get("scaled")))
+    undo = _undo_stars(psd, memo, parser) if back else None
+    if undo is not None and value == memo["count"]:     # back to the maker's count: the bake's own moves undone (D14)
         return undo
-    try:
-        plan = _plan_stars(psd, parsed, value, parser, split)
-    except _Shrink as wanted:                   # option B, else off the banner as before (told)
-        plan = _shrunk(psd, parsed, value, parser, wanted) or _plan_stars(psd, parsed, value, parser, split, 0.0)
+    plan = _from_maker(psd, parsed, value, parser, memo, undo) if undo is not None else None
+    if plan is not None:
+        return plan
+    plan = _new_stars(psd, parsed, value, parser, split)
     plan.memo = memo
+    return plan
+
+
+def _new_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser], split: bool) -> IconPlan:
+    """plan_stars' layout from the stars as they are: _plan_stars, else option B, else off the banner (told)."""
+    try:
+        return _plan_stars(psd, parsed, value, parser, split)
+    except _Shrink as wanted:
+        return _shrunk(psd, parsed, value, parser, wanted) or _plan_stars(psd, parsed, value, parser, split, 0.0)
+
+
+def _from_maker(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser], memo: dict,
+                undo: IconPlan) -> Optional[IconPlan]:
+    """
+    Another count on a card whose memo holds a shrink (option B): undo (_undo_stars, set_icons applies it first), then
+    `value` laid out from the maker's stars as a bake of the maker's PSD would; planned on a copy with the undo applied,
+    told onto psd's layers. None (planned as before) when that refuses, splits a star, turns one or has a texture.
+    """
+    work = _reopened(psd)
+    try:
+        first = _undo_stars(work, memo, parser)
+        if first is None:
+            return None
+        set_icons(work, first)
+        plan = _new_stars(work, {**parsed, "card": {**parsed["card"], "stars": memo["count"]}}, value, parser, True)
+    except Refused:
+        return None
+    gone = {id(one) for layer in undo.removed for one in [layer, *(layer.descendants() if layer.is_group() else ())]}
+    mine = [layer for layer in psd.descendants() if id(layer) not in gone]
+    theirs = list(work.descendants())
+    if plan.done or plan.textures or any(isinstance(unit, _Turned) for unit, *_ in plan.copies) \
+            or [layer.layer_id for layer in mine] != [layer.layer_id for layer in theirs]:
+        return None
+    back = {id(layer): one for layer, one in zip(theirs, mine)}
+    plan.show, plan.hide = [back[id(layer)] for layer in plan.show], [back[id(layer)] for layer in plan.hide]
+    plan.moves = [(back[id(layer)], dx, dy) for layer, dx, dy in plan.moves]
+    plan.copies = [(replace(unit, layers=[back[id(layer)] for layer in unit.layers]), dx, dy, name)
+                   for unit, dx, dy, name in plan.copies]
+    plan.scaled = [(back[id(layer)], s, centre, to) for layer, s, centre, to in plan.scaled]
+    plan.old, plan.memo, plan.before = parsed["card"].get("stars"), memo, undo
+    plan.how = f"from the card maker's {memo['count']}: {plan.how}"
     return plan
 
 
@@ -9939,8 +9990,9 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
         (field set) for a type icon that lands on the text or stars (at the template's spot: baked), a made one first
-        stepped down until it fits (_lowered, told)
+        stepped down until it fits (_lowered, told); plan.before (a shrink's undo) applied first, in the same Edit
     """
+    undone = set_icons(psd, plan.before, types_dir, rel) if plan.before is not None else None
     boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
     boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
     gone = []                                   # the bake's own added layers (an undo, D14), their FEid items too:
@@ -10031,6 +10083,9 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
                        + gone)
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [
         done[2] if done[0] in ("copy", "masked copy") else done[1] for done in plan.done if done[0] != "removed"]
+    if undone is not None:
+        region = union_box([undone.region, region])
+        layers = list({id(layer): layer for layer in undone.layers + layers}.values())
     notes = list(plan.notes) + touching
     return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
@@ -10058,6 +10113,8 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
     records keep their identity through the edits), after = record_map() now (what the saved file holds).
     """
     plan = edit.icons
+    if plan.before is not None:
+        return _index_chain(edit, before, after)
     split = {id(done[2]): done[1] for done in plan.done if done[0] == "split"}      # a split's copy: its layer's record
     moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
     edit.toggled = sorted(after[id(layer._record)] for layer in plan.hide + plan.show)
@@ -10094,6 +10151,49 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
                     for leaf in leaves(layer)]
     edit.filters += [(copy.smart_object.placed_id, source.smart_object.placed_id, done[3], done[4]) for done in plan.done
                      if done[0] == "copy" for source, copy in zip(leaves(done[1]), leaves(done[2]))]
+
+
+def _index_chain(edit: Edit, before: dict, after: dict) -> None:
+    """index_icons of a plan laid out after its shrink's undo (plan.before, _from_maker): each record's toggles and
+    moves over both, a star shrunk again moved by the plan's alone (the undo's came before the shrink), a copy by the
+    undo's of its source and its own."""
+    plan, undo = edit.icons, edit.icons.before
+
+    def shifts(one: IconPlan) -> dict:
+        out: dict = {}
+        for layer, dx, dy in one.moves:
+            for record in _subtree_records(layer):
+                x, y = out.get(id(record), (0, 0))
+                out[id(record)] = (x + dx, y + dy)
+        return out
+    u, m = shifts(undo), shifts(plan)
+    rects = {id(done[1]._record): done[2] for one in (undo, plan) for done in one.done if done[0] == "scaled"}
+    again = {id(done[1]._record) for done in plan.done if done[0] == "scaled"}
+    first = lambda key: (0, 0) if key in again else u.get(key, (0, 0))
+    net = lambda key: (first(key)[0] + m.get(key, (0, 0))[0], first(key)[1] + m.get(key, (0, 0))[1])
+    keys = [*dict.fromkeys([*u, *m, *rects])]
+    toggled = list({id(layer): layer for layer in undo.hide + undo.show + plan.hide + plan.show}.values())
+    was = lambda layer: next((any(layer is x for x in one.hide) for one in (undo, plan)
+                              if any(layer is x for x in one.hide + one.show)))
+    edit.toggled = sorted(after[id(layer._record)] for layer in toggled if layer.visible != was(layer))
+    edit.shifted = [(after[key], before[key], *net(key)) for key in keys if net(key) != (0, 0) or key in rects]
+    copies = [(old, new, done[3], done[4]) for done in plan.done if done[0] == "copy"
+              for old, new in zip(_subtree_records(done[1]), _subtree_records(done[2]))]
+    edit.copied = [(after[id(new)], before[id(old)], dx + first(id(old))[0], dy + first(id(old))[1])
+                   for old, new, dx, dy in copies]
+    edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
+    edit.removed = sorted(before[id(record)] for done in undo.done if done[0] == "removed" for record in done[2])
+    edit.unfiltered = [uid for done in undo.done if done[0] == "removed" for uid in done[3]]
+    edit.unlinked = [uuid for done in undo.done if done[0] == "removed" for uuid in done[4]]
+    edit.scaled = {before[key]: (rect[1], rect[0], rect[3], rect[2]) for key, rect in rects.items()}
+    leaves = lambda layer: [one for one in [layer, *(layer.descendants() if layer.is_group() else ())]
+                            if not one.is_group() and one.kind == "smartobject" and _filtered(one)]
+    moved = {id(leaf): leaf for one in (undo, plan) for layer, _, _ in one.moves for leaf in leaves(layer)}
+    edit.filters = [(leaf.smart_object.placed_id, leaf.smart_object.placed_id, *net(id(leaf._record)))
+                    for leaf in moved.values()]
+    edit.filters += [(copy.smart_object.placed_id, source.smart_object.placed_id,
+                      done[3] + first(id(source._record))[0], done[4] + first(id(source._record))[1])
+                     for done in plan.done if done[0] == "copy" for source, copy in zip(leaves(done[1]), leaves(done[2]))]
 
 
 def drawable(psd: PSDImage) -> None:

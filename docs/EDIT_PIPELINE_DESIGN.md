@@ -165,8 +165,10 @@ maker's star layers, their first visibility, the layers it added, where it left 
 the memo still holds (`_memo_holds`: no Photoshop save since, the stars it left, each named layer where and as shown
 as it left it), `plan_stars` undoes them instead of planning a layout (`_undo_stars`: its added layers deleted with
 their FEid items, `gate_bytes` taking them as removed records; the maker's layers moved back and shown or hidden as
-they were): the maker's layout and XMP come back as drawn. A shrink (option B), a split or a text copy can't be
-undone: such a bake drops the memo. The previews take the same path (`card_plates.star_value`, `psd_details`' header
+they were): the maker's layout and XMP come back as drawn. A split or a text copy can't be undone: such a bake drops
+the memo. A shrink (option B) keeps the PSD's blob before it: back to the maker's count redraws the shrunk stars from
+it; another count undoes the shrink first, then lays that count out from the maker's stars (`_from_maker`), as a bake
+of the maker's PSD would. The previews take the same path (`card_plates.star_value`, `psd_details`' header
 centres, the Rendered preview's bake).
 **Types back to the card maker's (D14 for types).** A types bake keeps the same memo in its own packet
 (`autocroissant:typeMoves`: the maker's row, the bake's hides and close-up moves, its made icons). A types edit naming

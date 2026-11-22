@@ -1320,3 +1320,31 @@ def test_a_shrink_comes_back(clone, parser, tmp_path, monkeypatch):
     _, back = _bake(parser, (four.psd_path, four.png_path), {"stars": 2}, tmp_path / "back", rel)
     assert _layers_of(back.psd_path) == was and pe.icon_memo(PSDImage.open(back.psd_path), "stars") is None
     assert (pe.render_all(PSDImage.open(back.psd_path)) == pe.render_all(original)).all()
+
+
+def test_another_count_after_a_shrink_starts_from_the_makers(clone, parser, tmp_path, monkeypatch):
+    """Remote Detonator 2 -> 4 (option B) -> 3 lays the three out from the maker's two, as 2 -> 3 does (not three of
+    the shrunk stars); -> 2 again is the maker's card (the memo kept the count); -> 5 shrinks again, its memo the first
+    shrink's PSD."""
+    rel = "N.M.E/Remote_Detonator.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    raw = Path(paths[0]).read_bytes()
+    sha = pe.sha1(b"blob %d\0" % len(raw) + raw).hexdigest()
+    monkeypatch.setattr(parser, "blob", {sha: raw}.get, raising=False)
+    was, original = _layers_of(paths[0]), PSDImage.open(paths[0])
+    pixels = lambda baked: np.asarray(Image.open(baked.png_path).convert("RGB"), np.int16)
+
+    def bake(at, value, name):
+        (tmp_path / name).mkdir()
+        return _bake(parser, at, {"stars": value}, tmp_path / name, rel)[1]
+    four = bake(paths, 4, "four")
+    three, direct = bake((four.psd_path, four.png_path), 3, "three"), bake(paths, 3, "direct")
+    assert three.icons["stars"].startswith("from the card maker's 2: ")
+    assert [one[1:] for one in _layers_of(three.psd_path)] == [one[1:] for one in _layers_of(direct.psd_path)]
+    assert np.abs(pixels(three) - pixels(direct)).max() <= 2
+    back = bake((three.psd_path, three.png_path), 2, "back")
+    assert _layers_of(back.psd_path) == was and pe.icon_memo(PSDImage.open(back.psd_path), "stars") is None
+    assert (pe.render_all(PSDImage.open(back.psd_path)) == pe.render_all(original)).all()
+    five = bake((four.psd_path, four.png_path), 5, "five")
+    memo = pe.icon_memo(PSDImage.open(five.psd_path), "stars")
+    assert (memo["count"], memo["now"], memo["from"]["blob"]) == (2, 5, sha) and "65%" in five.icons["stars"]

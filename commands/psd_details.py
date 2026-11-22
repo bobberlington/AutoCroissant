@@ -608,7 +608,11 @@ def _copied(order: list, container) -> Optional[str]:
 
 
 def _scale_of(plan) -> float:
-    """The size a plan draws the stars at against today's: option B's shrink, or an undo's back to the maker's (D14)."""
+    """The size a plan draws the stars at against today's: option B's shrink, or an undo's back to the maker's (D14),
+    or both (_from_maker's)."""
+    if plan.before is not None:
+        back = _scale_of(plan.before) if plan.before.restored else 1.0
+        return round(back * (plan.scaled[0][1] if plan.scaled else 1.0), 3)
     if plan.scaled:
         return plan.scaled[0][1]
     leaf, source = plan.restored[0][:2]
@@ -626,7 +630,7 @@ def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
         try:
             plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = [_ints(centre) for centre in plan.centres]
-            if plan.scaled or plan.restored:
+            if plan.scaled or plan.restored or plan.before is not None:
                 scale[str(n)] = _scale_of(plan)
         except Refused as e:
             refused[str(n)] = _why(e)
@@ -672,7 +676,7 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
         try:
             plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = _plan_centres(plan, container, types, size)
-            if plan.scaled or plan.restored:    # every star shrunk to fit the banner (option B), or back (D14)
+            if plan.scaled or plan.restored or plan.before is not None:     # shrunk (option B), or back (D14)
                 scale[str(n)] = _scale_of(plan)
             continue
         except Refused as e:
