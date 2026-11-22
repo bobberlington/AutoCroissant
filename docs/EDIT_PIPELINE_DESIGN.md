@@ -450,7 +450,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    in, else the font another shown layer prints it in, else Myriad Pro (`glyph_fonts`, `MGP_FONT`: Photoshop 2023's
    Missing Glyph Protection; owner D15, 2026-11-17: an edit never erases one); letters typed after a stray run (one
    setting only characters the body font can't draw) take the body font, characters only the stray font draws stay in
-   it (The Structure's digits); only one no font draws is a box or a gap (`no_glyph`) told `font`; a typed em or en dash,
+   it (The Structure's digits). Only the Font changes, so only plain letters (`plain_sigs`: at a size, baseline shift
+   and scales the body font's letters use) pass a font on or step back: a styled stand-in (Minecraft Panda's shifted
+   Minecraftia '∞', Spice's 46 pt Myriad '∞', Battle Spear's scaled Chiller '%') and letters typed into its run stay as
+   typed, and a letter typed at its settings takes Myriad Pro alone (x31 review, 2026-11-21); only one no font draws
+   is a box or a gap (`no_glyph`) told `font`; a typed em or en dash,
    ellipsis or curly double quote its font lacks is set plain first (- ... ", `plain_typed`; kept where the font has
    it; the read-back gates compare them as plain: owner D13, 2026-11-15). A `[token]` the website draws as an
    icon that the font prints as letters (`unlettered_icons`: text.js takes the base before the first colon, `norm()`ed,
