@@ -296,6 +296,12 @@ def test_shared_bars_and_moved_titles_are_remembered():
     assert cb.ability_fit(fit, "abcdef1234") == cb.ability_fit({**fit, "state": "refused"}, "abcdef1234") == 0.8836
     assert cb.ability_fit(fit, "99999999aa") == cb.ability_fit(baked, "abcdef1234") == 1.0
     assert cb.ability_fit({**fit, cb.FIT: 0.1}, "abcdef1234") == 1.0
+    card = cb.Card("Stay", "stay", {"name": "Stay"}, "Creatures/Other/3 Stars/Stay.psd", "abcdef1234")
+    boxes = [[236, 34, 964, 120]]                   # a title set smaller (r52) likewise, with the maker's boxes
+    cb.remember(card, {**baked, cb.TITLE_FIT: 0.8836, cb.TITLE_WAS: boxes})
+    assert (card.title_fit, card.title_was, card.ability_fit) == (0.8836, boxes, 1.0)
+    cb.remember(card, {**baked, cb.TITLE_FIT: 0.8836})     # without them: the title as it is
+    assert (card.title_fit, card.title_was) == (1.0, None)
 
 
 def test_blob_gate(github):

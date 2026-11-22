@@ -397,8 +397,15 @@ def test_a_shrunk_ability_reaches_the_mock_up(bs):
     verdict = {"state": "baked", "psd": "abcd1234", "reason": "ability", cb.FIT: 0.8836}
     for psd, fit, want in (("abcd1234ff", 0.8836, 0.8836), ("99999999aa", 0.8836, None), ("abcd1234ff", 0.1, None)):
         card = {"key": "Mini_Doomer", "name": "Mini Doomer", "problems": []}
-        bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.FIT: fit}})}, psd_sha=psd, shown="Mini Doomer")
-        assert card.get("abilityFit") == want
+        bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.FIT: fit, cb.TITLE_FIT: fit,
+                                                            cb.TITLE_WAS: [[236, 34, 964, 120]]}})},
+                       psd_sha=psd, shown="Mini Doomer")
+        assert card.get("abilityFit") == card.get("titleFit") == want     # a title set smaller (r52) likewise
+        assert card.get("titleWas") == ([[236, 34, 964, 120]] if want else None)    # with the maker's boxes
+    card = {"key": "Mini_Doomer", "name": "Mini Doomer", "problems": []}
+    bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.TITLE_FIT: 0.8836}})}, psd_sha="abcd1234ff",
+                   shown="Mini Doomer")
+    assert "titleFit" not in card and "titleWas" not in card     # without them: as the bake, no title fit
 
 
 def test_web_fonts_say_which_typed_characters_they_lack(bs, tmp_path, monkeypatch):

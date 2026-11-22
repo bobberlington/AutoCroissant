@@ -590,6 +590,21 @@ out([why(bagel, [[1, "The Bagel Or... is it", "The Bagel"]], [{ px: 145 }]), why
     assert fits == apart == "" and near == ["", "", ""]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function titleFit"), reason="no titleFit in this mockup.js")
+def test_a_title_over_an_icon_is_set_smaller(tmp_path):
+    """psd_edit fit_title in the mock-up: an icon near the old title is left out (titleIcons); the title steps by 0.94
+    to the first scale that clears, never under TITLE_MIN, at 1 when it reaches none or none clears; a title a bake set
+    smaller leaves out only icons near the card maker's boxes (keptTitle), as the next bake."""
+    out = node(tmp_path, """
+const head = { stars: { units: [{ core: [900, 40, 960, 100] }, { core: [600, 40, 660, 100] }] }, types: { row: [{ name: "fire", core: [100, 40, 160, 100] }] } };
+const at = need => m.titleFit(s => s > need), was = [[300, 20, 400, 60]];
+out([m.titleIcons(head, 0.5, was), at(0.85), at(0.5), at(2), m.keptTitle({ titleFit: 0.88, titleWas: was }),
+  m.keptTitle({ titleFit: 1, titleWas: was }), m.keptTitle({ titleFit: 0.88 })]);""")
+    assert out[0] == [["star", [450, 20, 480, 50]], ["fire", [50, 20, 80, 50]]]
+    assert out[1] == pytest.approx(0.94 ** 3) and out[2] == out[3] == 1
+    assert out[4] == [[300, 20, 400, 60]] and out[5] is None and out[6] is None
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
 def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's

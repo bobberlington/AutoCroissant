@@ -3065,6 +3065,32 @@ def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     assert layer._data.transform[4] == tx - moved
 
 
+def test_a_title_over_the_stars_is_set_smaller(clone, parser, chart):
+    """r52: a title edit that would print over a star or type icon its old text left clear is set smaller about its
+    anchor until it clears them (fit_title), else as drawn and told; a next edit (its fit and the maker's boxes) as
+    from the maker's PSD; back to the maker's text, the maker's size."""
+    fonts, rel = str(clone / pe.FONTS_DIR), "Auxiliary/Minions/Abyss_Watcher.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    layer, icons = pe.name_layer(psd, "Abyss Watcher"), pe.header_icons(psd, parser, "Abyss Watcher")
+    sizes, tx, box = [keys["FontSize"] for _, _, keys in pe.size_runs(layer)], layer._data.transform[4], list(layer.bbox)
+    edit = pe.set_text_layer(psd, "name", "Abyss WATCHER", fonts, chart, "Abyss Watcher", parser=parser)
+    assert pe.TITLE_MIN <= edit.fit < 1 and edit.notes == [] and not pe._reached(layer, icons) and edit.was == [box]
+    assert layer._data.transform[4] == tx                # about its anchor: not moved
+    fresh = pe.set_text_layer(PSDImage.open(_card(clone, rel)[0]), "name", "Abyss WATCHERS", fonts, chart,
+                              "Abyss Watcher", parser=parser)
+    edit = pe.set_text_layer(psd, "name", "Abyss WATCHERS", fonts, chart, "Abyss Watcher", parser=parser, fit=edit.fit,
+                             was=edit.was)              # wider again: never back over the stars (r52 retry)
+    assert edit.fit == pytest.approx(fresh.fit) and edit.fit < 1 and edit.notes == [] and not pe._reached(layer, icons)
+    edit = pe.set_text_layer(psd, "name", "Abyss Watcher", fonts, chart, "Abyss Watcher", parser=parser, fit=edit.fit,
+                             was=edit.was)
+    assert edit.fit == 1 and edit.was is None
+    assert [keys["FontSize"] for _, _, keys in pe.size_runs(layer)] == pytest.approx(sizes, abs=0.02)
+    psd = PSDImage.open(_card(clone, rel)[0])
+    edit = pe.set_text_layer(psd, "name", "Abyss Watcher Of The Ancients", fonts, chart, "Abyss Watcher", parser=parser)
+    assert edit.fit == 1
+    flagged(edit.notes, r"^name: it prints over the (stars|\w+ icon)( and the \w+ icon)?: check the card$")
+
+
 def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart, tmp_path):
     """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other (review
     2026-10-24): an edit sets the title in the face its pixels show and the PSD names it from then on (R3, owner
