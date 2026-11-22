@@ -462,9 +462,10 @@ def _names(layer) -> list:
 
 
 def _faces(layer) -> Optional[list]:
-    """[[font, its characters]] of the type layer (psd_edit.printed_fonts, most letters first), None in one font (the
-    icon font aside): the mock-up sets a typed character its font can't draw as the bake does (glyph_fonts)."""
-    printed = psd_edit.printed_fonts(layer)
+    """[[font, its characters]] of the type layer (psd_edit.printed_fonts, most letters first; styled stand-ins left out:
+    psd_edit.plain_sigs), None in one font (the icon font aside): the mock-up sets a typed character its font can't draw
+    as the bake does (glyph_fonts)."""
+    printed = psd_edit.printed_fonts(layer, plain=True)
     return [[font, "".join(sorted(chars))] for font, chars in printed] if len(printed) > 1 else None
 
 

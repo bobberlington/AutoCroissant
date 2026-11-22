@@ -770,7 +770,7 @@ def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel
     text = plain_typed(title, None, old_text, text, fonts_dir)
     fonts = font_map(fonts_dir)
     parts = edit_parts(old_text, text, *_edit_range(old_text, text))
-    printed, old_runs = printed_fonts(title), _run_fonts(title)
+    printed, old_runs = printed_letters(title), list(zip(_run_fonts(title), _sigs(title)))
     try:
         before = capture(title, fonts)
         title.set_text(text, keep="runs")
@@ -5262,21 +5262,51 @@ def _draws(fonts, font: str, c: str, ok: bool = False) -> bool:
     return face is not None and (not ok or found.how in OK_FONTS) and _inked(face, face.hb.get_nominal_glyph(ord(c)), c)
 
 
-def printed_fonts(layer, skip=()) -> list:
-    """[(font, the characters set in it)] over the layer's text, the icon font and whitespace left out, most letters
-    first (a tie: the first set); skip: str indices left out."""
+def _sigs(layer) -> list:
+    """Per str index of the layer's text, the final \\r's too: its run's (size, baseline shift, horizontal and vertical
+    scale), what a Font change keeps."""
+    out = [None] * (len(layer.text) + 1)
+    for _, run, a, b in _str_runs(layer):
+        st = run.style
+        sig = (round(st.font_size, 2), round(st.baseline_shift, 2), round(st.horizontal_scale, 3), round(st.vertical_scale, 3))
+        for i in range(max(a, 0), min(b, len(out))):
+            out[i] = sig
+    return out
+
+
+def printed_letters(layer, skip=()) -> list:
+    """[(font, _sigs, character)] of each letter of the layer's text, the icon font, whitespace and unprintables left
+    out; skip: str indices left out."""
+    runs, sigs = _run_fonts(layer), _sigs(layer)
+    return [(runs[i], sigs[i], c) for i, c in enumerate(layer.text) if i not in skip and runs[i] and not c.isspace()
+            and c.isprintable() and not runs[i].lower().startswith(ICON_FONT_PREFIX)]
+
+
+def plain_sigs(letters: list) -> set:
+    """The _sigs the body font (the most letters') sets letters at (letters: printed_letters'). Another font's letter set
+    at none of them is a styled stand-in (Minecraft Panda's '\u221e' shifted down, Spice's at 46 pt): glyph_fonts
+    leaves it, and letters typed into its run, as they are."""
+    count = Counter(font for font, _, _ in letters)
+    body = count.most_common(1)[0][0] if count else None
+    return {sig for font, sig, _ in letters if font == body}
+
+
+def printed_fonts(layer, skip=(), letters: Optional[list] = None, plain: bool = False) -> list:
+    """[(font, the characters set in it)] over the layer's text (printed_letters; letters: theirs), most letters first
+    (a tie: the first set); skip: str indices left out; plain: styled stand-ins' letters left out (plain_sigs)."""
+    letters = printed_letters(layer, skip) if letters is None else letters
+    ok = plain_sigs(letters) if plain else None
     count, chars = Counter(), {}
-    for i, (c, font) in enumerate(zip(layer.text, _run_fonts(layer))):
-        if i in skip or not font or c.isspace() or not c.isprintable() or font.lower().startswith(ICON_FONT_PREFIX):
-            continue
+    for font, sig, c in letters:
         count[font] += 1
-        chars.setdefault(font, set()).add(c)
-    return [(font, chars[font]) for font, _ in count.most_common()]
+        if ok is None or sig in ok:
+            chars.setdefault(font, set()).add(c)
+    return [(font, chars[font]) for font, _ in count.most_common() if font in chars]
 
 
 def retyped(old: str, new: str, parts: list, fonts: list) -> dict:
     """{new str index: its old font} for each character a changed part of edit_parts types again where it was (the same
-    character, aligned within the part); fonts: the old text's _run_fonts."""
+    character, aligned within the part); fonts: per old str index (_run_fonts, or (font, _sigs) pairs)."""
     out = {}
     for a0, a1, b0, b1, kept in parts:
         for i, j, n in SequenceMatcher(None, old[a0:a1], new[b0:b1], autojunk=False).get_matching_blocks() if not kept else ():
@@ -5289,21 +5319,24 @@ def glyph_fonts(psd: PSDImage, layer, changed: list, fonts, skip=(), before: Opt
     """
     Each typed character of the changed ranges (set on the layer) its run's font can't draw (_draws: no glyph, or an
     empty one) set in a font that draws it (owner D15 rest, 2026-11-17: an edit never erases one): its own old font where
-    the edit types it again in place (again: retyped's), else the font the layer prints it in (before: its
-    printed_fonts before the edit; else its kept letters'), else the font another visible type layer of the card prints
-    it in (most letters first), else MGP_FONT (Photoshop 2023's Missing Glyph Protection); OK_FONTS faces only, never
-    the icon font. Only Font changes: size, colour and the rest stay. A typed letter the body font (the most letters')
-    draws first takes it where a stray run passed its font on, one setting only characters the body can't draw (a line
-    typed after Holo Defense API's Myriad '.'); one only the stray font draws stays in it (The Structure's IRONMAN
-    digits). skip: str indices left alone (typed icons and badges). Returns [(index, font)] set, each font added to the
-    layer's FontSet.
+    the edit types it again in place (again: retyped's, (font, _sigs) per index), else the font the layer prints it in
+    (before: its printed_letters before the edit; else its kept letters'), else the font another visible type layer of
+    the card prints it in (most letters first), else MGP_FONT (Photoshop 2023's Missing Glyph Protection); OK_FONTS faces
+    only, never the icon font. Only Font changes, so only plain letters (plain_sigs: set as the body's) pass a font on and
+    take one; a styled stand-in (Minecraft Panda's shifted '\u221e') passes none, a letter typed at its settings takes
+    MGP_FONT alone (as before D15). A typed letter the body font (the most letters') draws first takes it where a plain
+    stray run passed its font on, one setting only characters the body can't draw (a line typed after Holo Defense API's
+    Myriad '.'); one only the stray font draws stays in it (The Structure's IRONMAN digits); one typed into a styled
+    stand-in stays as typed (Panda's '2' in place of its '\u221e'). skip: str indices left alone (typed icons and
+    badges). Returns [(index, font)] set, each font added to the layer's FontSet.
     """
     text, typed = layer.text, {i for a, b in changed for i in range(a, min(b, len(layer.text)))}
-    own = printed_fonts(layer, typed) if before is None else before
-    body = own[0][0] if own else None
-    stray = {font for font, chars in own[1:] if not any(_draws(fonts, body, c) for c in chars)}
-    now = _run_fonts(layer)
-    back = [i for i in sorted(typed) if i not in skip and now[i] in stray and not text[i].isspace()
+    letters = printed_letters(layer, typed) if before is None else before
+    every, own, plain = printed_fonts(layer, letters=letters), printed_fonts(layer, letters=letters, plain=True), plain_sigs(letters)
+    body = every[0][0] if every else None
+    stray = {font for font, chars in every[1:] if not any(_draws(fonts, body, c) for c in chars)}
+    now, sigs = _run_fonts(layer), _sigs(layer)
+    back = [i for i in sorted(typed) if i not in skip and now[i] in stray and sigs[i] in plain and not text[i].isspace()
             and _draws(fonts, body, text[i])]
     for a, b in _stretches(back):
         layer.set_span_style(a, b, Font=body)
@@ -5315,14 +5348,16 @@ def glyph_fonts(psd: PSDImage, layer, changed: list, fonts, skip=(), before: Opt
         return []
     others, out = None, []
     for i in todo:
-        c, was = text[i], (again or {}).get(i)
-        font = was if was and not was.lower().startswith(ICON_FONT_PREFIX) and _draws(fonts, was, c, True) else None
-        font = font or next((f for f, chars in own if c in chars and _draws(fonts, f, c, True)), None)
-        if font is None:
-            if others is None:
-                others = [pair for other in psd.descendants() if other is not layer and _is_text_layer(other)
-                          and other.is_visible() for pair in printed_fonts(other)]
-            font = next((f for f, chars in others if c in chars and _draws(fonts, f, c, True)), None)
+        c, (was, sig) = text[i], (again or {}).get(i) or (None, None)
+        font = None
+        if sigs[i] in plain:
+            font = was if was and sig in plain and not was.lower().startswith(ICON_FONT_PREFIX) and _draws(fonts, was, c, True) else None
+            font = font or next((f for f, chars in own if c in chars and _draws(fonts, f, c, True)), None)
+            if font is None:
+                if others is None:
+                    others = [pair for other in psd.descendants() if other is not layer and _is_text_layer(other)
+                              and other.is_visible() for pair in printed_fonts(other, plain=True)]
+                font = next((f for f, chars in others if c in chars and _draws(fonts, f, c, True)), None)
         font = font or (MGP_FONT if _draws(fonts, MGP_FONT, c, True) else None)
         if font is not None:
             out.append((i, font))
@@ -6372,7 +6407,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         room = np.zeros_like(room)
         room[y0:y1, x0:x1, 3] = 255
     off_before = _ink_off_canvas(layer, psd.width, psd.height)
-    printed, old_runs = printed_fonts(layer), _run_fonts(layer)    # glyph_fonts': the card's own font for each one
+    printed, old_runs = printed_letters(layer), list(zip(_run_fonts(layer), _sigs(layer)))   # glyph_fonts': the card's own fonts
     splice_text(layer, text, parts)
     glyphs = {i for a, b in drawn for i in range(a, b)}
     if styles:          # words the engine set in a badge's icon font (typed after one) take their source's style
@@ -13187,6 +13222,8 @@ __all__ = [
     'no_glyph',
     'glyph_fonts',
     'printed_fonts',
+    'printed_letters',
+    'plain_sigs',
     'layer_records',
     'layout_fonts',
     'fonts_in',
