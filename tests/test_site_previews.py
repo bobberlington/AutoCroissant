@@ -687,6 +687,16 @@ out([m.titleIcons(head, 0.5, was), at(0.85), at(0.5), at(2), m.keptTitle({ title
     assert out[4] == [[300, 20, 400, 60]] and out[5] is None and out[6] is None
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export const keptFit"), reason="no keptFit in this mockup.js")
+def test_a_split_titles_part_keeps_its_own_fit(tmp_path):
+    """r4-2: a split title's part a bake set smaller starts from the card maker's size and boxes (titleFits), as the
+    next bake; any other title the card's titleFit."""
+    out = node(tmp_path, """
+const was = [[300, 20, 400, 60]], card = { titleFit: 0.9, titleWas: [[1, 2, 3, 4]], titleFits: { 422: [0.78, was] } };
+out([m.keptTitle(card, 422), m.keptFit(card, 422), m.keptTitle(card, 7), m.keptFit(card, 7), m.keptTitle(card)]);""")
+    assert out == [[[300, 20, 400, 60]], 0.78, [[1, 2, 3, 4]], 0.9, [[1, 2, 3, 4]]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
 def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's

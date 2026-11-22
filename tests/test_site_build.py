@@ -434,6 +434,11 @@ def test_a_shrunk_ability_reaches_the_mock_up(bs):
     bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.TITLE_FIT: 0.8836}})}, psd_sha="abcd1234ff",
                    shown="Mini Doomer")
     assert "titleFit" not in card and "titleWas" not in card     # without them: as the bake, no title fit
+    parts = {"422": [0.78, [[259, 26, 935, 107]]], "423": [0.5, [[1, 2, 3, 4]]], "424": [0.9, []]}
+    card = {"key": "Mini_Doomer", "name": "Mini Doomer", "problems": []}     # a split title's parts (r4-2)
+    bs.apply_edits(card, {"mini doomer": ({}, {"_psd": {**verdict, cb.TITLE_FITS: parts}})}, psd_sha="abcd1234ff",
+                   shown="Mini Doomer")
+    assert card["titleFits"] == {"422": [0.78, [[259, 26, 935, 107]]]}
 
 
 def test_web_fonts_say_which_typed_characters_they_lack(bs, tmp_path, monkeypatch):
