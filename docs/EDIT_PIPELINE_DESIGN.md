@@ -65,7 +65,7 @@ the workflow facts were re-checked.
   Hemorrhaging, Contracted, Cursed Inferno, Spirit Flame; GradientOverlay on Become Back Money, Corrupted Blood, Condemned;
   both on Withering, Frozen In Time; DropShadow+Stroke on Curse). Fill = the status colour. Cards already use the swatch
   colour for status words about 95% of the time (ttscardmaker-companion skill §6).
-- **Text engine** (fork branch `feat/text-engine`, 647e19c6): `TypeLayer.set_text(text, keep="runs")` keeps the runs on the
+- **Text engine** (fork branch `feat/text-engine`, 647e19c6): `TypeLayer.set_text(text)` keeps the runs on the
   unchanged ends (`src/psd_tools/api/layers.py:3099`); `set_span_style(start, end, fill=(r,g,b))` (:3113);
   `rasterize(fonts=FontMap(dirs=[...]))` replaces the stored raster (:3142), raises `MissingFontError` on a missing face,
   reports `overflow` when a line no longer fits (fork `docs/text.rst`). Reopened `numpy('color')` equals the render; unedited
@@ -114,7 +114,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | Field | Kind | Pipeline (round 1) | After the bake |
 |---|---|---|---|
 | `hp` `def` `atk` `spd` | PSD + database | toggle `str(N)` visible in `<Stat> Dark`, clear the other nine (10 = none); template rows only; 0-10 | field removed |
-| `ability` | PSD + database | `set_text(keep="runs")`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count). Several layers: edited box by box (`parts`, PARTS_EDITOR.md; the joined `set_ability_layers` splice was deleted 2026-10-25, a plain edit there refuses as impossible); a plain edit of one layer with copies (SOMETHING's) goes through `set_parts`, the copies following (a relaid hidden one too until 2026-11-12) | field removed |
+| `ability` | PSD + database | `set_text`, status words filled from the chart, `rasterize`; the one visible `Ability` text layer, in any group or at the root (2026-10-23), no other layer printing its words where they show (a copy under the art does not count). Several layers: edited box by box (`parts`, PARTS_EDITOR.md; the joined `set_ability_layers` splice was deleted 2026-10-25, a plain edit there refuses as impossible); a plain edit of one layer with copies (SOMETHING's) goes through `set_parts`, the copies following (a relaid hidden one too until 2026-11-12) | field removed |
 | `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renamed it after the new title, as Photoshop renames a layer it named (`Edit.renamed`), until 2026-11-12 (owner: deleted; the layer keeps its old name and the parser reads the new title by its place (rule P)); refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
@@ -280,7 +280,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    nothing). Two rows (idea 13), a missing digit (moved there), a bar off the canvas and a tall mask over other rows: support
    and refusals deleted 2026-11-12 (owner: old layouts go; a row without the digit refuses naming it). A mask that starts
    on the canvas and reaches past it (Pure_Vessel) bakes.
-   Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
+   Ability/name: `set_text`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
    the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
@@ -297,7 +297,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    The red key leaves a colour glyph's red-less pixels out (a typed `[undead]`'s black eye sockets and jaw, a
    `[feather]`'s green; the JSX's too), which then print in the overlay's colour, so since review 2026-10-24 a badge
    layer's key also takes its colour glyphs' silhouettes where no other glyph inks (`_phrase_mask(badge=True)`: a key
-   drawn without colour glyphs, `Options(color_glyphs=False)`, each one its glyf outline, the icon's alpha past 110).
+   drawn without colour glyphs, each one its glyf outline, the icon's alpha past 110).
    The style is the chart's (Add), the overlay's (Convert overlays, whose words take the overlay's colour: its first drawn
    run, 8308103f) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
    (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a

@@ -57,7 +57,7 @@ import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
 from psd_tools.api.effects import GradientOverlay, Stroke
-from psd_tools.api.layers import AdjustmentLayer, FillLayer, Group, PixelLayer
+from psd_tools.api.layers import AdjustmentLayer, FillLayer, PixelLayer
 from psd_tools.api.links import FILETYPES, LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
 from psd_tools.constants import BlendMode, ColorMode, LinkedLayerType, Resource, StrokeFillType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
@@ -173,7 +173,7 @@ def fork_draws_knockout() -> bool:
             PixelLayer.frompil(Image.new("RGBA", (8, 4), (255, 0, 0, 255)), psd, "under")
             half = Image.new("RGBA", (8, 4))
             half.paste((0, 0, 255, 128), (0, 0, 4, 4))
-            group = Group.group_layers(psd, [PixelLayer.frompil(half, psd, "over")], name="knockout")
+            group = psd.create_group([PixelLayer.frompil(half, psd, "over")], name="knockout")
             group.blend_mode = BlendMode.PASS_THROUGH
             group.tagged_blocks.set_data(Tag.KNOCKOUT_SETTING, 1)
             if tsly is not None:

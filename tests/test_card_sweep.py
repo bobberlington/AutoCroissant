@@ -36,14 +36,14 @@ def test_earlier_icon_fonts(clone, tmp_path):
     glow halos', the :glow variants' and the first build's: the same advances, drawn otherwise), none the ref's own nor
     another version of an era, their (1CD) the pre-ring width (the ring's 2658 units; the first build had no badges), named so a FontMap over the
     folder never indexes them; a second walk reads only the fonts it writes."""
-    from psd_tools.composite.text.fonts import font_files
+    from psd_tools.composite.text.fonts import FONT_EXTENSIONS
     source = Source(str(clone))
     commit = source.commit(RING)
     tree = source.tree(commit)
     files = earlier_fonts(source, commit, tree, str(tmp_path))
     shas = [blob_sha(path) for path in files]
     assert shas == [_font_at(source, rev) for rev in (PRE_RING, GLOW_12, GLOW_TOKENS, FIRST)]
-    assert font_files(str(tmp_path)) == []
+    assert not [p for p in tmp_path.rglob("*") if p.name.lower().endswith(FONT_EXTENSIONS)]
     ring = tmp_path / "ring.ttf"
     ring.write_bytes(source.blob(tree[ICON_FONT_FILE][1]))
     assert [_advance(path, "(1CD)") for path in files] == [2040, 2040, 2040, 2383] and _advance(str(ring), "(1CD)") == 2658

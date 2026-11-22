@@ -2279,7 +2279,7 @@ def test_gate_fx_checks_a_title_edits_icons(clone, parser):
                                   (BENCH, "Bench [fire]", True, None)):
         old, psd = PSDImage.open(_card(clone, rel)[0]), PSDImage.open(_card(clone, rel)[0])
         layer = pe.name_layer(psd, Path(rel).stem.replace("_", " "))
-        layer.set_text(title, keep="runs")
+        layer.set_text(title)
         if icon:
             layer.add_font(pe.ICON_FONT)
             layer.set_span_style(title.index("["), len(title), Font=pe.ICON_FONT)

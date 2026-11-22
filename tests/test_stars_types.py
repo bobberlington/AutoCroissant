@@ -710,11 +710,10 @@ def test_stars_shrink_to_fit_their_banner(clone, parser, tmp_path):
 
 def test_a_star_group_with_a_mask_does_not_shrink():
     """Option B shrinks a star group's layers, not its own mask or effects: a group with one cannot shrink."""
-    from psd_tools.api.layers import Group
     psd = PSDImage.new("RGB", (40, 40))
     star = PixelLayer.frompil(Image.new("RGB", (10, 10), (255, 0, 0)), psd, "star", 5, 5)
     psd.append(star)
-    group = Group.group_layers(psd, [star], name="star one")
+    group = psd.create_group([star], name="star one")
     assert pe._scalable(group) is None
     group.create_mask(Image.new("L", (10, 10), 255), top=5, left=5)
     assert pe._scalable(group) == "'star one' has a mask or effects"

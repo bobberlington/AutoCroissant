@@ -337,7 +337,7 @@ def layout(layer, fonts_dir: str, stored: bool = True) -> Optional[dict]:
     pair = (capture(layer, faces), render(layer, fonts=faces)) if stored else None
     off = stored and _ink_off(layer, faces, geo, pair) > LAYOUT_OFF
     lay = lay_out(model, faces)
-    if (geo["missing_fonts"] or not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
+    if (not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
             or [g["i"] for g in geo["glyphs"]] != [g.cluster for g in lay.glyphs]):
         return None
     r = lambda v: round(v, 1)

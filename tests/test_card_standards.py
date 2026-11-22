@@ -729,7 +729,7 @@ def _typed_curly(data: bytes, fonts, path, earlier=()) -> bytes:
     layer = next(layer for layer in psd.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
     laid = cs.laid_plan(layer, psd_edit.font_map(fonts([]), layer), earlier)[0]
     keep = capture(layer, laid)
-    layer.set_text(layer.text.replace("creature's", "creature’s"), keep="runs")
+    layer.set_text(layer.text.replace("creature's", "creature’s"))
     layer.rasterize(fonts=laid, keep=keep, unit=psd_edit.SPLICE_UNIT)
     psd.save(str(path), update_preview=False)
     return path.read_bytes()

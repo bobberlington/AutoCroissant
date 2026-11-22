@@ -170,7 +170,7 @@ def test_g2_draws_no_knockout_the_fork_cannot(tmp_path, monkeypatch):
     import commands.psd_links as pl
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
-    group = Group.group_layers(new, [next(layer for layer in new if layer.name == "Square")], name="Knock")
+    group = new.create_group([next(layer for layer in new if layer.name == "Square")], name="Knock")
     group.tagged_blocks.set_data(Tag.KNOCKOUT_SETTING, 1)
     monkeypatch.setattr(pl, "fork_draws_knockout", lambda: False)
     for found in (pe.export(old, new, card()), pe.export_new(new)):

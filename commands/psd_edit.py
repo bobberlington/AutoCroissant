@@ -790,7 +790,7 @@ def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel
     printed, old_runs = printed_letters(title), list(zip(_run_fonts(title), _sigs(title)))
     try:
         before = capture(title, fonts)
-        title.set_text(text, keep="runs")
+        title.set_text(text)
         glyph_fonts(inner, title, [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0], fonts, (),
                     printed, retyped(old_text, text, parts, old_runs))     # a typed letter its font can't draw (D15)
         title.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
@@ -2092,7 +2092,7 @@ def _inside(part: tuple, start: int, end: int) -> Optional[tuple]:
 
 def splice_text(layer, text: str, parts: list) -> None:
     """
-    set_text(keep="runs") one changed part at a time (edit_parts), last first: the engine restyles only what changed, so
+    set_text one changed part at a time (edit_parts), last first: the engine restyles only what changed, so
     an edit at both ends of an ability leaves the badges and colours between them alone (in one call, everything from
     the first change to the last would take the first changed character's style). A part the engine's greedy prefix
     would run past (deleting "+2 ATK\r" before "+25% SPD" kept "+2" in the deleted line's red: review 2026-10-24), or an
@@ -2106,10 +2106,10 @@ def splice_text(layer, text: str, parts: list) -> None:
             nxt = current[:a0] + text[b0:b1] + current[a1:]
             if a1 - a0 != b1 - b0 and changed_range(current, nxt)[0] > (a0 if a1 == a0 else a0 + b1 - b0):
                 mark = next(c for c in "\ufffc\ufffd\u2060\u2061" if c not in current + text)
-                layer.set_text(current[:a0] + mark + current[a0 + (a1 > a0):], keep="runs")
-            layer.set_text(nxt, keep="runs")
+                layer.set_text(current[:a0] + mark + current[a0 + (a1 > a0):])
+            layer.set_text(nxt)
             current = nxt
-    layer.set_text(text, keep="runs")           # nothing left but a stale story to bring along
+    layer.set_text(text)           # nothing left but a stale story to bring along
 
 
 def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) -> list:
@@ -2303,7 +2303,7 @@ def header_looks(layer, parts: list, new: str, chart: Optional[dict] = None) -> 
 
 def changed_range(old: str, new: str) -> tuple:
     """
-    The str indices [start, end) of the new text that set_text(keep="runs") restyles: everything outside the
+    The str indices [start, end) of the new text that set_text restyles: everything outside the
     common prefix and suffix (the engine's own comparison, over the stored text with its final \\r).
 
     Args:
@@ -3011,7 +3011,7 @@ def _key_raster(lay, model, layer, engine: tuple) -> np.ndarray:
     out = np.zeros((ly1 - ly0, lx1 - lx0, 4), np.float32)     # on the layer's bbox (a splice keeps Photoshop's)
     if not lay.glyphs and not lay.rules:
         return out
-    rgba, bbox = rasterize(lay, model.transform, model.antialias, Options(color_glyphs=True), GlyphCache(),
+    rgba, bbox = rasterize(lay, model.transform, model.antialias, Options(), GlyphCache(),
                            max_alloc_bytes=layer._psd._max_alloc_bytes)
     x0, y0, x1, y1 = (int(v) for v in bbox)
     if x0 < lx0 - KEY_SLACK or y0 < ly0 - KEY_SLACK or x1 > lx1 + KEY_SLACK or y1 > ly1 + KEY_SLACK:
@@ -5433,7 +5433,7 @@ def _lacks(fonts, font: str, mark: str) -> bool:
 def plain_typed(layer, which: Optional[str], old_text: str, text: str, fonts_dir: str, chart: Optional[dict] = None) -> str:
     """
     text with each typed PLAIN_MARKS mark its font has no glyph for made plain, else kept (owner D13, 2026-11-15: no
-    box). Its font: the engine's (set_text keep="runs": a replacement takes the first character it replaces, an
+    box). Its font: the engine's (set_text: a replacement takes the first character it replaces, an
     insertion the run before it), the icon font's taking what edit_styles (which "ability") or title_styles ("name")
     sets there, a line typed under a header the next line's (header_looks), as set_text_layer does. Text with no typed
     mark is returned as it is.
@@ -12084,7 +12084,7 @@ def _colour_ink(layer, fonts, shape: tuple) -> np.ndarray:
     renders = []
     for fill in ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)):
         key = replace(model, runs=tuple(replace(run, style=replace(run.style, fill=fill)) for run in model.runs))
-        rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(color_glyphs=True), GlyphCache(),
+        rgba, bbox = rasterize(layout(key, fonts), key.transform, key.antialias, Options(), GlyphCache(),
                                max_alloc_bytes=layer._psd._max_alloc_bytes)
         out = np.zeros((*shape, 4), np.float32)
         x0, y0, x1, y1 = (int(v) for v in bbox)

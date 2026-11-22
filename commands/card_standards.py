@@ -1179,7 +1179,7 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         text = layer.text
         for at in reversed([i for i, c in enumerate(text) if c == APOSTROPHE]):
             text = text[:at] + "'" + text[at + 1:]
-            layer.set_text(text, keep="runs")
+            layer.set_text(text)
         cut = _spliced(path, psd, layer, found, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT),
                        fonts, names)
         records |= {psd_edit._record_index(fx) for fx in cut or ()}
