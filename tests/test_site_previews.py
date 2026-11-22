@@ -387,6 +387,18 @@ out([run({}), run({ one: true }), run({ strokeW: 0 })]);""")
     assert not any(s.endswith("rgb(1,2,3) 6") for s in one + bare) and bare[0] == "fill"
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "function seeThrough"), reason="no see-through Strokes in this mockup.js")
+def test_a_see_through_stroke_is_one_layer_at_its_opacity(tmp_path):
+    """A Stroke under 100% (psd_details rim): the letters' outlines drawn opaque on a layer of their own, put on the card
+    at its opacity before the fills (where two letters' outlines meet they don't add up); at 100% straight on the card."""
+    out = node(tmp_path, """const rec = [], proxy = (t, on) => new Proxy(t, { set: (o, k, v) => (o[k] = v, true), get: (o, k) => k in o ? o[k] : (...a) => on(o, k, a) });
+globalThis.document = { createElement: () => { const g = proxy({}, (o, k) => { if (k === "strokeText") rec.push(`layer ${o.strokeStyle}`); }); return { getContext: () => g }; } };
+const ctx = proxy({ canvas: { width: 90, height: 60 }, globalAlpha: 1 }, (o, k) => { if (k === "strokeText" || k === "fillText") rec.push(`${k} ${k === "fillText" ? o.fillStyle : o.strokeStyle}`); if (k === "drawImage") rec.push(`layer at ${o.globalAlpha}`); });
+const run = strokeA => { rec.length = 0; m.paintLines(ctx, [{ pieces: [{ text: "Hi", w: 20 }] }], { at: () => 0, base: 40, pitch: 0, z: 20, fam: "x", fill: [9, 9, 9], stroke: [1, 2, 3], strokeW: 8, strokeA, imgs: new Map() }); return [...rec]; };
+out([run(0.64), run(1)]);""")
+    assert out == [["layer rgb(1,2,3)", "layer at 0.64", "fillText rgb(9,9,9)"], ["strokeText rgb(1,2,3)", "fillText rgb(9,9,9)"]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "if (im && one === true) paintMask"), reason="no one-colour icons in this mockup.js")
 def test_a_typed_icon_under_an_overlay_takes_its_colour(tmp_path):
     """Under the Ability's overlay a typed icon is its shape in the text's fill (the overlay paints over it in the

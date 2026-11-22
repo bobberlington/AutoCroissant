@@ -59,7 +59,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads", "effects", "fb", "outline", "faces"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just", "stroke", "fx", "lead", "heads", "effects", "fb", "outline", "faces", "rim", "rims"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -107,6 +107,20 @@ def test_stroke_is_the_layers_or_its_groups(records, clone):
     kirby = next(x for x in PSDImage.open(str(clone / "Creatures/Kirby/3 Stars/Retro_Kirby.psd")).descendants() if x.layer_id == 417)
     assert (pd._stroke(kirby), pd._outline(kirby), pd._set(kirby).get("fb")) == ([0, 0, 0, 2], [0, 0, 0, 9], True)
     assert pd._outline(next(x for x in PSDImage.open(str(clone / DOOMER)).descendants() if x.name == "Ability")) is None
+
+
+def test_see_through_centred_and_gradient_strokes(clone):
+    """VERSION 15: rim and rims, what stroke and outline leave out. Dark Matter Swordsman's own 1 px at 44% under the
+    Text group's 7 px: 8 at 100%; Stranger's title 64%; Tanjerin's centred 7 px reaches 3.5; Spicy Spray's gradient its
+    mean colour; Dark Nebula's (pink to dark purple): too far off its mean, none."""
+    from psd_tools import PSDImage
+    def rims(rel, lid):
+        return pd._rims(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
+    assert rims("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", 596) == ([0, 0, 0, 1, 44], [0, 0, 0, 8, 100])
+    assert rims("Creatures/Omori/4 Stars/Stranger.psd", 422) == ([169, 169, 169, 7, 64], None)
+    assert rims("Creatures/Bug Fables/5 Stars/Tanjerin.psd", 8) == ([0, 0, 0, 3.5, 100], None)
+    assert rims("Items/Support/2 Stars/Spicy_Spray.psd", 10) == ([32, 53, 24, 13, 100], None)
+    assert rims("Creatures/Kirby/4 Stars/Dark_Nebula.psd", 417) == (None, None)
 
 
 def test_shadows_and_glows_that_show(records, clone):
