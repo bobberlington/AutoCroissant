@@ -178,8 +178,9 @@ The SHAs in the report and branches.md are unchanged. Get one back with `git fet
       rebuilt bundles as landed, SHA in `wrap/branch_record.tsv`).
 - [x] Details memo (AC `work/r3-1` 22e09b0c, `work/r4-3` 485dd38b): dropped 11-21 (owner 15:01; held-1121's judges:
       Actions CPU only, below the bar). Tips in `ac-kept-1121.bundle`.
-- [ ] **Retire game reports** (owner 11-13: after the timelines, which closed 11-21): delete `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` and
-      the `/report_game` lines in `docs/Campaigns/SIMULATOR_CAMPAIGN.md` and `docs/Future/SIMULATOR.md`.
+- [ ] **Retire game reports** (owner 11-13: after the timelines, which closed 11-21): delete
+      `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` and the `/report_game` lines in `docs/Campaigns/SIMULATOR_CAMPAIGN.md`
+      and `docs/Future/SIMULATOR.md`.
 - [ ] **D24**: put the stoogedings build number in the font's name at the next font build (no build since 11-15).
 - [ ] **TTS Saves folder** (owner 11-13): delete the old test save 'AC test 11-11 tooltips 2'. The folder's copy of the
       save is from 11-18: copy main's in again after the last save change.

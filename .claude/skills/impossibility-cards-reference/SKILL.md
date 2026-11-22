@@ -705,8 +705,8 @@ both to the repo root (gitignored). The card exports' rulebook-entry filter was 
 (`populate_files` :130). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `MDW/Assets/Markers`, and MDW card backs — except PNGs under `site/` and `TTS/` (the website's and the TTS save's own
 pictures, e.g. `site/favicon/`; `card_edits.NO_CARD_FOLDERS`, AC f4c08596, 2026-11-21); `EXCLUDE_FOLDERS` applies only
-to stats traversal, not here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick among `card_keys`,
-the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
+to stats traversal, not here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick
+among `card_keys`, the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
 
 Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by

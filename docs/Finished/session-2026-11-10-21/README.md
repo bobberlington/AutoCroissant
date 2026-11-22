@@ -543,19 +543,16 @@ Landed after the second cleanup (all MichaelJSr, no attribution; each prepare ra
 ## Left
 
 All in `docs/NEXT_SESSION_PLAN.md`. Headlines: research again (about 8 rounds a lane, ship every 4, then finish
-everything found); the D15 rest, owner-directed 11-17 ~00:30 and still open (the bake keeps a character the line's font
-can't draw in the font the card prints it in; built as r51-1 and retried as x31, it failed review both times: Minecraft
-Panda's '∞' run keeps its own baseline shift and size, so a typed '2' drops; branches AC fa13c489 / TC d20c1105, now in
-the wrap-up bundles); the fork's dead-code items (G8); D24 (a build number in the stoogedings name) at the next font build; r60-2, the AWS warm-up
-(proved, not shipped; numbers in the plan); ship items proven only by later events (the early save r60-1 by the next
-guarded push that re-exports a PNG, with its watch item (d); Croissant's next guarded push for the earlier push-lane
-items; x12 by the next Card checks run; x33 by the next bake moving an effect-layer line; x20 by the next Preview image
-press; the next bakes of named cards); two timing tests flaky under `taskpolicy -b` at high load;
-the phone editor's title box cutting long titles; x25's Navigation API (Safari before 26.2 and Firefox before 147 keep
-the old behaviour); x23's known limits; the 11-20 test leak's try/finally (its loop already ends after 60 s); the
-second cleanup's vetoed items (re-gate them when the afternoon's runs are done);
-CardBrowser's first trial and its follow-ups; `~/Documents/Tools/firstrepo.git` to an external disk and the old pre-wipe
-clone in `~/Downloads` (the owner's calls); the owner's TTS and website checks; the jetson's held davey 0.2.0.
+everything found); the five items deferred 11-21 21:22 (x31 = the D15 rest, owner-directed 11-17 ~00:30, verified keep
+on its third build; r52-1 and the Papyrus mock-up, verified keep; r44-2 and x37, verify unfinished; in the s2-deferred
+bundles); the fork's dead-code items (G8); D24 (a build number in the stoogedings name) at the next font build; ship
+items proven only by later events (the early save r60-1 by the next guarded push that re-exports a PNG, with its watch
+item (d); Croissant's next guarded push for the earlier push-lane items; x12 by the next Card checks run; x33 by the
+next bake moving an effect-layer line; x20 by the next Preview image press; the next bakes of named cards); two timing
+tests flaky under `taskpolicy -b` at high load; the phone editor's title box cutting long titles; x25's Navigation API
+(Safari before 26.2 and Firefox before 147 keep the old behaviour); x23's known limits; the 11-20 test leak's
+try/finally (its loop already ends after 60 s); the Desktop TC's 1,178 pack files (a careful promisor repack at a quiet
+time); CardBrowser's first trial and its follow-ups; the owner's TTS and website checks; the jetson's held davey 0.2.0.
 
 ## Files here
 
