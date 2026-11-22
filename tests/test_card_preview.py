@@ -866,7 +866,7 @@ def test_the_lanes_next_cards(tmp_path, monkeypatch):
     not while a press is taken: its PSD, PNG and the status chart into the clone; a press whose read is still going
     joins it (each blob read once)."""
     import commands.card_preview_lane as lane_mod
-    from time import monotonic, sleep
+    from time import sleep
     psd, png = "Creatures/Mario/1 Stars/Goomba.psd", "Creatures/Mario/1 Stars/Goomba.png"
     files = {psd: b"psd", png: b"png", early.STATUS_CHART: b"chart", "Creatures/Mario/1 Stars/Koopa.psd": b"other"}
     clone = tmp_path / "clone"
@@ -880,14 +880,18 @@ def test_the_lanes_next_cards(tmp_path, monkeypatch):
     for sha in shas.values():                   # a blobless clone's
         (clone / ".git" / "objects" / sha[:2] / sha[2:]).unlink()
     served, gate, data = [], threading.Event(), {_sha(d): d for d in files.values()}
+    reading, joining, joined = threading.Event(), threading.Event(), early.joined
 
     def get(url):
         if "/contents/db/" in url:
             return b"{}"
         served.append(url.rsplit("/", 1)[1])
-        gate.wait(5) if served[-1] == shas[psd] else None
+        if served[-1] == shas[psd]:
+            reading.set()
+            gate.wait(60)
         return data[served[-1]]
     monkeypatch.setattr(early, "_get", get)
+    monkeypatch.setattr(early, "joined", lambda *args: joining.set() or joined(*args))
     monkeypatch.setattr(lane_mod, "_say", lambda text: None)
     body = json.dumps([{"context": lane_mod.CONTEXT, "creator": {"login": "ed"}, "description": text} for text in (
         f"100 {REQUEST} {'a' * 40}", "101 next abcdef12", f"100 next {shas[psd][:8]}")]).encode()
@@ -898,17 +902,15 @@ def test_the_lanes_next_cards(tmp_path, monkeypatch):
     sleep(0.3)
     assert served == []
     hints.idle.set()
-    end = monotonic() + 10
-    while shas[psd] not in served and monotonic() < end:
-        sleep(0.01)
+    assert reading.wait(60)                     # events, not fixed times (slow under load)
     done = []
     press = threading.Thread(target=lambda: done.append(early.reads(psd, {"ability": "x"}, str(clone), "o/r", head, str(tmp_path / "r"),
                                                                     pending=hints.pending)))
     press.start()
-    sleep(0.3)
+    joining.wait(60)
     gate.set()
-    press.join(10)
-    assert sorted(served) == sorted(shas[p] for p in (psd, png, early.STATUS_CHART))
+    press.join(60)
+    assert joining.is_set() and sorted(served) == sorted(shas[p] for p in (psd, png, early.STATUS_CHART))
     assert early.missing(str(clone), list(shas.values())) == {shas["Creatures/Mario/1 Stars/Koopa.psd"]}
     assert done[0][psd][1] == "ok"
 

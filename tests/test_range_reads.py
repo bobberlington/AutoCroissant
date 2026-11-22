@@ -268,15 +268,19 @@ def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, mon
     _hide(monkeypatch, {_sha(data) for data in others.values()})
     monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, []))
     monkeypatch.setattr(cd.CardBuild, "_download", lambda self, path, sha: pytest.fail(f"{path} downloaded whole"))
-    linked_of, waited, second = cd.CardBuild._linked, [], threading.Event()
+    fetch_of, linked_of, waited, second = cd.GitBuild._fetch_psd, cd.CardBuild._linked, [], threading.Event()
+
+    def fetching(self, path, sha):
+        if cd.DOWNLOAD_WORKERS > 1 and path == "MDW/Linked/B - c.psb":
+            second.set()                                         # B's read begins (not its end: slow under load)
+        return fetch_of(self, path, sha)
 
     def reading(self, psd, path, sha):
         if cd.DOWNLOAD_WORKERS > 1 and path == "MDW/Assets/A.psd":
-            waited.append(second.wait(10))                       # B is read meanwhile, by another worker
-        if cd.DOWNLOAD_WORKERS > 1 and path == "MDW/Linked/B - c.psb":
-            second.set()
+            waited.append(second.wait(120))                      # B is read meanwhile, by another worker
         return linked_of(self, psd, path, sha)
 
+    monkeypatch.setattr(cd.GitBuild, "_fetch_psd", fetching)
     monkeypatch.setattr(cd.CardBuild, "_linked", reading)
     found = []
     for workers in (1, 4):
