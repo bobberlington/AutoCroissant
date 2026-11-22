@@ -366,6 +366,35 @@ def test_title_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
 
 
+def test_copies_on_the_box_take_the_colour(clone, tmp_path):
+    """Copies printed on the layer's box take its colour: Tainted Eden's offset titles (their Gradient Overlays off
+    too, through the bake's gates), SOMETHING's Ability copies (a phrase's '#n' counted on the Ability layer alone);
+    Mosling's arc title elsewhere keeps its look."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    fonts, red = str(clone / pe.FONTS_DIR), "#ff2200"
+    rel = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    got = pe.classify(parsed, {"colors": [{"field": "name", "color": red}]}, psd, parser)
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), fonts, psd=psd)
+    saved = PSDImage.open(baked.psd_path)
+    titles = [x for x in saved.descendants() if x.kind == "type" and x.name in ("Name", "Name copy", "Name copy 2")]
+    assert len(titles) == 3
+    assert all(pe._painted_over(x) is None and red in {pe._hex(f) for *_, f in pe.run_fills(x)} for x in titles)
+    psd = PSDImage.open(_card(clone, "Creatures/Omori/3 Stars/SOMETHING.psd")[0])
+    one = {"field": "ability", "phrase": "Attacks#2", "color": red}
+    assert "no 3rd" in pe.plan_colors(psd, [{**one, "phrase": "Attacks#3"}], "SOMETHING")[0][1]
+    edit = pe.set_colors(psd, [one], fonts, "SOMETHING")
+    at = edit.layers[0].text.index("Attacks", 1)
+    assert len(edit.layers) == 3 and len(edit.stories) == 2
+    assert all([(a, b) for a, b, f in pe.run_fills(x) if pe._hex(f) == red] == [(at, at + 7)] for x in edit.layers)
+    psd = PSDImage.open(_card(clone, "Auxiliary/Minions/Mosling.psd")[0])
+    assert len(pe.set_colors(psd, [{"field": "name", "color": red}], fonts, "Mosling").layers) == 1
+
+
 def test_see_through_title_fills(clone):
     """A title at fill 0% (Bulborb Larva's, drawn by its Inner Glow; The Freezer's set so): a whole title's colour sets
     the fill to 100% and bakes, a phrase after it too; a phrase alone stays refused."""
