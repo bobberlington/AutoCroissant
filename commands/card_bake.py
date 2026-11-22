@@ -135,6 +135,8 @@ class Card:
     listed: list = field(default_factory=list)  # the entry's creatures list: a value set apart from the print stays
     title_anchor: int = 0                       # px an earlier bake of this PSD moved its title on (R4, its verdict)
     ability_fit: float = 1.0                    # the scale an earlier bake of this PSD set its Ability at (its verdict)
+    title_fit: float = 1.0                      # ...and its title at (fit_title)
+    title_was: Optional[list] = None            # ...from the card maker's title boxes (psd_edit Edit.was)
     site: dict = field(default_factory=dict)    # field -> why: website only now, the card image can't print it (classify)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # its verdict (baked or refused), for the data's verdicts.json
@@ -1148,7 +1150,8 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
                                     parses[n], parser, out, fonts_dir, colors, types_dir=types_dir, psd=psd, view=n,
                                     template=template, ability_from=ability_from, title_anchor=card.title_anchor,
-                                    ability_fit=card.ability_fit, color_view=card.view)
+                                    ability_fit=card.ability_fit, color_view=card.view, title_fit=card.title_fit,
+                                    title_was=card.title_was)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -1190,6 +1193,8 @@ MOVED = r"name: moved ([+-]\d+) px to stay on the card"
 OWN_TITLE = "name: picture {n} prints its own title: the name bakes alone next run"     # never final (bake_pictures)
 ANCHOR = "title_moved"                          # a baked verdict's: the px its bake moved the title on
 FIT = "ability_fit"                             # a verdict's: the scale a bake set the Ability at (fit_below), under 1
+TITLE_FIT = "title_fit"                         # ...and the title at (fit_title)
+TITLE_WAS = "title_was"                         # ...from the card maker's title boxes (psd_edit Edit.was)
 
 
 def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
@@ -1203,17 +1208,30 @@ def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
     return int(found[len(found) - 1]) if found else 0
 
 
-def ability_fit(verdict: Optional[dict], psd_sha: str) -> float:
-    """The scale a verdict says a bake set the Ability at against the card maker's size (FIT), while the PSD is still
-    the one it was written on; else 1."""
-    fit = verdict.get(FIT) if isinstance(verdict, dict) and psd_sha and verdict.get("psd") == psd_sha[:8] else None
-    return float(fit) if isinstance(fit, (int, float)) and psd_edit.FIT_MIN <= fit < 1 else 1.0
+def ability_fit(verdict: Optional[dict], psd_sha: str, key: str = FIT, least: float = psd_edit.FIT_MIN) -> float:
+    """The scale a verdict says a bake set the Ability (key TITLE_FIT: the title) at against the card maker's size,
+    while the PSD is still the one it was written on; else 1."""
+    fit = verdict.get(key) if isinstance(verdict, dict) and psd_sha and verdict.get("psd") == psd_sha[:8] else None
+    return float(fit) if isinstance(fit, (int, float)) and least <= fit < 1 else 1.0
+
+
+def title_was(verdict: Optional[dict], psd_sha: str) -> Optional[list]:
+    """The card maker's title boxes a verdict keeps with its TITLE_FIT, on that PSD; else None."""
+    boxes = verdict.get(TITLE_WAS) if isinstance(verdict, dict) and psd_sha and verdict.get("psd") == psd_sha[:8] \
+        else None
+    ok = isinstance(boxes, list) and boxes and all(
+        isinstance(box, list) and len(box) == 4 and all(isinstance(v, int) for v in box) for box in boxes)
+    return boxes if ok else None
 
 
 def remember(card: "Card", verdict: Optional[dict]) -> None:
-    """What the card's verdict says an earlier bake of its PSD left: a moved title, a smaller Ability."""
+    """What the card's verdict says an earlier bake of its PSD left: a moved or smaller title, a smaller Ability."""
     card.title_anchor = title_anchor(verdict, card.psd_sha)
     card.ability_fit = ability_fit(verdict, card.psd_sha)
+    card.title_fit = ability_fit(verdict, card.psd_sha, TITLE_FIT, psd_edit.TITLE_MIN)
+    card.title_was = title_was(verdict, card.psd_sha) if card.title_fit < 1 else None
+    if card.title_was is None:                  # a title's fit holds only with them
+        card.title_fit = 1.0
 
 
 def final(snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bool:
@@ -1573,7 +1591,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                                          fonts_dir, colors, types_dir=types_dir,
                                                          psd=psd, template=template, ability_from=added,
                                                          title_anchor=card.title_anchor,
-                                                         ability_fit=card.ability_fit)
+                                                         ability_fit=card.ability_fit, title_fit=card.title_fit,
+                                                         title_was=card.title_was)
                     break
                 except Refused as refused:
                     if aside is None and refused.field == "name" and OWN_TITLE.split("}")[1] in refused.why:
@@ -1648,10 +1667,14 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                             "reason": "; ".join(dict.fromkeys(f"{r.code}: {r.why}" for r in card.partial))
                                       + _fx_notes(card), "at": _now()}
         _part_verdict(card)                     # per layer: the boxes leave the entry, skipped ones told
-        fit = getattr(card.baked, "fit", None)
-        fit = card.ability_fit if fit is None else fit
-        if card.verdict is not None and fit < 1:    # where the next Ability edit starts from (FIT)
-            card.verdict[FIT] = round(fit, 6)
+        for key, fit, was in ((FIT, getattr(card.baked, "fit", None), card.ability_fit),
+                              (TITLE_FIT, getattr(card.baked, "title_fit", None), card.title_fit)):
+            fit = was if fit is None else fit
+            if card.verdict is not None and fit < 1:    # where the next Ability or title edit starts from
+                card.verdict[key] = round(fit, 6)
+        boxes = card.title_was if getattr(card.baked, "title_fit", None) is None else card.baked.title_was
+        if card.verdict is not None and TITLE_FIT in card.verdict and boxes:
+            card.verdict[TITLE_WAS] = boxes
     except Refused as refused:
         card.refusal = refused.refusal
         if refused.code == "font":              # retried once MDW/Fonts changes (pending)
@@ -1899,6 +1922,7 @@ def refusal_verdict(card: Card) -> dict:
             **({"fonts": card.fonts} if card.fonts else {}),
             **({"pngs": card.pngs} if card.pngs else {}),
             **({FIT: card.ability_fit} if card.ability_fit < 1 else {}),
+            **({TITLE_FIT: card.title_fit, TITLE_WAS: card.title_was} if card.title_fit < 1 else {}),
             "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
 

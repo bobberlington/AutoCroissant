@@ -25,7 +25,7 @@ from json import dumps
 from math import cos, floor, hypot, radians, sin
 from os import PathLike, environ
 from os.path import isdir
-from re import IGNORECASE, fullmatch, sub
+from re import sub
 from threading import local
 from typing import Optional
 
@@ -35,9 +35,9 @@ from psd_tools.constants import Resource
 import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
-    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _memo_holds,
-    _merge_twins, _moved_box, _outside_units, _reading, _star_layouts, _star_units, _texts, _undo, canonical_type,
-    icon_memo, layer_parents, offline_parser, other_types, plan_stars, type_row,
+    Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _memo_holds,
+    _merge_twins, _moved_box, _outside_units, _reading, _star_container, _star_layouts, _star_units, _texts, _undo,
+    canonical_type, icon_memo, layer_parents, offline_parser, other_types, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -574,23 +574,6 @@ def _icon_parser(vocab) -> PSDParser:
     if key not in _parsers:
         _parsers[key] = offline_parser(list(key), [], None)
     return _parsers[key]
-
-
-def _star_container(group, types):
-    """The group plan_stars lays the stars out in: the one shown "N stars" folder, or the one star group drawing them all."""
-    while True:
-        folders = [child for child in group if child.is_group() and fullmatch(STAR_FOLDER, child.name, IGNORECASE)]
-        if folders:
-            shown = [folder for folder in folders if folder.visible]
-            if len(shown) != 1:
-                return group
-            group = shown[0]
-            continue
-        shown, hidden = _star_units(group, types)
-        if len(shown) == 1 and shown[0].count > 1 and not hidden and shown[0].layers[0].is_group():
-            group = shown[0].layers[0]
-            continue
-        return group
 
 
 def _plan_centres(plan, container, types, size) -> list:
