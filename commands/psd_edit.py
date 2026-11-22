@@ -6772,6 +6772,40 @@ def color_layers(psd: PSDImage, field: str, card: str, view: Optional[int] = Non
         return PSDParser.ability_parts(texts)
 
 
+def _on_box(a, b) -> bool:
+    """Whether boxes a and b share over half of the smaller one."""
+    w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    return w > 0 and h > 0 and 2 * w * h > min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+
+
+def color_copies(psd: PSDImage, spans: list, view: Optional[int] = None, memo: Optional[dict] = None) -> tuple:
+    """
+    (spans, then each again on its layer's copies: [(copy, start, end)], {id(copy): its layer}). A copy (psd_parts'
+    follow "copy": the words again, shown) printed on the layer's own box (over half the smaller box: Tainted Eden's
+    offset titles, SOMETHING's Ability; not Mosling's arc title or a watermark elsewhere), its text the layer's letter
+    for letter in any case; as color_layers' picture shows them. memo: {layer id: copies} kept between calls.
+    """
+    memo = {} if memo is None else memo
+    layers = list({id(layer): layer for layer, _, _ in spans}.values())
+    todo, mine = [layer for layer in layers if layer.layer_id not in memo], {layer.layer_id for layer in layers}
+    if todo:
+        with variant_view(psd, view or (1 if len(variants_of(psd)) > 1 else None)):
+            texts = [one for one in psd.descendants() if _is_text_layer(one) and one.layer_id not in mine
+                     and EFFECT_LAYER_TAG not in one.name and one.is_visible()]
+            for layer in todo:
+                own = layer.text or ""
+                memo[layer.layer_id] = [one for one in texts if own.strip() and len(one.text or "") == len(own)
+                                        and (one.text or "").casefold() == own.casefold()
+                                        and _on_box(tuple(layer.bbox), tuple(one.bbox)) and _shows(psd, one)]
+    more, source = [], {}
+    for layer, a, b in spans:
+        for one in memo[layer.layer_id]:
+            if one.layer_id not in mine:        # never a layer of spans
+                source.setdefault(id(one), layer)
+                more.append((one, a, b))
+    return spans + more, source
+
+
 def _hiding(node) -> list:
     """[(effect, kind)]: the node's enabled opaque Normal Color, Gradient and Pattern Overlays."""
     from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
@@ -6973,7 +7007,8 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
                 boxes: Optional[dict] = None, view: Optional[int] = None) -> list:
     """
     classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
-    Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
+    Found on the card's layers (color_spans), their copies on their box the same (color_copies; counted
+    for phrases by the layers alone): redundant when every letter it is the last to paint (color_order) has
     that colour already, or none is left to it; an Ability FX layer's words keep their look (its own pixels show), as
     status words do: a phrase of them alone is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set) unless an overlay
@@ -6984,7 +7019,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     it, and baked even in the colour it has; a fill at 0 goes to 100% (_overlay_off). A whole field's colour turns a group's overlays off too when every layer
     the group shows is the field's (_owned_group); a phrase's alone never does.
     """
-    out, final, painted, lit, unveil, gone = {}, {}, {}, set(), set(), {}
+    out, final, painted, lit, unveil, gone, memo = {}, {}, {}, set(), set(), {}, {}
     ordered = color_order(value)
     for k, one in enumerate(ordered):
         field, phrase = one["field"], one.get("phrase")
@@ -7018,10 +7053,13 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         spans, why = color_spans(color_layers(psd, field, card, view), one)
         if field == "name" and (why or not spans) and title_in_picture(psd, card):
             why = PICTURE_TITLE                  # the website's alone, as a name edit there (owner 2026-10-26)
-        cut = [name for layer, a, b in spans for s, e, name in _fx_words(psd, layer) if s < b and a < e] \
+        spans, source = color_copies(psd, spans, view, memo) if not why else (spans, {})
+        fx = {id(layer): _fx_words(psd, source.get(id(layer), layer)) for layer, _, _ in spans} if not why else {}
+        cut = [name for layer, a, b in spans for s, e, name in fx[id(layer)] if s < b and a < e] \
             if phrase and not why else []
-        mine = [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, _fx_words(psd, layer), _status_kept(layer, field, chart))] \
-            if not why else []
+        mine = [(layer, i) for layer, a, b in spans    # a copy: its layer's FX and status words
+                for i in _painted(layer, a, b, fx[id(layer)], _status_kept(source.get(id(layer), layer), field, chart))
+                ] if not why else []
         why = why or (f"{phrase!r} is drawn by its effect layer {cut[0]!r}, which keeps its own pixels"
                       if cut and all(layer.text[i].isspace() for layer, i in mine) else "")
         if not why and not mine and phrase and [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, [])]:
@@ -7099,7 +7137,8 @@ def color_views(psd: PSDImage, value: list, card: str, numbers: list, view: Opti
 def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart: Optional[dict] = None,
                view: Optional[int] = None) -> Edit:
     """
-    Recolour what a `colors` job names, found again on the card as its earlier edits left it (color_spans): each colour's
+    Recolour what a `colors` job names, found again on the card as its earlier edits left it (color_spans; its layers'
+    copies on their box as they are, color_copies): each colour's
     letters take it in the runs (set_span_style splits them, the Txt2 story with them; whole fields first, then
     phrases), the icon font's badges and icons and an Ability FX layer's words keeping theirs, and in the stored raster
     (recolour: the letters stay where Photoshop drew them). Fonts, sizes, effects and the composer are untouched.
@@ -7110,11 +7149,13 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         whole field's colour or a whole layer's (_whole_span), or a phrase's under a lone Color Overlay (_overlay_off;
         that one's colour then goes to the rest, its one-colour badges too), words an effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
-    jobs, notes, hidden, owned, groups = {}, [], [], {}, []
+    jobs, notes, hidden, owned, groups, memo, source = {}, [], [], {}, [], {}, {}
     for one in color_order(value):
         spans, why = color_spans(color_layers(psd, one["field"], card, view), one)
         if why:
             raise Refused("unsupported-card", f"colors: {color_text(one)}: {why}", "colors")
+        spans, copies = color_copies(psd, spans, view, memo)
+        source.update(copies)
         parts = [layer for layer, _, _ in spans]
         if not one.get("phrase"):               # a whole field's: its group's overlays go off too (_owned_group)
             owned.update({id(layer): _owned_group(layer, parts) for layer in parts if id(layer) not in owned})
@@ -7124,7 +7165,8 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     layers, records, stories, boxes = [], [], [], []
     for layer, which, spans in jobs.values():
         what = "title" if which == "name" else "ability"
-        fx, paint, status = _fx_words(psd, layer), {}, _status_kept(layer, which, chart)
+        mine = source.get(id(layer), layer)     # a copy: its layer's FX and status words
+        fx, paint, status = _fx_words(psd, mine), {}, _status_kept(mine, which, chart)
         whole = any(not one.get("phrase") or _whole_span(layer.text, a, b) for a, b, one in spans)
         base = None if whole else _solid_overlay(layer)
         clipped, group = _clipped_over(layer), owned.get(id(layer))
@@ -7157,7 +7199,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     if not layers:
         return Edit("colors", value, value, [], [], None)
     return Edit("colors", value, value, layers, records, union_box(boxes), story=stories[0], stories=stories[1:],
-                notes=notes, hidden=hidden, groups=groups)
+                notes=list(dict.fromkeys(notes)), hidden=hidden, groups=groups)
 
 
 # ========================
