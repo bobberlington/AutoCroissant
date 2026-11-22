@@ -237,7 +237,9 @@ def test_typed_letters_its_font_cant_draw_take_the_cards_font(clone, parser, cha
     """Owner D15 rest (2026-11-17): a typed character its font can't draw (no glyph, or an empty one) is set in the font
     the layer prints it in, else another layer's, else Myriad Pro, never a box or a gap; letters typed after a stray run
     take the body font, characters only the stray font draws stay in it. The Structure: MechanicalFREE has no digits or
-    punctuation, its own in IRONMANOFWAR002NCV. Battle Spear: Belisa plumilla manual's '%' is empty, its own in Chiller."""
+    punctuation, its own in IRONMANOFWAR002NCV. Only plain letters (set as the body's) pass a font on: Battle Spear's
+    Chiller '%' (Belisa plumilla manual's is empty) and Minecraft Panda's Minecraftia '\u221e' are scaled or shifted
+    (x31 review)."""
     fonts_dir = str(clone / pe.FONTS_DIR)
 
     def typed(rel, edit_of, at):                # {character from at on: its font} after the edit
@@ -252,7 +254,10 @@ def test_typed_letters_its_font_cant_draw_take_the_cards_font(clone, parser, cha
     assert typed(structure, lambda t: t + "\nGain 3 SP.", "Gain 3 SP.") == {**dict.fromkeys("GainSP", "MechanicalFREE"),
                                                                            "3": iron, ".": iron}
     assert typed("Auxiliary/Items/Battle_Spear.psd", lambda t: t + "\nGain 50% more.", "Gain 50% more.") == {
-        **dict.fromkeys("Gain50more.", "Belisaplumillamanual"), "%": "Chiller-Regular"}
+        **dict.fromkeys("Gain50more.", "Belisaplumillamanual"), "%": pe.MGP_FONT}
+    panda = "Creatures/Pandas/2 Stars/Minecraft_Panda.psd"   # '2' typed into its shifted run stays; a typed one: Myriad
+    assert typed(panda, lambda t: t.replace("\u221eT", "2T"), "2T") == {"2": "Minecraftia-Regular", "T": "Minecraft"}
+    assert typed(panda, lambda t: t + "\nGain \u221eT Calm.", "\u221eT Calm.")["\u221e"] == pe.MGP_FONT
     old, new = "do one:\rx", "do ONE:!\rx"      # a ':' typed again in place (Wickerbottom's Times): its own font
     again = pe.retyped(old, new, pe.edit_parts(old, new, *pe._edit_range(old, new)), ["B"] * 6 + ["T", "B", "B", "B"])
     assert again.get(6) == "T" and 7 not in again
