@@ -16,7 +16,7 @@ SmartObject.link_target), never from the filesystem.
     ppi(data, path) / set_ppi(layers, value)         a file's resolution as Photoshop reads it, the Rslt a link stores
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
-    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (a lone Gaussian or Motion Blur too)
+    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (a Gaussian or Motion Blur too)
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
@@ -93,7 +93,7 @@ LOOK = 32                       # look_of: ink box at INK_ALPHA, premultiplied, 
 LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size, no name needed (renamed copies <= 5.7)
 LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
 LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
-MOTION = {6: 2}                 # Motion Blur at angle 0 proven on Photoshop 2023's pixels: distance px -> c in (S + c) // taps
+BLURS = (b"GsnB", "GsnB", b"MtnB", "MtnB")       # Gaussian and Motion Blur: the smart filters a redraw draws
 # Photoshop 2023's Image Interpolation (Preferences > General): its relink and Update draw a placed layer again with it,
 # not the pick a Free Transform made (probed 11-13). draw() modes past PIL's; PS_AUTO is Photoshop's default.
 PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_SMOOTHER, PS_SHARPER, PS_AUTO = range(10, 16)
@@ -361,92 +361,21 @@ def _on(desc, key: bytes = b"enab") -> bool:
     return bool(getattr(desc.get(key), "value", desc.get(key, True)))
 
 
-def blur_radius(layer) -> Optional[float]:
-    """The radius when a layer's one smart filter on is a Gaussian Blur, Normal at 100%, its filter mask off or white
-    (extended) and its FEid source 8-bit RGBA; else None."""
-    one = _lone_filter(layer, b"GsnB")
-    return float(getattr(one[b"Fltr"].get(b"Rds "), "value", 0)) or None if one else None
-
-
-def motion_distance(layer) -> Optional[int]:
-    """The distance (px) when that one smart filter is a Motion Blur at angle 0 of a distance MOTION holds; else None."""
-    one = _lone_filter(layer, b"MtnB")
-    if not one:
-        return None
-    angle, distance = (float(getattr(one[b"Fltr"].get(key), "value", one[b"Fltr"].get(key) or 0)) for key in (b"Angl", b"Dstn"))
-    return int(distance) if angle == 0 and distance in MOTION else None
-
-
-def _lone_filter(layer, cls: bytes) -> Optional[dict]:
-    """The layer's one smart filter on when of class cls, Normal at 100%, its filter mask off or white (extended) and its
-    FEid source 8-bit RGBA; else None."""
-    from psd_tools.compression import decompress
-    fx = (placed_data(layer) or {}).get(b"filterFX")
+def _drawn_filters(layer) -> bool:
+    """One smart filter on, a Gaussian or Motion Blur the fork draws over a new picture (SmartObject.can_draw_filters;
+    a filter mask does not refuse: the composite applies it), its FEid source one the redraw writes again
+    (_filter_source: 8-bit RGBA, no layer-level filter blocks). The other kinds the fork draws wait for their proof."""
     blocks = layer._record.tagged_blocks
-    if not fx or any(key in blocks for key in (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3,
-                                               Tag.FILTER_MASK)):
-        return None
-    found = [item for item in fx.get(b"filterFXList") or [] if _on(item)] if _on(fx) else []
-    one = found[0] if len(found) == 1 else {}
-    blend = one.get(b"blendOptions") or {}
-    mode, opacity = getattr(blend.get(b"Md  "), "enum", b"Nrml"), float(getattr(blend.get(b"Opct"), "value", 100))
-    if getattr(one.get(b"Fltr"), "classID", None) not in (cls, cls.decode()) or mode not in (b"Nrml", b"normal") \
-            or opacity < 100:
-        return None
-    item = layer.smart_object.filter_item
-    if item is not None:
-        if item.depth != 8 or layer._psd.pil_mode.rstrip("A") != "RGB" or \
-                not all(item.channels[k].is_written for k in (0, 1, 2, -1)):
-            return None
-        mask = item.extra
-        if _on(fx, b"filterMaskEnable") and mask is not None and mask.is_written and mask.data:
-            top, left, bottom, right = mask.rectangle
-            if not _on(fx, b"filterMaskExtendWithWhite") or np.frombuffer(decompress(
-                    mask.data, mask.compression, right - left, bottom - top, 8, 2), np.uint8).min() < 255:
-                return None
-    return one
-
-
-def motion_blurred(rgba: np.ndarray, box: tuple, distance: int) -> tuple:
-    """A drawn picture under a Motion Blur at angle 0 as Photoshop 2023 stores it: a box of distance + 1 taps over
-    x - distance // 2 .. x + distance - distance // 2 of 8-bit alpha, alpha (S + MOTION[distance]) // taps (exact on
-    Gust of Wind's names), colours averaged premultiplied. Returns (straight RGBA, box)."""
-    taps, lo = distance + 1, distance // 2
-    hi = distance - lo
-    alpha = np.round(np.clip(rgba[..., 3], 0, 1) * 255).astype(np.int64)
-    color = np.round(np.clip(rgba[..., :3], 0, 1) * 255).astype(np.int64) * alpha[..., None]
-    width = alpha.shape[1] + distance
-
-    def sums(plane):                            # out at x sums the source over x - lo .. x + hi; out starts hi left
-        padded = np.pad(plane, [(0, 0), (distance, distance)] + [(0, 0)] * (plane.ndim - 2))
-        return sum(padded[:, i:i + width] for i in range(taps))
-    total, inks = sums(alpha), sums(color)
-    out_alpha = (total + MOTION[distance]) // taps
-    rgb = np.where(total[..., None] > 0, np.round(inks / np.maximum(total, 1)[..., None]), 0)
-    out = np.dstack([rgb / 255.0, out_alpha / 255.0]).astype(np.float32)
-    return out, (box[0] - hi, box[1], box[2] + lo, box[3])
-
-
-def blurred(rgba: np.ndarray, box: tuple, radius: float, size: tuple) -> tuple:
-    """A drawn picture under its Gaussian Blur (premultiplied, sigma = radius) as Photoshop stores it: a side at or past
-    the canvas's edge repeats its edge pixels (no halo), a side inside it fades out. Returns (straight RGBA, box)."""
-    from scipy.ndimage import gaussian_filter
-    pre = np.dstack([rgba[..., :3] * rgba[..., 3:], rgba[..., 3]])
-    pad = int(np.ceil(3 * radius)) + 1
-    x0, y0, x1, y1 = box
-    edge = (x0 <= 0, y0 <= 0, x1 >= size[0], y1 >= size[1])
-    for axis, before, after in ((1, edge[0], edge[2]), (0, edge[1], edge[3])):
-        for side, at_edge in ((0, before), (1, after)):
-            widths = [(0, 0)] * 3
-            widths[axis] = (0, pad) if side else (pad, 0)
-            pre = np.pad(pre, widths, mode="edge" if at_edge else "constant")
-    pre = np.dstack([gaussian_filter(pre[..., k], radius, mode="nearest", truncate=3.0) for k in range(4)])
-    out = (x0 - pad * (not edge[0]), y0 - pad * (not edge[1]), x1 + pad * (not edge[2]), y1 + pad * (not edge[3]))
-    left, top = pad * edge[0], pad * edge[1]
-    pre = pre[top:top + out[3] - out[1], left:left + out[2] - out[0]]
-    alpha = np.clip(pre[..., 3], 0.0, 1.0)
-    rgb = np.where(alpha[..., None] > 0, pre[..., :3] / np.maximum(alpha, 1e-6)[..., None], 0.0)
-    return np.dstack([np.clip(rgb, 0.0, 1.0), alpha]).astype(np.float32), out
+    if any(key in blocks for key in (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3, Tag.FILTER_MASK)):
+        return False
+    so = layer.smart_object
+    item = so.filter_item
+    if item is not None and (item.depth != 8 or layer._psd.pil_mode.rstrip("A") != "RGB" or
+                             not all(item.channels[k].is_written for k in (0, 1, 2, -1))):
+        return False
+    fx = so.filters
+    found = [one for one in fx.get(b"filterFXList") or [] if _on(one)] if fx is not None and _on(fx) else []
+    return len(found) == 1 and getattr(found[0].get(b"Fltr"), "classID", None) in BLURS and so.can_draw_filters()
 
 
 def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list) -> None:
@@ -474,7 +403,7 @@ def why_not_redrawn(layer) -> Optional[str]:
     """Why a placed layer's pixels cannot be drawn again from its file, else None."""
     if warped(layer):
         return "a warp"
-    if _filtered(layer) and blur_radius(layer) is None and motion_distance(layer) is None:
+    if _filtered(layer) and not _drawn_filters(layer):
         return "smart filters"
     corners = corners_of(layer)
     if len(corners) != 8 or abs(_area(corners)) < 1.0:
@@ -698,18 +627,17 @@ def picture(psd: PSDImage, data: bytes, kind: str) -> Optional[np.ndarray]:
 def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A placed layer's pixels drawn again from a file (rgba: its pixels in the card's colours) on corners at mode, its
-    mask and effects kept, a lone Gaussian or Motion Blur smart filter drawn too (blur_radius, motion_distance; the
-    link's Trnf and Sz are written by SmartObject.link or relink). Returns the canvas box drawn (old and new pixels').
+    mask and effects kept, its Gaussian or Motion Blur drawn too by the fork (why_not_redrawn's _drawn_filters) over the
+    whole picture, their FEid source the new picture (the link's Trnf and Sz are written by SmartObject.link or relink).
+    Returns the canvas box drawn (old and new pixels').
     """
     from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
     before = tuple(layer.bbox)
     out, box = draw(rgba, corners, mode)
-    radius, distance = blur_radius(layer), motion_distance(layer)
-    if radius or distance:                      # its Gaussian or Motion Blur smart filter (and its source) drawn too
+    if _filtered(layer):                        # filters before the source: the fork may read the old one
+        drawn = layer.smart_object.draw_filters(out, box, corners) if out is not None else (None, box)
         _filter_source(layer, out, box, corners)
-        if out is not None:
-            out, box = blurred(out, box, radius, (layer._psd.width, layer._psd.height)) if radius \
-                else motion_blurred(out, box, distance)
+        out, box = drawn
     TypeLayer._store_raster(layer, out if out is not None else np.zeros((0, 0, 4), np.float32), box)
     layer._invalidate_bbox()
     boxes = [b for b in (before, box) if b[2] > b[0] and b[3] > b[1]]
@@ -1538,8 +1466,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     Per layer: (i) the drawn-from file's pixels equal the new file's: size, Sz and contentID only; (ii) the same ink at a
     new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
     old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a link.
-    Refused (a warp, smart filters but one Gaussian Blur, a quad the redraw cannot reproduce): the link stays as it is,
-    with a hand note.
+    Refused (a warp, smart filters but one Gaussian or Motion Blur, a quad the redraw cannot reproduce): the link stays
+    as it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head

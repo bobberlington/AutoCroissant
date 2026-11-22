@@ -3059,8 +3059,8 @@ def test_placed_title_bakes_under_its_blur(clone, parser, tmp_path, monkeypatch)
     layer = next(layer for layer in new.descendants() if layer.name == "Name #1")
     corners = pl.corners_of(layer)
     assert corners[0] + inner[0].transform[4] == pytest.approx(anchor) and layer.smart_object.filesize == len(data)
-    assert pl.motion_distance(layer) == 6 and pl._size_of(layer) == inner.size
-    want, box = pl.motion_blurred(*pl.draw(pl.picture(new, data, "psb"), corners, Image.BICUBIC), 6)
+    assert pl.why_not_redrawn(layer) is None and pl._size_of(layer) == inner.size
+    want, box = layer.smart_object.draw_filters(*pl.draw(pl.picture(new, data, "psb"), corners, Image.BICUBIC), corners)
     assert tuple(layer.bbox) == box and np.abs(layer.numpy() - want).max() <= 1 / 255
 
 

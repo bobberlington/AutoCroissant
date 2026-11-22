@@ -370,19 +370,19 @@ COPPER = "Items/Equip/1 Stars/Copper_Sword.psd"     # its art under one Gaussian
 
 
 def test_gaussian_blur_redrawn(clone):
-    """A lone Gaussian Blur is drawn again: Copper Sword's art from its own picture lands near Photoshop's pixels (not
-    without the blur), its FEid source is the new picture unblurred; a painted filter mask refuses. blurred(): no halo
-    on a side at the canvas's edge."""
+    """A Gaussian Blur is drawn again by the fork: Copper Sword's art from its own picture lands near Photoshop's pixels
+    (not without the blur), its FEid source is the new picture unblurred; a painted filter mask does not refuse (the
+    composite applies it)."""
     from psd_tools.compression import compress, decompress
     psd = PSDImage.open(clone / COPPER)
     layer = next(layer for layer in psd.descendants() if layer.kind == "smartobject" and pl._filtered(layer))
-    assert pl.blur_radius(layer) == 6.6 and pl.why_not_redrawn(layer) is None
+    assert pl.why_not_redrawn(layer) is None
     mask, data = layer.smart_object.filter_item.extra, layer.smart_object.filter_item.extra.data
     top, left, bottom, right = mask.rectangle
     painted = np.full((bottom - top, right - left), 255, np.uint8)
     painted[:50, :50] = 0
     mask.data = compress(painted.tobytes(), mask.compression, right - left, bottom - top, 8, 2)
-    assert pl.why_not_redrawn(layer) == "smart filters"
+    assert pl.why_not_redrawn(layer) is None
     mask.data = data
 
     def canvas(rgba, box):
@@ -407,9 +407,6 @@ def test_gaussian_blur_redrawn(clone):
                         for k in (0, 1, 2, -1)])
     assert (left, top, right, bottom) == box and np.abs(source / 255 - plain).max() <= 1 / 255
 
-    out, where = pl.blurred(np.ones((20, 20, 4), np.float32), (0, 10, 20, 30), 2.0, (100, 100))
-    assert where == (0, 3, 27, 37) and out[17, 0, 3] == 1 and out[0, 0, 3] < 0.01
-
 
 GUST = "Items/Support/2 Stars/Gust_of_Wind.psd"     # Croissant's names, stars and type icon under Motion Blurs (11-11)
 GUST_REV = "aa8a491f5b1fdb78249f71c4cc95f7f7609425b9"
@@ -422,10 +419,10 @@ def test_motion_blur_redrawn(clone):
     from conftest import at_rev
     psd = PSDImage.open(BytesIO(at_rev(clone, GUST_REV, GUST)))
     layers = {layer.name: layer for layer in psd.descendants() if layer.kind == "smartobject"}
-    assert pl.motion_distance(layers["star"]) is None and pl.why_not_redrawn(layers["star"]) == "smart filters"
+    assert not layers["star"].smart_object.can_draw_filters() and pl.why_not_redrawn(layers["star"]) == "smart filters"
     for name in ("Name #1", "Name #2"):
         layer = layers[name]
-        assert pl.motion_distance(layer) == 6 and pl.blur_radius(layer) is None and pl.why_not_redrawn(layer) is None
+        assert pl.why_not_redrawn(layer) is None
         item = layer.smart_object.filter_item
         top, left, bottom, right = item.rectangle
         source = np.dstack([np.frombuffer(decompress(item.channels[k].data, item.channels[k].compression, right - left,
@@ -434,7 +431,7 @@ def test_motion_blur_redrawn(clone):
         ys, xs = np.nonzero(source[..., 3])
         box = (left + int(xs.min()), top + int(ys.min()), left + int(xs.max()) + 1, top + int(ys.max()) + 1)
         part = source[box[1] - top:box[3] - top, box[0] - left:box[2] - left].astype(np.float32) / 255
-        out, where = pl.motion_blurred(part, box, 6)
+        out, where = layer.smart_object.draw_filters(part, box)
         assert where == tuple(layer.bbox)
         assert np.array_equal((out * 255 + 0.5).astype(np.uint8), np.round(layer.numpy() * 255).astype(np.uint8))
 
