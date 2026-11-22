@@ -228,7 +228,8 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
       `wrap/adjudicate/` and the report's "Cleanup, second pass"):
       - The second pass's vetoed items, held back only because held-1121, r15-2, the favicon ship and timelines-apply
         were reading inside them: re-gate them when those runs are done. In `scratch/s1110` 25 of 29 actions, about
-        9.9 GiB (`wrap/adjudicate/s1110.tsv`; the gate's re-gate list is in the report). In old scratch: the APFS clone
+        9.9 GiB (`wrap/adjudicate/s1110.tsv`; the gate's re-gate list is in the report; -22, the `ojw-*` round
+        folders, is not on it: `ojw-handover/rounds.md` points at them). In old scratch: the APFS clone
         dedup of 71 oracle PSDs in `s1107/fork` (`wrap/adjudicate/clone_dedup.sh --do` under `taskpolicy -b nice -n
         15`, up to 1.7 GiB); the packs of opt-round3/4, alt-template, layouts, pkgtest, vl1113, s1107/r1-3 and
         s1107/status, keeping the files memory and this plan cite (opt-round4's `skeptic-cm-a1-tools/proposed2.py`,
@@ -423,17 +424,19 @@ lines).
   since 15:14.
 - CardBrowser: `MichaelJSr/CardBrowser` main 6437f11 = pre-release v0.1.1 (v0.1.0 at 5d9f2bf); source
   `~/Documents/Tools/wt/cardapp`.
-- Branches (second cleanup, 11-21 afternoon): every ref adjudicated in `docs/Finished/session-2026-11-10-21/branches.md`;
-  every tip recorded in `~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (200 rows); unlanded tips only in
-  the bundles (above). Local branches besides main: AC `archive/ai-generation`, `archive/discord-edits`,
-  `archive/local-update-stats` (= GitHub); none in TC or the fork once the running runs land (each removes its own:
-  held-1121's `work/h1121-*` and `wt/h1121-*`, timelines-apply's `work/tl-1121`, `wt/tl-ac`, `wt/tl-tc`, the favicon
-  ship's TC `work/favicon-1121`, `wt/favicon-tc`, AC `wt/favicon-ac2`, this docs run's `work/cleanup2-1121`).
+- Branches (second cleanup, 11-21 afternoon): every ref adjudicated in
+  `docs/Finished/session-2026-11-10-21/branches.md`; every tip recorded in
+  `~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (200 rows) or, for the 54 landed item branches the waves
+  deleted, `scratch/s1110/final-1120/wave2a_shas.txt` and `wave2b_shas.txt`; unlanded tips only in the bundles (above).
+  Local branches besides main: AC `archive/ai-generation`, `archive/discord-edits`, `archive/local-update-stats`
+  (= GitHub); none in TC or the fork once the running runs land (each removes its own: held-1121's `work/h1121-*` and
+  `wt/h1121-*`, timelines-apply's `work/tl-1121`, `wt/tl-ac`, `wt/tl-tc`, the favicon ship's TC `work/favicon-1121`,
+  `wt/favicon-tc`, AC `wt/favicon-ac2`, this docs run's `work/cleanup2-1121`).
 - Desktop clones: AC and the fork's `~/Documents/Tools/psd-tools` fast-forwarded to main at the wrap-up (owner 11-21;
   `caches_now.tsv` deleted); TC at 0cb95c33, behind main by the afternoon's TC commits (fast-forward with
   `GIT_NO_LAZY_FETCH=1` when its tree is clean; an untracked `data/` from 11-19 left as found).
 - GitHub has only main, data, history, plates and previews (TC), main and the archive/* branches (AC, fork) and the
-  fork's cards-* tags.
+  fork's 25 cards-* tags (plus about 125 upstream `v*`/`0.x`/`1.x` tags there, not ours).
 
 ## Owner
 

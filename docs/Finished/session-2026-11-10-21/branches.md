@@ -3,8 +3,10 @@
 Every branch, bundle ref and git store of the 11-10..21 session, adjudicated by the second cleanup (11-21 14:28-14:54)
 and condensed from `~/Documents/Tools/wt/scratch/s1110/wrap/adjudicate/branches.tsv` (290 rows; the full evidence per
 row is there). Refs at the same tip share one line here. Every tip's full SHA is also in
-`~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (200 rows). Updated to 11-21 ~16:00: r15-2 landed, cards
-r44-2 rescued into bundles, the owner's rulings below.
+`~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (200 rows) or, for the 54 item branches the waves deleted
+after they landed (AC 29 incl. `work/actbake-1110-r60-1` 4149cf25, TC 25), in
+`~/Documents/Tools/wt/scratch/s1110/final-1120/wave2a_shas.txt` and `wave2b_shas.txt`. Updated to 11-21 ~16:00: r15-2
+landed, cards r44-2 rescued into bundles, the owner's rulings below.
 
 Counts (branches.tsv): SUPERSEDED 87, HELD 60, LANDED-REBASED 60, REJECTED 36, POLICY-KEEP 22, LANDED 17, UNKNOWN 8.
 Since then: the fork's `work/research-1110` went HELD -> LANDED-REBASED (r15-2), the 7 stranded keeps went UNKNOWN ->
@@ -71,12 +73,12 @@ worktree (`~/Documents/Tools/wt/<name>`), never in a Desktop clone's working tre
 | 3017ef00 | cards r44-2 | `cards-1110-r44-2` | ac-r44-2 | shows the wrong table (Series while Subseries is pressed) |
 | 22e09b0c | details memo (fork r3-1) | `work/r3-1` | ac-unlanded | rebase onto AC main and measure against the research bar (fork lane: -40% gather CPU) |
 | 485dd38b | details memo (fork r4-3, carries r3-1) | `work/r4-3` | ac-unlanded | same item, carries r3-1 (-54% details CPU on its sample, round 23) |
-| e7e6e3ee | x26 | `refs/wrap/e7e6e3ee`, `work/cards-1110-x26` | ac-unlanded | icons blank in rulebook search results and same-book jumps; ship the wake() alone |
-| 129df760 | x27 | `refs/wrap/129df760`, `work/actbake-1110-x27` | ac-unlanded | the stored ink breaks Card sync's merge of bake records (jq argument over 128 KB) |
-| ac82a0e7 | x30 | `refs/wrap/ac82a0e7`, `work/cards-1110-x30` | ac-unlanded | opening the profile editor from a dialog puts focus on the header |
-| fa13c489 | x31 | `refs/wrap/fa13c489`, `work/actbake-1110-x31` | ac-unlanded | typed letters keep a stray run's size and baseline shift (D15 rest, owner-directed) |
-| 6109c566 | x37 | `refs/wrap/6109c566`, `work/actbake-1110-x37` | ac-unlanded | a move to another tab in the first second still waits about 18 s |
-| c6e4ec99 | x4 | `refs/wrap/c6e4ec99`, `work/actbake-1110-x4` | ac-unlanded | Dr. Robotnik's Roboticizer's apostrophe (another font) gets restyled |
+| e7e6e3ee | x26 | `refs/wrap/e7e6e3ee` (was `work/cards-1110-x26`) | ac-unlanded | icons blank in rulebook search results and same-book jumps; ship the wake() alone |
+| 129df760 | x27 | `refs/wrap/129df760` (was `work/actbake-1110-x27`) | ac-unlanded | the stored ink breaks Card sync's merge of bake records (jq argument over 128 KB) |
+| ac82a0e7 | x30 | `refs/wrap/ac82a0e7` (was `work/cards-1110-x30`) | ac-unlanded | opening the profile editor from a dialog puts focus on the header |
+| fa13c489 | x31 | `refs/wrap/fa13c489` (was `work/actbake-1110-x31`) | ac-unlanded | typed letters keep a stray run's size and baseline shift (D15 rest, owner-directed) |
+| 6109c566 | x37 | `refs/wrap/6109c566` (was `work/actbake-1110-x37`) | ac-unlanded | a move to another tab in the first second still waits about 18 s |
+| c6e4ec99 | x4 | `refs/wrap/c6e4ec99` (was `work/actbake-1110-x4`) | ac-unlanded | Dr. Robotnik's Roboticizer's apostrophe (another font) gets restyled |
 
 ### STRANDED KEEP (3)
 
@@ -101,7 +103,7 @@ worktree (`~/Documents/Tools/wt/<name>`), never in a Desktop clone's working tre
 | 4a988af3 | actbake r31-0 | `work/actbake-1110-r31-0` | ac-unlanded | correct and safe, but the gain was never measured (evidence confounded) |
 | 05a4a3c2 | actbake r47-1 | `work/actbake-1110-r47-1` | ac-unlanded | projected gain rests on a stall model the real runs contradict |
 | c4566ab7 | cards r4-0 | `work/cards-1110-r4-0` | ac-unlanded | round 4 reject (lazy icons far down); same idea later x26, not kept |
-| ca4b47db | f6 (finish n6) | `refs/wrap/ca4b47db`, `work/actbake-1110-f6` | ac-unlanded | not kept: moved a Warcraftian Hunter line visibly; r60-3 (shipped 11-20) is the same idea and covers it |
+| ca4b47db | f6 (finish n6) | `refs/wrap/ca4b47db` (was `work/actbake-1110-f6`) | ac-unlanded | not kept: moved a Warcraftian Hunter line visibly; r60-3 (shipped 11-20) is the same idea and covers it |
 | 790f1d4d | fork r10-0 stars sheet WebP method 4 | `work/r10-0` | ac-unlanded | fork verify keep=false: every starred card's plate download much bigger |
 | c324a802 | fork r11-2 bars with no comp applied | `work/r11-2` | ac-unlanded | not built (builder built=false); the actbake r20-2 fix covers Pandanoko/Retro Kirby |
 | c07080b2 | fork r19-1 bakes band the image straight | `work/r19-1` | ac-unlanded | fork verify keep=false: gain about 3% on its base, needs rework |
@@ -213,12 +215,12 @@ worktree (`~/Documents/Tools/wt/<name>`), never in a Desktop clone's working tre
 | 2cfa5dd6 | cards r22-0 | `work/cards-1110-r22-0` | tc-unlanded | the ban list's `<img>` lost its shape under `sizes="auto"` |
 | ea7d3d01 | cards r25-0 | `work/cards-1110-r25-0` | tc-unlanded | more blank tiles while scrolling on slow networks |
 | f12a757e | cards r44-2 | `cards-1110-r44-2` | tc-r44-2 | shows the wrong table (Series while Subseries is pressed) |
-| 494d9cba | x26 | `refs/wrap/494d9cba`, `work/cards-1110-x26` | tc-unlanded | icons blank in rulebook search results and same-book jumps; ship the wake() alone |
-| 824bb993 | x27 | `refs/wrap/824bb993`, `work/actbake-1110-x27` | tc-unlanded | the stored ink breaks Card sync's merge of bake records (jq argument over 128 KB) |
-| 2b11af0f | x30 | `refs/wrap/2b11af0f`, `work/cards-1110-x30` | tc-unlanded | opening the profile editor from a dialog puts focus on the header |
-| d20c1105 | x31 | `refs/wrap/d20c1105`, `work/actbake-1110-x31` | tc-unlanded | typed letters keep a stray run's size and baseline shift (D15 rest, owner-directed) |
-| 6e439e89 | x37 | `refs/wrap/6e439e89`, `work/actbake-1110-x37` | tc-unlanded | a move to another tab in the first second still waits about 18 s |
-| d05bf5c0 | x4 | `refs/wrap/d05bf5c0`, `work/actbake-1110-x4` | tc-unlanded | Dr. Robotnik's Roboticizer's apostrophe (another font) gets restyled |
+| 494d9cba | x26 | `refs/wrap/494d9cba` (was `work/cards-1110-x26`) | tc-unlanded | icons blank in rulebook search results and same-book jumps; ship the wake() alone |
+| 824bb993 | x27 | `refs/wrap/824bb993` (was `work/actbake-1110-x27`) | tc-unlanded | the stored ink breaks Card sync's merge of bake records (jq argument over 128 KB) |
+| 2b11af0f | x30 | `refs/wrap/2b11af0f` (was `work/cards-1110-x30`) | tc-unlanded | opening the profile editor from a dialog puts focus on the header |
+| d20c1105 | x31 | `refs/wrap/d20c1105` (was `work/actbake-1110-x31`) | tc-unlanded | typed letters keep a stray run's size and baseline shift (D15 rest, owner-directed) |
+| 6e439e89 | x37 | `refs/wrap/6e439e89` (was `work/actbake-1110-x37`) | tc-unlanded | a move to another tab in the first second still waits about 18 s |
+| d05bf5c0 | x4 | `refs/wrap/d05bf5c0` (was `work/actbake-1110-x4`) | tc-unlanded | Dr. Robotnik's Roboticizer's apostrophe (another font) gets restyled |
 
 ### REJECTED (14)
 

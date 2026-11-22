@@ -400,7 +400,7 @@ a real gain. Results (full lists: accepted.md and rejected.md):
 - **Custom refs (11-17).** Three actbake items used git refs outside refs/heads; held until a ref-free design (11-18).
 - **Gust names (11-11).** Croissant's blurred name smart objects were kept, not turned into text (a look change).
 - **Beholster's name flag (11-21).** A new card (11-20) prints 'The Beholster' from Beholster.psd. Neither renamed
-  nor marked intended; left for the plan.
+  nor marked intended; left for the plan. The owner then marked the names intended (15:12, TC b62f36de).
 - **Branches of items still in flight (11-21).** The wave cleanups kept r60-2's branches and the first builds of x37,
   x38 and x41 until their waves ended; the wrap-up then bundled them with everything else.
 - **The wrap-up cleanup (11-21).** The Desktop AC clone was not fast-forwarded (the hard rule), nor the fork's Desktop
@@ -487,14 +487,16 @@ stayed near 347 GiB free because the running runs wrote as much.
 - **Review pages** (owner 15:04, the orchestrator): the decided pages (pictures, uncertain, decide-1115,
   decide-1115b, d15-fonts) deleted, their json and crops kept for the timelines run; `index.html` goes after the
   timelines update lands; the review server stopped.
-- **Vetoed (all timing: running runs read inside them; re-gate when held-1121, the favicon ship and timelines-apply are
-  done).** In s1110, 25 of 29 actions, about 9.9 GiB: the gate's re-gate list is s1110-1 to -8, -12, -14 to -18,
-  -21, -23, -24, -28; -19 without t1-land and strand-*; -25 keeping `deadcode/skeptic-fork` and `r10pe-skeptic`
-  (asks/fork.json cites them); -27 with -11 in the change that drops the plan's v-x13/x23-merge line; -3 better packed
-  than deleted (screenshots and owner3 sheets can't be redone byte for byte); -13 and -9 (timelines) only after the
-  owner's timelines veto ends. Old scratch: the oracle PSD clone dedup (up to 1.7 GiB, heavy I/O), the timelines'
-  local preview site (208 MiB, owner veto), the packs of opt-round3/4 and six small folders (memory and the plan cite
-  files inside: keep them in place). Lists: `wrap/adjudicate/s1110.tsv`, `scratch_old.tsv`.
+- **Vetoed (timing, all but -22: running runs read inside them; re-gate when held-1121, the favicon ship and
+  timelines-apply are done).** In s1110, 25 of 29 actions, about 9.9 GiB: the gate's re-gate list is s1110-1 to -8,
+  -12, -14 to -18, -21, -23, -24, -28; -19 without t1-land and strand-*; -25 keeping `deadcode/skeptic-fork` and
+  `r10pe-skeptic` (asks/fork.json cites them); -27 with -11 in the change that drops the plan's v-x13/x23-merge line;
+  -3 better packed than deleted (screenshots and owner3 sheets can't be redone byte for byte); -13 and -9 (timelines)
+  only after the owner's timelines veto ends. Not on the re-gate list: -22 (pack the 104 `ojw-*` round folders,
+  68 MiB), kept (conservative): `s1110/ojw-handover/rounds.md`, the 11-11 handover to the owner's OJWikibot session,
+  points at 23 of them. Old scratch: the oracle PSD clone dedup (up to 1.7 GiB, heavy I/O), the timelines' local
+  preview site (208 MiB, owner veto), the packs of opt-round3/4 and six small folders (memory and the plan cite files
+  inside: keep them in place). Lists: `wrap/adjudicate/s1110.tsv`, `scratch_old.tsv`.
 - **Left as found (conservative).** `scratch/s1109/wrap/tc-unlanded-1110.bundle` (last session's record; a fetch into
   a temp repo failed, not adjudicated); `/tmp/x` (empty, not provably ours); `~/Documents/Tools/restamp` and
   OJWikibot's `scratch/ojw-lua-golive` (not ours). Noted, not acted on: six small AC file drafts from deleted tree copies
@@ -513,7 +515,7 @@ the wrap-up bundles); the fork's dead-code items (G8); D24 (a build number in th
 (proved, not shipped; numbers in the plan); ship items proven only by later events (the early save r60-1 by the next
 guarded push that re-exports a PNG, with its watch item (d); Croissant's next guarded push for the earlier push-lane
 items; x12 by the next Card checks run; x33 by the next bake moving an effect-layer line; x20 by the next Preview image
-press; the next bakes of named cards); two timing tests flaky under `taskpolicy -b` at high load; Beholster's name flag;
+press; the next bakes of named cards); two timing tests flaky under `taskpolicy -b` at high load;
 the phone editor's title box cutting long titles; x25's Navigation API (Safari before 26.2 and Firefox before 147 keep
 the old behaviour); x23's known limits; the 11-20 test leak's try/finally (its loop already ends after 60 s); the
 second cleanup's vetoed items (re-gate them when the afternoon's runs are done);
