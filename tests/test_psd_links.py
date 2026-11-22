@@ -532,6 +532,32 @@ def test_puppet_warp_redrawn(clone):
     assert np.array_equal(trimmed.numpy(), kept)
 
 
+RETRO = "Creatures/Kirby/3 Stars/Retro_Kirby.psd"             # its Light icon under a 6 px Mosaic
+
+
+def test_mosaic_redrawn(clone):
+    """A Mosaic on the canvas's grid is drawn again from the linked file: Retro Kirby's Light icon lands on Photoshop's
+    pixels (not without it). A file so big that the icon's new quad goes above the canvas is refused (a grid not proven
+    there), the layer kept."""
+    from conftest import at_rev
+    path = "Types/light.png"
+    psd = PSDImage.open(BytesIO(at_rev(clone, LINKED_REV, RETRO)))
+    layer = next(one for one in psd.descendants() if one.kind == "smartobject" and one.name == "Light")
+    data, kept = at_rev(clone, LINKED_REV, path), layer.numpy()
+    art = Image.open(BytesIO(data)).convert("RGBA")
+    big = _png(art.resize((art.width * 7 // 5, art.height * 7 // 5), Image.LANCZOS))
+    blobs = {pl.git_blob(one): one for one in (data, big)}
+    assert pl.redraw_psd(psd, RETRO, {path: pl.git_blob(big)}, blobs.get, {path: {pl.git_blob(data): len(data)}}) == (
+        False, False, [pl.NOT_REDRAWN.format(layer="Light", name="light.png", why="smart filters")])
+    assert np.array_equal(layer.numpy(), kept)
+    picture = pl.picture(psd, data, pl.file_type(data, path))
+    assert pl.why_not_redrawn(layer) is None
+    stored, corners, mode = _canvas(psd, kept, layer.bbox), pl.corners_of(layer), pe.image_mode(layer, picture)
+    plain = _off(_canvas(psd, *pl.draw(picture, corners, mode)), stored)
+    pl.redraw(layer, picture, corners, mode)
+    assert _off(_canvas(psd, layer.numpy(), layer.bbox), stored) <= 2 and plain > 3000
+
+
 MOL_D = "Creatures/Monkey D Folder/2 Stars/Mol_D_Truffy.psd"    # its art under a warpCustom, no smart filters
 
 
