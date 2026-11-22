@@ -202,7 +202,8 @@ def test_rulebook_chapters_drawn_near():
     """The Rulebook's chapters below the first screen are drawn once near (content-visibility, scoped to #view: the
     rulebook editor's preview is untouched) or two at a time while the page is idle; every chapter at once before a
     contents jump, a same-book scroll, Back/Forward, a reload's place or a redraw mid-book (rb-all), and a deep link
-    draws every chapter down to its target before it settles there, so nothing above the reader changes size later.
+    draws every chapter down to its target before it settles there, so nothing above the reader changes size later; it
+    measures the pinned bar first when its observer hasn't yet (a page load), so it lands below the bar on phones.
     Without scroll anchoring (WebKit), a jump past undrawn chapters draws them and keeps the place by hand."""
     app, css = (ASSETS / "app.js").read_text(encoding="utf-8"), (ASSETS / "style.css").read_text(encoding="utf-8")
     assert "#view:not(.rb-all) .rb-book > .rb-chapter:not(.drawn) { content-visibility: auto; contain-intrinsic-size: auto 3000px; }" in css
@@ -218,3 +219,6 @@ def test_rulebook_chapters_drawn_near():
     assert jump.index('if (scroll.closest(".rules")) view.classList.add("rb-all");') < jump.index("el?.scrollIntoView(")
     same = app[app.index("// another chapter of the book drawn: scroll"):]
     assert same.index('view.classList.add("rb-all");') < same.index("?.scrollIntoView();")
+    assert "new ResizeObserver(barSize).observe(" in app
+    settle = app[app.index("function settleAt(el) {"):app.index("function reaim(el) {")]
+    assert settle.index('if (el && !document.documentElement.style.getPropertyValue("--top-h")) barSize();') < settle.index("el?.scrollIntoView();")
