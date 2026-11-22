@@ -532,6 +532,37 @@ def test_puppet_warp_redrawn(clone):
     assert np.array_equal(trimmed.numpy(), kept)
 
 
+MOL_D = "Creatures/Monkey D Folder/2 Stars/Mol_D_Truffy.psd"    # its art under a warpCustom, no smart filters
+
+
+def test_custom_warp_redrawn(clone):
+    """A warpCustom is drawn again by the fork from a changed file of its own size: Mol D Truffy's art lands near
+    Photoshop's pixels (not drawn on its quad alone), quad and warp kept. Another size stays refused."""
+    from conftest import at_rev
+    psd, art, picture = _linked(clone, MOL_D, "Moldy Luffy")
+    stored, box, corners = _canvas(psd, art.numpy(), art.bbox), tuple(art.bbox), pl.corners_of(art)
+    assert pl.why_not_redrawn(art) == "a warp" and pl.why_not_redrawn(art, same_size=True) is None
+    path = f"MDW/Linked/{art.smart_object.filename}"
+    old = at_rev(clone, LINKED_REV, path)
+    rgba, icc = pl._decoded(old, "jpg")
+
+    def png(pixels) -> bytes:
+        out = BytesIO()
+        Image.fromarray(pixels).save(out, "PNG", icc_profile=icc)
+        return out.getvalue()
+    nudged = rgba.copy()
+    nudged[0, 0, 0] ^= 1
+    bigger = np.pad(rgba, ((0, 2), (0, 2), (0, 0)))
+    blobs = {pl.git_blob(data): data for data in (old, png(nudged), png(bigger))}
+    seen = {path: {pl.git_blob(old): len(old)}}
+    assert pl.redraw_psd(psd, MOL_D, {path: pl.git_blob(png(bigger))}, blobs.get, seen) == (
+        False, False, [pl.NOT_REDRAWN.format(layer=art.name, name=art.smart_object.filename, why="a warp")])
+    assert pl.redraw_psd(psd, MOL_D, {path: pl.git_blob(png(nudged))}, blobs.get, seen) == (True, True, [])
+    plain = _canvas(psd, *pl.draw(picture, corners, Image.BICUBIC))
+    assert tuple(art.bbox) == box and np.allclose(pl.corners_of(art), corners, atol=1e-6) and pl.warped(art)
+    assert _off(_canvas(psd, art.numpy(), art.bbox), stored) * 50 < _off(plain, stored)
+
+
 def test_a_painted_mask_refuses_an_invert(clone, monkeypatch):
     """An Invert or Puppet Warp is proven with its filter mask off or white: Termination Shock's globe under a painted
     mask is refused (a blur's is not: test_gaussian_blur_redrawn)."""

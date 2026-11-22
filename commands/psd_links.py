@@ -16,7 +16,7 @@ SmartObject.link_target), never from the filesystem.
     ppi(data, path) / set_ppi(layers, value)         a file's resolution as Photoshop reads it, the Rslt a link stores
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
-    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (its smart filters too)
+    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (its smart filters or warp too)
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
@@ -423,9 +423,16 @@ def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list)
     item.rectangle = (y0, x0, y1, x1)
 
 
-def why_not_redrawn(layer) -> Optional[str]:
-    """Why a placed layer's pixels cannot be drawn again from its file, else None."""
-    if warped(layer):
+def fork_warp(layer) -> bool:
+    """The fork draws the layer's warp on a new picture (SmartObject.can_draw_warp: a warpCustom of 4 x 4 points over
+    its whole content) and no smart filters are on it."""
+    return not _filtered(layer) and layer.smart_object.can_draw_warp()
+
+
+def why_not_redrawn(layer, same_size: bool = False) -> Optional[str]:
+    """Why a placed layer's pixels cannot be drawn again from its file, else None. A warp only from a file of its own
+    pixel size (same_size) that fork_warp draws."""
+    if warped(layer) and not (same_size and fork_warp(layer)):
         return "a warp"
     if _filtered(layer) and not fork_filters(layer):
         return "smart filters"
@@ -652,12 +659,12 @@ def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A placed layer's pixels drawn again from a file (rgba: its pixels in the card's colours) on corners at mode, its
     mask and effects kept, its smart filters drawn too by the fork (fork_filters) with their FEid source the new
-    picture (the link's Trnf and Sz are written by SmartObject.link or relink). Returns the canvas box drawn (old and
-    new pixels').
+    picture, a warp by the fork from the file (fork_warp: nearest, mode unused) (the link's Trnf and Sz are written by
+    SmartObject.link or relink). Returns the canvas box drawn (old and new pixels').
     """
     from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
     before = tuple(layer.bbox)
-    out, box = draw(rgba, corners, mode)
+    out, box = layer.smart_object.draw_warp(rgba, corners) if warped(layer) else draw(rgba, corners, mode)
     if _filtered(layer):                        # filters before the source: a Puppet Warp samples the old one
         drawn, where = layer.smart_object.draw_filters(out, box, corners) if out is not None else (None, box)
         _filter_source(layer, out, box, corners)
@@ -1490,8 +1497,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     Per layer: (i) the drawn-from file's pixels equal the new file's: size, Sz and contentID only; (ii) the same ink at a
     new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
     old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a link.
-    Refused (a warp, smart filters redraw does not draw, a trim under a Puppet Warp, a quad the redraw cannot reproduce):
-    the link stays as it is, with a hand note.
+    Refused (a warp but fork_warp's at the same size, smart filters redraw does not draw, a trim under a Puppet Warp, a
+    quad the redraw cannot reproduce): the link stays as it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1533,7 +1540,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         same = old_rgba is not None and old_rgba.shape == new_rgba.shape and np.array_equal(old_rgba, new_rgba)
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
         # a trim's new quad would move a kept Puppet Warp's mesh
-        why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer) or
+        why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer, size == _size_of(layer)) or
                                                     (trim and _puppet(layer) and "smart filters")] if w), None)
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
