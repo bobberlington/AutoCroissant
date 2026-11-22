@@ -11,6 +11,7 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image, ImageDraw
 from psd_tools import PSDImage
 from psd_tools.api.layers import PixelLayer
@@ -600,11 +601,18 @@ def test_perspective_warp_redrawn(clone):
     assert tuple(layer.bbox) == (871, 406, 1027, 1017)
 
 
+# Photoshop 2023's Update of Polevaulter at twice the star's pixels (r7-0's oracle): Layer 1 copy's Trnf, first vertex
+# and warped vertex
+PS_X2 = ([812.357171, -36.426732, 1140.975825, -32.094233, 1138.958779, 184.293522, 810.340124, 179.961024],
+         [711.834544, 62.574719], [846.176935, -3.555468])
+
+
 def test_perspective_warp_on_a_turned_quad(clone):
     """Polevaulter's star (a Perspective Warp on a turned quad, 12x smaller) is drawn again through the fork's
     place_picture, Photoshop's mip resample: near its stored pixels, far nearer than draw()'s one-step bicubic (r3-0's
-    darker, jaggier outlines). A file of twice the pixels is refused (Photoshop follows the warp by an affine map
-    there: r7-0's oracle), so is a turned quad at a scale the placement is not proven at."""
+    darker, jaggier outlines). A file of twice the pixels is redrawn as Photoshop's Update writes it (r7-0's oracle):
+    the quad the affine of three corners, the warp followed (PuX the quad); at another ppi it is refused, so is a
+    turned quad at a scale the placement is not proven at."""
     from conftest import at_rev
     psd, star, picture = _linked(clone, POLEVAULTER, "Layer 1 copy")
     corners, kept, box = pl.corners_of(star), star.numpy(), tuple(star.bbox)
@@ -618,11 +626,22 @@ def test_perspective_warp_on_a_turned_quad(clone):
     path = f"MDW/Linked/{star.smart_object.filename}"
     old = at_rev(clone, LINKED_REV, path)
     rgba, _ = pl._decoded(old, "psb")
-    big = _png(Image.fromarray(rgba, "RGBA").resize((rgba.shape[1] * 2, rgba.shape[0] * 2), Image.LANCZOS), 1)
-    blobs = {pl.git_blob(data): data for data in (old, big)}
-    assert pl.redraw_psd(psd, POLEVAULTER, {path: pl.git_blob(big)}, blobs.get, {path: {pl.git_blob(old): len(old)}}) == (
+    twice = Image.fromarray(rgba, "RGBA").resize((rgba.shape[1] * 2, rgba.shape[0] * 2), Image.LANCZOS)
+    big, dense = _png(twice, 1), BytesIO()
+    twice.save(dense, "PNG", compress_level=1, dpi=(300, 300))
+    blobs = {pl.git_blob(data): data for data in (old, big, dense.getvalue())}
+    seen = {path: {pl.git_blob(old): len(old)}}
+    assert pl.redraw_psd(psd, POLEVAULTER, {path: pl.git_blob(dense.getvalue())}, blobs.get, seen) == (
         False, False, [pl.NOT_REDRAWN.format(layer=star.name, name=star.smart_object.filename, why="smart filters")])
     assert np.array_equal(star.numpy(), kept) and tuple(star.bbox) == box
+    assert pl.new_quad(star, twice.size) == pytest.approx(PS_X2[0], abs=1e-5)
+    assert pl.redraw_psd(psd, POLEVAULTER, {path: pl.git_blob(big)}, blobs.get, seen) == (True, True, [])
+    fltr = star.smart_object.filters[b"filterFXList"][0][b"Fltr"]
+    first = [float(fltr[key][0][axis]) for key in (b"vertices", b"warpedVertices") for axis in (b"Hrzn", b"Vrtc")]
+    assert pl.corners_of(star) == pytest.approx(PS_X2[0], abs=1e-5) and pl._size_of(star) == twice.size
+    pux = [float(fltr[f"Pu{axis}{i}".encode()]) for i in range(4) for axis in "XY"]
+    assert pux == pl.corners_of(star) and first == pytest.approx(PS_X2[1] + PS_X2[2], abs=1e-5)
+    assert tuple(star.bbox) == (873, -35, 1094, 160)        # Photoshop's (874, -34, 1093, 160): the soft edge
     _, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
     x0, y0, x1, _, _, y1, _, _ = pl.corners_of(layer)
     turned = [x0, y0, x1, y0 + 20, x1, y1 + 20, x0, y1]
