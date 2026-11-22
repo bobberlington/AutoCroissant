@@ -96,6 +96,7 @@ for _key in TC_PATHS:                                     # '~' expanded for bui
     if environ.get(_key):
         environ[_key] = expanduser(environ[_key])
 SITE_SRC = Path(environ.get("AC_SITE_SRC") or CLONE)     # a TTSCardMaker checkout (code, not cards), else the clone
+SITE_NEEDS = ("TTS/checks/checks_env.py", "TTS/checks/run_all.py")   # test_tts_save loads them from SITE_SRC
 
 
 # ========================
@@ -137,6 +138,9 @@ def pytest_configure(config):
     missing = [f"{key}={environ[key]}: no such path" for key in TC_PATHS if environ.get(key) and not Path(environ[key]).exists()]
     if missing:                                           # set but wrong: stop, not skip
         raise pytest.UsageError("\n".join(missing))
+    absent = [str(SITE_SRC / rel) for rel in SITE_NEEDS if not (SITE_SRC / rel).is_file()]
+    if absent:                                            # an old sparse recipe: stop, not skip
+        raise pytest.UsageError(f"no {', '.join(absent)} (sparse-checkout add TTS/checks)")
     lacking = [f"{tool} (brew install {formula})" for tool, formula in TOOLS.items() if not shutil.which(tool)]
     if lacking:                                           # checked once: no test skips for a tool
         raise pytest.UsageError("not on PATH: " + ", ".join(lacking))

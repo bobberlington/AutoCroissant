@@ -565,8 +565,6 @@ def test_tts_checks_take_ac_main_unless_told(tmp_path, monkeypatch):
     """updater_idempotent's code (checks_env.copy_bot): AUTOCROISSANT unset = AC main as committed, fetched each run (not
     a checkout's working tree); set = that tree."""
     path = SITE_SRC / "TTS" / "checks" / "checks_env.py"
-    if not path.is_file():
-        pytest.skip(f"no {path} (AC_SITE_SRC lacks TTS/checks)")
     spec = importlib.util.spec_from_file_location("checks_env", path)
     env = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(env)
@@ -594,8 +592,6 @@ def test_tts_checks_run_a_part_again_on_bash_eintr(tmp_path, monkeypatch):
     """run_all: a card_sync_steps part that failed printing macOS bash 3.2's EINTR runs once more, both outputs kept;
     another failure, or another check with it, does not."""
     path = SITE_SRC / "TTS" / "checks" / "run_all.py"
-    if not path.is_file():
-        pytest.skip(f"no {path} (AC_SITE_SRC lacks TTS/checks)")
     monkeypatch.syspath_prepend(str(path.parent))                # run_all's own insert goes with it
     spec = importlib.util.spec_from_file_location("run_all", path)
     ra = importlib.util.module_from_spec(spec)

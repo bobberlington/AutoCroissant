@@ -294,7 +294,8 @@ needs its one delta-base blob there, `tc-kept-1121.bundle` needs none).
   `taskpolicy -b` at load 40-60 and pass under plain nice or utility (test_card_preview::test_the_lanes_next_cards,
   test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time): re-run them before calling a red
   real. Point `AC_SITE_SRC` at a sparse TC checkout at or after TC main (`.github`,
-  `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`); the workflow tests read `card-guards.yml` from it too.
+  `site`, `TTS/Global.lua`, `TTS/checks`, `Global.xml`, `decks.json`); the workflow tests read `card-guards.yml` from
+  it too. A tree without `TTS/checks` stops the run (conftest `SITE_NEEDS`, 11-22).
   Targeted files unless a full run is needed; at most a few new tests per change.
 - Resource limits (memory `resource-limits`): xdist at most 6, process pools at most 4, one full suite at a time
   (`~/Documents/Tools/wt/scratch/suite-wait.sh`), at most 2 workflows (a third only when the owner allows), at most 8
