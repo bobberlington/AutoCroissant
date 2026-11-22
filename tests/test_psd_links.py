@@ -573,20 +573,33 @@ def test_perspective_warp_redrawn(clone):
     assert tuple(layer.bbox) == (871, 406, 1027, 1017)
 
 
-def test_perspective_warp_on_a_turned_quad_refused(clone):
-    """The fork draws a Perspective Warp on any quad, but on a turned one draw() places the picture with PIL's
-    one-step transform, not Photoshop's resample (Polevaulter's star darker, jaggier): refused, on the layer's quad or
-    a new one."""
+def test_perspective_warp_on_a_turned_quad(clone):
+    """Polevaulter's star (a Perspective Warp on a turned quad, 12x smaller) is drawn again through the fork's
+    place_picture, Photoshop's mip resample: near its stored pixels, far nearer than draw()'s one-step bicubic (r3-0's
+    darker, jaggier outlines). A file of twice the pixels is refused (Photoshop follows the warp by an affine map
+    there: r7-0's oracle), so is a turned quad at a scale the placement is not proven at."""
     from conftest import at_rev
-    psd = PSDImage.open(BytesIO(at_rev(clone, LINKED_REV, POLEVAULTER)))
-    star = next(one for one in psd.descendants() if one.kind == "smartobject" and one.name == "Layer 1 copy")
-    assert star.smart_object.can_draw_filters() and not pl.upright(pl.corners_of(star))
-    assert pl.why_not_redrawn(star) == "smart filters"
+    psd, star, picture = _linked(clone, POLEVAULTER, "Layer 1 copy")
+    corners, kept, box = pl.corners_of(star), star.numpy(), tuple(star.bbox)
+    assert not pl.upright(corners) and pl.why_not_redrawn(star) is None
+    stored, mode = _canvas(psd, kept, box), pe.image_mode(star, picture)
+    onestep = _off(_canvas(psd, *star.smart_object.draw_filters(*pl.draw(picture, corners, mode), corners)), stored)
+    pl.redraw(star, picture, corners, mode)
+    assert _off(_canvas(psd, star.numpy(), star.bbox), stored) * 5 < onestep
+
+    psd, star, _ = _linked(clone, POLEVAULTER, "Layer 1 copy")
+    path = f"MDW/Linked/{star.smart_object.filename}"
+    old = at_rev(clone, LINKED_REV, path)
+    rgba, _ = pl._decoded(old, "psb")
+    big = _png(Image.fromarray(rgba, "RGBA").resize((rgba.shape[1] * 2, rgba.shape[0] * 2), Image.LANCZOS), 1)
+    blobs = {pl.git_blob(data): data for data in (old, big)}
+    assert pl.redraw_psd(psd, POLEVAULTER, {path: pl.git_blob(big)}, blobs.get, {path: {pl.git_blob(old): len(old)}}) == (
+        False, False, [pl.NOT_REDRAWN.format(layer=star.name, name=star.smart_object.filename, why="smart filters")])
+    assert np.array_equal(star.numpy(), kept) and tuple(star.bbox) == box
     _, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
     x0, y0, x1, _, _, y1, _, _ = pl.corners_of(layer)
     turned = [x0, y0, x1, y0 + 20, x1, y1 + 20, x0, y1]
-    assert layer.smart_object.can_draw_filters(turned) and not pl.filters_on(layer, turned)
-    assert pl.filters_on(layer, None)
+    assert not pl.filters_on(layer, turned) and pl.filters_on(layer, None)
 
 
 RETRO = "Creatures/Kirby/3 Stars/Retro_Kirby.psd"             # its Light icon under a 6 px Mosaic
