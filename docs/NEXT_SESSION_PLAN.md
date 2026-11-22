@@ -291,7 +291,7 @@ needs its one delta-base blob there, `tc-kept-1121.bundle` needs none).
   -n 6 -q -p no:cacheprovider tests` (`-n 3` while the owner games).
   1294 passed at the final heads (AC add5194d + TC 5f22cef0, 11-21 21:01); the TC tree must be at or after 5f22cef0
   (an older one fails tests, e.g. test_site_build's dialog seal and Morgue idea checks). Two timing tests flake under
-  `taskpolicy -b` at load 40-60 and pass under plain nice (test_card_preview::test_the_lanes_next_cards,
+  `taskpolicy -b` at load 40-60 and pass under plain nice or utility (test_card_preview::test_the_lanes_next_cards,
   test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time): re-run them before calling a red
   real. Point `AC_SITE_SRC` at a sparse TC checkout at or after TC main (`.github`,
   `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`); the workflow tests read `card-guards.yml` from it too.
@@ -300,8 +300,10 @@ needs its one delta-base blob there, `tc-kept-1121.bundle` needs none).
   (`~/Documents/Tools/wt/scratch/suite-wait.sh`), at most 2 workflows (a third only when the owner allows), at most 8
   git processes, never a partial clone of the local card repo, no repack or gc of the big clones while agents run.
   The git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) runs under Monitor during long unattended work.
-  While `pgrep -x RotMGExalt.real` finds the owner's game: heavy work under `taskpolicy -b nice -n 15`, xdist at most 3,
-  pools at most 2. Disk: at least 100 GB available counting purgeable and 50 GB truly free
+  While `pgrep -x RotMGExalt.real` finds the owner's game: heavy work under `taskpolicy -c utility nice -n 15`, xdist at
+  most 3, pools at most 2. Not `-b`: it keeps our work on the E-cores the other sessions keep busy, so each git write
+  waits seconds (11-22: a full suite took 2:05 h with 3 timing reds; 29 tests 711 s under `-b`, 22 s under utility).
+  Disk: at least 100 GB available counting purgeable and 50 GB truly free
   (`~/Documents/Tools/wt/scratch/s1110/tools/diskfree.sh`); delete bulky outputs when a step ends.
 - The Desktop TTSCardMaker clone is blobless from GitHub (full history): every git call with `GIT_NO_LAZY_FETCH=1`; a
   missing blob comes in ONE batched fetch, never one `git show` at a time; `git write-tree` needs `--missing-ok`.
