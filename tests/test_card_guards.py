@@ -1661,10 +1661,13 @@ def test_a_steps_background_jobs_end_with_the_test(tmp_path):
     step = {"run": """( end=$((SECONDS+60)); until [ $SECONDS -ge $end ]; do sleep 0.02; done ) < /dev/null > /dev/null 2>&1 &
                       timeout 60 sh -c 'touch "$0"; exec sleep 60' "$RUNNER_TEMP/up" < /dev/null > /dev/null 2>&1 &
                       until [ -e "$RUNNER_TEMP/up" ]; do sleep 0.02; done"""}
-    done, _ = _shell(step, {"PATH": os.environ["PATH"], "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(tmp_path / "out")})
-    sessions = set(_SESSIONS)
-    assert done.returncode == 0 and _running(sessions)
-    assert _end(sessions) == [] and _running(sessions) == []
+    try:
+        done, _ = _shell(step, {"PATH": os.environ["PATH"], "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(tmp_path / "out")})
+        sessions = set(_SESSIONS)
+        assert done.returncode == 0 and _running(sessions)
+    finally:                                    # an interrupted xdist worker may never reach the fixture's teardown
+        left = _end(set(_SESSIONS))
+    assert left == [] and _running(sessions) == []
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
