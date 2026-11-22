@@ -6797,11 +6797,11 @@ def _clip_text(chain: list) -> str:
 def _painted_over(layer, own: bool = True, skip=None) -> Optional[str]:
     """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
     ("its Gradient Overlay"), a layer clipped onto it, or a fill at 0; None when they show. own False: not its own
-    overlays or clipped layers (_overlay_off's); skip: a group whose overlays go off too (_owned_group)."""
+    overlays, clipped layers or fill (_overlay_off's); skip: a group whose overlays go off too (_owned_group)."""
     node = layer
     while node is not None and node.kind != "psdimage":
         whose = "its" if node is layer else f"its group {node.name!r}'s"
-        if node is layer and node.fill_opacity == 0:
+        if node is layer and node.fill_opacity == 0 and own:
             return f"{whose} fill at 0%"
         clipped = _clipped_over(layer) if node is layer and own else []
         if clipped:
@@ -6854,16 +6854,20 @@ def _owned_group(layer, parts: list):
 
 
 def _unveils(layer, group=None) -> bool:
-    """Whether turning the layer's own overlays off (and group's, _owned_group) and hiding its clipped layers shows its
-    colours (nothing else hides them)."""
-    return bool(_hiding(layer) or _clipped_over(layer) or group is not None) \
+    """Whether turning the layer's own overlays off (and group's, _owned_group), hiding its clipped layers and filling a
+    fill at 0 shows its colours (nothing else hides them)."""
+    return bool(_hiding(layer) or _clipped_over(layer) or group is not None or layer.fill_opacity == 0) \
         and _painted_over(layer, own=False, skip=group) is None
+
+
+FILLED = "fill goes from 0% to 100%"     # _overlay_off's note for a see-through text layer
 
 
 def _overlay_off(layer, group=None) -> str:
     """A whole field's colour (owner 2026-10-24: no refusing), or a phrase's on all of the layer's text (_whole_span) or
     under _solid_overlay: its own overlays off when that shows it (and group's: a whole field's, _owned_group), the layers
-    clipped onto it hidden (Edit.hidden); the first's kind, "" when nothing new went off."""
+    clipped onto it hidden (Edit.hidden), a fill at 0 set to 100% (Bulborb Larva's title: its Inner Glow kept); the
+    first's kind (FILLED for the fill), "" when nothing new went off."""
     if not _unveils(layer, group):
         return ""
     hiding, clipped = _hiding(layer), _clipped_over(layer)
@@ -6872,8 +6876,11 @@ def _overlay_off(layer, group=None) -> str:
         effect.descriptor[b"enab"] = Bool(False)
     for one in clipped:
         one.visible = False
+    filled = layer.fill_opacity == 0
+    if filled:
+        layer.fill_opacity = 255
     layer._psd.mark_updated()
-    return hiding[0][1] if hiding else _clip_text(clipped) if clipped else \
+    return hiding[0][1] if hiding else FILLED if filled else _clip_text(clipped) if clipped else \
         f"group {group.name!r}'s {theirs[0][1]}" if theirs else ""
 
 
@@ -6957,7 +6964,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     Ability's capitalised status words keep its colours (a phrase of them alone refused). A whole field's colour turns
     its layers' own overlays off and hides the layers clipped onto them (set_colors), as a phrase's does on a layer it
     is all of (_whole_span) or under a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after
-    it, and baked even in the colour it has. A whole field's colour turns a group's overlays off too when every layer
+    it, and baked even in the colour it has; a fill at 0 goes to 100% (_overlay_off). A whole field's colour turns a group's overlays off too when every layer
     the group shows is the field's (_owned_group); a phrase's alone never does.
     """
     out, final, painted, lit, unveil, gone = {}, {}, {}, set(), set(), {}
@@ -7116,7 +7123,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         if any(a <= i < b for a, b, _ in todo for i in status):
             notes.append(f"colors: {what}: status words keep the chart's colour")
         if off:
-            notes.append(f"colors: {what}: its {off} is off for the colour")
+            notes.append(f"colors: {what}: its {off if off == FILLED else off + ' is off'} for the colour")
         for a, b, one in todo:
             fill, phrase = (base, None) if one is None else (_fill(one["color"]), one.get("phrase"))
             got = _painted(layer, a, b, fx, status) + ([] if phrase and not _whole_span(layer.text, a, b) else [i for i in range(a, b) if i in salted])
