@@ -131,8 +131,8 @@ By hand after every fix (`python3 -I site/build/check_rules.py`). Later a step i
 `build_site.py` (push to main, cron every 6 h, dispatch) running sections 1-3 and 5 only (the sparse checkout has no
 Auxiliary/Rulebook and no psd-tools) and failing on anything outside `rules_baseline.json`; the baseline starts as
 today's inventory and shrinks to empty, so no fix is undone silently. The step goes in its own job or is
-`continue-on-error: true`: `deploy` has `needs: build`, and a red check must not stop the site publishing (`docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`
-P3 relies on that). Fits the later card standardization campaign (`docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`; same script, more sections). Plain script first, no
+`continue-on-error: true`: `deploy` has `needs: build`, and a red check must not stop the site publishing.
+Fits the later card standardization campaign (`docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`; same script, more sections). Plain script first, no
 watcher (simple-tooling preference). **You have a result when** a hand run after a page fix is green against the
 shrunken baseline and the Action step reports the same numbers as the hand run.
 

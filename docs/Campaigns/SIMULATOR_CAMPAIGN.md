@@ -1,8 +1,8 @@
 # Simulator campaign (2026-10-20)
 
 **Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). The user's idea
-"card game win and loss stats" (pasted 2026-10-20; its companion is
-`docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`, the home of the shared game report schema); starts after the deck browser
+"card game win and loss stats" (pasted 2026-10-20; its game reports campaign for Tabletop Simulator and the bot was
+retired 2026-11-22, owner 11-13); starts after the deck browser
 (public decks as repo files, private decks encrypted in the repo; sign-in top right; opt-in profiles
 `site/profiles/<login>.json`, not yet created; contributions and a leaderboard). 2026-10-21: both prerequisites landed (the deck
 browser with public and encrypted private decks, TTSCardMaker 305812c; sign-in, profiles and the People tab with contributions and the
@@ -24,8 +24,8 @@ win rates and card performance. Measured at each layer by the "you have a result
 Simulator.json` (kept by `~/Desktop/AutoCroissant/commands/tts_save.py` and TTSCardMaker's
 `.github/workflows/tts-save.yml`, rules `TTS/decks.json`) stays the real table. No server: the site stays static GitHub
 Pages built by `site/build/build_site.py` from repo files; no backend accounts: sign-in is the existing GitHub token of
-`edit.js` (`public_repo` scope and push permission on the repo, so only collaborators can publish from the browser;
-everyone else files reports through the bot, §4); no real-time relay we host. No AI play. No ruling made in code: a
+`edit.js` (`public_repo` scope and push permission on the repo, so only collaborators can publish from the browser);
+no real-time relay we host. No AI play. No ruling made in code: a
 contradiction in the rulebook is settled by the user in the rulebook, then encoded; where Layer 1 must pick a page to
 compute from, it shows the assumption beside the number and decides nothing.
 
@@ -186,41 +186,18 @@ File names in the headings are new unless they already exist in `site/assets/`; 
 
 ## 4. Game report
 
-The schema's home is `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` §4 (its decision D4: one schema for Tabletop Simulator
-and the browser); this document keeps no copy. Files `site/games/<id>.json`, read by `build_site.py` into
-`dist/data/games.json` (its P4): card pages get plays, deaths and win rate when in a winning hand; Stats gets most
-played and deadliest; profiles get wins and losses.
-
-**The browser fills** `source: browser`, `players[].color: null`, `started`/`ended`, the counters at the end, and every
-`cards[]` count exactly from Layer 2's event list (`log[]`); the Play tab validates the file and commits it with the
-`edit.js` sign-in. That sign-in is a GitHub token with `public_repo` scope and push permission on the repo, so only
-collaborators can file or confirm from the browser; a non-collaborator login is a free name. Everyone else files
-through the bot: `/report_game` (the home's P3), pasted text or a `.json` attachment (Discord caps string options at
-6000 characters; a report with a 17-card hand per team and a `cards[]` row per minion and item approaches that).
-
-**The Lua reporter** (the home's P1 and P2) needs scripting zones the save does not have today (0 `ScriptingTrigger`,
-16 hand zones, 43 counters; tiles nicknamed Creature Holder x6, Minion Holder x2, Item Holder x6, Field Item Holder
-x2, Graveyard x2, Discard Pile x1; the "Active item holder" of 04 Table4 is 2 tokens nicknamed "Active Holder"). A
-tile object cannot list the cards resting on it, so zones go over the 6 slots, both minion holders, both active
-holders, the graveyards, the discard pile, the field card slots and the shops, and `zone.getObjects()` gives every
-card's end position. Graveyard and discard zones give `died` (17 Death) and `used` (13 Items "discarded after
-resolving"; equips, actives and deploys are not discarded, 14 Item Types2, and a negated item returns where it was, 22
-Negation, 12 Reactions5: both undercount, said in the file). `played` is exact only from `onObjectEnterZone` on the
-slot and minion zones (a swap to hand and a second summon re-enter them); without that log the reporter writes
-`played: 1` for every card outside the hand at the end and says so (the home's snapshot limit), never a guess. Lua
-cannot write files: the JSON goes to a Notebook tab and the host copies it out. The reporter suggests the winner from
-"Defeat all of your opponent's creatures" (01 Getting Started) and a lone persistent minion (15 Minions); creatures
-still in hand are a silent point, so the host confirms (the home's D3).
-
-**Naming proposals for the home** (to settle under its open question 6): `teams[].field` means the seeded field card
-(ban list: "active in the shop at the start of the game", not in play) while `cards[].end: "field"` means on the
-primary field, and `end` is also the report-level result; proposed `teams[].field_card`, `cards[].end: "primary"`,
-report-level `result`. `seat` is not a game word (03 Setting Up says team; the save says Team 1 and Team 2): proposed
-`team`.
+A finished browser game is a file `site/games/<id>.json`, read by `build_site.py` into `dist/data/games.json`: card
+pages get plays, deaths and win rate when in a winning hand; Stats gets most played and deadliest; profiles get wins and
+losses. The Play tab fills it exactly from Layer 2's event list, validates it and commits it with the `edit.js` sign-in
+(collaborators only). Fields (v 1): `v`; `id` (`<date>-<8 hex>`, the file name); `source: browser`; `started`, `ended`
+(UTC ISO 8601); `global_turns` (04 Table2); `players[]` (`seat`: team 1 or 2, `login`); `teams[]` (`seat`, `hand`: card
+ids, `field`: field card id or null, `points`, `bricks`, `star_points` at the end); `winner` (seat or null); `end` (`all
+creatures defeated`, `conceded`, `unfinished`); `cards[]` (`card` id, `name`, `seat`, `played`, `died` (17 Death),
+`used` (13 Items), `end`: where it ended); `log[]` (`{t, card, from, to, by}`); `confirmed_by` (logins).
 
 ## 5. Order, gates, reuse, open questions
 
-**Order.** Layer 1 -> Layer 2 hot-seat -> report schema (§4) and the Lua reporter -> Layer 2 play-by-link -> rulings
+**Order.** Layer 1 -> Layer 2 hot-seat -> game report (§4) -> Layer 2 play-by-link -> rulings
 (Layer 3's list) -> Layer 3 -> Layer 4 -> Layer 5. **Gates** (take the branch, do not rationalize): G1 Layer 1's
 numbers match hand calculations on one real hand, else fix before any UI work. G2 the rulebook's worked turn replays
 in the hot-seat table, else the zones or counters are wrong. G3 every ruling in Layer 3's list is in the rulebook
@@ -243,7 +220,6 @@ and batched commits for publishing reports and scripts (collaborators only, §4)
 - Settling a contradiction in code: the rulebook is the authority; `engine.js` cites, never decides.
 - Inventing draw or mulligan rules for Layer 1: the rulebook has none (03 Setting Up, 13 Items).
 - Keeping game state in the TTS save: the save is the published table (tts-save.yml rewrites it); reports are files.
-- Letting the reporter alone declare a winner while creatures remain in hand: the rulebook is silent.
 - Naming the tab or a module "Table": that name belongs to the reverted viewer (`table.js`, `tts.js`).
 - Batch results from hands with `manual` cards: not evidence, by G5.
 
@@ -254,17 +230,16 @@ and batched commits for publishing reports and scripts (collaborators only, §4)
 3. Reports: GitHub logins only, or free names too (free names cannot be claimed by a profile)? Only collaborators can
    file or confirm from the browser (§4): may an admin confirm on a player's behalf, and does the leaderboard count a
    report confirmed by one team? Private reports encrypted like private decks, or all public?
-4. The Lua reporter: inside the published save (`tts_save.py` keeps it) or a separate object players spawn? (The
-   home's open question 2.)
+4. The Lua reporter's home (retired 2026-11-22 with the game reports campaign).
 5. Constructed's shop pool: the whole level, or minus both hands?
 6. The `script` field in `Card Edits.json` (one JSON, like every other edit) or one file per card under
    `site/scripts/`? The former matches the pipeline's two-kinds-of-edits rule; the latter diffs better.
 7. Minions and `Auxiliary/Creatures` cards in reports: per-card rows (they go to the graveyard, 15 Minions) or
-   folded into their parent? (The home's open question 5; one answer for both.)
+   folded into their parent?
 
 **Answered 2026-10-24 (the user):** 1 the team writes the rulings; unruled items stay by hand indefinitely. 2 no
 multiplayer for now: the browser simulator is single-player testing only. 3 GitHub logins only; all reports public; an
-admin may confirm for a player; one team's confirmation counts. 4 inside the Flex Table Control. 5 Constructed's shop
+admin may confirm for a player; one team's confirmation counts. 4 inside the Flex Table Control (retired). 5 Constructed's shop
 is the whole level (cards in either hand included). 6 one script file per card under `site/scripts/`, folded into the card's `site/cards/` data file when the web editor's
 migration creates it (2026-10-24; `Card Edits.json` stays until then). 7 own rows.
 

@@ -9,7 +9,7 @@ or `play.js`, and `site/sim/` and `site/scripts/` do not exist. Numbers are from
 doc wins.
 - Its non-goal "No AI play" is reversed (owner, 11-07).
 - Its hot-seat, play-by-link and real-time play (Layer 2) are out of scope.
-- Its report layer (§4: report files, the Lua reporter, `/report_game`) is out of scope.
+- Its game report (§4) is out of scope.
 
 **Goal.** Say how strong a hand or a card is: closed formulas first, then many games between hands with the AI on both
 sides, and one person testing a hand against the AI in the browser.

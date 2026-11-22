@@ -2,8 +2,8 @@
 
 **Status:** designed 2026-10-20, not scheduled, parked (owner, 10-24; `docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; card numbers are `~/Desktop/TTSCardMaker/site/dist/data/cards.json`
-of 2026-10-20 (801 rows; dup rows dropped). Anything not checked on disk or in git is marked "to confirm". Playtest hooks are the
-Play tab (`docs/Campaigns/SIMULATOR_CAMPAIGN.md`) and `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`; both unscheduled.
+of 2026-10-20 (801 rows; dup rows dropped). Anything not checked on disk or in git is marked "to confirm". Playtest hook: the
+Play tab (`docs/Campaigns/SIMULATOR_CAMPAIGN.md`), unscheduled.
 **2026-10-21:** the user revised D1-D3 (a separate AI sandbox repo with its own website and bot) and will iron the campaign out later;
 until then, read the phases' `ai/cards` and `ai-drafts` branches as that sandbox repo.
 
@@ -180,7 +180,7 @@ by hand, renders and pushes; the bot posts the PNG when asked. No queue daemon u
 
 Blind vote (Phase 3), envelope fit (share of stats within 1/2/3 SD per band), round-trip rate (Phase 2 gate over every draft),
 playtests on the Play tab and in TTS (a generated card is spawned by hand as a custom object, never a card in the save), their
-game reports carrying `generated: true` added to the `cards[]` row of `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` §4 (not there today) so they feed
+Play tab game reports carrying `generated: true` added to the `cards[]` row of `docs/Campaigns/SIMULATOR_CAMPAIGN.md` §4 (not there today) so they feed
 a separate table, never the real card statistics.
 
 ## 4. Known wrong paths (from `archive/ai-generation` and the playbook; do not repeat)

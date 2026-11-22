@@ -14,7 +14,7 @@ and be fully in sync." The spine of this design is the end state that makes the 
 **Non-goals.** Not a replacement for Photoshop for making art (Photoshop stays optional, never forbidden). No backend, no accounts, no server
 we host: the site stays static GitHub Pages built by `site/build/build_site.py`, writes go through the GitHub API with the editor's token
 (`site/assets/edit.js` `signIn`, `commitFiles`) and GitHub Actions (`.github/workflows/site.yml`, `tts-save.yml`, the pipeline's
-`card-edits.yml`, `docs/EDIT_PIPELINE_DESIGN.md` §8), as the simulator and game-reports campaigns assume. No second source of truth at any
+`card-edits.yml`, `docs/EDIT_PIPELINE_DESIGN.md` §8), as the simulator campaign assumes. No second source of truth at any
 step. No rule or card content invented: the editor changes what the owner types, nothing else.
 
 ## 2. The end state: card as data
