@@ -64,6 +64,8 @@ b9aa05e3 and TC b62f36de, f66c280c, ee16083b, all on main). Each needs a rebase 
 ```
 B=~/Documents/Tools/wt/scratch/s1110/bundles
 git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
+# the TC bundle's one missing delta base (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
+git -C ~/Desktop/TTSCardMaker cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null   # one lazy fetch, once
 GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
 ```
 
@@ -150,7 +152,8 @@ s2-deferred bundles above, all in `~/Documents/Tools/wt/scratch/s1110/bundles/`.
 (`refs/heads/work/<lane>-r<n>-<m>`, `refs/wrap/<sha8>`, `refs/heads/cards-1110-r44-2`, ...); `INDEX.tsv` lists all 98
 (bundle, ref, sha, item, verdict; "(was <old>.bundle)" maps the old names), `DROPPED-1121.tsv` the 108 tips left out.
 The SHAs in the report and branches.md are unchanged. Get one back with `git fetch <bundle> <ref>:refs/heads/<name>`
-(in TC with `GIT_NO_LAZY_FETCH=1`).
+(in TC with `GIT_NO_LAZY_FETCH=1`; `s2-deferred-1121-tc.bundle` first needs the one-blob fetch in the recipe under
+"Deferred from 11-21", `tc-kept-1121.bundle` needs none).
 
 ### Card fixes
 
@@ -285,9 +288,9 @@ The SHAs in the report and branches.md are unchanged. Get one back with `git fet
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
   -n 6 -q -p no:cacheprovider tests` (`-n 3` while the owner games).
-  1294 passed at the final heads (AC add5194d + TC 5f22cef0, 11-21 21:01); the TC tree must be at or after 0cb95c33 (with an
-  older one, 4 test_site_previews tests skip). Two timing tests flake under `taskpolicy -b` at load 40-60 and pass
-  under plain nice (test_card_preview::test_the_lanes_next_cards,
+  1294 passed at the final heads (AC add5194d + TC 5f22cef0, 11-21 21:01); the TC tree must be at or after 5f22cef0
+  (an older one fails tests, e.g. test_site_build's dialog seal and Morgue idea checks). Two timing tests flake under
+  `taskpolicy -b` at load 40-60 and pass under plain nice (test_card_preview::test_the_lanes_next_cards,
   test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time): re-run them before calling a red
   real. Point `AC_SITE_SRC` at a sparse TC checkout at or after TC main (`.github`,
   `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`); the workflow tests read `card-guards.yml` from it too.
@@ -380,7 +383,8 @@ Heads at the end (11-21 21:45); nothing in flight.
   test-only, Tests 19/19 green).
 - TTSCardMaker main 5f22cef0 (11-21 21:05: timelines answers on 92e0e24, the favicon and header logo); data ea50731e
   (psd_details VERSION 13); data moves with Card sync; branches `history` (orphan, the timelines' pictures; head
-  b8e865a8), `plates`, `previews`. Last whole-tree Card checks (11-21): 769 records, 0 hand, 33 bars, 0 name flags.
+  b8e865a8), `plates`, `previews`. Last whole-tree Card checks (11-21): 769 records, 0 hand, 33 bars; 0 name flags
+  since 15:14.
 - CardBrowser: `MichaelJSr/CardBrowser` main 6437f11 = pre-release v0.1.1 (v0.1.0 at 5d9f2bf); source
   `~/Documents/Tools/wt/cardapp`.
 - Branches: every ref adjudicated in `docs/Finished/session-2026-11-10-21/branches.md` (and its 11-21 evening

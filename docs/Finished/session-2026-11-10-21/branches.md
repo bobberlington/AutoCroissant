@@ -412,15 +412,17 @@ fetch into a fresh repo holding only main):
 
 Kept by verdict: REJECTED 35, HELD items the held-1121 judges dropped 43 (incl. the pre-retry tips of x31, x37, r52-1
 and r44-2), stranded tips not kept on re-verify 8 (r11-1 and its pre-retry copy, r9-2, Fable r1-1 and its pre-retry
-copy). Left out (108): SUPERSEDED, LANDED-REBASED and what held-1121 landed (old r40-1 and x30 tips, r11-0, Fable
-r1-0/r2-0/r2-1, fork r15-2 / be32812f). `INDEX.tsv` (bundle, ref, sha, item, verdict; 98 rows; each kept row ends
-"(was <old>.bundle)") and `DROPPED-1121.tsv` (the 108) map every old name. `wrap/branch_record.tsv` (244 lines) keeps
-every SHA, the 12 s2 rows included.
+copy). Left out (108): SUPERSEDED, LANDED-REBASED, what held-1121 landed (old r40-1 and x30 tips, r11-0, Fable
+r1-0/r2-0/r2-1) and fork r15-2 / be32812f (landed by its own run, 15:41). `INDEX.tsv` (bundle, ref, sha, item,
+verdict; 98 rows; each kept row ends "(was <old>.bundle)") and `DROPPED-1121.tsv` (the 108) map every old name.
+`wrap/branch_record.tsv` (244 lines) keeps every SHA, the 12 s2 rows included.
 
 ```
 B=~/Documents/Tools/wt/scratch/s1110/bundles
 grep x27 $B/INDEX.tsv                                     # which bundle holds a tip now
 git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
+# the TC bundle's one missing delta base (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
+git -C ~/Desktop/TTSCardMaker cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null   # one lazy fetch, once
 GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
 git -C ~/Desktop/AutoCroissant fetch $B/ac-kept-1121.bundle refs/heads/cards-1110-r44-2:refs/heads/work/r44-2-old
 git -C ~/Documents/Tools/psd-tools fetch $B/fork-kept-1121.bundle refs/heads/work/fable-fork-r1-1:refs/heads/work/fable-r1-1
