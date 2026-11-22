@@ -60,6 +60,8 @@ OPENING = 400                                            # /query_rulebook: a se
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
 TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE)   # (2PG), -1/3cd (TTS xTag, app.js)
+DURATION = compile(r"(\d+)t(\d*)", IGNORECASE)          # a status duration as cards print it: 2T, 2T1 (TTS duration)
+STATUS_RULE = "[X]T[Y]"                                  # Status Effects' SYNTAX line: how a duration reads
 PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
 ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
 WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next word: a ' or ABBR_END, never a sentence's end
@@ -1941,15 +1943,26 @@ def query_rulebook(interaction: Interaction,
         queue_message(interaction, "Give a word or phrase to search the rulebook for.")
         return
 
-    find, said, link = text, f"'{text}' is", text
-    tag = x_row(text, card_repo.rulebook_search_engine("")["ability"])
+    find, said, link, note = text, f"'{text}' is", text, ""
+    book = card_repo.rulebook_search_engine("")["ability"]
+    tag = x_row(text, book)
+    dur = not tag and duration_rule(text, book)
     if tag and not card_repo.rulebook_search_engine(tag[1]).empty:
         if tag[3]:                                   # '(1GCD)': its row's lines first ((XGCD) | Global cooldown...)
             find, said = (tag[1], tag[0]), f"'{tag[0]}' (its row {tag[1]}, with {tag[2]}) is"
         else:                                        # '(2PG)': the book's (XPG) row
             find = link = tag[1]
             said = f"'{tag[0]}' is not printed in the rulebook; its row {tag[1]}, with {tag[2]}, is"
+    elif dur and not card_repo.rulebook_search_engine(STATUS_RULE).empty:   # '2T1 Stuffed': the rule's line first
+        word, says, rest = dur
+        said = f"'{word}' is not printed in the rulebook; its rule {STATUS_RULE} ({says})"
+        if rest and not card_repo.rulebook_search_engine(rest).empty:
+            find, said = (STATUS_RULE, rest), f"{said} and '{rest}' are"
+        else:
+            find, said, note = STATUS_RULE, f"{said} is", f" (no line has '{rest}')" if rest else ""
     pages = rulebook_lines(card_repo.rulebook_search_engine(find), find)
+    if dur:                                          # the rule's page first
+        pages.sort(key=lambda page: not any(STATUS_RULE.lower() in line.lower() for _, ls in page[1] for line in ls))
     links = [("Rulebook on the website", search_link("rules", link))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
@@ -1965,7 +1978,7 @@ def query_rulebook(interaction: Interaction,
             links = []
         if any(name == BAN_LIST for name, *_ in shown):     # last: a limit cuts it first
             links.append((BAN_LIST, f"{SITE_URL}/#/rules/banlist"))
-    head = f"{said} on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}"
+    head = f"{said} on {count} line{'s' if count != 1 else ''} of {' and '.join(where)}{note}"
     head += f" (showing {len(shown)} chapters):" if len(shown) < len(pages) else ":"
     blocks = [head] + [f"**{name}{f' · {title}' if title else ''}**"
                        + "".join(f"\n- {_bold(render_type_tokens(line, escape=True), find)}" for line in lines)
@@ -1997,6 +2010,25 @@ def x_row(text: str, book) -> Optional[tuple]:
     printed = any(whole.search(str(page)) for page in book)
     return (f"({tag.upper()})", f"({'Y/' if y else ''}X{end.upper()})", f"Y = {y} and X = {x}" if y else f"X = {x}",
             printed)
+
+
+def duration_rule(text: str, book) -> Optional[tuple]:
+    """
+    A status duration typed as cards print it that the book (its pages' text) never prints as a whole word ('2T1';
+    '5T1' it does; the 2T in E2T is no word), read by the Status Effects rule [X]T[Y] (TTS Global.lua listPages, app.js
+    bookDuration). The other typed words stay, as a phrase.
+
+    Returns:
+        ('2T1', 'X = 2 turns, Y = 1 stack', 'Stuffed'), ('2T', 'X = 2 turns', ''), or None
+    """
+    words = text.split()
+    whole = lambda w: compile(r"(?<![a-z0-9])" + w + r"(?![a-z0-9])", IGNORECASE)
+    at = [i for i, w in enumerate(words) if DURATION.fullmatch(w) and not any(whole(w).search(str(p)) for p in book)]
+    if not at:
+        return None
+    x, y = DURATION.fullmatch(words[at[0]]).groups()
+    says = f"X = {x} turn{'s' * (int(x) != 1)}" + (f", Y = {y} stack{'s' * (int(y) != 1)}" if y else "")
+    return words[at[0]].upper(), says, " ".join(w for i, w in enumerate(words) if i not in at)
 
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:

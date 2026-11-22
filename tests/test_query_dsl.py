@@ -411,6 +411,46 @@ def test_rulebook_printed_timing_tags_say_what_they_mean(monkeypatch):
         assert first.startswith(meaning.replace(row, f"**{row}**", 1)), reply
 
 
+def test_rulebook_status_durations_find_their_rule(monkeypatch, tmp_path):
+    """A status duration as cards print it (2T1, 2T; 178 cards) the book never prints as a whole word finds Status
+    Effects' [X]T[Y] line first (its page too), any other words beside it; 5T1, printed whole, as typed; the 2T in E2T
+    is no word. The real book likewise, and the website's search (app.js bookDuration)."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    from commands import rulebook
+    from global_config import RULEBOOK_SRC
+    repo = qc.CardRepository()
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    rule = 'Formatted like "[X]T[Y] [Status]". For example, "5T1 Poison".'
+    repo.rulebook_dff = DataFrame({"ability": ["Stuffed.\nStuffed, then Stuffed.", rule, "(E2T) | Now (2CD)"]},
+                                  index=["A", "Status Effects", "Timing Tags"])
+    for text in ("2T1 Stuffed", "2t", "1T1 Restrained", "5T1", "5T1 Poison"):
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    says = "'{}' is not printed in the rulebook; its rule [X]T[Y] ({})"
+    assert sent[0] == (says.format("2T1", "X = 2 turns, Y = 1 stack") + " and 'Stuffed' are on 3 lines of 2 rulebook"
+                       " chapters:\n\n**Status Effects**\n- " + rule.replace("[X]T[Y]", "**[X]T[Y]**")
+                       + "\n\n**A**\n- **Stuffed**.\n- **Stuffed**, then **Stuffed**.")
+    assert sent[1].startswith(says.format("2T", "X = 2 turns") + " is on 1 line of 1 rulebook chapter:\n\n**Status")
+    assert sent[2].startswith(says.format("1T1", "X = 1 turn, Y = 1 stack")
+                              + " is on 1 line of 1 rulebook chapter (no line has 'Restrained'):")
+    assert sent[3].startswith("'5T1' is on 1 line") and sent[4].startswith("'5T1 Poison' is on 1 line")
+    book = rulebook.chapters({f"{RULEBOOK_SRC}/{p.name}": p.read_text(encoding="utf-8")
+                              for p in (SITE_SRC / "site" / "rulebook").glob("*.md")})
+    real = [c["text"] for c in book]
+    assert qc.duration_rule("2t1 Stuffed", real) == ("2T1", "X = 2 turns, Y = 1 stack", "Stuffed")
+    assert qc.duration_rule("5T1", real) is None and any("[X]T[Y]" in t for t in real)
+    found = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
+    return {{ file: f, ast, text: bookFold(`${{ast.title}}\\n${{RB.plainText(ast)}}`) }}; }});
+process.stdout.write(JSON.stringify(["2T1 Stuffed", "1t", "5t1", "e2t"].map(q => bookDuration(bookFold(q), q, chapters))));""")
+    assert found[0] == {"word": "2T1", "row": "[x]t[y]", "says": "X = 2 turns, Y = 1 stack", "rest": "stuffed",
+                        "said": "Stuffed", "found": True}
+    assert found[1]["says"] == "X = 1 turn" and found[2:] == [None, None]    # 1T only in the website-only Stoogedings
+
+
 def _app_book(tmp_path, tail: str):
     """app.js's rulebook search (bookFold to the deck builder: bookRe, highlight...) in node, its marks into out; then
     tail, which writes JSON."""

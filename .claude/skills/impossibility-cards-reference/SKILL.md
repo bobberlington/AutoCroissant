@@ -877,7 +877,11 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
    the book never prints whole (`(2PG)`, `3cd`, `4u`; `2pg` is not (2PGT)'s) quotes its X row ((XPG), (XCD), (Y/XCD)),
    the reply saying so (`x_row`; the website's app.js `bookTag` likewise, TTS Global.lua `xTag`); a printed one
    (`(1GCD)`, `2u`) finds itself OR its row, the row's sections and lines first in each chapter ("'(1GCD)' (its row
-   (XGCD), with X = 1) is on ...", so its meaning shows; the website searches both too). Since 2026-11-20 each line is
+   (XGCD), with X = 1) is on ...", so its meaning shows; the website searches both too). Since 2026-11-22 a status
+   duration typed as cards print it (`2T1`, `2T`) that the book never prints as a whole word (`5T1` it does; the 2T in
+   E2T is no word) finds Status Effects' `[X]T[Y]` line first, any other words beside it (`duration_rule`: '2T1
+   Stuffed' is ('[X]T[Y]', 'Stuffed'); "'2T1' is not printed in the rulebook; its rule [X]T[Y] (X = 2 turns, Y = 1
+   stack) and 'Stuffed' are on ..."; app.js `bookDuration` and TTS listPages likewise). Since 2026-11-20 each line is
    under its section ("**20. Creature Types · WIND**"; rulebook.json's `sections`: [start, end, title, slug] in text
    lines for each '## ' heading and titled `::: panel`, as rulebook.js groups them); a section titled the text, or whose
    title alone in it holds it, shows its first lines (OPENING, 400 characters) then its later lines holding the text,
