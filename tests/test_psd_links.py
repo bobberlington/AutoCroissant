@@ -532,6 +532,63 @@ def test_puppet_warp_redrawn(clone):
     assert np.array_equal(trimmed.numpy(), kept)
 
 
+DETONATOR = "N.M.E/Remote_Detonator.psd"                      # onfire_edge under a one-quad Perspective Warp
+POLEVAULTER = "Auxiliary/Minions/Polevaulter_Zombie.psd"       # a star under one, on a turned quad
+
+
+def test_perspective_warp_redrawn(clone):
+    """A Perspective Warp (its quad moved since it ran) is drawn again from the linked file: Remote Detonator's fire
+    lands on Photoshop's pixels (not without it); from a file of twice the pixels its vertices follow the new quad,
+    where Photoshop's Update put them (r6-0's oracle). A trim (same ink, new size) is refused: its new quad would move
+    the kept warp; so is a quad link_card fits."""
+    from conftest import at_rev
+    psd, layer, picture = _linked(clone, DETONATOR, "onfire_edge")
+    path = f"MDW/Linked/{layer.smart_object.filename}"
+    old, kept, corners = at_rev(clone, LINKED_REV, path), layer.numpy(), pl.corners_of(layer)
+    rgba, icc = pl._decoded(old, "png")
+
+    def png(pixels) -> bytes:
+        out = BytesIO()
+        Image.fromarray(np.ascontiguousarray(pixels), "RGBA").save(out, "PNG", **({"icc_profile": icc} if icc else {}))
+        return out.getvalue()
+    pad = png(np.pad(rgba, ((20, 20), (20, 20), (0, 0))))
+    blobs = {pl.git_blob(data): data for data in (old, pad)}
+    assert pl._puppet(layer) and pl.redraw_psd(psd, DETONATOR, {path: pl.git_blob(pad)}, blobs.get,
+                                               {path: {pl.git_blob(old): len(old)}}) == (
+        False, False, [pl.NOT_REDRAWN.format(layer=layer.name, name=layer.smart_object.filename, why="smart filters")])
+    assert np.array_equal(layer.numpy(), kept)
+    assert pl._quad_kept(layer, corners) and not pl._quad_kept(layer, [v + 1 for v in corners])
+    assert pl.why_not_redrawn(layer) is None
+    stored, mode = _canvas(psd, kept, layer.bbox), pe.image_mode(layer, picture)
+    plain = _off(_canvas(psd, *pl.draw(picture, corners, mode)), stored)
+    pl.redraw(layer, picture, corners, mode)
+    assert _off(_canvas(psd, layer.numpy(), layer.bbox), stored) <= 2 and plain > 3000
+
+    psd, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
+    big = png(np.asarray(Image.fromarray(rgba, "RGBA").resize((rgba.shape[1] * 2, rgba.shape[0] * 2), Image.LANCZOS)))
+    blobs[pl.git_blob(big)] = big
+    assert pl.redraw_psd(psd, DETONATOR, {path: pl.git_blob(big)}, blobs.get, {path: {pl.git_blob(old): len(old)}}) == (
+        True, True, [])
+    assert pl.corners_of(layer) == [530, 377, 1270, 377, 1270, 1244, 530, 1244]
+    assert tuple(layer.bbox) == (871, 406, 1027, 1017)
+
+
+def test_perspective_warp_on_a_turned_quad_refused(clone):
+    """The fork draws a Perspective Warp on any quad, but on a turned one draw() places the picture with PIL's
+    one-step transform, not Photoshop's resample (Polevaulter's star darker, jaggier): refused, on the layer's quad or
+    a new one."""
+    from conftest import at_rev
+    psd = PSDImage.open(BytesIO(at_rev(clone, LINKED_REV, POLEVAULTER)))
+    star = next(one for one in psd.descendants() if one.kind == "smartobject" and one.name == "Layer 1 copy")
+    assert star.smart_object.can_draw_filters() and not pl.upright(pl.corners_of(star))
+    assert pl.why_not_redrawn(star) == "smart filters"
+    _, layer, _ = _linked(clone, DETONATOR, "onfire_edge")
+    x0, y0, x1, _, _, y1, _, _ = pl.corners_of(layer)
+    turned = [x0, y0, x1, y0 + 20, x1, y1 + 20, x0, y1]
+    assert layer.smart_object.can_draw_filters(turned) and not pl.filters_on(layer, turned)
+    assert pl.filters_on(layer, None)
+
+
 RETRO = "Creatures/Kirby/3 Stars/Retro_Kirby.psd"             # its Light icon under a 6 px Mosaic
 
 
