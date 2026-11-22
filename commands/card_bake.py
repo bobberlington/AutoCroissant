@@ -137,6 +137,7 @@ class Card:
     ability_fit: float = 1.0                    # the scale an earlier bake of this PSD set its Ability at (its verdict)
     title_fit: float = 1.0                      # ...and its title at (fit_title)
     title_was: Optional[list] = None            # ...from the card maker's title boxes (psd_edit Edit.was)
+    title_fits: dict = field(default_factory=dict)  # ...a split title's parts': {layer id: [fit, was]} (Edit.fits)
     site: dict = field(default_factory=dict)    # field -> why: website only now, the card image can't print it (classify)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # its verdict (baked or refused), for the data's verdicts.json
@@ -1151,7 +1152,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
                                     parses[n], parser, out, fonts_dir, colors, types_dir=types_dir, psd=psd, view=n,
                                     template=template, ability_from=ability_from, title_anchor=card.title_anchor,
                                     ability_fit=card.ability_fit, color_view=card.view, title_fit=card.title_fit,
-                                    title_was=card.title_was)
+                                    title_was=card.title_was, title_fits=card.title_fits)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -1195,6 +1196,7 @@ ANCHOR = "title_moved"                          # a baked verdict's: the px its 
 FIT = "ability_fit"                             # a verdict's: the scale a bake set the Ability at (fit_below), under 1
 TITLE_FIT = "title_fit"                         # ...and the title at (fit_title)
 TITLE_WAS = "title_was"                         # ...from the card maker's title boxes (psd_edit Edit.was)
+TITLE_FITS = "title_fits"                       # ...a split title's parts' (psd_edit Edit.fits)
 
 
 def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
@@ -1224,9 +1226,24 @@ def title_was(verdict: Optional[dict], psd_sha: str) -> Optional[list]:
     return boxes if ok else None
 
 
+def title_fits(verdict: Optional[dict], psd_sha: str) -> dict:
+    """A split title's parts a verdict says a bake set smaller, on that PSD: {layer id: [fit, the card maker's boxes]}."""
+    found = verdict.get(TITLE_FITS) if isinstance(verdict, dict) and psd_sha and verdict.get("psd") == psd_sha[:8] \
+        else None
+    out = {}
+    for key, one in (found.items() if isinstance(found, dict) else ()):
+        fit = ability_fit({"psd": psd_sha[:8], TITLE_FIT: one[0]}, psd_sha, TITLE_FIT, psd_edit.TITLE_MIN) \
+            if isinstance(one, list) and len(one) == 2 else 1.0
+        boxes = title_was({"psd": psd_sha[:8], TITLE_WAS: one[1]}, psd_sha) if fit < 1 else None
+        if boxes:
+            out[str(key)] = [fit, boxes]
+    return out
+
+
 def remember(card: "Card", verdict: Optional[dict]) -> None:
     """What the card's verdict says an earlier bake of its PSD left: a moved or smaller title, a smaller Ability."""
     card.title_anchor = title_anchor(verdict, card.psd_sha)
+    card.title_fits = title_fits(verdict, card.psd_sha)
     card.ability_fit = ability_fit(verdict, card.psd_sha)
     card.title_fit = ability_fit(verdict, card.psd_sha, TITLE_FIT, psd_edit.TITLE_MIN)
     card.title_was = title_was(verdict, card.psd_sha) if card.title_fit < 1 else None
@@ -1592,7 +1609,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                                          psd=psd, template=template, ability_from=added,
                                                          title_anchor=card.title_anchor,
                                                          ability_fit=card.ability_fit, title_fit=card.title_fit,
-                                                         title_was=card.title_was)
+                                                         title_was=card.title_was, title_fits=card.title_fits)
                     break
                 except Refused as refused:
                     if aside is None and refused.field == "name" and OWN_TITLE.split("}")[1] in refused.why:
@@ -1675,6 +1692,10 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         boxes = card.title_was if getattr(card.baked, "title_fit", None) is None else card.baked.title_was
         if card.verdict is not None and TITLE_FIT in card.verdict and boxes:
             card.verdict[TITLE_WAS] = boxes
+        parts = {**card.title_fits, **(getattr(card.baked, "title_fits", None) or {})}
+        parts = {key: [round(fit, 6), was] for key, (fit, was) in parts.items() if fit < 1 and was}
+        if card.verdict is not None and parts:
+            card.verdict[TITLE_FITS] = parts
     except Refused as refused:
         card.refusal = refused.refusal
         if refused.code == "font":              # retried once MDW/Fonts changes (pending)
@@ -1923,6 +1944,7 @@ def refusal_verdict(card: Card) -> dict:
             **({"pngs": card.pngs} if card.pngs else {}),
             **({FIT: card.ability_fit} if card.ability_fit < 1 else {}),
             **({TITLE_FIT: card.title_fit, TITLE_WAS: card.title_was} if card.title_fit < 1 else {}),
+            **({TITLE_FITS: card.title_fits} if card.title_fits else {}),
             "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
 
