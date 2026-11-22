@@ -608,4 +608,4 @@ timelines; the bot's closure listed (21 modules; 47 card side) in place of the o
 archive worktrees under ~/Documents/Tools/wt (reboots wipe /tmp). Checked at AC ea0db694.
 
 2026-11-21 (final-1121): data flow (d) names owner.json `morgue_list` (the Morgue by the owner's word); card
-timelines closed by the owner, the archive and the first repo on his external SSD. Checked at AC add5194d.
+timelines closed by the owner, the archive and the first repo on the owner's external SSD. Checked at AC add5194d.

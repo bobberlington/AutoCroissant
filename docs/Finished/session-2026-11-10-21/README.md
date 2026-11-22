@@ -56,7 +56,7 @@ records, 0 hand, 33 bars, 1 name flag (Beholster, a new card since 11-20). What 
 | What | Where | Notes |
 |---|---|---|
 | Croissant's bars read | AC 460a4881, f69f7aae; TC 50cb651e, a1cc4c54 | Bars drawn over old ones hide them; comp bars all named 'Health' read by their row label; Uumuu's and Chris & Jordi's values put back; Hive Knight keeps Croissant's own bars, regrouped |
-| Knockout | AC e1f3c215; TC cf2712f1 | The guards re-made Clot Gold's and Chef Saltbaker's PNGs. They were right to (Croissant's PNGs did not show his PSDs), but Clot Gold's came out up to 59 levels off. Clot Gold got Photoshop's PNG; cards using knockout keep their pushed PNG until the fork draws knockout (a gate that lifts itself) |
+| Knockout | AC e1f3c215; TC cf2712f1 | The guards re-made Clot Gold's and Chef Saltbaker's PNGs. They were right to (Croissant's PNGs did not show their PSDs), but Clot Gold's came out up to 59 levels off. Clot Gold got Photoshop's PNG; cards using knockout keep their pushed PNG until the fork draws knockout (a gate that lifts itself) |
 | Isaac-style bars | fork `cards-20261112`; AC c17ff5f6; TC 18c2294b | 6 cards converted by us (Hive Knight, False Knight, Grimora, Skeleton Mate, Minecraft Panda, Tainted Keeper). Croissant did Zigg, Green Mage, Chris & Jordi and Uumuu himself |
 | Hand flags 22 -> 0 | TC dab01b20, 71e6b313, 460e8988, aef1f4eb, ff317bf0; fork `cards-20261112b`; AC c9c57bbb, 7f7ec3ea | Green Mage's rows, Zigg's bevel (fork fix), Dirty Bed, Twin Emperors' markers, Tomorrow I'll (Photoshop's PNG), Bulborb Larva |
 | Mock-up custom bars | TC 6d328fef; AC ff88a473, aff7a602 | Card plates pre-draw each custom bar at every value; the mock-up pastes them (81 cards) |
@@ -325,9 +325,9 @@ a real gain. Results (full lists: accepted.md and rejected.md):
   (9.7 GB, open since 02:39). Every Photoshop runner now quits the Photoshop it started.
 - **The lost-stats guard (11-11).** Built on the belief that nobody had told Croissant; Card checks already had.
   Reverted (AC 3d8faec6). Check the existing tells first.
-- **Croissant's cards (11-11 21:30 to 11-12 00:15).** He converted cards himself while a lane was converting them,
-  then pushed over the guards' rewrites. The custombars land dropped his cards; the guards went to report mode and
-  his Tyler and Pizza were restored as pushed (TC 91142142) until the owner lifted the pause. Every card push now
+- **Croissant's cards (11-11 21:30 to 11-12 00:15).** Croissant converted cards by hand while a lane was converting them,
+  then pushed over the guards' rewrites. The custombars land dropped those cards; the guards went to report mode and
+  Croissant's Tyler and Pizza were restored as pushed (TC 91142142) until the owner lifted the pause. Every card push now
   re-checks each blob right before pushing and never overwrites newer work.
 - **A push without the lock (11-12 ~01:58).** A one-off script's failed `mkdir` did not stop it, and its exit trap
   removed another lane's lock; repaired at once. Scripts now take the lock with `|| exit 1` and set the trap after.
@@ -482,7 +482,7 @@ stayed near 347 GiB free because the running runs wrote as much.
   blobs found nowhere else, all reachable, 343 in the AC tests' pin tree); pack-8cfce261 (0.98 GiB) is the timelines
   lane's 11-15 blob fetch by id (191 older card image versions, all reachable). `~/Documents/Tools/firstrepo.git`
   (48.4 GiB): kept as is; no duplicate objects, nothing unreachable, verify OK, so a repack would save about 0 (owner's
-  bar: 10 GB). The owner moves it to his external SSD. `history.git`, `scratch/tc-history.git` and
+  bar: 10 GB). The owner moves it to an external SSD. `history.git`, `scratch/tc-history.git` and
   `scratch/tts/{history,autocroissant}.git` kept (live uses).
 - **Review pages** (owner 15:04, the orchestrator): the decided pages (pictures, uncertain, decide-1115,
   decide-1115b, d15-fonts) deleted, their json and crops kept for the timelines run; `index.html` goes after the

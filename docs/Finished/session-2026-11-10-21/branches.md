@@ -35,8 +35,9 @@ In `~/Documents/Tools/wt/scratch/s1110/bundles/` (persistent; all pass `git bund
 | `ac-r44-2-1121.bundle` | `refs/heads/cards-1110-r44-2` (3017ef00; needs 91ddced3) | 14:57, from the Desktop clone's objects |
 | `tc-r44-2-1121.bundle` | `refs/heads/cards-1110-r44-2` (f12a757e; needs aab4fffc) | 14:57, from the Desktop clone's objects |
 
-The Bundle column below names them without `-1121.bundle`. Ruling 1's rebuild may rename or merge them: `git bundle
-list-heads <bundle>` shows what a bundle holds. Get a tip back (TC with `GIT_NO_LAZY_FETCH=1`):
+The Bundle column below names them without `-1121.bundle`. These bundles were replaced on 11-21 21:33 by
+`ac-kept-1121`, `tc-kept-1121`, `fork-kept-1121` and the two `s2-deferred-1121` bundles (see "11-21 evening" below;
+`INDEX.tsv` maps old names to new). The recipe below is kept as it was; use the new bundle names:
 
 ```
 B=~/Documents/Tools/wt/scratch/s1110/bundles
@@ -421,9 +422,11 @@ verdict; 98 rows; each kept row ends "(was <old>.bundle)") and `DROPPED-1121.tsv
 B=~/Documents/Tools/wt/scratch/s1110/bundles
 grep x27 $B/INDEX.tsv                                     # which bundle holds a tip now
 git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
-# the TC bundle's one missing delta base (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
-git -C ~/Desktop/TTSCardMaker cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null   # one lazy fetch, once
-GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
+T=~/Documents/Tools/wt/x31-tc   # TC work in a blobless GitHub clone (full history, not shallow), never the Desktop clone
+git clone -q --filter=blob:none --no-checkout https://github.com/MichaelJSr/TTSCardMaker.git $T
+# the TC bundle's one delta base not in main's tip (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
+git -C $T cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null
+git -C $T fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
 git -C ~/Desktop/AutoCroissant fetch $B/ac-kept-1121.bundle refs/heads/cards-1110-r44-2:refs/heads/work/r44-2-old
 git -C ~/Documents/Tools/psd-tools fetch $B/fork-kept-1121.bundle refs/heads/work/fable-fork-r1-1:refs/heads/work/fable-r1-1
 ```

@@ -34,6 +34,8 @@ Ship under the push locks with the full suite and Card-sweep trailers on silent 
 
 ## Order (owner, 11-20 and 11-21)
 
+0. **First, the five deferred items** ("Deferred from 11-21" below; owner 21:22 deferred them, they are built): rebase,
+   finish the r44-2 and x37 verifies, full suite, land (one workflow, beside the first research rounds).
 1. **Research rounds**: about 8 rounds per lane, one ship every 4 rounds, then stop (owner 11-21; don't ask for a budget
    again). Lanes as this session: Actions + bake + previews (`actbake`), card data + TTS + website + bot + tests
    (`cards`). The fork lane went dry on 11-16 (rounds 21-24 found nothing); start it only for the owner's open lens
@@ -46,9 +48,6 @@ Ship under the push locks with the full suite and Card-sweep trailers on silent 
 4. **Card timelines**: CLOSED (owner 11-21 21:45: "i dont plan to do timelines work again"). The live site keeps the
    `history` branch b8e865a8; per-card image versions keep updating from main in Actions. If ever needed: plug in the
    SSD and set `DISCORD_ARCHIVE` and `TIMELINES_FIRST_GIT` to its paths.
-
-The five deferred items (first under Waiting) are built: they need only a rebase, the verify for r44-2 and x37, the
-full suite and a land.
 
 ## Waiting from this session
 
@@ -64,9 +63,11 @@ b9aa05e3 and TC b62f36de, f66c280c, ee16083b, all on main). Each needs a rebase 
 ```
 B=~/Documents/Tools/wt/scratch/s1110/bundles
 git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
-# the TC bundle's one missing delta base (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
-git -C ~/Desktop/TTSCardMaker cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null   # one lazy fetch, once
-GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
+T=~/Documents/Tools/wt/x31-tc   # TC work in a blobless GitHub clone (full history, not shallow), never the Desktop clone
+git clone -q --filter=blob:none --no-checkout https://github.com/MichaelJSr/TTSCardMaker.git $T
+# the TC bundle's one delta base not in main's tip (site/assets/app.js at f66c280c); without it: 'pack has 1 unresolved delta'
+git -C $T cat-file blob f4a2c7ddbd8b3c4776216827d6dd5f224766a348 >/dev/null
+git -C $T fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
 ```
 
 - [ ] **x31, the D15 rest** (owner-directed 11-17 ~00:30; from r51-1): a typed character the line's font can't draw
@@ -152,8 +153,8 @@ s2-deferred bundles above, all in `~/Documents/Tools/wt/scratch/s1110/bundles/`.
 (`refs/heads/work/<lane>-r<n>-<m>`, `refs/wrap/<sha8>`, `refs/heads/cards-1110-r44-2`, ...); `INDEX.tsv` lists all 98
 (bundle, ref, sha, item, verdict; "(was <old>.bundle)" maps the old names), `DROPPED-1121.tsv` the 108 tips left out.
 The SHAs in the report and branches.md are unchanged. Get one back with `git fetch <bundle> <ref>:refs/heads/<name>`
-(in TC with `GIT_NO_LAZY_FETCH=1`; `s2-deferred-1121-tc.bundle` first needs the one-blob fetch in the recipe under
-"Deferred from 11-21", `tc-kept-1121.bundle` needs none).
+(TC tips into a blobless GitHub clone, as in the recipe under "Deferred from 11-21": `s2-deferred-1121-tc.bundle` first
+needs its one delta-base blob there, `tc-kept-1121.bundle` needs none).
 
 ### Card fixes
 
@@ -248,7 +249,7 @@ The SHAs in the report and branches.md are unchanged. Get one back with `git fet
       layers can take one; 6 show "no room").
 - [ ] Croissant's guarded pushes: the delta-free Land, the kept push lane, PNGs recompressed after Decided, the
       Follow-up build window past Landed, the preview reads at the commit. His push 50ecfca4 (11-20 15:46 PST, the
-      guards re-exported 1 PNG) came after all of them shipped: check its runs for them, else his next push.
+      guards re-exported 1 PNG) came after all of them shipped: check its runs for them, else Croissant's next push.
       Then also the early save (r60-1, wave 2a): proven only by the next guarded push that re-exports a PNG (watch
       item (d) above).
 - [ ] The next Card checks run: x12's threaded WebP encode, plates byte for byte as before.
@@ -404,7 +405,7 @@ Heads at the end (11-21 21:45); nothing in flight.
 - [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (from 11-06; 20-cell split bars, 0-40). Raid bosses (6+ stars,
       `card_models.RAID_STARS`) have no stat limit.
 - [x] `~/Documents/Tools/firstrepo.git` (48.4 GiB, self-contained since 11-17, verified intact 11-21) and
-      `~/Documents/Tools/discord-archive`: the owner moves both to his external SSD (11-21 night); ask him to plug it
+      `~/Documents/Tools/discord-archive`: the owner moves both to an external SSD (11-21 night); ask the owner to plug it
       in when a task needs them. `~/Downloads/Old TTSCardMaker` is gone (Finder Trash 15:02, emptied).
 - [ ] Choices made unattended since 11-18, for a later look: the report's section "Conservative choices taken while
       unattended".

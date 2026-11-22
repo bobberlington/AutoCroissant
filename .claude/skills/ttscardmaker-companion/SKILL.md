@@ -1012,7 +1012,7 @@ Full notes: TTSCardMaker `site/NOTES.md` §19; user docs: `site/README.md` Editi
 
 ## 3. Missing-fonts audit (2026-10-19, re-checked 2026-10-20)
 
-**Status 2026-10-23: no font is missing.** The owner added BabaUI, the last one (`MDW/Fonts/Baba UI Regular.ttf`, his
+**Status 2026-10-23: no font is missing.** The owner added BabaUI, the last one (`MDW/Fonts/Baba UI Regular.ttf`, the owner's
 file, TTSCardMaker 92b5ae6b), after the Windows/Office faces of 2026-10-21 (a88b232). `python -m commands.font_check
 --fonts MDW/Fonts --all .` (AutoCroissant, the fork venv) reads 812 card PSDs against 274 files / 282 faces and reports
 "Every font the cards ask for is in MDW/Fonts." The audit below is the 2026-10-20 state.
