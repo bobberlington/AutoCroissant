@@ -194,24 +194,34 @@ def joined(repository: str, sha: str, clone: str, read, path: str = "", head: st
     return b"" if not missing(clone, [sha]) else read_blob(repository, sha, clone, path, head, blobs)
 
 
-def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str, blobs: str = "",
-          pending: Optional[dict] = None) -> dict:
-    """The records and the card's blobs side by side (blobs: read_blob's; pending: {sha: Event} of the lane's hint
-    reads, joined). Returns {what: [seconds, "ok" or why not]}; never raises."""
-    started, done = perf_counter(), {}
+def _timed(done: dict, started: float, what: str, read, *args):
+    """read(*args), its seconds and "ok" (or why not) in done[what]; None when it raised."""
+    try:
+        value = read(*args)
+        done[what] = [round(perf_counter() - started, 2), "ok"]
+        return value
+    except Exception as error:                  # noqa: BLE001 - the preview reads it as before
+        done[what] = [round(perf_counter() - started, 2), f"{type(error).__name__}: {error}"[:200]]
+        return None
 
-    def one(what: str, read, *args):
-        try:
-            value = read(*args)
-            done[what] = [round(perf_counter() - started, 2), "ok"]
-            return value
-        except Exception as error:              # noqa: BLE001 - the preview reads it as before
-            done[what] = [round(perf_counter() - started, 2), f"{type(error).__name__}: {error}"[:200]]
-            return None
+
+def read_records(repository: str, records: str, started: Optional[float] = None) -> dict:
+    """The data's records (RECORDS) side by side into records. Returns {what: [seconds, "ok" or why not]}; never raises."""
+    started, done = started or perf_counter(), {}
     makedirs(records, exist_ok=True)
-    with ThreadPoolExecutor(len(RECORDS) + 5) as pool:
+    with ThreadPoolExecutor(len(RECORDS)) as pool:
         for name in RECORDS:
-            pool.submit(one, f"db/{name}", read_record, repository, name, records)
+            pool.submit(_timed, done, started, f"db/{name}", read_record, repository, name, records)
+    return done
+
+
+def read_card(card: str, fields: dict, clone: str, repository: str, head: str, blobs: str = "",
+              pending: Optional[dict] = None, started: Optional[float] = None) -> dict:
+    """The card's blobs side by side (blobs: read_blob's; pending: {sha: Event} of the lane's hint reads, joined).
+    Returns {what: [seconds, "ok" or why not]}; never raises."""
+    started, done = started or perf_counter(), {}
+    one = lambda what, read, *args: _timed(done, started, what, read, *args)
+    with ThreadPoolExecutor(5) as pool:
         try:
             tree = tree_of(clone, head)
             paths = paths_of(tree, card, fields)
@@ -234,6 +244,17 @@ def reads(card: str, fields: dict, clone: str, repository: str, head: str, recor
             else:
                 done[path] = [0, "in the clone"]
     return done
+
+
+def reads(card: str, fields: dict, clone: str, repository: str, head: str, records: str, blobs: str = "",
+          pending: Optional[dict] = None) -> dict:
+    """The records and the card's blobs side by side (read_records, read_card). Returns {what: [seconds, "ok" or why
+    not]}; never raises."""
+    started = perf_counter()
+    with ThreadPoolExecutor(1) as pool:
+        got = pool.submit(read_records, repository, records, started)
+        done = read_card(card, fields, clone, repository, head, blobs, pending, started)
+        return {**got.result(), **done}
 
 
 # ========================
@@ -270,5 +291,7 @@ __all__ = [
     'BLOBS_ENV',
     'main',
     'paths_of',
+    'read_card',
+    'read_records',
     'reads',
 ]

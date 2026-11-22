@@ -55,7 +55,7 @@ from typing import Callable, NamedTuple, Optional
 from urllib.parse import quote
 
 from commands.card_preview_branch import HAND_DONE, LANE_ARTIFACT, LANE_END, _Api, clean
-from commands.card_preview_reads import BLOBS_ENV, RECORDS, missing, paths_of, read_blob, reads, tree_of
+from commands.card_preview_reads import BLOBS_ENV, RECORDS, missing, paths_of, read_blob, read_card, read_records, tree_of
 
 # ========================
 # Configuration
@@ -305,42 +305,52 @@ def main_of(api: _Api, repository: str) -> tuple:
     return (sha, "") if SHA.fullmatch(sha or "") else ("", f"the card repo's main not read ({status})")
 
 
+def _fields(text: str) -> dict:
+    """The edit's fields (a JSON object's keys but "_" ones; {} for anything else)."""
+    try:
+        edit = loads(text)
+    except ValueError:
+        edit = {}
+    return {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
+
+
 def take(api: _Api, press: Press, run: Optional[dict], *, bake: Callable, lane: str, clone: str, repository: str, head: str,
-         kept: dict, bot_repo: str, bot: str, limit: int, hints: Optional[Warm] = None,
+         kept: dict, bot_repo: str, bot: str, limit: int, sides: tuple, hints: Optional[Warm] = None,
          moved: Optional[Callable] = None) -> str:
     """
     One press (run: its run, None when rung): its out dir made (the hand-over's artifact created then), its blob
-    (read_press), its reads (card_preview_reads, as the Reads step; joining hints' reads) beside the bot's check (a
-    rung one's: the card repo's main too: on a newer main, moved(main) and its reads there), then bake() into it;
-    <out>.code after. Returns "" when baked, else why the lane ends.
+    (read_press) beside the data's records, the bot's check and (a rung one's) the card repo's main (sides: two more
+    _Api, their own kept connections), then the card's reads (card_preview_reads.read_card; joining hints' reads; on a
+    newer main, moved(main) and its reads there), then bake() into it; <out>.code after. Returns "" when baked, else why
+    the lane ends.
     """
     out, seen = join(lane, press.request), monotonic()
     makedirs(out, exist_ok=True)
     records = mkdtemp(prefix="card-preview-lane-")
     why, code = "", "skipped"
+    blobs, pending = environ.get(BLOBS_ENV, ""), hints and hints.pending
     if hints is not None:
         hints.idle.clear()                      # no new hint read while the press is taken
     try:
-        card, text, why = read_press(api, repository, press)
+        with ThreadPoolExecutor(3) as pool:
+            got = pool.submit(read_records, repository, records)
+            bots = pool.submit(bot_moved, sides[0], bot_repo, bot)
+            mains = None if run else pool.submit(main_of, sides[1], repository)
+            card, text, why = read_press(api, repository, press)
+            blob, fields = monotonic(), {} if why else _fields(text)
+            if not why:                         # the card's own files (most often in the clone: a hint read them)
+                read_card(card, fields, clone, repository, head, blobs, pending)
+            got.result()
+            why = why or bots.result()
+            main, w = mains.result() if mains else (head, "")
+            why = why or w
         if why:
             return why
-        blob = monotonic()
-        try:
-            edit = loads(text)
-        except ValueError:
-            edit = {}
-        fields = {k: v for k, v in edit.items() if not str(k).startswith("_")} if isinstance(edit, dict) else {}
-        with ThreadPoolExecutor(1) as pool:
-            done = pool.submit(reads, card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""),
-                               pending=hints and hints.pending)
-            why = bot_moved(api, bot_repo, bot)
-            main, why = (head, why) if run or why else main_of(api, repository)
-            done.result()
-        if not why and main != head:            # a rung press on a newer main
+        if main != head:                        # a rung press on a newer main
             why = moved(main) if moved else "the card repo's main moved"
             if not why:
                 head = main
-                reads(card, fields, clone, repository, head, records, environ.get(BLOBS_ENV, ""), pending=hints and hints.pending)
+                read_card(card, fields, clone, repository, head, blobs, pending)
         for name in RECORDS if not why else ():
             fresh = _read(join(records, name))
             why = why or ("the data's records not read" if fresh is None else "the data's records changed" if fresh != kept[name] else "")
@@ -445,7 +455,7 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
         code: The first press's exit code (a lane only after 0)
         limit: card_preview.MAX_EDIT
     """
-    lane, api, why, logged = abspath(lane), None, "", False
+    lane, api, sides, why, logged = abspath(lane), None, (), "", False
     makedirs(lane, exist_ok=True)
     try:
         me, actor, token = environ.get("GITHUB_RUN_ID", ""), environ.get("GITHUB_TRIGGERING_ACTOR", ""), environ.get("GITHUB_TOKEN", "")
@@ -462,19 +472,21 @@ def serve(lane: str, *, bake: Callable, out: str, clone: str, repository: str, h
         bot = run_process(["git", "-C", dirname(dirname(abspath(__file__))), "rev-parse", "HEAD"], capture_output=True,
                           text=True, timeout=30).stdout.strip()
         api = _Api(environ.get("GITHUB_API_URL", "https://api.github.com"), token)
+        sides = tuple(_Api(environ.get("GITHUB_API_URL", "https://api.github.com"), token) for _ in range(2))
         why = served_elsewhere(api, repository, named, request) or bot_moved(api, bot_repo, bot)
         if why:
             return why
         _say(f"up for {clean(actor, 40)}'s next presses ({LANE_IDLE} s idle at most)")
         why = listen(api, int(me), actor, bake=bake, lane=lane, clone=clone, repository=repository, head=head, kept=kept,
-                     bot_repo=bot_repo, bot=bot, until=until, limit=limit)
+                     bot_repo=bot_repo, bot=bot, until=until, limit=limit, sides=sides)
         return why
     except Exception as error:                  # noqa: BLE001 - the lane only ends
         why = f"error: {type(error).__name__}: {clean(error, 300)}"
         return why
     finally:
-        if api is not None:
-            api.close()
+        for each in (api, *sides):
+            if each is not None:
+                each.close()
         if logged:
             _say(f"ended: {why}")
         with open(lane + LANE_END, "w", encoding="utf-8") as fh:
