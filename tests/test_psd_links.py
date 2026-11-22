@@ -427,13 +427,13 @@ GUST_REV = "aa8a491f5b1fdb78249f71c4cc95f7f7609425b9"
 
 
 def test_motion_blur_redrawn(clone):
-    """A lone Motion Blur at angle 0 of a proven distance (6 px) is drawn as Photoshop 2023 stores it: Gust of Wind's names
-    from their FEid sources land on Photoshop's pixels exactly; a 17 px one (its stars) is not proven: not redrawn."""
+    """A lone Motion Blur at angle 0 (1-256 px) is drawn as Photoshop 2023 stores it: Gust of Wind's names (6 px) from
+    their FEid sources land on Photoshop's pixels exactly; its stars and support (17 px, no FEid source) are redrawn."""
     from psd_tools.compression import decompress
     from conftest import at_rev
     psd = PSDImage.open(BytesIO(at_rev(clone, GUST_REV, GUST)))
     layers = {layer.name: layer for layer in psd.descendants() if layer.kind == "smartobject"}
-    assert not layers["star"].smart_object.can_draw_filters() and pl.why_not_redrawn(layers["star"]) == "smart filters"
+    assert all(pl.why_not_redrawn(layers[name]) is None for name in ("star", "star copy", "support"))
     for name in ("Name #1", "Name #2"):
         layer = layers[name]
         assert pl.why_not_redrawn(layer) is None
