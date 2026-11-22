@@ -63,6 +63,12 @@ def stars_from_psd(relative_path: str) -> bool:
     return any(folder in relative_path for folder in STARS_FROM_PSD)
 
 
+def series_folder(path: Optional[str]) -> Optional[str]:
+    """The folder a Creatures/<folder>/<N Stars>/ card is in, else None."""
+    parts = (path or "").split("/")
+    return parts[len(parts) - 3] if parts[0] == "Creatures" and len(parts) >= 4 else None
+
+
 def layer_tag(name: str) -> tuple:
     """(base name, frozenset of variants) for a tagged name, else (name, None); FX layers are never tagged."""
     m = None if EFFECT_LAYER_TAG in name else TAG.match(name)
@@ -596,14 +602,12 @@ class CardClassifier:
 
     @staticmethod
     def _classify_creatures(folders: list[str]) -> dict:
-        """Classify creature cards, preserving existing series if available."""
-        result = {
+        """Classify creature cards (no series: PSDParser.folder_series)."""
+        return {
             "type": CardType.CREATURE.value,
             "stars": CardClassifier._stars(folders[len(folders) - 1]),
-            "series": folders[len(folders) - 2].lower(),
             "hp": -1, "def": -1, "atk": -1, "spd": -1,
         }
-        return result
 
     @staticmethod
     def _classify_auxiliary(folders: list[str]) -> dict:
@@ -672,17 +676,19 @@ class PSDParser:
             path=relative_path,
             stars=card_dict.get("stars"),
             subtype=card_dict.get("subtype"),
-            series=card_dict.get("series"),
             parser_version=PARSER_VERSION,
         )
 
         # Preserve author and series (and subseries) from existing card, as they were before website edits
         if existing_card:
             parsed = existing_card.parsed_values or {}
+            old = {f.lower() for f in map(series_folder, (relative_path, getattr(existing_card, "path", None))) if f}
             for attr in ("author", "series", "subseries"):
                 value = parsed[attr] if attr in parsed else getattr(existing_card, attr)
-                if value:
+                if value and not (attr == "series" and value in old):     # the folder's name: the old default
                     setattr(card, attr, value)
+        if not card.series:
+            card.series = self.folder_series(relative_path)
 
         # Set initial stats if present
         if "hp" in card_dict:
@@ -699,6 +705,17 @@ class PSDParser:
             self._extract_from_layers(psd, card, relative_path, variant)
 
         return card
+
+    def folder_series(self, relative_path: str) -> Optional[str]:
+        """A creature's series when none is stored: the one series the other cards in its folder carry (Isaac: The
+        Binding of Isaac), else None (Other); the folder's name lowercased was the default until 2026-11-22: none."""
+        folder = series_folder(relative_path)
+        if folder is None:
+            return None
+        found = {getattr(c, "series", None) for c in tuple(self.db.stats.values())       # a copy: a sync adds cards
+                 if getattr(c, "path", None) != relative_path and series_folder(getattr(c, "path", None)) == folder}
+        found -= {None, "", folder.lower()}
+        return found.pop() if len(found) == 1 else None
 
     def _extract_from_layers(self, psd: PSDImage, card: CardInfo, relative_path: str,
                              variant: Optional[int] = None) -> None:
@@ -1823,6 +1840,7 @@ __all__ = [
     'layer_tag',
     'named_after_text',
     'picture_numbers',
+    'series_folder',
     'shown_in',
     'stars_from_psd',
     'title_text',

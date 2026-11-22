@@ -50,7 +50,7 @@ live folder tree.
 | `MDW/...` | `MDW`, ability forced `None` | — | — (excluded from traversal anyway, see below) |
 | `Field/<N Stars>/x.psd` | `field` | — | leaf folder name |
 | `Items/<Subtype>/<N Stars>/x.psd` | `item` | `subtype` = `<Subtype>`.lower() | leaf folder name |
-| `Creatures/<Series>/<N Stars>/x.psd` | `creature` | `series` = `<Series>`.lower(); hp/def/atk/spd seeded −1 | leaf folder name |
+| `Creatures/<Series>/<N Stars>/x.psd` | `creature` | `series`: the stored one, else the one series the folder's other cards carry, else none (`PSDParser.folder_series`, 2026-11-22; `<Series>`.lower() before, now read as none); hp/def/atk/spd seeded −1 | leaf folder name |
 | `N.M.E/x.psd` | `nme` | `subtype` from its header's item-type icon, as `aux item` (its `nme` icon is none) | PSD star layers |
 | `Auxiliary/Minions/x.psd` | `minion` | hp/def/atk/spd seeded −1 | PSD star layers |
 | `Auxiliary/Items/x.psd` | `aux item` | `subtype` from its header's item-type icon (2026-11-08, below) | PSD star layers |
@@ -1011,3 +1011,7 @@ Drink / Wham Bam Bone's "before 2020"; the series-words fallback (x40). Checked 
 
 2026-11-21 (final-1121): §7.1 /query skips `site/` and `TTS/` PNGs (`NO_CARD_FOLDERS`, f4c08596). Checked at AC
 add5194d, TC 5f22cef0.
+
+2026-11-22 (cards-1122 x3): §2 a new creature's series is its folder's one shared series (else none), not the folder name
+lowercased. The editor's series "PSD value" (build_site.folder_series) stays the folder name lowercased; a series revert
+gives back the bot's parsed_values.series.
