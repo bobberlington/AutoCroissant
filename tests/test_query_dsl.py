@@ -618,6 +618,27 @@ def test_replies_ping_nobody(monkeypatch):
     assert kw["allowed_mentions"].to_dict() == AllowedMentions.none().to_dict()
 
 
+def test_a_miss_on_a_cards_name_points_to_it(monkeypatch):
+    """/query_rulebook: no lines for a card's exact name (a status's rules are on its card) names the card, its kind and
+    page; an icon's, an MDW/Unfinished card's or a near name's miss stays bare."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    monkeypatch.setattr(cm.stats_db, "stats", {"Enfeebled": cm.CardInfo(name="Enfeebled", card_type="debuff",
+                                                                         path="Debuffs/Enfeebled.psd")})
+    repo = qc.CardRepository()
+    for path in ("Debuffs/Enfeebled.png", "Types/Panda.png", "MDW/Unfinished/Pandeity.png"):
+        repo._add_file_to_registry(path)
+    repo.card_keys, repo.site_ids = ["enfeebled.png"], {"enfeebled.png": ("enfeebled", "")}
+    repo.rulebook_dff = DataFrame({"ability": ["Each slot takes its turn."]}, index=["08 Global Turn"])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    for text in ("enfeebled", "panda", "pandeity", "enfeeble"):
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    sent = [kw for _, kw in utils.dispatch_queue]
+    assert sent[0]["content"] == "No rulebook lines match 'enfeebled'.\n**Enfeebled** is a debuff card: /query Enfeebled"
+    assert sent[0]["links"][1:] == [("Card page", f"{qc.SITE_URL}/c/enfeebled/")]
+    assert [kw["content"] for kw in sent[1:]] == [f"No rulebook lines match '{t}'." for t in ("panda", "pandeity", "enfeeble")]
+
+
 def test_ban_list(monkeypatch):
     """The website's ban list: a section after the chapters (its own link), a banned card's line (a duplicate's too)."""
     import commands.utils as utils

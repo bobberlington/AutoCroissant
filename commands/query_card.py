@@ -58,6 +58,9 @@ URL_MAX = 512                                            # Discord's longest lin
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 OPENING = 400                                            # /query_rulebook: a section titled the text, its first characters
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
+KIND_WORDS = {"creature": "a creature", "creatures": "an auxiliary creature", "minion": "a minion", "item": "an item",
+              "aux item": "an auxiliary item", "nme": "an N.M.E. item", "field": "a field card",
+              "buff": "a buff card", "debuff": "a debuff card"}   # a kind in a sentence (app.js KIND_LABEL)
 BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: curly " as straight (app.js bookFold)
 TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE)   # (2PG), -1/3cd (TTS xTag, app.js)
 DURATION = compile(r"(\d+)t(\d*)", IGNORECASE)          # a status duration as cards print it: 2T, 2T1 (TTS duration)
@@ -1966,7 +1969,9 @@ def query_rulebook(interaction: Interaction,
     links = [("Rulebook on the website", search_link("rules", link))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
-        queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
+        said, page = _card_pointer(text)                 # a card's name: its card ('Enfeebled')
+        links += [("Card page", page)] if page else []
+        queue_message(interaction, f"No rulebook lines match '{text}'.{said}", links=links)
         return
     shown = pages if limit < 0 else pages[:limit]
     count = sum(n for *_, n in pages)
@@ -1991,6 +1996,18 @@ def query_rulebook(interaction: Interaction,
             messages.append(block)                   # a page longer than a message: the dispatch splits it
     for i, message in enumerate(messages):
         queue_message(interaction, message, links=links if i == len(messages) - 1 else None)
+
+
+def _card_pointer(text: str) -> tuple:
+    """(a line '**Enfeebled** is a debuff card: /query Enfeebled', its card page) when text is exactly a card's name,
+    printed title, alias or old name (never an icon, MDW/The Morgue or MDW/Unfinished: NOT_CARDS); else ("", None)."""
+    key, how, old = card_repo.lookup(text)
+    if how not in ("exact", "renamed") or card_repo.git_files.get(key, "").startswith(NOT_CARDS):
+        return "", None
+    name = escape_markdown(_label(key))
+    was = f" (renamed from {escape_markdown(old)})" if how == "renamed" else ""
+    kind = KIND_WORDS.get(getattr(_stats_card(key), "card_type", None), "a card")
+    return f"\n**{name}**{was} is {kind}: /query {name}", card_repo.site_url(key)
 
 
 def x_row(text: str, book) -> Optional[tuple]:
