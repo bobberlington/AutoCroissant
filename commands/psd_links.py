@@ -94,6 +94,8 @@ LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size
 LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
 LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
 BLURS = (b"GsnB", "GsnB", b"MtnB", "MtnB")       # Gaussian and Motion Blur: a filter mask does not refuse them
+PERSPECTIVE = (b"perspectiveWarpTransform", "perspectiveWarpTransform")
+QUAD_FILTERS = (b"rigidTransform", "rigidTransform", *PERSPECTIVE)   # Puppet and Perspective Warp: on the layer's quad
 # Photoshop 2023's Image Interpolation (Preferences > General): its relink and Update draw a placed layer again with it,
 # not the pick a Free Transform made (probed 11-13). draw() modes past PIL's; PS_AUTO is Photoshop's default.
 PS_NEAREST, PS_BILINEAR, PS_BICUBIC, PS_SMOOTHER, PS_SHARPER, PS_AUTO = range(10, 16)
@@ -374,9 +376,9 @@ def _plain_source(layer) -> bool:
 def fork_filters(layer) -> bool:
     """The fork draws the layer's smart filters on a new picture (SmartObject.can_draw_filters) and its FEid source is
     plain: none on, or one Gaussian or Motion Blur (a filter mask does not refuse: the composite applies it), Puppet
-    Warp or Invert (proven with the mask off or white)."""
+    Warp, Perspective Warp (upright: _placed_as_photoshop) or Invert (proven with the mask off or white)."""
     so = layer.smart_object
-    if not _plain_source(layer) or not so.can_draw_filters():
+    if not _plain_source(layer) or not so.can_draw_filters() or not _placed_as_photoshop(layer, corners_of(layer)):
         return False
     fx = so.filters
     found = [one for one in fx.get(b"filterFXList") or [] if _on(one)] if fx is not None and _on(fx) else []
@@ -394,12 +396,28 @@ def _masked(so) -> bool:
     return mask is not None and (not so.filter_mask_extends_white or int(mask[1].min()) < 255)
 
 
-def _puppet(layer) -> bool:
-    """A Puppet Warp on: its mesh follows the layer's quad."""
+def _filter_on(layer, classes: tuple) -> bool:
     fx = (placed_data(layer) or {}).get(b"filterFX")
     return bool(fx) and _on(fx) and any(
-        _on(item) and getattr(item.get(b"Fltr"), "classID", None) in (b"rigidTransform", "rigidTransform")
+        _on(item) and getattr(item.get(b"Fltr"), "classID", None) in classes
         for item in fx.get(b"filterFXList") or [] if isinstance(item, Descriptor))
+
+
+def _puppet(layer) -> bool:
+    """A Puppet or Perspective Warp on: its mesh or quad follows the layer's quad."""
+    return _filter_on(layer, QUAD_FILTERS)
+
+
+def _quad_kept(layer, quad: Optional[list]) -> bool:
+    """No Puppet or Perspective Warp, or quad the layer's own: a quad moved with the ink kept in place (a trim, a fit)
+    would move the warp off it."""
+    return quad is None or not _puppet(layer) or bool(np.allclose(quad, corners_of(layer), atol=QUAD_TOL))
+
+
+def _placed_as_photoshop(layer, corners: list) -> bool:
+    """A Perspective Warp only over a picture draw() places as Photoshop does: an upright quad (on a turned one PIL's
+    one-step transform is not Photoshop's resample: the stars' outlines darker and jaggier)."""
+    return not _filter_on(layer, PERSPECTIVE) or upright(corners)
 
 
 def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list) -> None:
@@ -430,8 +448,9 @@ def fork_warp(layer) -> bool:
 
 
 def filters_on(layer, corners: Optional[list]) -> bool:
-    """The fork draws the layer's smart filters on a new quad too (a Mosaic's not above or left of the canvas)."""
-    return layer.smart_object.can_draw_filters(corners)
+    """The fork draws the layer's smart filters on a new quad too (a Mosaic's not above or left of the canvas, a
+    Perspective Warp's upright)."""
+    return layer.smart_object.can_draw_filters(corners) and _placed_as_photoshop(layer, corners or corners_of(layer))
 
 
 def why_not_redrawn(layer, same_size: bool = False) -> Optional[str]:
@@ -1133,9 +1152,10 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
     """
     One PSD's pictures linked in place by its catalogue entries (assign), its stat bars left embedded:
     classes 1, 4 and 5 keep the raster; 2 takes place_trim's quad and keeps it; 3 is drawn again from the Types file
-    at psd_edit.image_mode (refused: an exact copy, class 5, under its fallback name); a header pixel star or icon with
-    a Types file's ink becomes a smart object linking it (link_pixels). Existing links are rewritten canonical (repair;
-    one to a file the repo lacks stays, with a hand note). No lnk item is left without a layer.
+    at psd_edit.image_mode (refused, and 2 under a Puppet or Perspective Warp its quad would move: an exact copy, class
+    5, under its fallback name); a header pixel star or icon with a Types file's ink becomes a smart object linking it
+    (link_pixels). Existing links are rewritten canonical (repair; one to a file the repo lacks stays, with a hand
+    note). No lnk item is left without a layer.
 
     Args:
         psd: The open PSD (edited in place)
@@ -1196,8 +1216,9 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
                 continue
             quads = [_trim_corners(layer, old, new, 1) if cls == INK else _fit_corners(layer, old, new) for layer in layers]
             why = next((why for layer, quad in zip(layers, quads) for why in [
-                why_not_redrawn(layer) or (not filters_on(layer, quad) and "smart filters") if cls == REDRAW else
-                "a warp" if warped(layer) else None] if why), None)
+                (why_not_redrawn(layer) or (not filters_on(layer, quad) and "smart filters") if cls == REDRAW else
+                 "a warp" if warped(layer) else None) or
+                (not _quad_kept(layer, quad) and "smart filters")] if why), None)
             if None in quads or why:
                 path = entry.get("fallback")
                 if not path:
@@ -1504,7 +1525,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
     old one's scale round the same centre, whole pixels when upright and resized (snapped), as Photoshop updates a link.
     Refused (a warp but fork_warp's at the same size, smart filters redraw does not draw, on the old quad or the new, a
-    trim under a Puppet Warp, a quad the redraw cannot reproduce): the link stays as it is, with a hand note.
+    trim under a Puppet or Perspective Warp, a quad the redraw cannot reproduce): the link stays as it is, with a hand
+    note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1546,7 +1568,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         same = old_rgba is not None and old_rgba.shape == new_rgba.shape and np.array_equal(old_rgba, new_rgba)
         trim = not same and old_rgba is not None and ink_key(old_rgba) == ink_key(new_rgba)
         boxes = (ink_box(old_rgba), ink_box(new_rgba)) if trim else None
-        # a trim's new quad would move a kept Puppet Warp's mesh; a Mosaic's grid is proven on the canvas only
+        # a trim's new quad would move a kept Puppet or Perspective Warp; a Mosaic's grid is proven on the canvas only
         why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer, size == _size_of(layer)) or
                                                     (trim and _puppet(layer) and "smart filters") or
                                                     (not filters_on(layer, new_quad(layer, size, boxes)) and
