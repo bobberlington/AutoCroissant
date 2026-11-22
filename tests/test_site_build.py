@@ -272,6 +272,34 @@ def test_a_renamed_row_shows_its_old_name_and_when_the_card_was_made(bs):
     assert shown == {"Papyrus": (None, "2020-07-22"), "Papyrus 2": (None, "2020-07-22"), "Gone": ("Gone Card", "2024-01-01")}
 
 
+def test_a_rename_redrawn_under_another_file_name_keeps_its_versions(bs, tmp_path, monkeypatch):
+    """A person's rename that also redrew the picture under another file name (TC c05e5d4a, Man_Serpent_Shield.png ->
+    Man-Serpent's_Shield.png: no Renamed trailer, no same blob or file name): Image versions go on under the old name
+    through the card data's archive tag."""
+    root, folder = tmp_path / "repo", "Items/Heal/2 Stars"
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / folder).mkdir(parents=True)
+    (root / f"{folder}/Pizza.psd").write_text("pizza")
+    _png(root / f"{folder}/Pizza.png", 10)
+    c1, t1 = _commit(root, "Pizza", 1_780_000_000)
+    for ext in ("psd", "png"):
+        (root / f"{folder}/Pizza.{ext}").unlink()
+    (root / f"{folder}/Pepperoni_Pizza.psd").write_text("pepperoni")
+    _png(root / f"{folder}/Pepperoni_Pizza.png", 20)
+    c2, t2 = _commit(root, "Pepperoni", 1_780_000_000 + DAY)
+    new = _card("Pepperoni Pizza", f"{folder}/Pepperoni_Pizza.psd", "Heal 3.", t2, card_type="item")
+    old = _card("Pizza", f"{folder}/Pizza.psd", "Heal 2.", t1, card_type="item")
+    old.archived = {"at": float(t2), "path": f"{folder}/Pizza.psd", "commit": c2, "renamed_to": "Pepperoni Pizza"}
+    new.parser_version = old.parser_version = 2
+    db = tmp_path / "db"
+    cdb.write_db(str(db), {"Pepperoni Pizza": new}, defaultdict(list, {"Pizza": [old]}), json.dumps({"version": 1, "cards": {}}),
+                 {"card_commit": c2})
+    out = _build(bs, monkeypatch, {"root": root, "db": db}, tmp_path / "a")
+    cid = _by_name(out["cards.json"])["Pepperoni Pizza"]["id"]
+    one = _versions(out, cid)
+    assert [(one["commits"][r[0]][0], r[1:]) for r in one["cards"][cid]] == [(c2, []), (c1, [f"{folder}/Pizza.png"])]
+
+
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
     """The editor (editing.js), the sign-in form shown while it loads (signin.js, also in the editor's), Stats (charts.js), a card's Balance block (balance.js, no stats.js:
     the chart primitives are chartkit.js), People (profile.js), the font box (tokens.js), the
