@@ -50,6 +50,30 @@ def test_a_minion_label_beside_a_blank_is_no_ability_change(tmp_path):
     assert same == [True] * 5 + [False] * 4 + [True, True, False]
 
 
+def test_text_changes_show_whole_phrases(tmp_path):
+    """r4-0 (text.js diffOnce, every diffWords): a rewritten phrase is its old words, then its new ones, not word by word
+    (Air Totem's History); a one-word edit as before; never joined across a line break or into a new line; both texts
+    rebuilt exactly."""
+    pairs = [("(1PGT) Inflict 3 Peppy for 1 turn.\nOverkill damage carries over to the next friendly Totem.",
+              "(1PGT) Inflict a friendly creature with 1T3 Peppy.\nOverkill damage carries over to the next friendly Totem."),
+             ("Heal 2 HP.", "Heal 3 HP."),
+             ("Deal 2 damage.\nHeal 1 HP.", "Gain 3 shields.\nDraw 4 cards."),
+             ("Deal 5 damage to all enemies now", "Heal every friendly creature by 3 now\nDraw a card."),
+             ("Immune to tier 2 and below debuffs.", "Immune to 2 star and below debuffs."),
+             ("Total an enemy team's prime creatures' stars on the PF.", "For the current sum of star levels of all enemy prime creatures on the field:")]
+    text = ASSETS / "text.js"
+    out = node(tmp_path, f"const t = await import({json.dumps(text.as_uri())});\n"
+               f"process.stdout.write(JSON.stringify({json.dumps(pairs)}.map(([x, y]) => t.diffWords(x, y))));")
+    assert "Inflict <del>3 Peppy for 1 turn.</del><ins>a friendly creature with 1T3 Peppy.</ins><br>Overkill damage" in out[0]
+    assert out[1:5] == ["Heal <del>2</del><ins>3</ins> HP.",
+                        "<del>Deal 2 damage.</del><ins>Gain 3 shields.</ins><br><del>Heal 1 HP.</del><ins>Draw 4 cards.</ins>",
+                        "<del>Deal 5 damage to all enemies</del><ins>Heal every friendly creature by 3</ins> now<ins><br>Draw a card.</ins>",
+                        "Immune to <del>tier 2</del><ins>2 star</ins> and below debuffs."]
+    plain = lambda h: re.sub(r"<[^>]+>", "", h.replace("<br>", "\n")).replace("&#39;", "'")
+    for (x, y), h in list(zip(pairs, out))[1:]:
+        assert plain(re.sub(r"<ins>.*?</ins>", "", h)) == x and plain(re.sub(r"<del>.*?</del>", "", h)) == y
+
+
 def test_compare_modes_like_github_s_image_diff(tmp_path):
     """Owner 11-17 ~20:35 (compare.js): a pinned base and a picked version in 2-up (the default), Swipe (a slider with
     its aria values, keys and pointer place), Onion skin (an opacity range) or Difference (CSS mix-blend-mode, no canvas
