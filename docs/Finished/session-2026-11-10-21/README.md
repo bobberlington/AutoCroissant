@@ -449,22 +449,74 @@ a real gain. Results (full lists: accepted.md and rejected.md):
   `tooltipFadeTime="0"` and `tooltipBackgroundImage="none"`.
 - Research gains with numbers (11-13): scratch `~/Documents/Tools/wt/scratch/s1110/gains/table.md`.
 
+## Cleanup, second pass (11-21 afternoon)
+
+Owner ~14:25: "do more clean up and make sure our worktrees and branches are adjudicated and cleaned up". Workflow
+cleanup2-1121 (14:27-16:00): inventory, gate, act and verify per category, all niced (the owner was gaming). Three runs
+started beside it (held-1121, r15-2, favicon) and timelines-apply was live: their ground was vetoed. Every path went
+into a `*_done.tsv` before it went (`~/Documents/Tools/wt/scratch/s1110/wrap/adjudicate/`). Freed about 3.3 GiB; df
+stayed near 347 GiB free because the running runs wrote as much.
+
+- **Branches.** Every ref adjudicated: 290 rows (`branches.md` here, with the owner's 15:01 rulings and the fetch
+  recipe). Deleted by this pass: 0 branches, 0 worktrees (everything left belonged to a running run). Cards r44-2 (AC
+  3017ef00, TC f12a757e), cited by the plan but in no bundle, was rescued from the Desktop clones' objects into
+  `bundles/ac-r44-2-1121.bundle` and `tc-r44-2-1121.bundle`. branch_record.tsv: 200 rows (r44-2's two tips,
+  tcx-repin's f80772da and the three branches the r15-2 run deleted when it landed at 15:41). The adjudication's 3 temp
+  bare repos (`wrap/adjudicate/tmp`, 12 MB) deleted.
+- **Old scratch** (74 entries outside s1110, s1107's parts, `~/std-work-1107`, the review pages): 0.90 GiB. 178 AC and
+  fork tree copies in the fork harness's round folders (`s1107/fork/*`, 810 MiB) and 7 elsewhere (28 MiB): every file's
+  version is in AC's or the fork's git or a bundle (manifests `fork_copies_delete_act.manifest.tsv`,
+  `other_copies_delete.manifest.tsv`). The 3 forktests logs in `s1107/fork/rel-1114/logs` zstd'd (66 -> 4 MB, checked
+  byte for byte), `s1109/wrap/tcx-repin` (12 MiB sparse TC clone, its tip on TC main), 3 headless Chrome profiles (11
+  MiB) and 2 old .bak scripts deleted. Kept on purpose: `s1107/fork/s1110-r9m/ac-6a2f49b6` and `ac-b06e4940` (17 MiB,
+  stranded keep r9-2's tree, while held-1121 ships it).
+- **s1110** (11.06 GiB, 784k entries at 14:28): 0.17 GiB. research3's round subfolders (2,304 files, 147 MiB) packed
+  into `~/Documents/Tools/wt/scratch/s1110/archive/research3-rounds.tar.zst` (4.7 MiB) and the CardBrowser run folders
+  (1,342 files, 27 MiB) into `archive/cardapp-runs.tar.zst` (2.8 MiB). Each archive has `<name>.list.txt` and
+  `<name>.tar-t.txt` beside it (zstd -t passed; tar -t = list); `archive/INDEX.tsv` says where each folder went.
+  research3/*.json, `cardapp/APP_BRIEF.md` and `DESIGN.md` stay in place. 4 font copies deleted, 223 emptied folders
+  pruned.
+- **Git stores.** 12 Desktop TC packs that were pure copies deduped: packs 28.17 -> 25.94 GiB (2.24 GiB); their 467
+  commits and trees kept in 11 small promisor packs; fsck connectivity ok, 0 of 1,605 objects missing. The two packs
+  "of unknown origin" are explained and kept: pack-333ff011 (8.47 GiB) is the 11-10 blobless clone's checkout (2,575
+  blobs found nowhere else, all reachable, 343 in the AC tests' pin tree); pack-8cfce261 (0.98 GiB) is the timelines
+  lane's 11-15 blob fetch by id (191 older card image versions, all reachable). `~/Documents/Tools/firstrepo.git`
+  (48.4 GiB): kept as is; no duplicate objects, nothing unreachable, verify OK, so a repack would save about 0 (owner's
+  bar: 10 GB). The owner moves it to his external SSD. `history.git`, `scratch/tc-history.git` and
+  `scratch/tts/{history,autocroissant}.git` kept (live uses).
+- **Review pages** (owner 15:04, the orchestrator): the decided pages (pictures, uncertain, decide-1115,
+  decide-1115b, d15-fonts) deleted, their json and crops kept for the timelines run; `index.html` goes after the
+  timelines update lands; the review server stopped.
+- **Vetoed (all timing: running runs read inside them; re-gate when held-1121, the favicon ship and timelines-apply are
+  done).** In s1110, 25 of 29 actions, about 9.9 GiB: the gate's re-gate list is s1110-1 to -8, -12, -14 to -18,
+  -21, -23, -24, -28; -19 without t1-land and strand-*; -25 keeping `deadcode/skeptic-fork` and `r10pe-skeptic`
+  (asks/fork.json cites them); -27 with -11 in the change that drops the plan's v-x13/x23-merge line; -3 better packed
+  than deleted (screenshots and owner3 sheets can't be redone byte for byte); -13 and -9 (timelines) only after the
+  owner's timelines veto ends. Old scratch: the oracle PSD clone dedup (up to 1.7 GiB, heavy I/O), the timelines'
+  local preview site (208 MiB, owner veto), the packs of opt-round3/4 and six small folders (memory and the plan cite
+  files inside: keep them in place). Lists: `wrap/adjudicate/s1110.tsv`, `scratch_old.tsv`.
+- **Left as found (conservative).** `scratch/s1109/wrap/tc-unlanded-1110.bundle` (last session's record; a fetch into
+  a temp repo failed, not adjudicated); `/tmp/x` (empty, not provably ours); `~/Documents/Tools/restamp` and
+  OJWikibot's `scratch/ojw-lua-golive` (not ours). Noted, not acted on: six small AC file drafts from deleted tree copies
+  now live only as unreachable objects in the Desktop AC clone (`vso/man_unsafe.tsv`; a future `gc --prune` drops
+  them); `scratch/s1109/wrap/fetchblobs.sh` points at the deleted tcx-repin; the AC tests' pin cache
+  (`~/.cache/autocroissant-tests/a4d137bf06cd`) can't read 786 of its 2,291 blobs through its alternates (older than
+  this pass; the suite still passed 1289 at dcf0b6f9).
+
 ## Left
 
 All in `docs/NEXT_SESSION_PLAN.md`. Headlines: research again (about 8 rounds a lane, ship every 4, then finish
 everything found); the D15 rest, owner-directed 11-17 ~00:30 and still open (the bake keeps a character the line's font
 can't draw in the font the card prints it in; built as r51-1 and retried as x31, it failed review both times: Minecraft
 Panda's '∞' run keeps its own baseline shift and size, so a typed '2' drops; branches AC fa13c489 / TC d20c1105, now in
-the wrap-up bundles); the fork's dead-code items (G8); fork r15-2 (colour glyphs in Smooth and Sharp text; its AC
-unblock r18-0 landed 11-16 as 2f7e22fe in actbake's research3 ship 1, so it waits only for a fork release, after a check
-of The Great Papyrus); D24 (a build number in the stoogedings name) at the next font build; r60-2, the AWS warm-up
+the wrap-up bundles); the fork's dead-code items (G8); D24 (a build number in the stoogedings name) at the next font build; r60-2, the AWS warm-up
 (proved, not shipped; numbers in the plan); ship items proven only by later events (the early save r60-1 by the next
 guarded push that re-exports a PNG, with its watch item (d); Croissant's next guarded push for the earlier push-lane
 items; x12 by the next Card checks run; x33 by the next bake moving an effect-layer line; x20 by the next Preview image
 press; the next bakes of named cards); two timing tests flaky under `taskpolicy -b` at high load; Beholster's name flag;
 the phone editor's title box cutting long titles; x25's Navigation API (Safari before 26.2 and Firefox before 147 keep
 the old behaviour); x23's known limits; the 11-20 test leak's try/finally (its loop already ends after 60 s); the
-wrap-up cleanup's leftovers (two TC packs of unknown origin, the Desktop AC and fork checkouts behind main);
+second cleanup's vetoed items (re-gate them when the afternoon's runs are done);
 CardBrowser's first trial and its follow-ups; `~/Documents/Tools/firstrepo.git` to an external disk and the old pre-wipe
 clone in `~/Downloads` (the owner's calls); the owner's TTS and website checks; the jetson's held davey 0.2.0.
 
@@ -475,3 +527,5 @@ clone in `~/Downloads` (the owner's calls); the owner's TTS and website checks; 
   scratch; checked: no secrets, personal paths or Discord message text).
 - `accepted.md`: 400 accepted ideas by lane and round, with where each shipped.
 - `rejected.md`: 68 rows; 38 ideas not built or dropped in the end, each with its reason in one line.
+- `branches.md`: every branch, bundle ref and git store adjudicated (11-21), the owner's rulings on the bundled tips,
+  and how to fetch a tip back.
