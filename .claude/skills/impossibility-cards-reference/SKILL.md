@@ -812,6 +812,9 @@ with a note (`_by_series`, `series_note`, 2026-11-21, AC 835f78af; the website a
 nights` -> "No card's text has “spongebob”: the series SpongeBob SquarePants". Words compare case and accents aside,
 stopwords and words under 3 letters left out, numbers kept (`series_words`); never inside a typed card name (93aba1b3);
 in an OR or NOT each term falls back on its own (`!spongebob` drops that series' cards).
+Else, a term that is a type's name as letters and digits only (`squash`; the stoogedings aliases squash the same) lists
+that type's cards (`_by_type`, search.js `byType`, 2026-11-22): `defensive minion`, `N.M.E.`, `debuff stack` -> "No
+card's text has “n.m.e.”: the type nme (types==nme)". A term some card's text has stays text (`offensive minion`: 2).
 `site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones

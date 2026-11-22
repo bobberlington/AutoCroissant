@@ -143,11 +143,14 @@ def _holds(words: tuple, run: tuple) -> bool:
 
 
 def series_note(note: tuple) -> str:
-    """A series fallback's note (search.js seriesNote): No card's text has “x”: the series A and B."""
-    text, ser, sub = note
+    """A series or type fallback's note (search.js seriesNote): No card's text has “x”: the series A and B; the type
+    nme (types==nme)."""
+    text, ser, sub, kinds = note
     both = lambda xs: xs[0] if len(xs) < 2 else ", ".join(xs[:-1]) + " and " + xs[-1]
+    kinds = [f"{t} (types=={t})" for t in kinds]
     return f"No card's text has \u201c{text}\u201d: " + " and ".join(
-        f"the {kind} {both(xs)}" for kind, xs in (("series", ser), ("subseries", sub)) if xs)
+        f"the {kind} {both(xs)}" for kind, xs in (("series", ser), ("subseries", sub),
+                                                 ("types" if len(kinds) > 1 else "type", kinds)) if xs)
 
 
 def ban_list_text(banlist: dict) -> str:
@@ -665,13 +668,25 @@ class CardRepository:
         if not ser and not sub:
             return None
         if notes is not None:
-            notes.append((text, ser, sub))
+            notes.append((text, ser, sub, ()))
         names = {*ser, *sub}
         hit = zeros(len(df), dtype=bool)
         for column in ("series", "subseries"):
             if column in df:
                 hit |= df[column].isin(names).values
         return df[hit]
+
+    def _by_type(self, text: str, notes: Optional[list]) -> Optional[DataFrame]:
+        """A plain term no card has that is a type's name, squashed ('defensive minion', 'N.M.E.', 'debuff stack': the
+        font's aliases too): that type's cards, noting (text, (), (), types) (search.js byType); else None."""
+        term, df = squash(text), self.cards_dff
+        each = df["types"] if "types" in df else ()
+        names = {t for ts in each if isinstance(ts, (list, tuple)) for t in ts if squash(t) == term} if term else set()
+        if not names:
+            return None
+        if notes is not None:
+            notes.append((text, (), (), sorted({t.replace("_", " ") for t in names})))
+        return df[each.map(lambda ts: isinstance(ts, (list, tuple)) and any(t in names for t in ts)).astype(bool)]
 
     def ability_search_engine(self, ability: str, near: bool = True, notes: Optional[list] = None,
                               by_series: bool = True) -> DataFrame:
@@ -694,8 +709,9 @@ class CardRepository:
             ability: Search query string
             near: a text term no card has finds the closest abilities (attrs near); inside &, | and ! it finds nothing,
                 as on the website
-            notes: gets (term, series, subseries) for each text term no card has that finds series' cards by words
-            by_series: such a term may find series' cards by words (off in a name typed with & or |: 'mario & luigi')
+            notes: gets (term, series, subseries, types) for each text term no card has that finds series' cards by
+                words or a type's cards by its name
+            by_series: such a term may find those cards (off in a name typed with & or |: 'mario & luigi')
 
         Returns:
             DataFrame of matching cards
@@ -750,8 +766,9 @@ class CardRepository:
             pattern = f"(?:{whole(ability[1:-1])})|(?:{pattern})"
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
-        if not len(exact_matches) and by_series:
+        if not len(exact_matches) and by_series:              # a series by words, else a type by name
             series = self._by_series(ability, notes)
+            series = self._by_type(ability, notes) if series is None else series
             exact_matches = exact_matches if series is None else series
         if len(exact_matches) or not near:
             return exact_matches
@@ -1789,7 +1806,7 @@ def query_ability(interaction: Interaction,
         return
 
     found = f"Found {total_results} result{'s' * (total_results != 1)} for '{ability}'!"
-    if results.attrs.get("series"):                       # a term no card has: series' cards by its words
+    if results.attrs.get("series"):                       # a term no card has: a series' or type's cards
         found = "".join(f"{series_note(n)}.\n" for n in results.attrs["series"]) + found
     if results.attrs.get("near"):                         # no card has the text: the closest abilities
         found = f"No card has the text '{ability}'; " + (f"{total_results} cards have a similar ability, closest first:"

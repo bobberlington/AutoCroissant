@@ -175,6 +175,30 @@ def test_types_any_one(tmp_path):
     assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
 
 
+def test_a_type_name_finds_its_cards(tmp_path):
+    """A plain term no card's text has that is a type's name, letters and digits only (n.m.e., debuff stack), finds that
+    type's cards with a note, inside | and ! too; a term a card's text has stays text; the bot and the website alike."""
+    cards = [dict(name="Wall", type="minion", types=["defensive_minion"], ability="Block."),
+             dict(name="Bubble", type="nme", types=["nme"], ability="Pop."),
+             dict(name="Chilled", type="debuff", types=["debuffstack"], ability="-1 SPD."),
+             dict(name="Guard Dog", type="minion", types=["offensive_minion"], ability="Bite."),
+             dict(name="Lich", type="creature", ability="Summon an offensive minion.")]
+    rows = [("defensive minion", {"Wall"}), ("n.m.e.", {"Bubble"}), ("debuff stack", {"Chilled"}),
+            ("defensive_minion | nme", {"Wall", "Bubble"}), ("!debuffstack", {"Wall", "Bubble", "Guard Dog", "Lich"}),
+            ("offensive minion", {"Lich"})]
+    repo = _repo(cards)
+    assert [set(repo.ability_search_engine(q).index) for q, _ in rows] == [c for _, c in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
+    queries = ["n.m.e.", "defensive minion | debuffstack"]
+    notes = [[] for _ in queries]
+    for query, got in zip(queries, notes):
+        repo.ability_search_engine(query, notes=got)
+    assert [[qc.series_note(n) for n in got] for got in notes] == _website(tmp_path, queries, cards, notes=True) == [
+        ["No card's text has \u201cn.m.e.\u201d: the type nme (types==nme)"],
+        ["No card's text has \u201cdefensive minion\u201d: the type defensive minion (types==defensive minion)",
+         "No card's text has \u201cdebuffstack\u201d: the type debuffstack (types==debuffstack)"]]
+
+
 def _website(tmp_path, queries, cards=CARDS, notes=False) -> list:
     """search.js on cards as cards.json has them (app.js filterCards): each query's card names, or notes: its series
     fallback notes."""
