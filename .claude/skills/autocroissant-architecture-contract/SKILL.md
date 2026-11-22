@@ -18,7 +18,7 @@ description: How AutoCroissant works as a system, plus the start-here map of all
 - AI/diffusion: removed from main 2026-10-20; code and its skill are on branch `archive/ai-generation` ; future ideas → autocroissant-research-frontier
 - "How do I know I'm right" → autocroissant-research-methodology ; help text / style / skill upkeep → autocroissant-docs-and-style
 - The TTSCardMaker side (icon font, Types/ icons, card website, Photoshop scripting) → ttscardmaker-companion
-- Card timelines (the `history` branch, Created dates, the Morgue's lost cards; by hand on the Mac) →
+- Card timelines (the `history` branch, Created dates, the Morgue's lost cards; by hand on the Mac; closed 2026-11-21) →
   ttscardmaker-companion §2 and docs/Future/CARD_TIMELINE.md
 - The desktop app's site hook (`window.cardApp`, read-only) → ttscardmaker-companion §2
 - THIS skill: how the system works + the invariants. Read "The execution model" before writing code.
@@ -266,7 +266,7 @@ the one send that needs no interaction. FakeInteraction rides the error path **b
 the Discord archive + the first repo's store (~/Documents/Tools/firstrepo.git; both outside every repo)
       v
 commands/discord_match, discord_verdicts, discord_chain, discord_morgue -> discord_preview build, check
-      (owner answers: scripts/apply_rulings.py)
+      (owner answers: scripts/apply_rulings.py; the Morgue's labels and repeat pictures: owner.json morgue_list)
       v
 scripts/history_branch.py --push -> TTSCardMaker's orphan `history` branch (per card: pictures + timeline.json; _morgue/)
       v
@@ -606,3 +606,6 @@ psd_remote and card_sync's /fonts from the manifest; the outside-the-bot list na
 2026-11-21 (wrap-1121): the map points at the card timelines and the desktop app's site hook; data flow (d) card
 timelines; the bot's closure listed (21 modules; 47 card side) in place of the old outside-the-bot list; rebind count 39;
 archive worktrees under ~/Documents/Tools/wt (reboots wipe /tmp). Checked at AC ea0db694.
+
+2026-11-21 (final-1121): data flow (d) names owner.json `morgue_list` (the Morgue by the owner's word); card
+timelines closed by the owner, the archive and the first repo on his external SSD. Checked at AC add5194d.

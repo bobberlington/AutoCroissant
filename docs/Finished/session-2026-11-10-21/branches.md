@@ -25,7 +25,7 @@ UNKNOWN is left: the previous session's `scratch/s1109/wrap/tc-unlanded-1110.bun
 
 ## Bundles
 
-In `~/Documents/Tools/wt/scratch/s1110/bundles/` (persistent; all pass `git bundle verify`):
+In `~/Documents/Tools/wt/scratch/s1110/bundles/` (persistent; all pass `git bundle verify`). Replaced 11-21 21:33 by the rebuilt bundles: see the addendum at the end.
 
 | Bundle | Refs | Made |
 |---|---|---|
@@ -392,3 +392,39 @@ Not adjudicated: each run removes its own branches and worktrees when it lands.
 - timelines-apply: AC and TC `work/tl-1121`, worktrees `wt/tl-ac`, `wt/tl-tc`.
 - favicon + header logo: TC `work/favicon-1121` (9b774c81), worktree `wt/favicon-tc`; AC `wt/favicon-ac2` (detached).
 - This docs run: AC `work/cleanup2-1121`, worktree `wt/cleanup2-1121`.
+
+## 11-21 evening addendum: bundles rebuilt (21:23-21:33)
+
+Owner rulings 1 and 2 applied; ruling 3's retries and ruling 4's re-verify are done (held-1121 landed x30, actbake
+r40-1, fork r11-0 and Fable fork r1-0/r2-0/r2-1; the rest dropped, kept in the bundles). The owner deferred five
+ships2-1121 items at 21:22. The bundles above (`ac/tc/fork-unlanded-1121`, `ac/tc-r44-2-1121`) and the h1121 ones are
+deleted; every tip a section above lists as HELD, REJECTED or STRANDED KEEP that did not land is in one of these, under
+its original ref name (all in `~/Documents/Tools/wt/scratch/s1110/bundles/`, each passes `git bundle verify` and a
+fetch into a fresh repo holding only main):
+
+| Bundle | Refs | Prerequisites |
+|---|---|---|
+| `ac-kept-1121.bundle` | 43 | 27, on AC add5194d |
+| `tc-kept-1121.bundle` | 36 | 25, on TC 5f22cef0 |
+| `fork-kept-1121.bundle` | 7 | 6, on fork 977e4067 |
+| `s2-deferred-1121-ac.bundle` | 6: `refs/heads/s2/{x31, r52-1, papyrus-mockup, r44-2, r44-2-v, x37}` | AC 847b1fe0, b9aa05e3 |
+| `s2-deferred-1121-tc.bundle` | the same 6 | TC b62f36de, f66c280c, ee16083b |
+
+Kept by verdict: REJECTED 35, HELD items the held-1121 judges dropped 43 (incl. the pre-retry tips of x31, x37, r52-1
+and r44-2), stranded tips not kept on re-verify 8 (r11-1 and its pre-retry copy, r9-2, Fable r1-1 and its pre-retry
+copy). Left out (108): SUPERSEDED, LANDED-REBASED and what held-1121 landed (old r40-1 and x30 tips, r11-0, Fable
+r1-0/r2-0/r2-1, fork r15-2 / be32812f). `INDEX.tsv` (bundle, ref, sha, item, verdict; 98 rows; each kept row ends
+"(was <old>.bundle)") and `DROPPED-1121.tsv` (the 108) map every old name. `wrap/branch_record.tsv` (244 lines) keeps
+every SHA, the 12 s2 rows included.
+
+```
+B=~/Documents/Tools/wt/scratch/s1110/bundles
+grep x27 $B/INDEX.tsv                                     # which bundle holds a tip now
+git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
+git -C ~/Desktop/AutoCroissant fetch $B/ac-kept-1121.bundle refs/heads/cards-1110-r44-2:refs/heads/work/r44-2-old
+git -C ~/Documents/Tools/psd-tools fetch $B/fork-kept-1121.bundle refs/heads/work/fable-fork-r1-1:refs/heads/work/fable-r1-1
+```
+
+The s2 refs' worktrees and branches (AC `work/s2-*`, the TC clones `wt/s2-*-tc`) are deleted. The "In flight" runs
+above all finished and removed their branches and worktrees.

@@ -703,8 +703,9 @@ both to the repo root (gitignored). The card exports' rulebook-entry filter was 
 `CardRepository` (`commands/query_card.py:98`, singleton `card_repo` at :1160) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
 (`populate_files` :130). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
-`MDW/Assets/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
-here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick among `card_keys`,
+`MDW/Assets/Markers`, and MDW card backs — except PNGs under `site/` and `TTS/` (the website's and the TTS save's own
+pictures, e.g. `site/favicon/`; `card_edits.NO_CARD_FOLDERS`, AC f4c08596, 2026-11-21); `EXCLUDE_FOLDERS` applies only
+to stats traversal, not here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick among `card_keys`,
 the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
 
 Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
@@ -993,3 +994,6 @@ change, sections 4-5 are stale until rewritten.
 
 2026-11-21 (wrap-1121): 'single quotes' as quoted terms; any creature meets a stat; Created as Pacific days and Pep
 Drink / Wham Bam Bone's "before 2020"; the series-words fallback (x40). Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-21 (final-1121): §7.1 /query skips `site/` and `TTS/` PNGs (`NO_CARD_FOLDERS`, f4c08596). Checked at AC
+add5194d, TC 5f22cef0.

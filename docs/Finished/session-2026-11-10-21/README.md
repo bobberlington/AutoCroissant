@@ -505,6 +505,41 @@ stayed near 347 GiB free because the running runs wrote as much.
   (`~/.cache/autocroissant-tests/a4d137bf06cd`) can't read 786 of its 2,291 blobs through its alternates (older than
   this pass; the suite still passed 1289 at dcf0b6f9).
 
+## 11-21 evening addendum (16:35 to 21:45)
+
+Landed after the second cleanup (all MichaelJSr, no attribution; each prepare ran the full AC suite at the exact heads):
+
+- **held-1121** (owner 15:01: retry the most impactful held items, ship the stranded keeps re-verified): x30, the page
+  under a card dialog goes inert after the paint (TC f66c280c, AC tests 5e6080b4, 18:51; suite 1290); actbake r40-1, a
+  stars shrink comes back to the maker's stars on an undo, with fork r11-0's raw template bar pixels (AC b9aa05e3, TC
+  ee16083b, 19:23; suite 1293); Fable fork r1-0, r2-0, r2-1 (fork 619b5f4b, tag `cards-20261121b`, AC pin 1492173c,
+  20:38; Mac venv re-pinned).
+- **The orchestrator's lands (21:05)**: the bot's /query skips the website's and the TTS save's PNGs (AC f4c08596,
+  deployed; the header-logo skeptic found `site/favicon/*.png` answering as cards); the website favicon and header logo
+  (owner's icon B1; TC 92e0e24); the timelines owner answers 3 (history b8e865a8, TC 5f22cef0, AC add5194d, deployed;
+  Frozen In Time's Created date, Morgue labels by the owner's word, Fireball (Mario)'s repeat picture shown once); the
+  fork CI fix (owner "Fix the tests now": fork 977e4067, Tests 19/19 green, run 44987185766, the first green run since
+  11-15). Suite 1294 at AC add5194d + TC 5f22cef0. Jetson at add5194d.
+- **Deferred** (owner 21:22: "Wrap up now, defer all 5"; workflow ships2-1121 stopped, nothing of it landed): x31 (the
+  D15 rest), r52-1 (titles over the stars) and the Papyrus mock-up, each verified keep; r44-2 (Stats table) and x37
+  (Preview tab), built with the verify unfinished. Bundled as `s2-deferred-1121-{ac,tc}.bundle`, first in the next plan.
+- **Dropped** (owner 15:01 "drop the rest"): the 20 held items held-1121's judges dropped (each with its reason in the
+  next plan) and three stranded keeps not kept on re-verify: AC r11-1 (superseded by dc77c7b8), r9-2 (gain mostly
+  covered by 7790f7e3), Fable fork r1-1 (would delete the test workflow the owner asked to fix).
+- **Bundles rebuilt** (owner 15:01 rulings: landed and superseded tips out, rejected and dropped tips kept):
+  `ac-kept-1121.bundle` (43 refs), `tc-kept-1121.bundle` (36), `fork-kept-1121.bundle` (7) and the two s2-deferred
+  bundles (6 refs each), in `~/Documents/Tools/wt/scratch/s1110/bundles/`; `INDEX.tsv` (98 rows) and
+  `DROPPED-1121.tsv` (108 tips left out). The old bundles (`ac/tc/fork-unlanded-1121`, `ac/tc-r44-2-1121`,
+  `h1121-{ac,tc,fork}`) are deleted; their names in this report and `branches.md` map through `INDEX.tsv`. Recipe in
+  `branches.md`.
+- **Cleanup, third pass** (21:23-21:40): the second pass's vetoed actions done; `scratch/s1110` 11.74 -> 2.31 GiB,
+  about 10 GiB freed; every action in `scratch/s1110/wrap/cleanup3_actions.tsv`. The Desktop AC, psd-tools and Desktop
+  TC checkouts fast-forwarded to main at 21:25.
+- **Card timelines closed** (owner 21:45: "i dont plan to do timelines work again"). `~/Documents/Tools/firstrepo.git`
+  (verified intact) and `~/Documents/Tools/discord-archive` move to the owner's external SSD. `~/Downloads/Old
+  TTSCardMaker` was already gone before the owner's 16:54 "delete it" (moved to the Trash through Finder at 15:02, the
+  Trash emptied; who did it is not recorded).
+
 ## Left
 
 All in `docs/NEXT_SESSION_PLAN.md`. Headlines: research again (about 8 rounds a lane, ship every 4, then finish
@@ -530,4 +565,4 @@ clone in `~/Downloads` (the owner's calls); the owner's TTS and website checks; 
 - `accepted.md`: 400 accepted ideas by lane and round, with where each shipped.
 - `rejected.md`: 68 rows; 38 ideas not built or dropped in the end, each with its reason in one line.
 - `branches.md`: every branch, bundle ref and git store adjudicated (11-21), the owner's rulings on the bundled tips,
-  and how to fetch a tip back.
+  how to fetch a tip back, and the 11-21 evening addendum (rebuilt bundles).

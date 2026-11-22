@@ -12,12 +12,15 @@ CardBrowser; the 422 verified ideas and every accepted and rejected title); earl
 session's binding lines are in `~/Documents/Tools/wt/scratch/s1110/BRIEF.md`; the ones that last are under Standing
 rules below.
 
-The Desktop AutoCroissant checkout and the fork's `~/Documents/Tools/psd-tools` were fast-forwarded to main at the
-wrap-up (owner 11-21; the stray `caches_now.tsv` deleted). If a checkout is behind, `git pull --ff-only` first. Wave 2
-left nothing half-done: every kept item landed, every run was green, and the jetson runs AC 0d2de792 (the same bot
-modules as main). Three runs were still going when this plan was written (11-21 ~16:00): held-1121 (the held items'
-retries and the stranded keeps), the website favicon and header logo, and the timelines rulings. What they landed is in
-the BRIEF's last lines.
+The Desktop AutoCroissant checkout (add5194d), the fork's `~/Documents/Tools/psd-tools` (977e4067) and the Desktop
+TTSCardMaker clone (5f22cef0) were fast-forwarded to main at 21:25 on 11-21 (the stray `caches_now.tsv` deleted
+earlier). If a checkout is behind, `git pull --ff-only` first (TC with `GIT_NO_LAZY_FETCH=1`). The session ended at
+21:22 on the owner's "Wrap up now, defer all 5": nothing is half-landed, five built items wait in bundles (first under
+Waiting), and the jetson runs AC add5194d (main). `~/Documents/Tools/firstrepo.git` (verified intact) and
+`~/Documents/Tools/discord-archive` move to the owner's external SSD (11-21 night): when a task needs the pre-wipe
+history or the archive, ask the owner to plug the SSD in. `~/Downloads/Old TTSCardMaker` is gone: it was moved to the
+Trash through Finder at 15:02 on 11-21, before the owner's 16:54 "delete it", and the Trash emptied (who did it is not
+recorded); firstrepo.git holds its history.
 
 ## Starting prompt
 
@@ -40,147 +43,114 @@ Ship under the push locks with the full suite and Card-sweep trailers on silent 
    whose reviewer confirmed a real gain one more try (two judges first: still needed, no ruling against it, the
    regression fixable). All of it lands before the wrap-up.
 3. **The other open tasks** below, beside the rounds where their ground doesn't clash (at most 2 workflows).
-4. **Card timelines**: live since 11-17. More work on them only when the owner asks.
+4. **Card timelines**: CLOSED (owner 11-21 21:45: "i dont plan to do timelines work again"). The live site keeps the
+   `history` branch b8e865a8; per-card image versions keep updating from main in Actions. If ever needed: plug in the
+   SSD and set `DISCORD_ARCHIVE` and `TIMELINES_FIRST_GIT` to its paths.
+
+The five deferred items (first under Waiting) are built: they need only a rebase, the verify for r44-2 and x37, the
+full suite and a land.
 
 ## Waiting from this session
 
+### Deferred from 11-21 (do these first)
+
+Owner 11-21 21:22: "Wrap up now, defer all 5". Workflow ships2-1121 built all five (owner 16:54: retry x31, r52-1,
+r44-2 and x37; the Papyrus mock-up "Fix it now") and was stopped before any landed. Every tip lives only in
+`~/Documents/Tools/wt/scratch/s1110/bundles/s2-deferred-1121-ac.bundle` and `s2-deferred-1121-tc.bundle` as
+`refs/heads/s2/<item>` (full SHAs in that folder's `INDEX.tsv` and `wrap/branch_record.tsv`; prerequisites AC 847b1fe0,
+b9aa05e3 and TC b62f36de, f66c280c, ee16083b, all on main). Each needs a rebase onto today's mains (AC add5194d, TC
+5f22cef0), the full suite and a ship under the locks (TC first where the AC tests read the site). Get one back:
+
+```
+B=~/Documents/Tools/wt/scratch/s1110/bundles
+git -C ~/Desktop/AutoCroissant fetch $B/s2-deferred-1121-ac.bundle refs/heads/s2/x31:refs/heads/work/x31
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch $B/s2-deferred-1121-tc.bundle refs/heads/s2/x31:refs/heads/work/x31
+```
+
+- [ ] **x31, the D15 rest** (owner-directed 11-17 ~00:30; from r51-1): a typed character the line's font can't draw
+      keeps the font the card prints it in, so an edit never erases it. Verified keep: the old objection is fixed
+      (Minecraft Panda's round trip 0 px, its '2' keeps Minecraftia and its shift); round trips Wickerbottom 23,161 ->
+      480 px, Ancient Fuelweaver 21,516 -> 104, Crock Pot 13,956 -> 117; 329 targeted tests. Landing bumps psd_details
+      VERSION 13 -> 14 (71 cards gain "faces"): one Card sync re-read of every record. The verifier flagged for the
+      owner (not blockers): NiseSegaSonic's own '"' is a huge 2-shaped glyph, so a typed curly quote prints like 'CALL
+      IT 2BOB2' and Sonic's Ability re-lays about 17% smaller (D13 + D15; main prints the same for a straight quote);
+      the mock-up then shows that font's '%' on Sonic's redrawn line 2; `site/NOTES.md` still says kept letters follow
+      Battle Spear's Chiller '%'. `s2/x31`: AC 16ab7835 (8 commits on 847b1fe0), TC bb16d3d0 (4 on b62f36de). Left:
+      rebase, fix the NOTES.md line, full suite, land, watch the VERSION 14 re-read.
+- [ ] **r52-1, titles over the stars** (actbake): a title edit that would print over the stars or type icons is set
+      smaller until it clears them (13 of 13; the rest byte-identical to main). Verified keep: the round's objection
+      (a second edit of a shrunk title printed full size over the icons) is fixed, checked with chained bakes on 11
+      cards, together with r40-1's stars undo. `s2/r52-1`: AC 8d7c1440 (2 on 847b1fe0), TC a48251a2 (1 on f66c280c).
+      Left: rebase, full suite, land.
+- [ ] **Papyrus mock-up** (owner "Fix it now", 16:54): on The Great Papyrus the mock-up drew added words over the
+      spaghetti picture beside the Ability text; now pictures over a text layer stay over the new words, as the bake
+      lays them. Verified keep. `s2/papyrus-mockup`: AC 605ebbd3 (1 on 847b1fe0, "Plates: pictures over a text layer
+      as covers"), TC b445f691 (1 on f66c280c). Left: rebase (TC applies with `git am -3` over ee16083b's mockup.js),
+      full suite, land.
+- [ ] **r44-2, the Stats table** (cards): a Stats chart's table is drawn on its first Table press, not built hidden on
+      every visit (#/stats 18,929 -> 6,769 elements); the round's objection (Series shown while Subseries is pressed) is
+      fixed in the build. Built, verify unfinished (ships2 stopped). Two variants: `s2/r44-2` (builder: AC ac4deb7e on
+      847b1fe0, TC d02ae198 on b62f36de) and `s2/r44-2-v` (the verifier's rebase: AC 3151073b on b9aa05e3, TC ae131385
+      on ee16083b). The AC test needs the TC change landed first. Left: finish the verify, rebase, full suite, land.
+- [ ] **x37, the Preview tab** (actbake): the tab where a preview is pressed does the checking, and a "starting" press
+      now counts for the tab in front (the retry's objection: a move to another tab before the dispatch answers waited
+      about 18 s). Built, verify unfinished. `s2/x37`: AC 6fce267f (3 on b9aa05e3), TC 85f8c0d6 (3 on ee16083b). Left:
+      finish the verify, rebase, full suite, land.
+
 ### Research items
 
-Owner 11-21 15:01 on the held items in this section (r60-2, the retries not kept, x5 and x2, the round rejects, cards
-r44-2, the details memo): "retry the most impactful ones, to finish within ~3 hours. drop the rest." Workflow held-1121
-does it (by ~18:00; at this writing it builds actbake r40-1 and x30 and ships the stranded keeps below). What it lands
-gets ticked; the rest are dropped (kept here as a record; don't retry them unless the owner asks), except the D15
-rest, the owner's own open request. Every tip of these items lives only in a bundle (`ac-`, `tc-`, `fork-unlanded-1121`,
-cards r44-2 in `ac-`/`tc-r44-2-1121`, all in `~/Documents/Tools/wt/scratch/s1110/bundles/`); refs, verdicts and the
-fetch recipe: `docs/Finished/session-2026-11-10-21/branches.md`.
+Owner 11-21 15:01 on the held items: "retry the most impactful ones, to finish within ~3 hours. drop the rest";
+on the 7 stranded keeps: "Ship now, re-verified". Workflow held-1121 did both. Landed on 11-21 evening:
 
-Wave 2 landed every kept item on 11-21: wave 2a cards (11 items: r58-3, f11, x1, x6, x9, x16, x17, x21, x25, x28,
-x32) at 08:07, AC ab9c7349 (deployed), TC 68961a8b + save 6950590a; wave 2a actbake (12: f5, f9, x10, x13, x14, x18,
-x19, x20, x22, x24, x29 and the early save r60-1) at 09:23, AC f0f4c7c1, TC 0911ce04; wave 2b cards (x35, x36, x39,
-x40, x41) at 10:54, AC 0d2de792 (deployed), TC f769e0fc + save 33c6ce3c; wave 2b actbake (x12, x23, x33, x34, x38) at
-12:27, AC ea0db694, TC 0cb95c33. Only r60-2 was left out:
-
-- [ ] **AWS warm-up** (actbake r60-2, finish item n=4; proved, not shipped): card jobs on GitHub's AWS runners read node
-      and Python into memory in the background first. The builder's proof on the fork's origin (11-21): first step to
-      the end of the venv check, network wait included, 8.52 s cold against 3.60 s warmed on AWS (+4.92 s, medians of 10
-      and 8 probes, p=0.017; the venv check step alone 1.67 -> 0.06 s); no change on Azure. Wave 2a's verifier ran its
-      own proof (180 probes, 19 on AWS): first step to venv checked 6.61 -> 3.66 s, +2.95 s at the median (p=0.0006, 95%
-      CI 2.2-5.2 s); both proofs pooled (37 AWS probes) +3.7 to +4.1 s; Azure 3.04 -> 3.22 s (noise). About 1 job in 5
-      runs on AWS (25 of 142 real jobs 11-19 to 11-21; Card data 3 of 19). Not shipped: the gain is real but smaller
-      than built and clears the 11-16 research bar only on its narrowest reading (owner 11-21 ~01:50: when unsure, ship
-      nothing doubtful). Nothing regressed. Decide it against the bar with these numbers. TC abb071f5
-      (`work/actbake-1110-r60-2`, only in the TC bundle; its AC side has no commits).
+- [x] x30: the page under a card dialog goes inert after the paint (TC f66c280c, AC tests 5e6080b4; 18:51).
+- [x] actbake r40-1: a stars shrink comes back to the maker's stars on an undo (AC b9aa05e3, TC ee16083b; 19:23), with
+      fork r11-0 (template bar pixels read raw) in the same AC push.
+- [x] Fable fork r1-0 (CPU parity nudge), r2-0 (history_pairs tool), r2-1 (Group.new() pass-through + same_picture
+      tool): fork main 619b5f4b, tag `cards-20261121b`, AC pin 1492173c (20:38).
+- [x] The bot's /query skips the website's and the TTS save's PNGs (header-logo skeptic): AC f4c08596, deployed 21:05.
+- [x] Website favicon and header logo (owner's icon B1; ringless logo in the text colour): TC 92e0e24 (21:05).
+- [x] Timelines owner answers 3 (16:54): history b8e865a8, TC 5f22cef0, AC add5194d, deployed 21:05.
+- [x] Fork CI fix (owner "Fix the tests now"): fork main 977e4067, Tests 19/19 green (run 44987185766), the first
+      green run since 11-15; test-only, no release.
 - [ ] **Early save, watch item (d)** (r60-1, landed in wave 2a: TC d01f81cd, notes (a)-(c) fixed in 79d79682, checks
       0911ce04): the guards' Land onto a main that a Card sync save has already moved has never run on a real push.
       The early save is proven only by the next guarded push that re-exports a PNG: watch Land retrying, the
       follow-up's re-pin, and the early 'Card sync: TTS save updated' commit with its one extra #github-updates post.
-- [ ] Seven verified changes never shipped (stranded 11-11..11-14): AC work/r9-2 6a2f49b6 (Bars: art fill reads the
-      alpha alone), work/r11-0 ef95dcbf (Bars: template bar pixels read raw; Empress Bulblax's bars drawn as Photoshop
-      draws them), work/r11-1 031fb786 (Plates: a merge's view redrawn on its rows only; with r11-0, Card checks 152.3
-      -> 137.3 s, -9.9%, on 13 cards); fork work/fable-fork-r1-0 0d663338 (CPU parity nudge; proven only on non-AVX-512
-      CPUs), r1-1 f7ec40a0 (one cards CI workflow in place of upstream's four), r2-0 bd0aa15b (history_pairs tool),
-      r2-1 3d14ac57 (Group.new pass-through + same_picture tool). Tips only in
-      `scratch/s1110/bundles/ac-unlanded-1121.bundle` and `fork-unlanded-1121.bundle` as `refs/heads/<name>`. Owner 11-21
-      15:01: ship now, re-verified (workflow held-1121, running at this writing). Whatever did not land: rebase,
-      re-verify, two judges, ship.
 
-Not kept after their one retry (11-20/21). Each gain was reproduced; each is blocked by a named regression. Retry only
-with the fix. Ids as in `scratch/s1110/final-1120/final_a_results.json`. Every branch named in this plan was deleted
-(the wrap-up cleanup, 11-21; the fork's `work/research-1110` with r15-2's landing) after being recorded in
-`~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` and bundled in `~/Documents/Tools/wt/scratch/s1110/bundles/`
-(`ac-unlanded-1121.bundle`, `tc-unlanded-1121.bundle`, `fork-unlanded-1121.bundle`; cards r44-2 in
-`ac-r44-2-1121.bundle` and `tc-r44-2-1121.bundle`; each verified): the tips below live only there. The retries are
-bundle refs `refs/wrap/<sha>`, the round branches `refs/heads/work/<lane>-r<n>-<m>`; get one back with `git fetch
-<bundle> <ref>:refs/heads/<name>` (in TC with `GIT_NO_LAZY_FETCH=1`). The SHAs are unchanged. The orchestrator rebuilds
-the bundles at the end of 11-21 (owner: landed and superseded tips out, rejected tips kept): `git bundle list-heads`
-shows what each holds.
+Dropped (owner 15:01 "drop the rest"; held-1121's two judges each; don't retry unless the owner asks). Tips kept in
+the bundles (below):
 
-- [ ] **D15 rest, owner-directed (11-17 ~00:30)** (x31, from r51-1): a typed character the line's font can't draw keeps
-      the font the card prints it in (else Myriad Pro), so an edit never erases it. Not kept: the step back to the body
-      font changes only the Font, so typed letters keep a stray run's size and baseline shift (Minecraft Panda's '2'
-      drops like a subscript; Spice's new line prints huge). Fix: give such a letter the body run's whole style, or skip
-      the step when size, shift or scale differ; re-run the census and the Panda round trip. AC fa13c489, TC d20c1105
-      (was `work/actbake-1110-x31`).
-- [ ] x4: Mock-up: an edit the card's font draws the same keeps the card's own pixels. Not kept: Dr. Robotnik's
-      Roboticizer's apostrophe is in another font, so the bake restyles it and the build hides that (about 50 layers mix
-      fonts, sizes or shifts on one line). Fix: per-letter style in psd_details, or no shortcut when a layer has more
-      than one font. AC c6e4ec99, TC d05bf5c0.
-- [ ] x26: Rulebook and Stats icons load as they come near (-22% bytes on the Rulebook's first open). Not kept: icons
-      show blank in rulebook search results (0.3-0.7 s) and same-book jumps (up to 1.44 s on a 3G phone). Reviewer's
-      suggestion: ship 494d9cba's wake() alone, without the lazy icons. AC e7e6e3ee, TC 494d9cba.
-- [ ] x27: Bake: a re-edited Ability is fitted against the card maker's own text. Not kept: the stored ink (about
-      10 KB a verdict) breaks Card sync's merge of bake records on Linux (one jq argument over 128 KB) once about 13
-      Ability bakes wait. Fix: pass the verdicts as files (`--slurpfile`), test a 200 KB artifact, ship it with the AC
-      change. AC 129df760, TC 824bb993.
-- [ ] x30: Card dialogs make the page under them inert on the first Tab (open and close about 40% faster). Not kept:
-      opening the profile editor from a dialog puts focus on the header instead of the form. Fix: run a pending seal
-      before any view render. AC ac82a0e7, TC 2b11af0f.
-- [ ] x37: Rendered preview: the tab where a preview is pressed does the checking. Not kept: a move to another tab in
-      the first second still waits about 18 s. Fix (tried in scratch): count "starting" presses in claim(), then a fresh
-      browser check. AC 6109c566, TC 6e439e89.
+- actbake r1-1 (Ability on the old baseline): covered since; geoDraw draws on the plate's own baselines.
+- x5 / actbake r10-0 (guarded push waits for Landed): gain gone (kept push lane) and against the early save r60-1.
+- actbake r23-0 (Commit main skips the PDF wait): 3 pushes instead of 2 on some lanes, beyond the P-2 amendments.
+- actbake r39-0 (new type icon from covering layers): worse on 6 of 32 cards, against the 11-09 icon-look ruling.
+- actbake r42-0 (first preview press warm): race regressions on code that moved a lot since 11-16.
+- actbake r54-1 (lifted Ability back to the maker's place): the mock-up half makes follow-up previews worse.
+- x2 / actbake r7-0 (kept lines by letters): done since (geoDraw / geoPlan).
+- actbake r7-2 (keep the card's letters in a one-line edit): covered since by geoPlan's splice.
+- actbake r2-1 (shrink only with more lines): superseded by roomBelow (D12, x23, x34).
+- actbake r60-2 (AWS warm-up): +3-4 s on AWS runners only (about 1 job in 5), under 1 s a job on average.
+- cards r10-0 (related strips load in view): blank strips; the fix costs most of the byte gain.
+- cards r10-1 (small per-card history file): done since (per-card versions files, 11-18).
+- cards r21-0 (`sizes="auto"` grid tiles): bytes on 1x desktops only; status cards softer.
+- cards r22-0 (smaller rulebook copies): bytes on 1x-1.5x desktops only; clashes with x16/x17.
+- cards r25-0 (one screen look-ahead): no fix keeps the gain.
+- x4 (mock-up keeps the card's pixels for same-looking edits): needs per-letter style data.
+- x26 (lazy rulebook icons): blank icons are built in; wake() alone would be a new idea.
+- x27 (Ability fit against the maker's text): its ink breaks Card sync's jq merge (E2BIG) once ~13 bakes wait.
+- Details memo, fork r3-1 and r4-3: Actions CPU only (3-4% on unpicked cards), below the bar.
 
-Dropped by the judges and never built: x3, x7, x8 and x11 (all done since) and x15 (against the exact mock-up, owner
-11-21). Two were split, so the next judges look again (tips only in the bundles):
+Stranded keeps not kept on re-verify: AC r11-1 (Plates: a merge's view redrawn on its rows only) superseded by
+dc77c7b8; AC r9-2 (Bars: art fill reads the alpha alone), its gain mostly covered by 7790f7e3; Fable fork r1-1 (one
+cards CI workflow) would delete the test workflow the owner asked to fix.
 
-- [ ] x5 (actbake r10-0): a guarded push's own Bake and save waits for the guards' Landed and saves; the follow-up's
-      main lane then skips. Dropped 2-1. Two judges: gone on today's mains (the kept push lane saves sooner; on the 8
-      follow-ups since 11-12 the follow-up was ready by Landed). The third: still missing on pushes whose fixes change
-      a picture (b156a96d, 11-18: save at +79 s, the push lane ready since +13 s). Check it on the next such push,
-      beside the early save (r60-1). AC 5598470f, TC 8496a843.
-- [ ] x2 (actbake r7-0): the mock-up matches kept Ability lines by their letters, not their colour runs. Dropped 2-1.
-      Two judges: done since (drawText tries the plate's own line layout first; keptLines runs only when that doesn't
-      draw). The third: retry parts (a) and (b) without the dy move (76 better, 0 worse when the reviewer measured
-      them). AC a35ce841, TC ae380cfa.
-
-Rejected in the rounds and not retried (`rejected.md` section 1 of the report has all 21). These 15 were turned down
-for a named regression: 13 had their gain reproduced; r7-2's pixel scores reproduce, but its regression is in the very
-edits it targets. For the other 6 the gain was not reproduced or did not hold up, or the change broke a site contract
-(r15-3). Two judges first: some may be done since. Their tips live only in the bundles.
-
-- [ ] actbake r1-1: a redrawn Ability sits on the old text's own baseline, measured per font. Regression: a shrunk new
-      text sits on the old, larger baseline (pushed down, once off the card). AC 137bdd7e, TC bd3d3fcc.
-- [ ] actbake r2-1: an Ability shrinks only when it needs more lines than the old text. Regression: Life Link's text
-      runs off the card again; Sans, Poorly Drawn Cabbage and Mangle worse. TC adf4f5e5.
-- [ ] actbake r7-2: in the one line an Ability edit changes, the mock-up keeps the card's own letters around the change
-      and draws only the changed ones (one-number edits: wrong px median 3656 -> 318). Regression: about 1 one-number
-      edit in 5 shows bits of the old digit or the wrong text, which the pixel score counts as better. AC 168c2502,
-      TC 25695371.
-- [ ] actbake r23-0: Card sync's Commit main stops waiting for the Rulebook PDF (TTS save 12-21% sooner, modelled
-      from logs). Regression: its new PDF step starts before the book fonts are in the checkout. AC 4db5c3ce, TC
-      040ea6f2.
-- [ ] actbake r39-0: a new type icon copies only the clipped layers that cover the whole reference icon (32 cards).
-      Regression: the new icon looks worse on 6 of them (White Space most). AC 03a1248e, TC c662cfeb.
-- [ ] actbake r40-1: going back to the maker's star count after an option-B shrink brings back the maker's stars
-      (finishing D14; 66 round trips on 23 cards). Regression: a new helper `_offset` replaced psd_edit's existing one
-      and broke the comp bakes: rename it. AC dd18a196, TC 9566bd52.
-- [ ] actbake r42-0: the first preview press is warm too (the site starts a lane when an editor changes a printed
-      field). Regression: a late warm-up hand-over can point the next press at a lane that has ended. AC aec4ed01, TC
-      6199cb8d.
-- [ ] actbake r52-1: a title edit that would print over the stars or type icons shrinks until it clears them (13 of 13
-      fixed). Regression: a second edit of a shrunk title prints at full size over the icons, with no note. AC
-      6480d339, TC fb14d299.
-- [ ] actbake r54-1: an Ability an earlier bake lifted goes back to the maker's place on its next edit (22 of 22
-      lifted status Abilities fixed). The AC bake part holds; the TC mock-up part made a follow-up preview worse: ship
-      the bake alone or fix the mock-up. AC 61be6f6a, TC 33eb406a.
-- [ ] cards r10-0: card pages' related strips load their pictures once in view (desktop -15% bytes). Regression: some
-      strips stay blank on desktop (29 tiles on 7 of 41 pages). AC a1af2a3a, TC e4961e73.
-- [ ] cards r10-1: the card dialog reads a small per-card history file (desktop -12% bytes). Regression: positions
-      shift between builds, so a deploy while a page is open shows the wrong history. versions.json is gone since 11-19:
-      check what is left. AC a074e520, TC fc828639.
-- [ ] cards r21-0: grid tiles pick their picture by drawn width (`sizes="auto"`; first screen -13 to -21%).
-      Regression: the 64 status cards' square pictures get visibly softer. TC 9a9ba84f.
-- [ ] cards r22-0: smaller rulebook copies of card pictures, the cover and the table map (whole book -17% bytes).
-      Regression: the ban list's `<img>` lost its shape under `sizes="auto"`: give it width and height. AC 98dffe2b,
-      TC 2cfa5dd6.
-- [ ] cards r25-0: grid tiles load one screen ahead, not Chrome's ~1250 px (first screen -17 to -23%). Regression:
-      more blank tiles while scrolling on slow networks. AC 2f5642a1, TC ea7d3d01.
-- [ ] cards r44-2: a Stats chart's table is drawn on its first Table press, not built hidden on every visit (10,746 of
-      16,861 elements; load -9%, filter changes -10% on a phone). Regression: it shows the wrong table (Series while
-      Subseries is pressed). AC 3017ef00, TC f12a757e (only in `ac-r44-2-1121.bundle` / `tc-r44-2-1121.bundle` as
-      `refs/heads/cards-1110-r44-2`, rescued 11-21 from the Desktop clones' objects).
-
-The research4 backlog (28 ideas, `scratch/s1110/research4/args.json`) is all built and judged; r54-1 above is the only
-one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already covered on main and n=6 by r60-3.
+Bundles (rebuilt 11-21 21:23-21:33 per the owner's 15:01 rulings: landed and superseded tips out, rejected and dropped
+tips kept): `ac-kept-1121.bundle` (43 refs), `tc-kept-1121.bundle` (36), `fork-kept-1121.bundle` (7), plus the two
+s2-deferred bundles above, all in `~/Documents/Tools/wt/scratch/s1110/bundles/`. Refs keep their original names
+(`refs/heads/work/<lane>-r<n>-<m>`, `refs/wrap/<sha8>`, `refs/heads/cards-1110-r44-2`, ...); `INDEX.tsv` lists all 98
+(bundle, ref, sha, item, verdict; "(was <old>.bundle)" maps the old names), `DROPPED-1121.tsv` the 108 tips left out.
+The SHAs in the report and branches.md are unchanged. Get one back with `git fetch <bundle> <ref>:refs/heads/<name>`
+(in TC with `GIT_NO_LAZY_FETCH=1`).
 
 ### Card fixes
 
@@ -204,12 +174,11 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
       fork main 82be96d2, tag cards-20261121; AC dcf0b6f9 'Pin cards-20261121 (fork r15-2)' (full suite 1289). Fork
       Tests 44962115008 red on the same 17 tests as the old pin's run 43690498999 (16x
       test_gradient_lookup::test_the_lookup_is_interp1ds on windows/3.11, test_fonts::test_platform_dirs_linux):
-      there since 11-15, none new. The run deleted the fork's `work/research-1110` (be32812f, still in
-      `fork-unlanded-1121.bundle`).
-- [ ] Details memo (AC `work/r3-1` 22e09b0c, `work/r4-3` 485dd38b, only in `ac-unlanded-1121.bundle`: star pieces
-      and core boxes read once per gather; the fork lane measured -54% of details CPU on its sample, round 23): rebase
-      onto AC main and measure against the research bar before building on it.
-- [ ] **Retire game reports** (owner 11-13: after the timelines): delete `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` and
+      there since 11-15, none new. The run deleted the fork's `work/research-1110` (be32812f; left out of the
+      rebuilt bundles as landed, SHA in `wrap/branch_record.tsv`).
+- [x] Details memo (AC `work/r3-1` 22e09b0c, `work/r4-3` 485dd38b): dropped 11-21 (owner 15:01; held-1121's judges:
+      Actions CPU only, below the bar). Tips in `ac-kept-1121.bundle`.
+- [ ] **Retire game reports** (owner 11-13: after the timelines, which closed 11-21): delete `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md` and
       the `/report_game` lines in `docs/Campaigns/SIMULATOR_CAMPAIGN.md` and `docs/Future/SIMULATOR.md`.
 - [ ] **D24**: put the stoogedings build number in the font's name at the next font build (no build since 11-15).
 - [ ] **TTS Saves folder** (owner 11-13): delete the old test save 'AC test 11-11 tooltips 2'. The folder's copy of the
@@ -220,38 +189,28 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
 - [x] **Desktop TC promisor duplicates**: the wrap-up deduped pack-185d66d5, 4080ec91, 239227ea and c94ca1fd (clean
       dry runs, `fsck --connectivity-only` passed) and removed a 0.91 GiB tmp pack: TC packs 32.3 -> 28.2 GiB. The
       second cleanup (11-21 afternoon) deduped 12 more pure copy packs: 28.2 -> 25.9 GiB (fsck ok, 0 objects missing).
+- [ ] **Desktop TC pack files**: the clone holds 1,178 pack files (11-21). A careful promisor repack at a quiet time
+      (no agents running; every object and promisor flag kept; `fsck --connectivity-only` after); never a gc or fetch
+      that lazy-fetches.
 - [x] **Two TC packs of unknown origin**: found and kept. pack-333ff011 (8.47 GiB) is the fresh blobless clone's
       checkout of 11-10: 2,575 blobs found nowhere else, all reachable (2,109 in today's checkout, 466 older versions
       on main; 343 in the AC tests' pin tree). pack-8cfce261 (0.98 GiB) is the timelines lane's blob fetch by id of
       11-15: 191 older card image versions, all reachable. Dropping either would lazy-fetch or break the clone.
-- [ ] Cleanup leftovers (11-21: the wrap-up, `~/Documents/Tools/wt/scratch/s1110/wrap/run-1121/`; the second pass,
-      `wrap/adjudicate/` and the report's "Cleanup, second pass"):
-      - The second pass's vetoed items, held back only because held-1121, r15-2, the favicon ship and timelines-apply
-        were reading inside them: re-gate them when those runs are done. In `scratch/s1110` 25 of 29 actions, about
-        9.9 GiB (`wrap/adjudicate/s1110.tsv`; the gate's re-gate list is in the report; -22, the `ojw-*` round
-        folders, is not on it: `ojw-handover/rounds.md` points at them). In old scratch: the APFS clone
-        dedup of 71 oracle PSDs in `s1107/fork` (`wrap/adjudicate/clone_dedup.sh --do` under `taskpolicy -b nice -n
-        15`, up to 1.7 GiB); the packs of opt-round3/4, alt-template, layouts, pkgtest, vl1113, s1107/r1-3 and
-        s1107/status, keeping the files memory and this plan cite (opt-round4's `skeptic-cm-a1-tools/proposed2.py`,
-        `alt-template/census/`, `s1107/status/census.*`); `~/Documents/Tools/discord-archive/derived/preview/site`
-        (208 MiB) once the timelines rulings are live. Also `s1107/fork/s1110-r9m/ac-6a2f49b6` and `ac-b06e4940` (17
-        MiB, r9-2's tree) once r9-2 has landed.
-      - `scratch/s1110` is 14.9 GiB at this writing: the running runs grew it (h1121 alone 2.4 GiB).
-      - `scratch/s1109/wrap/ac-actions-1108.bundle` and `tc-actions-1108.bundle` (42 KiB) kept: their heads are not
-        ancestors of main (the work landed rebased). `scratch/s1109/wrap/tc-unlanded-1110.bundle` (the previous
-        session's record) is not adjudicated: a fetch into a temp repo failed.
-      - `s1110/v-x13` and `s1110/x23-merge` (about 8 MB) still in place: pack them in the change that drops this line.
-      - `scratch/s1109/wrap/fetchblobs.sh` points at the deleted `tcx-repin` clone's `card-guards.yml` (named only by an
-        11-10 memory line).
-      - Memory `card-timelines-project` still points to the deleted review pages focus, final and meme (their
-        generators `scratch/s1110/timelines/focus/make_*.py` remain). The review folder's `index.html` goes after the
-        timelines update lands.
-      - Done: every work/scratch branch and worktree recorded, bundled and removed (117 worktrees -> 1, 177 local
-        branches deleted, none on GitHub), the review pages final, focus and meme 1-4 deleted (the server was not
-        running), the 288 Photoshop relink references deleted, 3 leaked x13 workers killed. Second pass: every ref
-        adjudicated (`docs/Finished/session-2026-11-10-21/branches.md`), cards r44-2 rescued into bundles, about 3.3
-        GiB freed (12 TC copy packs 2.24 GiB, 185 tree copies, logs, profiles), research3's and CardBrowser's run
-        folders packed into `scratch/s1110/archive/`, the decided review pages deleted (owner 15:04).
+- [x] Cleanup, third pass (11-21 21:23-21:40): the second pass's 25 vetoed `scratch/s1110` actions done (rebuildable
+      bulk deleted, 13 archives packed into `scratch/s1110/archive/`), old scratch packed with the cited files kept
+      (opt-round3/4's `plan.json`, opt-round4's `skeptic-cm-a1-tools/proposed2.py`, `s1107/status/census.*`;
+      `alt-template/` left whole), the APFS clone dedup run (the 71 PSDs were already clones). `scratch/s1110` 11.74 ->
+      2.31 GiB, about 10 GiB freed. Every action: `scratch/s1110/wrap/cleanup3_actions.tsv`; plan and what was held
+      back in `wrap/cleanup3/` (`plan3.tsv.gz`, `excluded3.tsv.gz`). Left in place on purpose: `timelines/`, `s2/`,
+      `h1121/`, the deferred items' folders (any path naming x31, x37, r44-2, r52-1 or papyrus), r9-2/r11-1/Fable r1-1,
+      `strand-a/b/c`, `t1-land`, the `ojw-*` round folders (`ojw-handover/rounds.md` points at them), `x23-merge`,
+      `v-x13`. `~/std-work-1107` holds only `cardapp-bin` and `chrome`. `land1121/suite.sh` was copied back out of its
+      pack for the final docs suite.
+- [ ] Cleanup leftovers, small: `scratch/s1109/wrap/ac-actions-1108.bundle` and `tc-actions-1108.bundle` (42 KiB)
+      kept (landed rebased); `scratch/s1109/wrap/tc-unlanded-1110.bundle` (the previous session's record) not
+      adjudicated: a fetch into a temp repo failed. `scratch/s1109/wrap/fetchblobs.sh` points at the deleted
+      `tcx-repin` clone. Memory `card-timelines-project` still names the deleted review pages (timelines closed: no
+      action needed). The Discord archive's local preview site moves with the archive to the owner's SSD.
 
 ### CardBrowser (owner 11-20/21)
 
@@ -287,7 +246,7 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
       Follow-up build window past Landed, the preview reads at the commit. His push 50ecfca4 (11-20 15:46 PST, the
       guards re-exported 1 PNG) came after all of them shipped: check its runs for them, else his next push.
       Then also the early save (r60-1, wave 2a): proven only by the next guarded push that re-exports a PNG (watch
-      item (d) above), and x5's open question beside it.
+      item (d) above).
 - [ ] The next Card checks run: x12's threaded WebP encode, plates byte for byte as before.
 - [ ] The next bake whose Ability edit moves an effect-layer line: x33 keeps the line's look.
 - [ ] The next Preview image press on the website: x20's 250 ms hand-over checks. x34's caption ("The text runs past
@@ -325,7 +284,7 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
   -n 6 -q -p no:cacheprovider tests` (`-n 3` while the owner games).
-  1289 passed at the final heads (AC ea0db694 + TC 0cb95c33, 11-21); the TC tree must be at or after 0cb95c33 (with an
+  1294 passed at the final heads (AC add5194d + TC 5f22cef0, 11-21 21:01); the TC tree must be at or after 0cb95c33 (with an
   older one, 4 test_site_previews tests skip). Two timing tests flake under `taskpolicy -b` at load 40-60 and pass
   under plain nice (test_card_preview::test_the_lanes_next_cards,
   test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time): re-run them before calling a red
@@ -404,48 +363,44 @@ one rejected and not retried. Of the 11 finish items, n=3 and n=10 were already 
   (`tests/test_site_app_hook.py`) must stay green.
 - Discord archive and card timelines: never copy message text into any repo; derived outputs live outside the repos.
   Answered review items go in with `apply_rulings.py`, a rebuild and `scripts/history_branch.py --push`.
-  `~/Documents/Tools/firstrepo.git` is kept (never delete it). It may live on the owner's external SSD: when a task
-  needs the pre-wipe history and it isn't there, ask the owner to plug the SSD in.
+  `~/Documents/Tools/firstrepo.git` is kept (never delete it). It and the Discord archive live on the owner's external
+  SSD since 11-21 night: when a task needs them, ask the owner to plug the SSD in (`DISCORD_ARCHIVE`,
+  `TIMELINES_FIRST_GIT` point the tools at its paths).
 - Dead and deprecated code is deleted (owner 10-23, 11-12), except the owner's KEEP picks (memory
   `owner-decisions-2026-11-12`).
 
-## State (2026-11-21)
+## State (2026-11-21, final)
 
-Heads at this writing (11-21 ~16:00); held-1121, the favicon ship and timelines-apply may move them (BRIEF's last
-lines).
+Heads at the end (11-21 21:45); nothing in flight.
 
-- AutoCroissant main dcf0b6f9 (11-21 15:41, the r15-2 pin, after the wrap-up's skills and docs 8113496b), deployed on
-  the jetson at 0d2de792 (11-21 10:54, 42 commands): the same bot modules as main (everything since changed only card
-  code, tests, skills, docs and the fork pin). Fork pin `cards-20261121` = 82be96d2 (fork main; 9 fork releases this
-  session, cards-20261111 to cards-20261121).
-- TTSCardMaker main b62f36de (11-21 15:12, Beholster's names marked intended); data 685a45c3 (psd_details VERSION
-  13); data moves with Card sync; branches `history` (orphan, the timelines' pictures; head 680dbfba since 11-19),
-  `plates` (5e1e786f), `previews`. Last whole-tree Card checks (11-21): 769 records, 0 hand, 33 bars; 0 name flags
-  since 15:14.
+- AutoCroissant main add5194d (11-21 21:05, the timelines owner answers 3, after the /query fix f4c08596 and the
+  `cards-20261121b` pin 1492173c), deployed on the jetson at add5194d (42 commands). Fork pin `cards-20261121b` =
+  619b5f4b (10 fork releases this session, cards-20261111 to cards-20261121b); fork main 977e4067 (the CI fix on top,
+  test-only, Tests 19/19 green).
+- TTSCardMaker main 5f22cef0 (11-21 21:05: timelines answers on 92e0e24, the favicon and header logo); data ea50731e
+  (psd_details VERSION 13); data moves with Card sync; branches `history` (orphan, the timelines' pictures; head
+  b8e865a8), `plates`, `previews`. Last whole-tree Card checks (11-21): 769 records, 0 hand, 33 bars, 0 name flags.
 - CardBrowser: `MichaelJSr/CardBrowser` main 6437f11 = pre-release v0.1.1 (v0.1.0 at 5d9f2bf); source
   `~/Documents/Tools/wt/cardapp`.
-- Branches (second cleanup, 11-21 afternoon): every ref adjudicated in
-  `docs/Finished/session-2026-11-10-21/branches.md`; every tip recorded in
-  `~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (200 rows) or, for the 54 landed item branches the waves
-  deleted, `scratch/s1110/final-1120/wave2a_shas.txt` and `wave2b_shas.txt`; unlanded tips only in the bundles (above).
-  Local branches besides main: AC `archive/ai-generation`, `archive/discord-edits`, `archive/local-update-stats`
-  (= GitHub); none in TC or the fork once the running runs land (each removes its own: held-1121's `work/h1121-*` and
-  `wt/h1121-*`, timelines-apply's `work/tl-1121`, `wt/tl-ac`, `wt/tl-tc`, the favicon ship's TC `work/favicon-1121`,
-  `wt/favicon-tc`, AC `wt/favicon-ac2`, this docs run's `work/cleanup2-1121`).
-- Desktop clones: AC and the fork's `~/Documents/Tools/psd-tools` fast-forwarded to main at the wrap-up (owner 11-21;
-  `caches_now.tsv` deleted); TC at 0cb95c33, behind main by the afternoon's TC commits (fast-forward with
-  `GIT_NO_LAZY_FETCH=1` when its tree is clean; an untracked `data/` from 11-19 left as found).
+- Branches: every ref adjudicated in `docs/Finished/session-2026-11-10-21/branches.md` (and its 11-21 evening
+  addendum); every tip recorded in `~/Documents/Tools/wt/scratch/s1110/wrap/branch_record.tsv` (244 lines) or, for the
+  54 landed item branches the waves deleted, `scratch/s1110/final-1120/wave2a_shas.txt` and `wave2b_shas.txt`;
+  unlanded tips only in the bundles (above). Local branches besides main: AC `archive/ai-generation`,
+  `archive/discord-edits`, `archive/local-update-stats` (= GitHub), plus this docs run's `work/final-1121` until the
+  orchestrator lands it; none in TC or the fork.
+- Desktop clones: AC (add5194d), the fork's `~/Documents/Tools/psd-tools` (977e4067) and TC (5f22cef0)
+  fast-forwarded to main at 21:25 (TC with `GIT_NO_LAZY_FETCH=1`; an untracked `data/` from 11-19 left as found).
 - GitHub has only main, data, history, plates and previews (TC), main and the archive/* branches (AC, fork) and the
-  fork's 25 cards-* tags (plus about 125 upstream `v*`/`0.x`/`1.x` tags there, not ours).
+  fork's cards-* tags (newest `cards-20261121b`; plus about 125 upstream `v*`/`0.x`/`1.x` tags there, not ours).
 
 ## Owner
 
 - [ ] CardBrowser's first trial (above).
 - [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (from 11-06; 20-cell split bars, 0-40). Raid bosses (6+ stars,
       `card_models.RAID_STARS`) have no stat limit.
-- [ ] `~/Documents/Tools/firstrepo.git` (48.4 GiB, self-contained since 11-17; no duplicate objects, nothing
-      unreachable, a repack would save about 0): the owner moves it to his external SSD.
-      The old pre-wipe folder `~/Downloads/Old TTSCardMaker` is no longer needed: the owner may delete it.
+- [x] `~/Documents/Tools/firstrepo.git` (48.4 GiB, self-contained since 11-17, verified intact 11-21) and
+      `~/Documents/Tools/discord-archive`: the owner moves both to his external SSD (11-21 night); ask him to plug it
+      in when a task needs them. `~/Downloads/Old TTSCardMaker` is gone (Finder Trash 15:02, emptied).
 - [ ] Choices made unattended since 11-18, for a later look: the report's section "Conservative choices taken while
       unattended".
 - [x] Manual pass on Needs handling: empty since 11-13 (0 hand flags; Tainted Lazarus' flag removed by the owner).
@@ -495,6 +450,20 @@ looks kept; Discord pending-updates left; no TTS JPEG copies (11-07; banded PNGs
   creatures (its types read light + undead until then).
 
 ## Developer
+
+### Follow-ups from the 11-21 evening lands
+
+- [ ] x30's kept trade-off: a press right after a dialog closes, with no pointer move first, can be lost (about 100 ms
+      on a desktop); phones were not measured.
+- [ ] r40-1 (stars undo after a shrink) has had no real round trip yet: check the first website stars edit that undoes
+      a shrink.
+- [ ] Fable fork r1-0's CPU parity nudge is untested on AVX-512 CPUs (test_cpu_parity passed on GitHub's ubuntu and
+      windows x86 runners and on macOS).
+- [ ] x31's flagged side effects (see its item under Deferred): the owner's look at NiseSegaSonic's quote and '%'.
+- [ ] The /query fix (f4c08596) skips `site/` and `TTS/` PNGs (`card_edits.NO_CARD_FOLDERS`); open question: should
+      `MDW/` and `Types/` PNGs (`query_card.NOT_CARDS`) also stop being found by exact name?
+- Not planned (timelines closed, owner 11-21 21:45): 12 other Morgue entries have byte-identical repeat pictures; the
+  owner ruled only on Fireball (Mario), shown once.
 
 ### Follow-ups from the final waves (11-20/21)
 
@@ -561,7 +530,7 @@ call).
 | `CARD_CREATOR.md` | In-browser card creator: designed, not queued (owner 11-10: not yet) |
 | `SIMULATOR.md` | Simulator against the AI or by the numbers: designed, not scheduled (owner 11-10: not yet) |
 | `TTS_CARD_FORMS.md` | Stage 0 passed; parked (owner 11-13) |
-| `CARD_TIMELINE.md` | Built and live 11-17; more only when the owner asks |
+| `CARD_TIMELINE.md` | Built and live 11-17; closed 11-21 (owner: no more timelines work) |
 
 ## Not chosen
 
