@@ -64,6 +64,8 @@ LINE_GROW = 2                               # px the glyphs' ink boxes grow for 
 LINE_COVER = 0.99                           # of the stored ink inside them, at least (live 0.997 and up)
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 TEXTURES = ("pixel", "smartobject", "shape", "solidcolorfill", "gradientfill", "patternfill")   # adjustments alone: none
+COVER_MIN = 0.5                             # a picture over a text layer covers it where its alpha passes this
+COVER_RIM = 2                               # px of fainter alpha kept round that (its edges); a faint overlay: none
 BAND = 4                                    # a letter look's band: the layer's box and 1/BAND of its height past it
 TINT_RIM = 8                                # px past where a layer's tints differ (the view's LANCZOS reach)
 # tints' colours (TTSCardMaker mockup.js PROBES): the RGB cube's corners, then grey
@@ -126,6 +128,47 @@ def crop(psd: PSDImage, layer, png: np.ndarray, icc: bool, step: int, extra=()) 
     box, (plate,), seam, (ink,) = got
     ys, xs = np.nonzero(ink)
     return box, plate, seam, (box[0] + int(xs.min()), box[1] + int(ys.min()), box[0] + int(xs.max()) + 1, box[1] + int(ys.max()) + 1)
+
+
+def covers(psd: PSDImage, layer) -> list:
+    """The pictures drawn over layer that meet its padded box: shown pixel, smart-object, shape or fill layers above it in
+    a normal blend (their groups' too), neither clipped nor FX layers (the bake moves those with their words)."""
+    from psd_tools.constants import BlendMode
+    box, above, out = _padded(layer), False, []
+    if box is None:
+        return out
+    for other in psd.descendants():
+        if other is layer:
+            above = True
+            continue
+        if not above or other.kind not in TEXTURES or other.clipping or EFFECT_LAYER_TAG in other.name or not other.is_visible():
+            continue
+        node, plain = other, True
+        while node is not None and node is not psd:
+            plain = plain and node.blend_mode in (BlendMode.NORMAL, BlendMode.PASS_THROUGH, BlendMode.DISSOLVE) and \
+                (node is other or not node.clipping)
+            node = node.parent
+        b = other.bbox
+        if plain and b[0] < box[2] and box[0] < b[2] and b[1] < box[3] and box[1] < b[3]:
+            out.append(other)
+    return out
+
+
+def cover_alpha(psd: PSDImage, layer, box: tuple) -> Optional[Image.Image]:
+    """covers()' alpha over box (canvas px) as a grey image, drawn alone as the card stacks them, where it passes
+    COVER_MIN and COVER_RIM round it; None when it never does (the bake leaves them over the layer's new letters: the
+    mock-up puts them back; fainter, they tint the letters, whose colours the mock-up reads off the card)."""
+    from psd_tools.composite import composite
+    ids = {x.layer_id for x in covers(psd, layer)}
+    if not ids:
+        return None
+    _, _, alpha = composite(psd, viewport=box, layer_filter=lambda x: (x.is_group() and x.is_visible()) or x.layer_id in ids)
+    alpha = alpha[..., 0] if alpha.ndim == 3 else alpha
+    solid = alpha > COVER_MIN
+    if not solid.any():
+        return None
+    near = np.asarray(Image.fromarray(solid.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(2 * COVER_RIM + 1))) > 0
+    return Image.fromarray(np.round(np.clip(np.where(near, alpha, 0), 0, 1) * 255).astype(np.uint8))   # a tint's letters have it
 
 
 def textured(psd: PSDImage, layer) -> bool:
@@ -464,7 +507,8 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
            pictures: Optional[dict] = None, raw: Optional[bytes] = None, card: str = "",
            chart: Optional[Callable] = None) -> Optional[dict]:
     """
-    The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"}, or None when no layer gave one.
+    The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"} (+ "letters", "tints", "covers"),
+    or None when no layer gave one.
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
     layer with FX layers on it has a second crop without them too, its "fx" their status words (the mock-up's when
     one leaves the text: the bake moves FX layers with their words). With fonts_dir, a layer's first crop also has
@@ -474,7 +518,9 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     that never shows none. With raw, a textured layer's letter_look() is in img too: "letters": [{"id", "fill", "box",
     "at"}] (the mock-up fills typed letters of that colour with it); with raw and fonts_dir, a textured or adjusted
     layer's tint_looks() too: "tints": [{"id", "box", "at": [a cut per PROBES], "luma"}] (the mock-up's whole-field
-    colour, mixed from them).
+    colour, mixed from them). A cropped layer under pictures (cover_alpha: Papyrus's spaghetti) has their alpha over its
+    first crop's box, at the view's scale, a PNG of its own: "covers": [{"id", "box", "img"}] (the mock-up puts them
+    back over its new letters).
 
     Args:
         psd: The card
@@ -492,7 +538,7 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
     icc = psd_edit.export_icc(psd, png)
     by_id = {layer.layer_id: layer for layer in psd.descendants()}
     follow = [f for f in (parts or {}).get("follow") or [] if isinstance(f, dict)]
-    found, looks, tints, cropped = [], [], [], set()
+    found, looks, tints, covered, cropped = [], [], [], [], set()
     fields = {p["id"]: "name" if k == "title" else "ability" for k in KINDS for p in (parts or {}).get(k) or []
               if isinstance(p, dict) and p.get("id") is not None}
     tagged = len(variants_of(psd)) > 1
@@ -515,6 +561,13 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
                     found.append(({"id": lid, **_layout(layer, fonts_dir), **({"stacked": stacked} if stacked else {})},
                                   *got))
                     cropped.add(lid)
+                    try:
+                        cover = cover_alpha(psd, layer, got[0])
+                    except Exception as error:      # noqa: BLE001 - none: the mock-up's letters stay on top
+                        print(f"{layer.name}: no cover: {type(error).__name__}: {error}", file=stderr)
+                        cover = None
+                    if cover is not None:
+                        covered.append(({"id": lid}, got[0], cover))
                 fx = [x for x in psd_edit.fx_layers(psd, layer) if _meets(layer, x)]
                 got = crop(psd, layer, truth, icc, step, [*copies, *fx]) if fx else None
                 if got:
@@ -569,8 +622,14 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str
         y += top + im.height + bottom
     buf = BytesIO()
     Image.fromarray(np.concatenate(parts)).save(buf, "AVIF", quality=QUALITY)
+    shut = []                                   # apart, lossless: the sheet's pixels stay as they were
+    for key, box, image in covered:
+        one = BytesIO()
+        image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),
+                     Image.LANCZOS).save(one, "PNG", optimize=True)
+        shut.append({**key, "box": list(box), "img": "data:image/png;base64," + b64encode(one.getvalue()).decode()})
     return {"v": VERSION, "w": psd.width, "crops": crops, **({"letters": letters} if letters else {}),
-            **({"tints": list(tinted.values())} if tinted else {}),
+            **({"tints": list(tinted.values())} if tinted else {}), **({"covers": shut} if shut else {}),
             "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}
 
 

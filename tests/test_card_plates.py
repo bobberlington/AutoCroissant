@@ -29,6 +29,7 @@ CLOT = "3f7040af67a5f605e0220b79051da3d0f9b43e57"       # Clot_Gold.psd (TC 96c3
 BYC = "Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd"   # its title on four layers alone in a group with a Gradient Overlay
 AUTOPSY = "Auxiliary/Items/Autopsy_Report.psd"        # its title printed again in its Evidence box (parts' follow)
 EDEN = "Creatures/Isaac/2 Stars/Tainted_Eden.psd"     # two copies on its title, a few px aside: its red and cyan
+PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"     # a picture over its Ability (the card's pin: before its rename)
 SNAKE = "Auxiliary/Items/Snake.psd"                     # its Ability's fork render past LAYOUT_OFF, its lines the card's
 MONKEY = "14d42952d7b978fd5902d23f2d956f8b0cb828e7"     # Monkey_D_Letion.psd (TC 854b03a8): 'as' on line 4, the fork's 3
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
@@ -64,6 +65,23 @@ def test_plates_of_a_card(clone):
             xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
             assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
     assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
+    assert "covers" not in found                                # its FX layer moves with its word: no cover
+
+
+def test_a_picture_over_a_layer_is_its_cover(clone):
+    """A picture drawn over a text layer (Papyrus's spaghetti beside its Ability's last word) is that layer's cover: its
+    alpha over the layer's crop, at the view's scale, opaque on the picture and clear off it."""
+    psd, png = PSDImage.open(clone / PAPYRUS), Image.open(clone / PAPYRUS.replace(".psd", ".png"))
+    found = cp.plates(psd, png, card_parts(psd, PAPYRUS, "Papyrus", _bare_parser()))
+    (cover,) = found["covers"]
+    crop = next(c for c in found["crops"] if c["id"] == cover["id"])
+    alpha = np.asarray(Image.open(io.BytesIO(base64.b64decode(cover["img"].split(",", 1)[1]))), np.int16)
+    k, picture = cp.VIEW_W / psd.width, next(x for x in psd.descendants() if x.name == "Layer 10").bbox
+    assert cover["box"] == crop["box"] and alpha.shape == (crop["at"][3], crop["at"][2])
+    x0, y0, x1, y1 = (round((v - o) * k) for v, o in zip(picture, crop["box"][:2] * 2))
+    on = np.zeros(alpha.shape, bool)
+    on[y0 - 3:y1 + 3, x0 - 3:x1 + 3] = True                   # LANCZOS's reach
+    assert alpha[on].mean() > 100 and alpha[~on].max() < 8 and (alpha == 255).sum() > 0.3 * on.sum()
 
 
 def test_copies_of_a_title(clone):

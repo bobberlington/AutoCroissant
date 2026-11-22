@@ -497,6 +497,30 @@ out([jobs([30, 2210, 1170, 2388]), jobs(false), jobs(undefined)]);""")
     assert out == [[["+ability", [30, 2210, 1170, 2388]]], [], [["+ability", [405, 1778, 793, 1856]]]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function putCover"), reason="no covers in this mockup.js")
+def test_a_picture_over_the_text_stays_over_the_new_words(tmp_path):
+    """A plate's cover (card_plates.cover_alpha: Papyrus's spaghetti): new letters under it are mixed back to the plate
+    by its alpha, as the bake leaves the picture over them, and said past the old lines' ink; the card's own pixels stay;
+    moved words never take the picture with them (moveInk)."""
+    out = node(tmp_path, """
+const W = 10, H = 2, px = (a, n, c) => { for (let i = 0; i < n; i++) a.set(c, i * 4); return a; };
+const card = px(new Uint8ClampedArray(W * H * 4), W * H, [0, 0, 0, 255]);
+for (const x of [6, 7]) card.set([200, 0, 0, 255], x * 4);                          // the picture, on row 0
+const plate = card.slice(), alpha = px(new Uint8ClampedArray(W * H * 4), W * H, [0, 0, 0, 255]);
+for (const x of [6, 7]) alpha.set([255, 255, 255, 255], x * 4);
+const cover = m.coverCuts({ crops: [{ id: 3, box: [0, 0, W, H] }], covers: [{ id: 3, box: [0, 0, W, H] }] }, () => plate, () => alpha, [3], 1, W, H);
+const drawn = card.slice(); for (const x of [4, 5, 6, 7, 8]) drawn.set([255, 255, 255, 255], x * 4);   // new words across it
+const ctx = buf => ({ getImageData: (x, y, w, h) => { const d = new Uint8ClampedArray(w * h * 4); for (let r = 0; r < h; r++) d.set(buf.subarray(((y + r) * W + x) * 4, ((y + r) * W + x + w) * 4), r * w * 4); return { data: d }; },
+  putImageData: (im, x, y) => { const w = im.data.length / 4 / H; for (let r = 0; r < H; r++) buf.set(im.data.subarray(r * w * 4, (r + 1) * w * 4), ((y + r) * W + x) * 4); } });
+const a = drawn.slice(), b = drawn.slice(), row = buf => [...Array(W).keys()].map(x => buf[x * 4]);
+const said = [m.putCover(ctx(a), W, cover, card, [[0, 0, 4, 2]], 0), m.putCover(ctx(b), W, cover, card, [[0, 0, W, 2]], 0)];
+const wiped = card.slice(); for (const x of [6, 7]) wiped.set([150, 0, 0, 255], x * 4);   // the plate's picture, a little off the card's
+const moved = c => { const o = wiped.slice(0, W * 4); m.moveInk(o, wiped.slice(0, W * 4), card, W, [0, 1], [0, 0, 8, 1], 2, 0, c); return row(o); };
+out([row(a), said, moved(cover), moved(null)]);""")
+    assert out[0] == [0, 0, 0, 0, 255, 255, 200, 200, 255, 0] and out[1] == [True, False]
+    assert out[2] == [0, 0, 0, 0, 0, 0, 150, 150, 0, 0] and min(out[3][8:]) > 100   # without it: a ghost of the picture
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function stackRows"), reason="no stacked rows in this mockup.js")
 def test_a_stacked_box_knows_its_rows(tmp_path):
     """A stacked Ability box (bake fit_below stacked) is checked against its sibling rows (one layer path), grown by
