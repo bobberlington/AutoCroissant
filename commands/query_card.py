@@ -21,7 +21,7 @@ from re import compile, escape, IGNORECASE, search, split
 from urllib.parse import quote
 
 from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZONE
-from commands.card_edits import CardAuthors, art_list
+from commands.card_edits import NO_CARD_FOLDERS, CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
 from commands.card_models import item_types, picture_only, site_cards, stats_db, straight
@@ -282,8 +282,9 @@ class CardRepository:
         # Process PNG files from repository
         for item in tree.get("tree", []):
             path: str = item.get("path", "")
-            if not path.endswith(".png"):
-                continue
+            if not path.endswith(".png") or (not path.startswith(NOT_CARDS)
+                                             and any(f in NO_CARD_FOLDERS for f in path.split("/"))):
+                continue                                        # site/, TTS/: the website's own pictures, no card
 
             new.blobs[path] = item.get("sha", "")
             new._add_file_to_registry(path)

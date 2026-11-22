@@ -307,6 +307,23 @@ def test_morgue_and_unfinished_cards_say_so(monkeypatch):
     utils.dispatch_queue.clear()
 
 
+def test_site_and_tts_pictures_are_no_cards(monkeypatch):
+    """The website's own PNGs (site/favicon: favicons, header logo) and TTS/ ones are no cards: no exact name, no guess
+    ('logo' was logo-mask); MDW/ and Types/ files are still found by exact name."""
+    monkeypatch.setattr(cm.stats_db, "stats", {})
+    monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
+    monkeypatch.setattr(qc, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    paths = ["Items/Heal/1 Stars/Spice.png", "Types/Light.png", "MDW/Assets/Markers/Red.png", "TTS/Rulebook/page_1.png",
+             *(f"site/favicon/{n}.png" for n in ("favicon-16", "favicon-32", "apple-touch-icon", "logo-mask"))]
+    repo = qc.CardRepository()
+    repo._fetch_tree = lambda name: ({"tree": [{"path": p, "sha": "s"} for p in paths]}, "", 200, "")
+    repo.populate_files()
+    assert sorted(repo.git_files.values()) == sorted(paths[:3]) and "site" not in repo.tops
+    assert [repo.lookup(q)[0] for q in ("logo", "apple", "favicon", "favicon-16", "logo-mask", "page 1")] == [None] * 6
+    assert [repo.lookup(q)[0:2] for q in ("spice", "light", "red")] == [
+        ("spice.png", "exact"), ("light.png", "exact"), ("red.png", "exact")]
+
+
 def test_folders_and_paths(repo):
     """Guesses score names without their folder (creatures/panda, there for Types/Panda.png, took every 'creatures ...');
     a typed path (a top folder or .png) finds its file name, exact only in its own folder, never an icon from another;
