@@ -1645,9 +1645,9 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
           restore: str = "", own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
           guard_docs: Optional[list] = None, records: Optional[list] = None) -> Outcome:
     """
-    One build (design section 7.1): db/ before, the tree and index from git, the
-    changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
-    changelog events with their pushes, the gates, then db/ written with its manifest.
+    One build (design section 7.1): db/ before (READ_BY_EYE's values on its stored readings), the tree and index
+    from git, the changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the
+    versions, the changelog events with their pushes, the gates, then db/ written with its manifest.
 
     Args:
         repository: owner/name of the card repo (the REST fallback, the activity list, the manifest)
@@ -1675,7 +1675,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     from commands import changelog, psd_details
     from commands.card_db import check_db, read_db, record as card_record, round_trip_problems, write_db
     from commands.font_check import fonts_report
-    from commands.card_history import date_archive, kept_values, record_versions, start_archived
+    from commands.card_history import date_archive, kept_values, read_by_eye, record_versions, start_archived
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
@@ -1706,6 +1706,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         limit=png_changes.RUN_MAX)
     if restore:
         db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
+    by_eye = read_by_eye(db.old_stats)
     before, before_old = deepcopy(db.stats), deepcopy(db.old_stats)
     archived_before = _archived(before, before_old)
     details_before = len(details)
@@ -1828,6 +1829,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     kept = kept_values(db.stats, db.old_stats)
     if kept:                                              # read by parser 2: kept until an allow_high_stats entry
         out.lines.append(f"History values out of range kept (an allow_high_stats entry allows them): {', '.join(kept)}")
+    if by_eye:
+        out.lines.append(f"History readings set to their pictures' values: {', '.join(by_eye)}")
     if out.refused:
         out.code = EXIT_GATE
         return out

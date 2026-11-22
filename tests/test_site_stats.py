@@ -154,6 +154,15 @@ def test_stat_mistake_put_back_within_a_day():
     assert (bal("slow"), totals("slow")) == ([(30 * day, "buff"), (3 * day, "buff"), (day, "nerf")], [20, 18, 20, 21])
 
 
+def test_stars_not_found_are_no_stars_change():
+    """A reading whose stars were not found (NO STARS FOUND, the bot's unknown) is no stars change (BadCabbage's 0 into
+    Poorly Drawn Cabbage's 2); a found one is."""
+    an = site_analytics()
+    v = lambda stars, *problems: SimpleNamespace(stars=stars, problems=list(problems))
+    assert an.change(v(0, 'NO STARS FOUND (put the star layers in a group named "Stars")'), v(2), []) == {}
+    assert an.change(v(0), v(2), []) == {"stars": [0, 2]}
+
+
 def test_stats_open_starts_its_data_and_draws_charts_near():
     """Stats' first open starts analytics.json beside the charts chunks (as a link to it does); its charts below the first
     screen are drawn once near (content-visibility) or two at a time while the page is idle, and every chart at once

@@ -36,6 +36,16 @@ RETIRED = ("MDW", "Markers")                          # no card folders (card_da
 STAT_MAX, STAT_CAP, STARS_MAX = 20, 99, 7             # a stat above 20 needs an allowance (allows_high); 3 digits: none
 RANGE_PARSER = 2                                      # parser 2 (5835139): the validator's range check, allow_high_stats
 STAT_KEYS = ("hp", "defense", "attack", "speed")
+# stored readings their own PSD's picture contradicts (a misread never counts, owner 10-23), checked by eye on the
+# PSD's merged image and its PNG: (card, PSD blob, the printed values); read_by_eye sets them on every build.
+# A card whose timeline has a git_first row stays out: that frozen row holds the same misread.
+READ_BY_EYE = (
+    ("Retro Kirby", "948add6c770ab5354f5f9e6fbb4095db82cf55ca", {"defense": 2, "attack": 6}),   # bar layers vs pixels
+    ("Retro Kirby", "7d74b7a127e72d99ec4bf84703f0b1bf74110f62", {"defense": 2, "attack": 6}),
+    ("Retro Kirby", "b8f9e2f188fe49f245cee0d7726cc8e2dec4a7d6", {"defense": 2, "attack": 6}),
+    ("Living Bread", "a8bbbaf8e153c82e839d13415496b60fa76c60bb", {"stars": 2}),
+    ("Shell Shield", "bdcf6e202bcf4f5f88f69ba707030b3ae4a76884", {"stars": 2}),
+)
 
 
 @dataclass
@@ -395,6 +405,22 @@ def kept_values(stats: dict, old_stats: dict) -> list:
                    if not unchecked(v) and out_of_range(v, allows_high(name, stats.get(name)))})
 
 
+def read_by_eye(old_stats: dict) -> list:
+    """READ_BY_EYE's values on the stored versions with that blob, in place (the current card is read from its PSD).
+    Returns the names changed, sorted."""
+    changed = set()
+    for name, blob, values in READ_BY_EYE:
+        for version in old_stats.get(name) or ():
+            if getattr(version, "blob_sha", None) != blob:
+                continue
+            for key, value in values.items():
+                holder = version.stats if key in STAT_KEYS else version
+                if getattr(holder, key, None) != value:
+                    setattr(holder, key, value)
+                    changed.add(name)
+    return sorted(changed)
+
+
 # ========================
 # Archive tags
 # ========================
@@ -533,6 +559,7 @@ def start_archived(old_stats: dict, names: list, index: GitIndex) -> None:
 # ========================
 __all__ = [
     'DATA_FIELDS',
+    'READ_BY_EYE',
     'RETIRED',
     'UNKNOWN_IF',
     'Commit',
@@ -548,6 +575,7 @@ __all__ = [
     'misread_stats',
     'out_of_range',
     'psd_changed',
+    'read_by_eye',
     'record_versions',
     'same_series',
     'start',

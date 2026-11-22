@@ -661,7 +661,10 @@ differ are one misread (`misreads`). A history value out of range (stars outside
 2026-11-06) without an allowance (`allows_high`: the card's allow_high_stats, raid boss stars, or no current card), any
 stat of three digits) is kept, and the data build lists the names of parser-2 readings holding one (`kept_values`);
 the versions read before parser 2 (`unchecked`) had theirs set unknown once, with an `OUT OF RANGE: ...` problem keeping
-the old value (`unknown_values`, removed 2026-11-12 with none left). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
+the old value (`unknown_values`, removed 2026-11-12 with none left). Stored readings their own PSD's picture
+contradicts get the printed values on every build (`READ_BY_EYE`, 2026-11-22: Retro Kirby, Living Bread, Shell
+Shield; checked by eye on the PSD's merged image and PNG; a card with a timeline git_first row stays out); the website's
+history shows no stars change from a NO STARS FOUND reading. **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`
 (`at`: the run's epoch, replaced by the deleting commit's committer date when `_archive_sources` finds it, and by the

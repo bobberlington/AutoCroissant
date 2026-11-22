@@ -264,6 +264,23 @@ def test_history_values_out_of_range_are_kept_and_listed(cards):
     assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(22, 3, 3, 3)]
 
 
+def test_history_readings_set_by_eye(cards, monkeypatch):
+    """READ_BY_EYE's printed values go on the stored version with that blob (Retro Kirby's DEF 8 / ATK 4, its bars'
+    layers vs its pixels), said once; the next build changes nothing."""
+    import commands.card_history as ch
+    monkeypatch.setattr(ch, "READ_BY_EYE", (("Mini Doomer", "b1", {"defense": 2, "stars": 4}),))
+    read = lambda blob: cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.", stars=3,
+                                    stats=cm.CardStats(5, 8, 4, 5), timestamp=600.0, parser_version=2, blob_sha=blob)
+    cdb.write_db(str(cards.db), {}, defaultdict(list, {"Mini Doomer": [read("b0"), read("b1")]}),
+                 '{"version": 1, "cards": {\n\n}}\n', {})
+    code, message = _build(cards, "--empty")
+    assert code == cd.EXIT_OK and "History readings set to their pictures' values: Mini Doomer" in message
+    assert [(v.stats, v.stars) for v in _read(cards)[1]["Mini Doomer"]] == [(cm.CardStats(5, 8, 4, 5), 3),
+                                                                           (cm.CardStats(5, 2, 4, 5), 4)]
+    code, message = _build(cards)
+    assert code == cd.EXIT_OK and "pictures' values" not in message
+
+
 def test_errors(cards, tmp_path, capsys):
     assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ without --empty
     shallow = tmp_path / "shallow"
