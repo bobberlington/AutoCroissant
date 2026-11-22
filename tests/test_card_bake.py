@@ -302,6 +302,11 @@ def test_shared_bars_and_moved_titles_are_remembered():
     assert (card.title_fit, card.title_was, card.ability_fit) == (0.8836, boxes, 1.0)
     cb.remember(card, {**baked, cb.TITLE_FIT: 0.8836})     # without them: the title as it is
     assert (card.title_fit, card.title_was) == (1.0, None)
+    parts = {"12": [0.73, boxes], "13": [0.73, None], "14": [0.2, boxes]}    # a split title's parts (r4-2)
+    cb.remember(card, {**baked, cb.TITLE_FITS: parts})
+    assert card.title_fits == {"12": [0.73, boxes]}
+    cb.remember(card, {**baked, "psd": "99999999", cb.TITLE_FITS: parts})
+    assert card.title_fits == {}
 
 
 def test_blob_gate(github):

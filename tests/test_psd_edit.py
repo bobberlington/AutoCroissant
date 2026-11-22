@@ -3115,6 +3115,46 @@ def test_a_title_over_the_stars_is_set_smaller(clone, parser, chart):
     flagged(edit.notes, r"^name: it prints over the (stars|\w+ icon)( and the \w+ icon)?: check the card$")
 
 
+def test_box_split_moved_and_copied_titles_over_the_stars(clone, parser, chart):
+    """r4-2: a box title (Bolts and Screws) is set smaller on its first baseline, a split title's part (Dark Matter
+    Swordsman's) smaller alone, each back to the maker's text at the maker's size and place (its fit and boxes as the
+    next bake has them); a title part R4 moves onto an icon (Knight Lost A Lot's) smaller where it moves to; a title with
+    copies (Tainted Eden) told."""
+    fonts = str(clone / pe.FONTS_DIR)
+
+    def edit(rel, name, more, **memory):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        record = pe.card_parts(psd, rel, name, parser)
+        part = record["title"][0]
+        layer = pe.lyid_index(psd)[part["id"]]
+        before = ([keys["FontSize"] for _, _, keys in pe.size_runs(layer)], layer._data.transform[4:],
+                  pe.first_base(layer, pe.font_map(fonts, layer)))
+        out = pe.set_parts(psd, {str(part["id"]): {"text": part["text"] + more}}, record, fonts, chart, name, parser, psd)
+        done = out[len(out) - 1]
+        fit = (done.fit, done.was) if done.fits is None else done.fits[str(part["id"])]
+        return psd, part, layer, before, done, fit, pe.header_icons(psd, parser, name)
+    for rel, name in (("Items/Heal/1 Stars/Bolts_and_Screws.psd", "Bolts and Screws"),
+                      ("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", "Dark Matter Swordsman")):
+        psd, part, layer, (sizes, at, base), done, (fit, was), icons = edit(rel, name, " Prime")
+        assert pe.TITLE_MIN <= fit < 1 and was and not pe._reached(layer, icons) and done.notes == []
+        assert pe.first_base(layer, pe.font_map(fonts, layer)) == pytest.approx(base, abs=1)
+        record = pe.card_parts(psd, rel, name, parser)
+        back = pe.set_parts(psd, {str(part["id"]): {"text": part["text"]}}, record, fonts, chart, name, parser, psd,
+                            title_fit=done.fit, title_was=done.was, title_fits=done.fits)
+        back = back[len(back) - 1]
+        assert (back.fit, back.was) == (1, None) and back.fits in (None, {str(part["id"]): [1, None]})
+        assert {round(keys["FontSize"], 1) for _, _, keys in pe.size_runs(layer)} == {round(v, 1) for v in sizes}
+        assert layer._data.transform[4:] == pytest.approx(at, abs=0.6)
+    psd, part, layer, _, done, (fit, _), icons = edit("Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd",
+                                                      "Knight Lost A Lot", " Prime")
+    assert pe.TITLE_MIN <= fit < 1 and not pe._reached(layer, icons) and "prints over" not in " ".join(done.notes)
+    flagged(done.notes, r"^overflow: name \(title 1/4\): moved \+\d+ px to stay on the card$")
+    psd, part, layer, (sizes, _, _), done, (fit, _), _ = edit("Creatures/Isaac/2 Stars/Tainted_Eden.psd", "Tainted Eden",
+                                                              " Prime")
+    assert fit == 1 and "name: it prints over the stars: check the card" in done.notes
+    assert [keys["FontSize"] for _, _, keys in pe.size_runs(layer)] == sizes
+
+
 def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart, tmp_path):
     """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other (review
     2026-10-24): an edit sets the title in the face its pixels show and the PSD names it from then on (R3, owner
