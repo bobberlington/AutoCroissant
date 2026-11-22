@@ -3,7 +3,7 @@ The standards channel's one post per push (owner 2026-11-11): the guards' lines 
 (card_check) and the font check's missing fonts (font_check) in one message, one line per card with its commit link,
 the Development role pinged only when a font is missing. Each check reports only what the push made new on a card
 (the old notes stay in its commit comment and job summary). Stdlib only:
-TTSCardMaker's card-guards.yml runs it in its tell job on the runner's own python3 (no venv there).
+TTSCardMaker's card-guards.yml runs it in its check job's Tell Discord, on python3.
 
     python3 -m commands.standards_post --repo <owner/name> --after <sha> [--plan plan.json [--landed landed.json]]
                                        [--card-check report.json] [--font-check report.json] --out <payload out>

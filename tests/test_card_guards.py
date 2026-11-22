@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import types
+import zipfile
 from io import BytesIO
 from pathlib import Path
 from sys import executable
@@ -1415,7 +1416,7 @@ def test_action_shaped_copy(tmp_path):
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
     done = subprocess.run([executable, "-S", "-m", "commands.standards_post", "--help"], cwd=bot, capture_output=True,
-                          text=True, timeout=120)                               # the tell job's: the runner's python3, no venv
+                          text=True, timeout=120)                               # Tell Discord's: stdlib only
     assert done.returncode == 0 and done.stdout.startswith("usage: python3 -m commands.standards_post"), done.stderr
     for module in ("card_check", "font_check"):
         done = subprocess.run([executable, "-m", f"commands.{module}", "--help"], cwd=bot, capture_output=True, text=True,
@@ -1425,7 +1426,7 @@ def test_action_shaped_copy(tmp_path):
         done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
     doc = _guard_steps(None)[0]
-    for name in ("check", "checks", "tell"):                                   # its bot checkouts: that list
+    for name in ("check", "checks"):                                           # its bot checkouts: that list
         job = doc["jobs"][name]
         bot = next(s for s in job["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
         assert bot_files(job, bot) == ["/" + f for f in cg.SPARSE_FILES], name
@@ -1465,8 +1466,17 @@ if args[:2] == ["workflow", "run"]:
 elif args[0] == "api":
     method = args[args.index("--method") + 1] if "--method" in args else "GET"
     path = next(a for a in args[1:] if a.startswith("repos/"))
-    if path.endswith("/jobs"):                  # the attempt's jobs: none
-        out = jq({"jobs": []}) if "--jq" in args else json.dumps({"jobs": []})
+    base = path.split("?")[0]
+    if base.endswith("/jobs"):                  # the run's jobs: the next answer (the last one stays), else none
+        jobs = db.setdefault("jobs", [[]])
+        answer = jobs.pop(0) if len(jobs) > 1 else jobs[0]
+        out = jq({"jobs": answer}) if "--jq" in args else json.dumps({"jobs": answer})
+    elif base.endswith("/artifacts"):
+        out = jq({"artifacts": db.get("artifacts", [])})
+    elif base.endswith("/zip"):
+        json.dump(db, open(state, "w"))
+        sys.stdout.buffer.write(open(db["zip"], "rb").read())
+        sys.exit(0)
     elif method == "POST":
         db["next"] += 1
         db["comments"][str(db["next"])] = json.load(sys.stdin)["body"]
@@ -1487,26 +1497,18 @@ exit 0
 """
 
 
-def _run_steps(steps, names, env, outputs, jobs=None):
+def _run_steps(steps, names, env, outputs):
     """Run the named steps' shell as card-guards.yml would (bash -e -o pipefail); outputs[name] = its GITHUB_OUTPUT. A
-    `needs.<job>.outputs.<name>` env reads the step output the job's outputs name (jobs: the doc's), when that step ran
-    here; else the env given stays."""
+    `steps.<id>.outputs.<name>` env reads outputs[<id>] (a step name's first word) when given, else the env's stays."""
     for name in names:
         step = steps[name]
         out = Path(env["OUT"]) / f"{name}.output"
         out.write_text("")
         step_env = {**env, **{k: v for k, v in step.get("env", {}).items() if "${{" not in str(v)}, "GITHUB_OUTPUT": str(out)}
         for key, value in step.get("env", {}).items():
-            needed = re.fullmatch(r"\$\{\{ needs\.(\w+)\.outputs\.(\w+) \}\}", str(value))
-            if needed and jobs:
-                value = jobs[needed.group(1)].get("outputs", {}).get(needed.group(2), "")
-                match = re.fullmatch(r"\$\{\{ steps\.(\w+)\.outputs\.(\w+) \}\}", value)
-                if match and match.group(1) in outputs:
-                    step_env[key] = outputs[match.group(1)].get(match.group(2), "")
-                continue
             match = re.fullmatch(r"\$\{\{ steps\.(\w+)\.outputs\.(\w+) \}\}", str(value))
-            if match:
-                step_env[key] = outputs.get(match.group(1), {}).get(match.group(2), "")
+            if match and match.group(1) in outputs:
+                step_env[key] = outputs[match.group(1)].get(match.group(2), "")
         done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=step_env,
                               capture_output=True, text=True, timeout=60)
         assert done.returncode == 0, (name, done.stdout, done.stderr)
@@ -1515,7 +1517,7 @@ def _run_steps(steps, names, env, outputs, jobs=None):
 
 
 def _tell(steps, env, bot) -> dict:
-    """The tell job's Told already and Tell Discord (the real standards_post on this python3, from bot/); their outputs."""
+    """Told already and Tell Discord (the real standards_post on this python3, from bot/); their outputs."""
     out = _run_steps(steps, ["Told already"], env, {})
     if out["told"].get("told") == "true":
         return out
@@ -1526,13 +1528,13 @@ def _tell(steps, env, bot) -> dict:
 
 
 def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
-    """The Comment, Told before, Follow up, Told already and Tell Discord steps' shell against a fake gh and curl
-    (standards_post real, on this python3): the first run comments, Follow up rewrites it, the tell job posts ONE message
-    (the guards' lines as Land settled them, the card check's new notes, owner 2026-11-11), marks
+    """The check job's Comment, Follow up, Told already and Tell Discord steps' shell against a fake gh and curl
+    (standards_post real, on this python3): the first run comments, Follow up rewrites it, Tell Discord posts ONE
+    message (the guards' lines as Land settled them, the card check's new notes, owner 2026-11-11), marks
     the guards' comment and comments the card check's report; a re-run edits that comment, keeps the mark and posts
-    nothing, and so does a re-run of the tell job alone (its Told already looks the mark up). With CARD_GUARDS off the
-    card check alone posts, its comment carrying the mark."""
-    doc, steps, jenv = _guard_steps(clone)
+    nothing, and so does a re-run whose comment was not looked up (Told already looks the mark up). With CARD_GUARDS off
+    the card check alone posts, its comment carrying the mark. The checks job broken: the post goes, not whole."""
+    _, steps, jenv = _guard_steps(clone)
     bin_dir = _fake_tools(tmp_path)
     bot = tmp_path / "bot"
     (bot / "commands").mkdir(parents=True)
@@ -1550,14 +1552,15 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     (out / "report.md").write_text("## Card guards\n\nAlice's card.\n")
     (out / "report-landed.md").write_text("## Card guards\n\nAfter the window.\n")
     (checks / "card-check" / "report.md").write_text("## Card check\n\n- `X/Alice.psd`: no stars\n")
+    (tmp_path / "checks.result").write_text("success\n")                       # Checks' reports start's
     (checks / "card-check" / "report.json").write_text(json.dumps({"cards": [
         {"path": "X/Alice.psd", "author": "Alice", "notes": ['NO STARS FOUND (x)', "STATS TOO HIGH"], "new": ['NO STARS FOUND (x)', "STATS TOO HIGH"]},
         {"path": "X/Bob.psd", "author": "Bob", "notes": ["STATS TOO HIGH"], "new": []}]}))     # Bob's old note: not told
     env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "OUT": str(out), "TOLD": jenv["TOLD"], "MODE": "on",
            "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"),
            "FAKE_POSTS": str(tmp_path / "posts.txt"), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
-           "RUNNER_TEMP": str(tmp_path), "GITHUB_SHA": "f" * 40, "CHECKED": "success", "LAND": "true", "CHECKS": "success"}
-    first = _run_steps(steps, ["Comment on the commit", "Told before", "Follow up"], env, {"land": {"ran": "true"}}, doc["jobs"])
+           "RUNNER_TEMP": str(tmp_path), "GITHUB_SHA": "f" * 40, "CHECKED": "success", "LAND": "true"}
+    first = _run_steps(steps, ["Comment on the commit", "Follow up"], env, {"land": {"ran": "true"}})
     (comment_id, body), = json.loads((tmp_path / "gh.json").read_text())["comments"].items()
     first.update(_tell(steps, {**env, "COMMENT": comment_id}, bot))
     state = json.loads((tmp_path / "gh.json").read_text())
@@ -1569,10 +1572,10 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     assert json.loads((tmp_path / "posts.txt").read_text().strip()) == {
         "content": 'Alice pushed Alice: PNG not made: G6; export it in Photoshop; no stars (group them in "Stars"); a stat over 20.' + link,
         "allowed_mentions": {"parse": []}, "flags": 4}
-    again = _run_steps(steps, ["Comment on the commit", "Told before"], env, {"land": {"ran": "true"}}, doc["jobs"])   # every job
-    assert again["comment"] == {"told": "true", "id": comment_id} and again["told"] == {"told": "true"}
+    again = _run_steps(steps, ["Comment on the commit"], env, {"land": {"ran": "true"}})      # a re-run
+    assert again["comment"] == {"told": "true", "id": comment_id}
     assert _tell(steps, {**env, "CHECK_TOLD": "true"}, bot)["told"] == {"told": "true"}       # so Tell Discord is skipped
-    alone = _tell(steps, {**env, "GITHUB_RUN_ATTEMPT": "2"}, bot)                             # the tell job alone
+    alone = _tell(steps, {**env, "GITHUB_RUN_ATTEMPT": "2"}, bot)                             # no comment looked up
     assert alone["told"] == {"told": "true"} and "tell" not in alone
     state = json.loads((tmp_path / "gh.json").read_text())
     assert len(state["comments"]) == 2 and (tmp_path / "posts.txt").read_text().count("Alice pushed") == 1
@@ -1590,6 +1593,51 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     out.mkdir()
     assert _tell(steps, {**env, "COMMENT": ""}, bot)["tell"] == {}
     assert "Alice pushed Alice: no stars" in (tmp_path / "posts.txt").read_text().splitlines()[-1]
+    # the checks job broken (its result, no reports): the guards' part goes, not whole
+    shutil.rmtree(checks)
+    (tmp_path / "checks.result").write_text("failure\n")
+    (out / "plan.json").write_text(json.dumps({"after": "f" * 40, "cards": [
+        {"card": "Alice", "psd": "X/Alice.psd", "login": "Alice", "commit": "a" * 40, "told": lines, "issues": []}]}))
+    (out / "landed.json").write_text(json.dumps({"told": {"X/Alice.psd": lines}}))
+    assert _tell(steps, {**env, "COMMENT": ""}, bot)["tell"] == {}
+    assert "Alice pushed Alice: PNG not made" in (tmp_path / "posts.txt").read_text().splitlines()[-1]
+
+
+def test_the_checks_reports_come_once_that_job_ends(clone, tmp_path):
+    """Checks' reports start (fake gh, in the background from Landed): the checks job looked up until its newest
+    attempt is completed, then its card-checks artifact unzipped where Tell Discord reads it, the result beside it; a
+    broken checks job with no artifact: its result alone."""
+    _, steps, _ = _guard_steps(clone)
+    bin_dir = _fake_tools(tmp_path)
+    archive = tmp_path / "card-checks.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("card-check/report.json", '{"cards": []}')
+        z.writestr("font-check/report.md", "## Font check")
+    job = lambda attempt, status, conclusion=None: {"name": "checks", "run_attempt": attempt, "status": status,  # noqa: E731
+                                                    "conclusion": conclusion}
+    state = tmp_path / "gh.json"
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "GH_TOKEN": "x", "GITHUB_REPOSITORY": "o/cards", "GITHUB_RUN_ID": "77",
+           "RUNNER_TEMP": str(tmp_path), "STARTED": str(int(time.time())), "FAKE_STATE": str(state),
+           "GITHUB_OUTPUT": str(tmp_path / "start.output")}
+    for answers, artifacts, want, files in (
+            ([[job(1, "in_progress")], [job(1, "completed", "failure"), job(2, "in_progress")],
+              [{"name": "check", "run_attempt": 2, "status": "completed"}, job(1, "completed", "failure"),
+               job(2, "completed", "success")]], [{"id": 9}], "success", True),
+            ([[job(1, "completed", "failure")]], [], "failure", False)):
+        shutil.rmtree(tmp_path / "checks", ignore_errors=True)
+        (tmp_path / "checks.result").unlink(missing_ok=True)
+        state.write_text(json.dumps({"comments": {}, "next": 100, "log": [], "jobs": answers, "artifacts": artifacts,
+                                     "zip": str(archive)}))
+        done, _ = _shell(steps["Checks' reports start"], env)
+        assert done.returncode == 0, done.stderr
+        until = time.monotonic() + 30
+        while not (tmp_path / "checks.result").exists() and time.monotonic() < until:
+            time.sleep(0.05)
+        asked = json.loads(state.read_text())["log"]
+        assert (tmp_path / "checks.result").read_text().strip() == want
+        assert sum("/runs/77/jobs" in a for a in asked) == len(answers)
+        assert (tmp_path / "checks" / "card-check" / "report.json").is_file() == files
+        assert (tmp_path / "checks" / "font-check" / "report.md").is_file() == files
 
 
 def _fake_tools(tmp_path) -> Path:
