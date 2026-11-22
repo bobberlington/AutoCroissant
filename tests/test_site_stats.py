@@ -19,7 +19,7 @@ STATS_JS = ASSETS / "stats.js"
 PRELUDE = """
 globalThis.getComputedStyle = () => ({ getPropertyValue: () => "#336699" });
 globalThis.document = { documentElement: {} };
-const st = await import(%(stats)s), bal = await import(%(balance)s), ins = await import(%(insights)s);
+const st = await import(%(stats)s), bal = await import(%(balance)s), ins = await import(%(insights)s), kit = await import(%(chartkit)s);
 const text = html => html.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim();
 const out = x => process.stdout.write(JSON.stringify(x));
 const chart = (html, id) => (html.match(new RegExp(`<section class="chart[^"]*" id="chart-${id}">[\\\\s\\\\S]*?</section>`)) || [""])[0];
@@ -54,10 +54,11 @@ function render(cards, A, q = "", { banned = new Map(), distPage = {}, narrow = 
 
 
 def node(tmp_path, body: str):
-    """Run body after PRELUDE (st, bal, ins; fixture(), analytics(), render()); its stdout as JSON."""
+    """Run body after PRELUDE (st, bal, ins, kit; fixture(), analytics(), render()); its stdout as JSON."""
     script = tmp_path / "probe.mjs"
     uri = lambda name: json.dumps((ASSETS / name).as_uri())
-    script.write_text(PRELUDE % {"stats": uri("stats.js"), "balance": uri("balance.js"), "insights": uri("insights.js")} + body,
+    script.write_text(PRELUDE % {"stats": uri("stats.js"), "balance": uri("balance.js"), "insights": uri("insights.js"),
+                                 "chartkit": uri("chartkit.js")} + body,
                       encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=120)
     assert done.returncode == 0, done.stderr
@@ -65,14 +66,15 @@ def node(tmp_path, body: str):
 
 
 def test_power_creep(tmp_path):
-    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items."""
+    """Hand-computed: 2020 average vs median 0, 2021 -0.2 (12 creatures); left out for items. The table waits in
+    chartTable() for its first Table press, not in the page."""
     out = node(tmp_path, """
-const cards = fixture(), A = analytics(cards), r = render(cards, A);
-out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=item").balance.includes("chart-bal-creep") });
+const cards = fixture(), A = analytics(cards), r = render(cards, A), creep = rows(kit.chartTable("bal-creep"));
+out({ creep, inPage: rows(chart(r.balance, "bal-creep")).length, item: render(cards, A, "kind=item").balance.includes("chart-bal-creep") });
 """)
     minus = lambda s: s.replace("−", "-")
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
-    assert not out["item"]
+    assert out["inPage"] == 0 and not out["item"]
 
 
 def test_narrow_charts(tmp_path):
@@ -102,7 +104,7 @@ def test_distribution_counts_each_creature(tmp_path):
     (Twin Emperors: DEF 4 and 10; HP 7 once)."""
     out = node(tmp_path, """
 const twin = { ...C("Twin", "Mario", 3, [7, 4, 5, 6], "2020-05-01", "Ann"), creatures: [{ hp: 7, def: 4, atk: 5, spd: 6 }, { hp: 7, def: 10, atk: 4, spd: 4 }] };
-const dist = cards => rows(chart(render(cards, null).top, "dist")).map(r => r.map(Number));
+const dist = cards => (render(cards, null), rows(kit.chartTable("dist")).map(r => r.map(Number)));
 const a = dist(fixture()), b = dist([...fixture(), twin]);
 out(b.map((r, i) => [r[0], ...r.slice(1).map((v, j) => v - (a[i]?.[j + 1] || 0))]).filter(r => r.slice(1).some(Boolean)));
 """)
