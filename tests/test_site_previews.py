@@ -81,7 +81,7 @@ def test_the_warm_lane_is_named_and_checked(tmp_path):
     """The press's lane (owner D22): laneBlob is the lane's press_blob (sha and bytes) and the title card-preview.yml's
     run-name makes names the lane and blob, well under GitHub's 512 characters; laneOf names the run that handed over
     the newest result while it has LANE_SAFE_MS left (its idle end, its start's cap); pollDelay looks for a named lane's
-    hand-over from LANE_FIRST_MS every LANE_POLL."""
+    hand-over from LANE_FIRST_MS every LANE_POLL from a round's start."""
     import base64
     import re
     import yaml
@@ -95,7 +95,8 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
   p.laneOf({{ a: [own, next(now - 60 * s)] }}, now), p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 1070 * s }} }}, next(now - 60 * s)] }}, now),
   p.laneOf({{ a: [{{ ...own, run: {{ id: 101, started: now - 1000 * s }} }}, next(now - 60 * s)] }}, now),
   p.laneOf({{ a: [own, next(now - 230 * s)] }}, now), p.laneOf({{}}, now),
-  p.pollDelay(lane(1 * s), now), p.pollDelay(lane(5 * s), now), p.pollDelay(lane(5 * s, {{ fromAt: now }}), now), p.pollDelay(lane(16 * s), now)]);""")
+  p.pollDelay(lane(1 * s), now), p.pollDelay(lane(5 * s), now), p.pollDelay(lane(5 * s), now, () => true, 180), p.pollDelay(lane(5 * s), now, () => true, 400),
+  p.pollDelay(lane(5 * s, {{ fromAt: now }}), now), p.pollDelay(lane(16 * s), now)]);""")
     blob, named, capped, long, idle, none, *delays = out
     data, sha = press_blob(request, card, edit)
     assert blob == {"sha": sha, "base64": base64.b64encode(data).decode()} and len(data) > 1024
@@ -104,7 +105,7 @@ out([await p.laneBlob({json.dumps(request)}, {json.dumps(card)}, {json.dumps(edi
     title = re.sub(r"\$\{\{.*\}\}", lambda m: f" lane 101-{sha}", run_name.replace("${{ inputs.request }}", request.ljust(64, "x")))
     assert press_of(title) == (request.ljust(64, "x"), 101, sha) and len(title) < 150
     assert (named, capped, long, idle, none) == (101, None, 101, None, None)     # 18 minutes from its start
-    assert delays == [1000, 500, 7000, 1000]
+    assert delays == [1000, 250, 70, 0, 7000, 1000]
 
 
 def test_one_wait_with_its_run_known_is_checked_every_250_ms(tmp_path):
@@ -123,12 +124,13 @@ out([p.pollDelay(one(13 * s, { run }), now), p.pollDelay(one(13 * s, { run }), n
 @pytest.mark.parametrize("miss", [False, pytest.param(True, marks=pytest.mark.skipif(not has(PREVIEW_JS, "ZIP_404S"), reason="no zip 404s looked past"))])
 def test_the_editor_takes_the_lanes_hand_over(tmp_path, miss):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
-    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), then rings the lane's
-    doorbell (a commit status at press 1's result's commit: the lane's CONTEXT and RUNG) and shows the lane's
-    card-preview-<request> 2 s after the press; one toast each; a 422 with a lane dispatches again without it, and no
-    lane is named after that; a blob not posted rings nothing. Press 1's hand-over is listed from 12.5 s: its list goes
+    press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), rings the lane's doorbell
+    beside them (a commit status at press 1's result's commit: the lane's CONTEXT and RUNG; not after the blob's answer)
+    and shows the lane's card-preview-<request> 2 s after the press; one toast each; a 422 with a lane dispatches again
+    without it, and no lane is named after that, nor after a blob not posted. Press 1's hand-over is listed from 12.5 s: its list goes
     If-None-Match the last ETag (a 304: not yet) every 250 ms while it waits alone. miss: each zip's first fetch a 404
-    (listed just before it's finalized, run 44465554232): both shown on the next round, press 2 still named to the lane."""
+    (listed just before it's finalized, run 44465554232): both shown on the next round (250 ms on), press 2 still named
+    to the lane."""
     import base64
     from commands.card_preview_lane import CONTEXT, RUNG, press_blob
     out = node(tmp_path, f"const miss = {str(miss).lower()}, zipped = new Set();\n" + """let T = 1e12; const q = []; Date.now = () => T;
@@ -140,10 +142,11 @@ const zip = text => { const n = Buffer.from("result.json"), d = Buffer.from(text
   h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(n.length, 26); c.writeUInt32LE(0x02014b50, 0); c.writeUInt32LE(d.length, 20); c.writeUInt16LE(n.length, 28);
   e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(1, 10); e.writeUInt32LE(30 + n.length + d.length, 16); const b = Buffer.concat([h, n, d, c, n, e]); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); };
 const { createHash } = await import("node:crypto");
-const sent = [], toasts = [], listed = [], blobs = [], refs = [];
+const sent = [], toasts = [], listed = [], blobs = [], refs = [], posts = [];
 let n304 = 0;
 let refuse = false, failBlob = false;
 const github = async (path, o = {}) => {
+  if (o.method === "POST") posts.push(path.endsWith("/git/blobs") ? "blob" : path.includes("/statuses/") ? "status" : "dispatch");
   if (path.endsWith("/git/blobs")) { blobs.push(o.body); if (failBlob) { const e = new Error("GitHub 403"); e.status = 403; throw e; }
     const raw = Buffer.from(o.body.content, "base64"); return { sha: createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${raw.length}\0`), raw])).digest("hex") }; }
   if (path.includes("/statuses/")) { refs.push([T - 1e12, o.method, path.split("/statuses/")[1], o.body]); return null; }
@@ -169,19 +172,20 @@ refuse = true; await pv.start(card("c2"), { hp: 6 }); await pv.start(card("c3"),
 refuse = false; failBlob = true; const pv2 = p.createPreviews(app); await pv2.start(card("c4"), { hp: 4 }); await pv2.start(card("c5"), { hp: 3 });
 out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map(c => pv.entries(c)[0].state), from: pv.entries("c1")[0].from, head: pv.entries("c1")[0].fromHead, lane: listed.filter(([t, n]) => n !== "card-preview").map(([t]) => t - (second - 1e12)),
   shown: [pv.entries("c0")[0].fromAt - 1e12, pv.entries("c1")[0].fromAt - second],
-  named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null), n304 });""")
+  named: ["c1", "c4"].map(c => pv2.entries(c)[0].lane ?? null), n304, posts });""")
     sent = out["sent"]
     data, sha = press_blob(sent[1]["request"], "Mini Doomer", sent[1]["edit"])
     assert "lane" not in sent[0] and sent[1]["lane"] == f"101-{sha}"
     assert out["blobs"][0] == {"content": base64.b64encode(data).decode(), "encoding": "base64"}
-    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == ([2250, 2750] if miss else [2000])   # the lane's, 2 s on (rounds' phase)
-    assert out["shown"] == ([12750, 2750] if miss else [12500, 2000]) and out["n304"] == 1   # 12 s, 12.25 (304), 12.5
+    assert out["states"] == ["baked", "baked"] and out["from"] == 101 and out["lane"] == ([2000, 2250] if miss else [2000])   # the lane's, 2 s on
+    assert out["shown"] == ([12750, 2250] if miss else [12500, 2000]) and out["n304"] == 1   # 12 s, 12.25 (304), 12.5
     assert out["head"] == "c" * 40                                  # still rung where the lane lists, not where it baked
     at, method, commit, body = out["refs"][0]
     rung = RUNG.fullmatch(body["description"])
     assert rung and rung.groups() == ("101", sent[1]["request"], sha) and (method, commit) == ("POST", "c" * 40)
     assert body["context"] == CONTEXT and body["state"] == "success" and at == out["second"] and len(body["description"]) <= 140
-    assert len(out["refs"]) == 1                                    # none for the 422's press (its lane gone first), the blob's
+    assert out["posts"][:4] == ["dispatch", "blob", "status", "dispatch"]   # press 2's doorbell beside its blob, not after it
+    assert len(out["refs"]) == 3                                    # the 422's press and the blob's rang too (beside), the next ones none
     assert out["toasts"].count("Preview ready: Mini Doomer") == 2
     assert "lane" in sent[2] and "lane" not in sent[3] and "lane" not in sent[4]      # the 422's retry, then none named
     assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again

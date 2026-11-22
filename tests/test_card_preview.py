@@ -770,7 +770,7 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
     <blob>') is taken before its run is listed (a request rung with two blobs, another editor's, another context's or
     another lane's is none), its run counts as served once listed, and a newer run it doesn't take ends the lane as
     ever; a rung press's take checks the card repo's main in place of the run's commit and bakes with no run (on a newer
-    main: there, once moved() follows it)."""
+    main: there, once moved() follows it); its blob is read beside those checks."""
     import base64
     import commands.card_preview_lane as lane_mod
     from time import time
@@ -779,9 +779,13 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
     statuses = [bell("100 next abcdef12"), bell(f"100 {REQUEST} {sha}"), bell(f"100 rung-twice-1 {'b' * 40}"),
                 bell(f"100 rung-twice-1 {'c' * 40}"), bell(f"1001 other-lane-1 {sha}"), bell(f"100 other-editor {sha}", "eve"),
                 bell(f"100 other-context {sha}", context="ci"), bell(f"100 next {'d' * 8}", "eve")]
-    runs, took, main, asked = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}, []
+    runs, took, main, asked, checked = [], [], {"o/r": "1" * 40, "bot/repo": "bot"}, [], threading.Event()
 
     def get(path, conditional=False):
+        if path.endswith("/git/ref/heads/main"):
+            checked.set()
+        elif path.endswith(sha) and took:
+            assert checked.wait(10)             # the blob beside the checks
         body = (statuses if path == "/repos/o/r/commits/h/statuses?per_page=100"
                 else {"workflow_runs": runs} if path.endswith(f"/runs?event=workflow_dispatch&actor=ed&per_page={lane_mod.LISTED}")
                 else {"sha": sha, "size": len(data), "encoding": "base64", "content": base64.b64encode(data).decode()}
@@ -801,9 +805,11 @@ def test_the_lanes_doorbell(tmp_path, monkeypatch):
     assert lane_mod.listen(api, 100, "ed", until=time() + 60, repository="o/r", head="h") == "a newer press named no lane"
     assert took == [((REQUEST, 100, sha), None)] and asked == [{"abcdef12"}]     # a next card: read beside
     baked = []
-    monkeypatch.setattr(lane_mod, "reads", lambda card, fields, clone, repository, head, records, blobs, pending=None: None)
+    monkeypatch.setattr(lane_mod, "read_card", lambda card, fields, clone, repository, head, blobs, pending=None: {})
+    monkeypatch.setattr(lane_mod, "read_records", lambda repository, records: {})
     keys = dict(bake=lambda card, edit, out, repository, **k: baked.append((card, edit, k["run"], k["head"])) or {"state": "baked"},
-                lane=str(tmp_path), clone="", repository="o/r", head="1" * 40, kept={}, bot_repo="bot/repo", bot="bot", limit=99)
+                lane=str(tmp_path), clone="", repository="o/r", head="1" * 40, kept={}, bot_repo="bot/repo", bot="bot", limit=99,
+                sides=(api, api))
     monkeypatch.setattr(lane_mod, "RECORDS", ())
     assert real_take(api, took[0][0], None, **keys) == "" and baked == [("Mini Doomer", b'{"hp": 7}', "", "1" * 40)]
     main["o/r"] = "2" * 40
@@ -989,7 +995,8 @@ def test_the_warm_lane(cards, tmp_path, monkeypatch):
     assert code == 0 and codes == ["0\n"] and (tmp_path / "lane.end").read_text() == "a newer press named no lane\n"
     assert sorted(p.name for p in (tmp_path / "lane").iterdir()) == [second, f"{second}.code"]
     assert (tmp_path / "lane" / f"{second}.code").read_text() == "0\n"
-    assert [a for a in asked if a[0] in ("runs", "main", sha)] == [("main", 200), ("runs", 200), (sha, 200), ("main", 304), ("runs", 304)]
+    listed = [a for a in asked if a[0] in ("runs", "main", sha)]     # the press's blob beside the bot's main (its own connection)
+    assert listed[:2] + sorted(listed[2:4]) + listed[4:] == [("main", 200), ("runs", 200)] + sorted([(sha, 200), ("main", 200)]) + [("runs", 304)]
     warm = json.loads((tmp_path / "lane" / second / cp.RESULT).read_text())
     assert warm["run"] == f"https://github.com/{cb.CARD_REPO}/actions/runs/101" and warm["reason"] == "hp 5 -> 7"
     monkeypatch.delenv("GITHUB_RUN_ID")
