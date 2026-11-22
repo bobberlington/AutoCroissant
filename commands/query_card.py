@@ -1292,6 +1292,8 @@ def _post_lost(interaction: Interaction, entry: dict) -> None:
         fact += f" · {'in the old repo' if entry.get('firstOld') else 'first posted'} {entry['first']}"
     if entry.get("firstCh"):
         fact += f" in #{entry['firstCh']}"
+    for when, channel in entry.get("also") or ():      # the same picture posted again (owner 11-21)
+        fact += f" · also posted {when}" + (f" in #{channel}" if channel else "")
     page = f"{SITE_URL}/c/{quote(str(entry['id']))}/" if entry.get("id") else None
     embed = Embed(title=name[:256], url=page)
     if pic:                                             # a URL (the history branch's) or a path on the site

@@ -350,7 +350,8 @@ def test_lost_morgue_cards_answer_as_such(repo, monkeypatch):
                                    "pic": f"history/_morgue/{i}/O.webp", **kw}
     raw = "https://raw.githubusercontent.com/r/h/abc/_morgue/void-sentinel/P.webp"      # history branch-hosted
     site = {"cards": [], "morgue": [
-        entry("Chestnut The Forbidden One", "chestnut", first="2020-10-14", firstCh="ideas-discussion"),
+        entry("Chestnut The Forbidden One", "chestnut", first="2020-10-14", firstCh="ideas-discussion",
+              also=[["2020-10-15", "meme-cards"]]),                    # one picture posted again (owner 11-21)
         entry("Void Sentinel", "void-sentinel", lost="played", first="2020-07-27", firstCh="update-01-port", pic=raw),
         entry("M'uru", "m-uru", lost="played", inGit=True, pic=None), entry("Magolor", "magolor-2"),
         entry("Sacrifice", "sacrifice"), entry("Mario", "mario"), entry("Rope", "rope-morgue", live="rope"),
@@ -364,7 +365,8 @@ def test_lost_morgue_cards_answer_as_such(repo, monkeypatch):
     page = f"{qc.SITE_URL}/c/%s/"
     for query, content, title, image, link in [
             ("chestnut the forbidden one", "**Chestnut The Forbidden One** is in The Morgue: Joke card · first posted "
-             "2020-10-14 in #ideas-discussion; out of play.", "Chestnut The Forbidden One",
+             "2020-10-14 in #ideas-discussion · also posted 2020-10-15 in #meme-cards; out of play.",
+             "Chestnut The Forbidden One",
              f"{qc.SITE_URL}/history/_morgue/chestnut/O.webp", page % "chestnut"),
             ("void sentinel", "**Void Sentinel** is in The Morgue: Played, lost before git · first posted 2020-07-27 "
              "in #update-01-port; out of play.", "Void Sentinel", raw, page % "void-sentinel"),
