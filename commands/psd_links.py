@@ -376,9 +376,10 @@ def _plain_source(layer) -> bool:
 def fork_filters(layer) -> bool:
     """The fork draws the layer's smart filters on a new picture (SmartObject.can_draw_filters) and its FEid source is
     plain: none on, or one Gaussian or Motion Blur (a filter mask does not refuse: the composite applies it), Puppet
-    Warp, Perspective Warp (upright: _placed_as_photoshop) or Invert (proven with the mask off or white)."""
+    Warp, Perspective Warp (a turned quad: at a scale the fork's place_picture is proven at) or Invert (proven with the
+    mask off or white)."""
     so = layer.smart_object
-    if not _plain_source(layer) or not so.can_draw_filters() or not _placed_as_photoshop(layer, corners_of(layer)):
+    if not _plain_source(layer) or not so.can_draw_filters():
         return False
     fx = so.filters
     found = [one for one in fx.get(b"filterFXList") or [] if _on(one)] if fx is not None and _on(fx) else []
@@ -414,12 +415,6 @@ def _quad_kept(layer, quad: Optional[list]) -> bool:
     return quad is None or not _puppet(layer) or bool(np.allclose(quad, corners_of(layer), atol=QUAD_TOL))
 
 
-def _placed_as_photoshop(layer, corners: list) -> bool:
-    """A Perspective Warp only over a picture draw() places as Photoshop does: an upright quad (on a turned one PIL's
-    one-step transform is not Photoshop's resample: the stars' outlines darker and jaggier)."""
-    return not _filter_on(layer, PERSPECTIVE) or upright(corners)
-
-
 def _filter_source(layer, rgba: Optional[np.ndarray], box: tuple, corners: list) -> None:
     """The layer's FEid item (its smart filters' input, PLAN R7) drawn again: the new picture unfiltered over its quad's
     box and the canvas, as Photoshop caches it. Nothing without one."""
@@ -447,10 +442,10 @@ def fork_warp(layer) -> bool:
     return not _filtered(layer) and layer.smart_object.can_draw_warp()
 
 
-def filters_on(layer, corners: Optional[list]) -> bool:
-    """The fork draws the layer's smart filters on a new quad too (a Mosaic's not above or left of the canvas, a
-    Perspective Warp's upright)."""
-    return layer.smart_object.can_draw_filters(corners) and _placed_as_photoshop(layer, corners or corners_of(layer))
+def filters_on(layer, corners: Optional[list], size: Optional[tuple] = None) -> bool:
+    """The fork draws the layer's smart filters on a new quad too, for a file of size (w, h) (a Mosaic's not above or
+    left of the canvas, a Perspective Warp's upright or at a scale its place_picture is proven at)."""
+    return layer.smart_object.can_draw_filters(corners, size)
 
 
 def why_not_redrawn(layer, same_size: bool = False) -> Optional[str]:
@@ -683,14 +678,22 @@ def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A placed layer's pixels drawn again from a file (rgba: its pixels in the card's colours) on corners at mode, its
     mask and effects kept, its smart filters drawn too by the fork (fork_filters) with their FEid source the new
-    picture, a warp by the fork from the file (fork_warp: nearest, mode unused) (the link's Trnf and Sz are written by
+    picture, a warp by the fork from the file (fork_warp: nearest, mode unused), a turned quad under a Perspective Warp
+    by the fork's place_picture (Photoshop's mip resample, mode unused) (the link's Trnf and Sz are written by
     SmartObject.link or relink). Returns the canvas box drawn (old and new pixels').
     """
     from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
-    before = tuple(layer.bbox)
-    out, box = layer.smart_object.draw_warp(rgba, corners) if warped(layer) else draw(rgba, corners, mode)
+    before, so = tuple(layer.bbox), layer.smart_object
+    if warped(layer):
+        out, box = so.draw_warp(rgba, corners)
+    elif _filter_on(layer, PERSPECTIVE) and not upright(corners):
+        out, box = so.place_picture(rgba, corners)
+        out = out if out.size else None
+    else:
+        out, box = draw(rgba, corners, mode)
     if _filtered(layer):                        # filters before the source: a Puppet Warp samples the old one
-        drawn, where = layer.smart_object.draw_filters(out, box, corners) if out is not None else (None, box)
+        size = (rgba.shape[1], rgba.shape[0])
+        drawn, where = so.draw_filters(out, box, corners, size=size) if out is not None else (None, box)
         _filter_source(layer, out, box, corners)
         out, box = (drawn, where) if drawn is not None and drawn.size else (None, (0, 0, 0, 0))
     TypeLayer._store_raster(layer, out if out is not None else np.zeros((0, 0, 4), np.float32), box)
@@ -1215,8 +1218,9 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
                 out.left.append((uid, f"{path} changed since the catalogue"))
                 continue
             quads = [_trim_corners(layer, old, new, 1) if cls == INK else _fit_corners(layer, old, new) for layer in layers]
+            wh = None if new is None else (new.shape[1], new.shape[0])
             why = next((why for layer, quad in zip(layers, quads) for why in [
-                (why_not_redrawn(layer) or (not filters_on(layer, quad) and "smart filters") if cls == REDRAW else
+                (why_not_redrawn(layer) or (not filters_on(layer, quad, wh) and "smart filters") if cls == REDRAW else
                  "a warp" if warped(layer) else None) or
                 (not _quad_kept(layer, quad) and "smart filters")] if why), None)
             if None in quads or why:
@@ -1571,7 +1575,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         # a trim's new quad would move a kept Puppet or Perspective Warp; a Mosaic's grid is proven on the canvas only
         why = next((w for layer in layers for w in [None if same else why_not_redrawn(layer, size == _size_of(layer)) or
                                                     (trim and _puppet(layer) and "smart filters") or
-                                                    (not filters_on(layer, new_quad(layer, size, boxes)) and
+                                                    (not filters_on(layer, new_quad(layer, size, boxes), size) and
                                                      "smart filters")] if w), None)
         if why:
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
