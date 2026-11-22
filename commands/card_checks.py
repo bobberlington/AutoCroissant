@@ -748,21 +748,21 @@ def check_card(ctx: Context, rel: str) -> dict:
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if image is not None else {}   # {PNG: picture n}
     if image is not None and parts is not None:
         try:
-            old = _published(ctx, rel)
+            old, pictures = _published(ctx, rel), _pictures(snapshot, rel, drawn)
             try:                                # the stars first: their sheet encodes while the rest is drawn
                 stars, missed = card_plates.with_stars(None, psd, raw, image, parsed, ctx.parser, rel, MAX_STARS, old,
-                                                       later=True), None
+                                                       later=True, pictures=pictures), None
             except Exception as error:          # noqa: BLE001 - met where the stars were
                 stars, missed = None, error
             with psd_edit.record_aside(psd):    # the rest as before: the stars' render record not yet
-                plate = card_plates.plates(psd, image, parts, ctx.fonts, _pictures(snapshot, rel, drawn), raw,
+                plate = card_plates.plates(psd, image, parts, ctx.fonts, pictures, raw,
                                            psd_edit._card_name(parsed), ctx.chart)
                 plate = card_plates.with_bars(plate, psd, raw, image, parsed, ctx.parser, rel, style, votes, old,
                                               later=True)
             if missed is not None:
                 raise missed
-            if stars:
-                plate = {**(plate or stars), "icons": stars["icons"]}
+            if stars:                           # picture 1's "icons", another's "icons@<n>"
+                plate = {**(plate or stars), **{k: v for k, v in stars.items() if k.startswith("icons")}}
             plate = card_plates.with_under(plate, psd, image, ctx.parser, psd_edit._card_name(parsed))
             plate = card_plates.with_probe(plate, psd, raw, image, parsed, ctx.parser, rel, ctx.types(), old)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check

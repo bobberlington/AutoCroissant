@@ -749,3 +749,14 @@ out([P.starsKept(rec, 0), P.starsKept(rec, 1), P.starMove(path, 0), P.starMove(p
   P.starsKept(vigor, 0), p.mockNote({{ refused: [["stars", P.starsKept(vigor, 0)]] }}), P.starsKept(odd, 0), !!P.starMove(path, 0, [], true)]);""")
     assert out == [why, None, None, "Creatures/Kirby/3 Stars/", f"The bake would refuse the stars: {why}.",
                    buff, "The bake would refuse the stars: this card has none.", why, True]
+
+
+@pytest.mark.skipif(not has(MOCKUP_JS, "export function starSheet"), reason="no per-picture stars in this mockup.js")
+def test_each_picture_takes_its_own_stars(tmp_path):
+    """A PSD of several pictures (card_plates.with_stars): picture 1 the plate's "icons", picture n its "icons@<n>"; a
+    plate without that picture's (an older one) none: the mock-up's starPlan."""
+    out = node(tmp_path, """
+const sheet = img => ({ vw: 720, bars: { stars: { at: 2, to: { 3: 0 } } }, cuts: [[1, 2, 3, 4, 0, 0]], img });
+const plate = { v: 1, w: 1200, crops: [], icons: sheet("one"), "icons@2": sheet("two") };
+out([1, 2, 3].map(n => m.starSheet(plate, n)?.img ?? null).concat([m.starSheet({ v: 1, icons: sheet("one") }, 2), m.starSheet(null, 1)]));""")
+    assert out == ["one", "two", None, None, None]

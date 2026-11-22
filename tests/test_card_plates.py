@@ -35,6 +35,8 @@ MONKEY = "14d42952d7b978fd5902d23f2d956f8b0cb828e7"     # Monkey_D_Letion.psd (T
 SNACK = ("7fb550763c7c910e221aba2a95c98bc826b73a7e",     # A_Snack.psd tagged: Name #1, #2, #3 (TC be0eaeeb)
          "1b9d58befdada2b3ac2d7b7f20d4a361396be8e3", "d25bf9243f525e042e16218ff5479995415eb8bc",   # its PNG, A_Snack2.png
          "b342ed97bdea33d1f205de1c0eb86a1e856c5bb0")     # A_Snack3.png
+MELON = ("e138e69858587f357f3c0582db9ab85acd9f0696",     # Watermelon.psd tagged, its stars' backdrop by picture (TC 4b475464)
+         "f55de0a3497b19ccf68d49097b2a88b91117d1c2", "eec45f36c40dd742018b6c89e4e6b15244ebc413")   # its PNG, Watermelon2.png
 
 
 def test_plates_of_a_card(clone):
@@ -290,6 +292,34 @@ def test_star_pictures_are_the_bakes(clone, tmp_path):
     assert np.array_equal(np.asarray(ours), np.asarray(Image.open(baked.png_path)))
     stars = cp.with_stars(None, psd, raw, png, parsed, parser, PUZZLED, 5)["icons"]["bars"]["stars"]
     assert stars["at"] == 3 and sorted(stars["to"]) == ["1", "2", "4", "5"]
+
+
+def test_each_pictures_stars_are_its_bakes(clone, tmp_path):
+    """A tagged PSD (Watermelon): picture 1's sheet under "icons", picture 2's under "icons@2", that one the bake's PNG
+    of picture 2 (apply_jobs as picture 2 onto its PNG, bake_pictures' run) at the site's view."""
+    from conftest import card_blob
+    from commands.psd_parser import variant_view
+    rel, (raw, one, two) = "Items/Heal/2 Stars/Watermelon.psd", (card_blob(clone, sha) for sha in MELON)
+    psd, parser, pngs = PSDImage.open(io.BytesIO(raw)), _bare_parser(), [Image.open(io.BytesIO(b)) for b in (one, two)]
+    plate = cp.with_stars(None, psd, raw, pngs[0], psd_edit.parse_card(parser, rel, rel, psd), parser, rel, 3,
+                          pictures={2: pngs[1]})
+    assert sorted(k for k in plate if k.startswith("icons")) == ["icons", "icons@2"]
+    assert all(sorted(plate[k]["bars"]["stars"]["to"]) == ["1", "3"] for k in ("icons", "icons@2"))
+    (tmp_path / "Watermelon.psd").write_bytes(raw)
+    (tmp_path / "Watermelon2.png").write_bytes(two)
+    (tmp_path / "out").mkdir()
+    with variant_view(psd, 2):
+        parsed = psd_edit.parse_card(parser, rel, rel, psd)
+    baked = psd_edit.apply_jobs(str(tmp_path / "Watermelon.psd"), str(tmp_path / "Watermelon2.png"),
+                                "Items/Heal/3 Stars/Watermelon.psd", {"stars": 3}, parsed, parser, str(tmp_path / "out"),
+                                str(clone / "MDW/Fonts"), psd=psd, view=2)
+    icons = plate["icons@2"]
+    x, y, w, h, sx, sy = icons["cuts"][icons["bars"]["stars"]["to"]["3"]]
+    got = np.asarray(Image.open(io.BytesIO(base64.b64decode(icons["img"].split(",", 1)[1]))).convert("RGBA"))[sy:sy + h, sx:sx + w]
+    now, was = (np.asarray(cp.view(im).convert("RGBA"), np.int16)[y:y + h, x:x + w] for im in (Image.open(baked.png_path), pngs[1]))
+    held = np.abs(now - was).max(-1) > cp.BAR_MOVED
+    assert icons["img"].startswith(cp.WEBP_URL) and held.sum() > 1000
+    assert np.array_equal(got[..., 3] == 255, held) and np.array_equal(got[held], now[held])
 
 
 def test_type_probe_is_the_bakes(clone, parser, tmp_path):

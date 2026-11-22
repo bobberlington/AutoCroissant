@@ -9,7 +9,7 @@ dropped; the website fetches the open card's in edit mode. With the fonts, a lay
 of it (its lines and letters, layout()) when that is the stored pixels'. A card whose stat rows the mock-up's cells
 cannot redraw also gets "bars" (with_bars): the bake's own picture of each stat at every value it takes, at that view,
 which the mock-up pastes instead; every starred card gets "icons" (with_stars): the bake's own stars at every count,
-pasted in place of the mock-up's erased and redrawn ones; a card with header type icons gets "under" (with_under): the
+pasted in place of the mock-up's erased and redrawn ones (a tagged PSD's picture n: "icons@<n>"); a card with header type icons gets "under" (with_under): the
 card without them, shown where a types edit takes one away, and "typeProbe" (with_probe): the bake's own drawing of
 type icons of two hues it makes there, whose look the mock-up's new icons take. A title under a clipped texture or an
 adjustment layer (an Ability under an adjustment) gets "tints": the bake's own pictures of it in 9 colours, mixed for a
@@ -934,23 +934,26 @@ def bar_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parse
     return out
 
 
-def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, top: int) -> dict:
+def star_changes(psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str, top: int,
+                 shown: Optional[int] = None) -> dict:
     """{count: _moved()} of star_value at every count 1 to top but the card's; {} for a card whose stars no edit
-    moves (bar_changes' cards, a tagged PSD: one picture only)."""
+    moves (bar_changes' cards). shown: a tagged PSD's picture (variant_view, as bake_pictures runs it; png and parsed
+    its own); a tagged PSD without one: {}."""
     count = parsed["card"].get("stars")
-    if not isinstance(count, int) or png.size != psd.size or len(variants_of(psd)) > 1 \
+    if not isinstance(count, int) or png.size != psd.size or (shown is None and len(variants_of(psd)) > 1) \
             or psd_edit.story_style_drift(psd, kerning=False):
         return {}
     psd_edit.use_record(psd, rel)
-    icc = psd_edit.export_icc(psd, png)
     was, base = np.asarray(view(png).convert("RGBA")), _base(png)
     out = {}
-    with psd_edit.render_cache(shared=True), rcache.frozen(psd):     # psd only read: its keys once
-        for value in range(1, top + 1):
-            merged = None if value == count else star_value(psd, raw, png, parsed, parser, rel, value, icc)
-            moved = _moved(was, merged, base) if merged is not None else None
-            if moved:
-                out[value] = moved
+    with variant_view(psd, shown):
+        icc = psd_edit.export_icc(psd, png)
+        with psd_edit.render_cache(shared=True), rcache.frozen(psd):     # psd only read: its keys once
+            for value in range(1, top + 1):
+                merged = None if value == count else star_value(psd, raw, png, parsed, parser, rel, value, icc)
+                moved = _moved(was, merged, base) if merged is not None else None
+                if moved:
+                    out[value] = moved
     return out
 
 
@@ -1107,14 +1110,27 @@ def with_bars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image
 
 
 def with_stars(plate: Optional[dict], psd: PSDImage, raw: bytes, png: Image.Image, parsed: dict, parser, rel: str,
-               top: int, old: Optional[dict] = None, later: bool = False) -> Optional[dict]:
-    """The plates file with its "icons": bar_sheet of star_changes under "stars"; plate as it was without any. old: the
-    card's published plates file. later: bar_sheet's."""
-    sheet = bar_sheet({"stars": star_changes(psd, raw, png, parsed, parser, rel, top)}, parsed["card"], vw=view(png).width,
-                      old=(old or {}).get("icons"), later=later)
-    if sheet is None:
-        return plate
-    return {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), "icons": sheet}
+               top: int, old: Optional[dict] = None, later: bool = False,
+               pictures: Optional[dict] = None) -> Optional[dict]:
+    """The plates file with its "icons": bar_sheet of star_changes under "stars"; plate as it was without any. A tagged
+    PSD's per picture with a PNG (pictures: {n: picture n's PNG} past 1), each parsed as it shows: picture 1's "icons",
+    picture n's "icons@<n>"; none when their stars differ (the bake refuses). old: the card's published plates file.
+    later: bar_sheet's."""
+    views = {None: (png, parsed)}
+    if len(variants_of(psd)) > 1:
+        views = {}
+        for n, picture in [(1, png), *sorted((pictures or {}).items())]:
+            with variant_view(psd, n):
+                views[n] = (picture, psd_edit.parse_card(parser, rel, rel, psd))
+        if len({repr(one["card"].get("stars")) for _, one in views.values()}) > 1:
+            return plate
+    for n, (picture, one) in views.items():
+        key = "icons" if (n or 1) == 1 else f"icons@{n}"
+        sheet = bar_sheet({"stars": star_changes(psd, raw, picture, one, parser, rel, top, n)}, one["card"],
+                          vw=view(picture).width, old=(old or {}).get(key), later=later)
+        if sheet is not None:
+            plate = {**(plate or {"v": VERSION, "w": psd.width, "crops": []}), key: sheet}
+    return plate
 
 
 def with_under(plate: Optional[dict], psd: PSDImage, png: Image.Image, parser, name: str) -> Optional[dict]:
