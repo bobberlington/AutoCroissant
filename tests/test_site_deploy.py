@@ -1,7 +1,7 @@
 """
 The Card browser's deploy beside its build (TTSCardMaker .github/workflows/site.yml, .github/scripts/pages_wait.py): the
 version job holds github-pages and deploys, the build (no environment: it starts ~2 s sooner) uploads and waits.
-Loads both from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without pages_wait.py (2026-11-17).
+Loads both from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone.
 """
 import json
 import re
@@ -11,13 +11,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from subprocess import run as run_process
 
-import pytest
 import yaml
 
 from conftest import SITE_SRC
 
 WAIT = SITE_SRC / ".github" / "scripts" / "pages_wait.py"
-pytestmark = pytest.mark.skipif(not WAIT.is_file(), reason=f"no {WAIT}")
 
 
 def test_the_version_job_deploys_what_the_build_uploads():

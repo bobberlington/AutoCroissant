@@ -1,17 +1,13 @@
 """
 Site fresh.js (TTSCardMaker site/assets/fresh.js, in node): an open page looks for a new deploy every 15 s for 5 minutes
 after it opens or its tab shows again, then every 3 minutes; a publish's 15 minutes are kept (2026-11-20).
-Skips without fresh.js.
 """
 import json
 from subprocess import run as run_process
 
-import pytest
-
 from conftest import SITE_SRC
 
 FRESH_JS = SITE_SRC / "site" / "assets" / "fresh.js"
-pytestmark = pytest.mark.skipif(not FRESH_JS.is_file(), reason=f"no {FRESH_JS}")
 
 
 def test_checks_every_15_s_after_opening_or_showing(tmp_path):

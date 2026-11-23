@@ -11,7 +11,6 @@ from subprocess import run as run_process
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 from PIL import Image
 from psd_tools import PSDImage
 
@@ -23,7 +22,6 @@ from helpers import _card
 
 SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
-site = pytest.mark.skipif(not (ASSETS / "textcolor.js").is_file(), reason=f"no textcolor.js in {ASSETS}")
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 BURNING = {"field": "ability", "phrase": "Burning", "color": "#ff7a1a"}
 
@@ -55,7 +53,6 @@ def test_field_rules_and_file():
         assert names.get("HP") == "#00ff00" and len(names) > 50
 
 
-@site
 def test_menu_logic(tmp_path):
     """The phrase a selection names (whole words, "#n" when it repeats), the list a pick leaves, the runs drawn (over the
     card's own colours, on the card page and the mock-up), the plain words, and the file edit.js writes."""
@@ -166,7 +163,6 @@ LINK_CARDS = [{"id": "burning", "name": "Burning", "type": "debuff"}, {"id": "bu
 REAL = json.loads((Path(__file__).resolve().parent / "fixtures" / "palette_texts.json").read_text(encoding="utf-8"))
 
 
-@site
 def test_site_words_agree_with_tts(tmp_path):
     """The site's word colours (owner 2026-11-11): textcolor.js wordColors (the website's card text) and build_site
     word_colors (tts.json's) paint the same letters in the same colours from one palette, on these and 50 real
@@ -619,7 +615,6 @@ def test_faint_overlay_goes_off(clone, tmp_path):
     assert r > 150 and g < 90 and b < 90, (r, g, b)      # mauve (130, 112, 150) before
 
 
-@site
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color
@@ -665,7 +660,6 @@ process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors,
     assert got == want and [len(w) for w in want[:n]] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1], (got, want)
 
 
-@site
 def test_mockup_reads_a_layers_own_overlay(clone, tmp_path):
     """Twin Emperors' five Ability layers share one path; only 'Vek'nilash:' and 'Vek'lor:' carry a Gradient Overlay (the
     record's text[].effects). paintedOver refuses a phrase on them alone, as plan_colors does; the draw gives only them
@@ -690,9 +684,6 @@ process.stdout.write(JSON.stringify([sets.map(c => M.paintedOver(rec, c).map(n =
     assert sorted(layers) == [["Atta", False, False], ["Immu", False, False], ["This", False, False], ["Vek'", True, True], ["Vek'", True, True]], layers
 
 
-@site
-@pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "keptOver" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
-                    reason="no keptOver in this mockup.js")
 def test_mockup_says_kept_colours_as_the_bake(clone, tmp_path):
     """mockup.js keptOver, on the cards' details records, says what plan_colors refuses as keeping its own look, in its
     words: a phrase of only an FX layer's words (Computer Virus' '1st: Slime'), badges (Mini Doomer's '(BOT)') or status
@@ -726,9 +717,6 @@ process.stdout.write(JSON.stringify(jobs.map(j => M.keptOver(j.rec, j.colors, j.
     assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 0, 1, 1], (got, want)
 
 
-@site
-@pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "titleOff" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
-                    reason="no titleOff in this mockup.js")
 def test_mockup_draws_a_whole_title_colour_flat_as_the_bake(clone, tmp_path):
     """mockup.js titleOff, on the cards' details records: a whole title's colour turns the title's own Gradient Overlay
     off where set_colors does (_overlay_off: its letters flat, so the mock-up redraws them, not tints them), or its

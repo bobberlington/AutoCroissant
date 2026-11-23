@@ -3,18 +3,14 @@ A turned phone keeps the reader's place (TTSCardMaker site/assets/app.js turnPla
 the tile just under the bar, noted as the page scrolls, goes back to its spot when the width changes, though the
 browser's own turn went to the top (short windows unpin the bar: its turn anchor); turning back lands on the same tile,
 a reader's scroll notes another, a card dialog closed after a turn keeps it (not Back's older scroll), and a tile not
-drawn yet (content-visibility) is never noted. Skips without turnPlace (2026-11-22).
+drawn yet (content-visibility) is never noted (2026-11-22).
 """
 import json
 from subprocess import run as run_process
 
-import pytest
-
 from conftest import SITE_SRC
 
 APP_JS = SITE_SRC / "site" / "assets" / "app.js"
-pytestmark = pytest.mark.skipif(not APP_JS.is_file() or "const turnPlace" not in APP_JS.read_text(encoding="utf-8"),
-                                reason=f"no turnPlace in {APP_JS}")
 
 GRID = r"""
 let innerWidth = 390, innerHeight = 844, scrollY = 30000, now = 0, drawn = true, lag = 0;   // lag: undrawn tiles' guess

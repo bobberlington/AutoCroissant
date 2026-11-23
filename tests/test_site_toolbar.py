@@ -1,19 +1,15 @@
 """
 The Cards toolbar's Grid/Table and S/M/L toggles (TTSCardMaker site/assets/grid.js toolbarHtml, in node): each button
 says whether it is on (aria-pressed, the same state as its .on colour) inside a named group. Loads the site from
-$AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without a grid.js with toolbarHtml (2026-11-16).
+$AC_SITE_SRC (a TTSCardMaker checkout) or the clone (2026-11-16).
 """
 import json
 import re
 from subprocess import run as run_process
 
-import pytest
-
 from conftest import SITE_SRC
 
 GRID_JS = SITE_SRC / "site" / "assets" / "grid.js"
-pytestmark = pytest.mark.skipif(not GRID_JS.is_file() or "toolbarHtml" not in GRID_JS.read_text(encoding="utf-8"),
-                                reason=f"no toolbarHtml in {GRID_JS}")
 
 
 def test_toggles_say_which_is_on(tmp_path):

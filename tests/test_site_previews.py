@@ -17,11 +17,6 @@ ASSETS = SITE / "site" / "assets"
 PREVIEW_JS, MOCKUP_JS = ASSETS / "preview.js", ASSETS / "mockup.js"
 
 
-def has(path: Path, word: str) -> bool:
-    """For a skip only while a test's feature is still on a work branch."""
-    return path.is_file() and word in path.read_text(encoding="utf-8")
-
-
 def node(tmp_path, body: str):
     """Run body with preview.js as p and mockup.js as m; its stdout as JSON."""
     script = tmp_path / "probe.mjs"
@@ -58,7 +53,6 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
     assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
 
 
-@pytest.mark.skipif(not has(PREVIEW_JS, "function unzip"), reason="no hand-over unzip in this preview.js")
 def test_the_hand_over_unzips(tmp_path):
     """The preview job's hand-over as upload-artifact zips it (deflated, data descriptors) and a stored entry: the
     checking tab's unzip gives the bytes back."""
@@ -121,7 +115,7 @@ out([p.pollDelay(one(13 * s, { run }), now), p.pollDelay(one(13 * s, { run }), n
     assert out == [250, 150, 0, 1000, 1000, 1000, 1000, 3000, 1000]
 
 
-@pytest.mark.parametrize("miss", [False, pytest.param(True, marks=pytest.mark.skipif(not has(PREVIEW_JS, "ZIP_404S"), reason="no zip 404s looked past"))])
+@pytest.mark.parametrize("miss", [False, True])
 def test_the_editor_takes_the_lanes_hand_over(tmp_path, miss):
     """createPreviews against a stand-in GitHub on a fake clock: press 1 names no lane and shows its run's hand-over;
     press 2 names that run and its blob (posted beside the dispatch: the lane's press_blob), rings the lane's doorbell
@@ -191,7 +185,6 @@ out({ sent, toasts, blobs, refs, second: second - 1e12, states: ["c0", "c1"].map
     assert "lane" in sent[5] and "lane" not in sent[6] and out["named"] == [101, None]  # a blob not posted: none again
 
 
-@pytest.mark.skipif(not has(PREVIEW_JS, "laneNext"), reason="no next cards in this preview.js")
 def test_the_lane_reads_the_next_card(tmp_path):
     """A PSD-kind change on another card while a lane is up rings it as the lane's next card (a status at the lane's
     commit: card_preview_lane.NEXT), once per card and lane, none for a card the lane baked; its press rings as ever."""
@@ -218,7 +211,6 @@ out({ refs, lane: pv.entries("c1")[0].lane ?? null });""")
     assert out["lane"] == 101 and len(refs) == 2 and RUNG.fullmatch(refs[1][1]) and refs[1][2] == "c" * 40   # the press's doorbell
 
 
-@pytest.mark.skipif(not has(PREVIEW_JS, "function claim("), reason="the tab in front doesn't take the check in this preview.js")
 def test_the_tab_in_front_shows_the_hand_over(tmp_path):
     """Two tabs, one localStorage, storage events to the other, each its own visibility; the dispatch answers in 0.3 s.
     Press 1 (cold) in B, the person moves to A 2 s later: A takes the check and shows the run's hand-over (listed 12.2 s
@@ -307,7 +299,6 @@ out([show(m.glyphPlan("(WOF) +1 Heal (+1 DEF).", "(WOF) +1 Heal.", "+")), show(m
     assert out[5] == "The ability's font has no '+': the bake prints a box there. The title's font has no '.': the bake leaves a gap there."
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function glyphFont"), reason="no picked fonts in this mockup.js")
 def test_typed_letters_the_font_cant_draw_take_the_font_the_bake_picks(tmp_path):
     """Owner D15 rest: a typed letter its font lacks or draws empty (fonts.json lacks, empty) is drawn in the font the
     bake sets it in (psd_edit.glyph_fonts): the one the run it is typed into prints in, else its layer's (details'
@@ -334,7 +325,6 @@ out([[":", "+", "%", "["].map(c => m.glyphFont(rec, ab, c, map)), m.glyphFont(re
     assert out[6] == ["a", {"s": "+", "fam": "F"}, "b", {"s": "...", "fam": "G"}]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function lineSplices"), reason="no lineSplices in this mockup.js")
 def test_words_changed_on_several_lines_splice_each_line(tmp_path):
     """geoPlan on the card's own lines: changes on two lines or in two paragraphs give one splice per line (a paragraph's
     trailing spaces left out); one line: the single splice; a new line break: neither."""
@@ -347,7 +337,6 @@ out(["Hit an evil foe and the cookie dies.\\nHeal 2.", "Hit an Evil fee and the 
     assert out == [[None, [[0, 7, 8, 7, "e"], [1, 24, 25, 24, "c"]]], [None, [[0, 13, 14, 13, "e"], [2, 42, 43, 43, "3"]]], ["e", None], [None, None]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, r"/[()\n]/.test(inner)"), reason="no cost swaps in this mockup.js")
 def test_a_cost_badge_is_swapped_alone(tmp_path):
     """A cost (one pill glyph on the card) for another, as a timing tag: spliced alone at the old pill's width times the
     new one's over it, the rest of the line moved by the difference."""
@@ -360,7 +349,6 @@ out(["Gain 1 (3 points) now.", "Gain 1 (1 point) now."].map(fit));""")
     assert out == [[7, 100, 0], [7, 90, -10]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "mOf = j => R.fr"), reason="no second-font runs in this mockup.js")
 def test_letters_typed_into_a_second_fonts_run(tmp_path):
     """psd_details fr: a digit typed into a line set in another font is spliced at the line's size, measured in that
     font (without fr: shrunk to make the main font fit); a line with a few letters in it measures each run in its own font."""
@@ -376,7 +364,6 @@ out([fit(cost, () => w2, null, "Cost: 5 Points"), fit(cost, () => w2, [0, 14], "
     assert out == [[11.76, 0.59, 1], [20, 1, 1], [20, 1, 1]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "only this line's size differs"), reason="no outsize lines in this mockup.js")
 def test_a_line_set_far_larger_keeps_its_size(tmp_path):
     """A title line set 2.5x the layer's size (Zenith Martlet's 'Martlet'): spliced at its own size when the layer's
     other lines match this font; alone, or beside a line that doesn't match either, refused (a font far off)."""
@@ -393,7 +380,6 @@ out([fit([["Martlet", 25], [z, 10]], "Martlets\\n" + z), fit([["Martlet", 25]], 
     assert out == [[50, 2.5], None, None]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function paintLines"), reason="no exported paintLines in this mockup.js")
 def test_a_redrawn_pill_keeps_the_layers_stroke(tmp_path):
     """A badge painted again on a layer with a Stroke is outlined in its colour at its width under the pill (as the card
     prints it); not on a one-colour layer, nor without the record's Stroke width."""
@@ -408,7 +394,6 @@ out([run({}), run({ one: true }), run({ strokeW: 0 })]);""")
     assert not any(s.endswith("rgb(1,2,3) 6") for s in one + bare) and bare[0] == "fill"
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "tc.stroke || stroke"), reason="no record Stroke in this mockup.js's shades")
 def test_a_gradients_shades_leave_out_the_records_stroke(tmp_path):
     """Black-outlined orange letters on a dark backdrop (the outline not 25 levels under it, so the pixels show no
     outline): the shades leave out the record's Stroke, so the top is orange, not black (Fire Staff, The Maelstrom)."""
@@ -420,7 +405,6 @@ out([run(null), run([0, 0, 0])].map(r => [r.stroke, r.shades.stops[0][1]]));""")
     assert out == [[None, [0, 0, 0]], [None, [240, 140, 20]]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function seeThrough"), reason="no see-through Strokes in this mockup.js")
 def test_a_see_through_stroke_is_one_layer_at_its_opacity(tmp_path):
     """A Stroke under 100% (psd_details rim): the letters' outlines drawn opaque on a layer of their own, put on the card
     at its opacity before the fills (where two letters' outlines meet they don't add up); at 100% straight on the card."""
@@ -432,7 +416,6 @@ out([run(0.64), run(1)]);""")
     assert out == [["layer rgb(1,2,3)", "layer at 0.64", "fillText rgb(9,9,9)"], ["strokeText rgb(1,2,3)", "fillText rgb(9,9,9)"]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "if (im && one === true) paintMask"), reason="no one-colour icons in this mockup.js")
 def test_a_typed_icon_under_an_overlay_takes_its_colour(tmp_path):
     """Under the Ability's overlay a typed icon is its shape in the text's fill (the overlay paints over it in the
     bake); elsewhere, or with the overlay off for a whole colour ("badges"), the icon's own picture."""
@@ -444,7 +427,6 @@ out([run(false), run(true), run("badges")]);""")
     assert out == [["icon"], ["mask rgb(200,10,10)", "canvas"], ["icon"]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "kind = OVERLAY, t = null"), reason="no own effects in this mockup.js")
 def test_a_layer_sharing_its_path_has_its_own_overlay(tmp_path):
     """Twin Emperors' 5 Ability layers share a path whose effects are a label's Gradient Overlay: a layer's own
     effects (psd_details VERSION 12) answer for it, else the path's; a group's overlay still counts."""
@@ -454,7 +436,6 @@ out([m.oneColour(rec, at, undefined, { layer: at, effects: [] }), m.oneColour(re
     assert out == [False, True, True, True, True]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "const iconEm"), reason="no icon glyph shapes in this mockup.js")
 def test_an_icon_swap_keeps_the_line_at_the_glyphs_shape(tmp_path):
     """A typed icon steps as its stoogedings glyph (its picture's width over height, 1 em tall or 1.4 wide, 0.04 em each
     side); one icon for another is spliced alone at the old icon's size (its pen step, or its ink where tracking spaces
@@ -471,7 +452,6 @@ out([widths, fit([62, 112]), fit([67, 107])]);""")
     assert out == [[5.8, 10.8, 14.8, 11], [5, 29, -25, 50, False], [5, 34, -20, 40, True]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "VARIANT_PAD"), reason="no icon variants in this mockup.js")
 def test_a_typed_icon_variant_steps_as_its_glyph(tmp_path):
     """[x:glow] steps as the font's glyph with its halo spacers (0.26 em each side), [x:sticker] 0.03, [x:tint] and
     [x:no] as the plain icon, each with its picture; a layered one typed on a tracked line is set untracked (psd_edit),
@@ -491,7 +471,6 @@ out([ps.map(p => p.vary || (p.no ? "no" : "")), ps[1].vfile, widths, fit(text, [
                    [54, 0, 40], [76, 22, 47]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "back[v.at(j)]"), reason="no variant runs in this mockup.js's tintOld")
 def test_a_colour_over_a_variant_ability_tints_in_place(tmp_path):
     """Afraid's record spells [dark:sticker], the website [dark]: a colour on its Ability tints the letters in place, each
     letter's old fill read from the record's runs at its own index (after the icon too), not a retyped Ability."""
@@ -508,7 +487,6 @@ out([own(plan("Can't"), "Can't"), own(plan("creatures"), "creatures")]);""")
     assert out == [["255,255,255"] * 5, ["32,80,255"] * 9]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function mixPlan"), reason="no mixPlan in this mockup.js")
 def test_a_whole_field_colour_mixes_the_bakes_looks(tmp_path):
     """A plate's tints (card_plates: the bake's looks of a layer in the 9 probe colours): a whole-field colour mixes them
     where they move (a corner probe: its look, grey: the grey look; luma: through black, grey and white), the rest keeps
@@ -530,7 +508,6 @@ out([mix("#ff0000"), mix("#808080"), mix("#ffffff", true), mix("#ff0000", false,
     assert phrase is None and other is None and stale is None
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function firstBase"), reason="no firstBase in this mockup.js")
 def test_a_no_layout_ability_starts_on_its_own_first_baseline(tmp_path):
     """An Ability whose plate has no layout, retyped with the same words: line 1 on the record's first baseline, its ink
     top plus the line's tallest piece (capitals, a badge's pill, an icon's glyph); scaled from the frame's top if shrunk."""
@@ -543,7 +520,6 @@ out([at("After attacking, destroy this creature."), at("heal 2 now"), at("(1CD) 
     assert out == [120, 114.4, 123.5, 126.8, None, 110]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function ownWrap"), reason="no ownWrap in this mockup.js")
 def test_a_rewrapped_ability_moves_the_cards_own_words(tmp_path):
     """ownWrap: a shorter or deleted word pulls the next line's first word up where the bake's greedy wrap puts it; kept
     words are the card's ink moved (cut half-way to their neighbours'), only the typed word drawn. A frame that does not
@@ -567,7 +543,6 @@ out([run(one, "aaa q ccc ddd eee"), run(one, "aaa ccc ddd eee", [0, 62]), run(on
     assert out[5:] == [None, None, None]   # a blank line after, before, inside the change
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function geoRoom"), reason="no geoRoom in this mockup.js")
 def test_a_growing_ability_measures_its_room_on_the_cards_lines(tmp_path):
     """geoRoom: the new lines on the card's own baselines (the first gone line's, its step), the lines after moved down by
     the added lines, the floor the inked lines' lowest bottom; a blank line is no ink (low: the lowest inked baseline)."""
@@ -579,7 +554,6 @@ out([G.floor, G.step, G.paint.map(p => [p.base, p.lines.length]), G.low, G.deep]
     assert out == [70, 40, [[65, 2], [145, 1]], 105, 145]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "function geoRoom"), reason="no geoRoom in this mockup.js")
 def test_a_plates_emoji_counts_as_two_letters(tmp_path):
     """The plate's indexes are code points (Python's); the website's text counts an emoji as 2: the lines after it and
     its letters' pens still start where they do (Cave of the Past's clock)."""
@@ -600,7 +574,6 @@ out([jobs([30, 2210, 1170, 2388]), jobs(false), jobs(undefined)]);""")
     assert out == [[["+ability", [30, 2210, 1170, 2388]]], [], [["+ability", [405, 1778, 793, 1856]]]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function putCover"), reason="no covers in this mockup.js")
 def test_a_picture_over_the_text_stays_over_the_new_words(tmp_path):
     """A plate's cover (card_plates.cover_alpha: Papyrus's spaghetti): new letters under it are mixed back to the plate
     by its alpha, as the bake leaves the picture over them, and said past the old lines' ink; the card's own pixels stay;
@@ -624,7 +597,6 @@ out([row(a), said, moved(cover), moved(null)]);""")
     assert out[2] == [0, 0, 0, 0, 0, 0, 150, 150, 0, 0] and min(out[3][8:]) > 100   # without it: a ghost of the picture
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function stackRows"), reason="no stacked rows in this mockup.js")
 def test_a_stacked_box_knows_its_rows(tmp_path):
     """A stacked Ability box (bake fit_below stacked) is checked against its sibling rows (one layer path), grown by
     their Stroke and shadows; a lone layer or another creature's (Tainted Lazarus) has none. An indented first line
@@ -675,7 +647,6 @@ out(["hp", "def", "atk", "spd"].filter(k => !bars.some(r => r.k === k)));""")
     assert set(js) <= set(cp.mock_misses(image, psd, card, kinds))
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function followSpecs"), reason="no followSpecs in this mockup.js")
 def test_a_retyped_title_rewrites_its_copies_elsewhere(tmp_path):
     """card_plates' crops of follow layers: a copy takes the title's new text, a watermark the joined title; none for a
     copy under a layer the draw wipes too, nor one without a crop (never shown); a deleted title: erased only."""
@@ -693,7 +664,6 @@ out([got([spec(1, "Moslings", "Mosling")]), got([spec(1, "Moslings", "Mosling"),
                    [["4", "Moslings", [240, 600, 480, 660]]], [["3", None, [300, 1080, 660, 1380]], ["4", None, [240, 600, 480, 660]]]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function splitWhy"), reason="no splitWhy in this mockup.js")
 def test_a_split_titles_part_the_bake_refuses_is_said(tmp_path):
     """psd_edit.split_title_check's refusals, said as the bake words them: off the card (The Bagel), onto another line
     (a box), into another part; a part that fits, titles in separate pictures, or a near miss (a letter past a box or its
@@ -717,7 +687,6 @@ out([why(bagel, [[1, "The Bagel Or... is it", "The Bagel"]], [{ px: 145 }]), why
     assert fits == apart == "" and near == ["", "", ""]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function titleFit"), reason="no titleFit in this mockup.js")
 def test_a_title_over_an_icon_is_set_smaller(tmp_path):
     """psd_edit fit_title in the mock-up: an icon near the old title is left out (titleIcons); the title steps by 0.94
     to the first scale that clears, never under TITLE_MIN, at 1 when it reaches none or none clears; a title a bake set
@@ -732,7 +701,6 @@ out([m.titleIcons(head, 0.5, was), at(0.85), at(0.5), at(2), m.keptTitle({ title
     assert out[4] == [[300, 20, 400, 60]] and out[5] is None and out[6] is None
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export const keptFit"), reason="no keptFit in this mockup.js")
 def test_a_split_titles_part_keeps_its_own_fit(tmp_path):
     """r4-2: a split title's part a bake set smaller starts from the card maker's size and boxes (titleFits), as the
     next bake; any other title the card's titleFit."""
@@ -742,7 +710,6 @@ out([m.keptTitle(card, 422), m.keptFit(card, 422), m.keptTitle(card, 7), m.keptF
     assert out == [[[300, 20, 400, 60]], 0.78, [[1, 2, 3, 4]], 0.9, [[1, 2, 3, 4]]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function fitPart"), reason="no fitPart in this mockup.js")
 def test_a_type_icon_fills_its_spot_by_its_opaque_part(tmp_path):
     """A type icon with a glow past its opaque part (light, support): the mock-up draws the file where the bake's
     _icon_image links it, the opaque part filling the spot, not the whole file fitted into it."""
@@ -762,7 +729,6 @@ out(m.fitPart(80, 96, m.opaquePart(d, 80, 96), {json.dumps(box)}).slice(0, 4));"
     assert max(abs(p - q) for p, q in zip((x, y, x + w, y + h), (quad[0], quad[1], quad[4], quad[5]))) <= 1
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export const capBox"), reason="no capBox in this mockup.js")
 def test_an_icons_erase_box_stays_near_the_icon(tmp_path):
     """A record's star or type box past half the icon (Holo Defense API, Ice Dragon: the whole card) is erased only
     that far; a real glow box is kept as it is."""
@@ -774,7 +740,6 @@ out([m.starPlan(stars, 2, 1).erase, m.starPlan(stars, 2, 0).erase, m.typePlan(ty
     assert out == [[[891.5, -48.5, 1121.5, 168.5]], [[1063, 8, 1187, 120], [891.5, -48.5, 1121.5, 168.5]], [[100.5, -2, 356.5, 210.5]]]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function creatureSite"), reason="no creatureSite in this mockup.js")
 def test_creatures_the_bake_leaves_on_the_website_are_said(tmp_path):
     """Split, + or - Creature and creature 2's stat emptied leave the list on the website (psd_edit._classify_creatures):
     said; a creature's stat edit (the plate's picture), creature 1's emptied stat and no list say nothing."""
@@ -789,7 +754,6 @@ out([say({ creatures: [a, { ...a }] }, { creatures: null }), say({ creatures: [a
     assert out[4:] == ["", "", ""]
 
 
-@pytest.mark.skipif(not has(ASSETS / "parts.js", '"a card shows at least one"'), reason="no under-1 stars rule in this parts.js")
 def test_stars_under_one_are_the_bakes_refusal(tmp_path):
     """Stars to 0: the bake refuses (psd_edit: 'a card shows at least one'), so the mock-up keeps the printed stars and
     says so, and a folder card promises no move to '0 Stars/'. A buff (no stars: psd_details' '*') keeps its own
@@ -806,7 +770,6 @@ out([P.starsKept(rec, 0), P.starsKept(rec, 1), P.starMove(path, 0), P.starMove(p
                    buff, "The bake would refuse the stars: this card has none.", why, True]
 
 
-@pytest.mark.skipif(not has(MOCKUP_JS, "export function starSheet"), reason="no per-picture stars in this mockup.js")
 def test_each_picture_takes_its_own_stars(tmp_path):
     """A PSD of several pictures (card_plates.with_stars): picture 1 the plate's "icons", picture n its "icons@<n>"; a
     plate without that picture's (an older one) none: the mock-up's starPlan."""

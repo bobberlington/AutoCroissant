@@ -165,8 +165,6 @@ def test_cards_json_columns(bs):
 def test_mentions_built_as_the_site_finds_them(bs, monkeypatch):
     """cards.json mentions (mention_lists: text.js in node): per card the indexes of the cards its ability names, 0 for
     none, hidden cards neither naming nor named (app.js derive() at boot); no node, none (the boot parses)."""
-    if not hasattr(bs, "mention_lists"):
-        pytest.skip("a site before built mentions")
     cards = [{"id": "alpha", "name": "Alpha", "type": "creature", "ability": "Summon a Beta. Alpha heals."},
              {"id": "beta", "name": "Beta", "type": "minion", "ability": "Hits Gamma."},
              {"id": "gamma", "name": "Gamma", "type": "creature", "ability": "Alpha.", "hidden": True},
@@ -716,8 +714,6 @@ def test_timelines_before_the_repo(bs, repo, tmp_path, monkeypatch):
     PNG's current version (none after its first record here), a physical card photo's Created ("Before 2020", owner Q6:
     a live card's and M'uru's; no paper rows) and their changes under Recorded changes (a type fact's "remove" as a
     removal), a confirmed fact once; without HISTORY_DIR, none of it."""
-    if not hasattr(bs, "HISTORY_DIR"):
-        pytest.skip("a site before HISTORY_DIR")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
     _png(repo["root"] / "MDW/The Morgue/White_Palace.png", 70)
     palace_commit, _ = _commit(repo["root"], "Palace picture", 1_780_000_000 + 3 * DAY)
@@ -838,8 +834,6 @@ def test_versions_one_file_per_card(bs, repo, tmp_path, monkeypatch):
     visible and hb; one stamp for the folder (index.html's meta data, app.js dataUrl). Each also holds the card's own
     history.json texts and analytics.json Balance row, their commit indexes into its own lists (its dialog needs neither
     all-cards file)."""
-    if not hasattr(bs, "version_files"):
-        pytest.skip("a site before data/versions/")
     monkeypatch.setattr(bs, "HISTORY_DIR", str(_timelines(tmp_path / "history")))
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     per = out["versions/"]
@@ -987,8 +981,6 @@ def test_morgue_tiles_show_the_list_copy(tmp_path):
     or less, imgAttrs) show the 360 px list copy; the card view's sizes (480, 720: the dialog, the compare view) the
     webp; without a copy, the webp everywhere (grid.js in node)."""
     grid = SITE_SRC / "site" / "assets" / "grid.js"
-    if "lpic" not in grid.read_text(encoding="utf-8"):
-        pytest.skip("a site before the Morgue list copies")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
 const c = {{ pic: "h/P-1.webp", lpic: "h/P-1-list.avif", tw: 40, th: 80 }}, old = {{ pic: "h/P-1.webp" }};
@@ -1006,8 +998,6 @@ def test_compare_pictures_sized_to_their_column(tmp_path):
     column's width (style.css .compare: 32 px of padding, 14 px gaps, columns min(220px, half) at least, the panel's
     30 px), at every screen width and card count."""
     grid = SITE_SRC / "site" / "assets" / "grid.js"
-    if "compareAttrs" not in grid.read_text(encoding="utf-8"):
-        pytest.skip("a site before Compare's sized pictures")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
 process.stdout.write(JSON.stringify([1, 2, 3, 4, 5].map(n => G.compareAttrs({{ 360: "a", 480: "b", 720: "c" }}, {{ img: "x" }}, n))));
@@ -1066,8 +1056,6 @@ def test_table_rows_take_the_small_copies_unless_drawn_wider(tmp_path):
     """Table rows (30x42, object-fit: cover; app.js imgAttrs(c, 30, 42)) list the 48 and 64 px copies for a card drawn 30
     px wide; a square or wide one is drawn wider, so it keeps 96 first, as before (grid.js in node)."""
     grid = SITE_SRC / "site" / "assets" / "grid.js"
-    if "coverH" not in grid.read_text(encoding="utf-8"):
-        pytest.skip("a site before the 48 and 64 px copies")
     probe = tmp_path / "probe.mjs"
     probe.write_text(f"""const G = await import({json.dumps(grid.as_uri())});
 const t = {{ 48: "a", 64: "b", 96: "c", 192: "d", 240: "e", 360: "f" }}, w = s => /srcset="([^"]*)"/.exec(s)[1].match(/\\d+w/g).join(" ");

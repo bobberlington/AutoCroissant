@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from subprocess import run as run_process
 
-import pytest
-
 from commands import text_align as ta
 from commands.psd_edit import aligned_parts
 from conftest import SITE_SRC
@@ -59,7 +57,6 @@ TEXTALIGN_JS = SITE_SRC / "site" / "assets" / "textalign.js"
 EDITS = json.loads((Path(__file__).resolve().parent / "fixtures" / "text_align_edits.json").read_text(encoding="utf-8"))["edits"]
 
 
-@pytest.mark.skipif(not TEXTALIGN_JS.is_file(), reason=f"no {TEXTALIGN_JS}")
 def test_the_mock_ups_port_lines_up_as_the_bake(tmp_path):
     """The website mock-up's port (textalign.js) gives real card edits the bake's segments, parts (psd_edit
     aligned_parts) and moves, its UTF-16 offsets aside (emoji)."""

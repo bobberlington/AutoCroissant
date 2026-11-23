@@ -66,8 +66,8 @@ one test looping over it). Shared helpers live in `tests/helpers.py`, never impo
 Website tests (owner, 2026-11-12): one smoke test per site piece, plus the tests that check the bot against the site.
 Workflow tests (owner, 2026-11-12): only the ones that catch a bot change breaking the Actions (a bot checkout's list is
 the module's `SPARSE_FILES`, steps that run the bot's own code or CLIs), the import closure tests and actionlint. A
-missing tool (conftest `TOOLS`) or TTSCardMaker file (site code, workflow, font) fails, never skips; a site test skips
-only while its feature is on a work branch (test_site_previews `has()`), until that feature is on TTSCardMaker's main.
+missing tool (conftest `TOOLS`) or TTSCardMaker file (site code, workflow, font) fails, never skips; a site test never
+skips for a TTSCardMaker feature: TC lands first, then AC.
 A test that starts a background job ends it after the test, passed or failed (tests/test_card_guards.py
 `steps_end_with_the_test`: 2026-11-16 three loops were left from three runs, 2 h 15 min old; 2026-11-20 one ran about
 26 hours). Process pools in card code exit with their parent (`card_bake.exit_with_parent`, 2026-11-12).
@@ -552,3 +552,6 @@ jobs and pools end with their test or parent. Checked at AC ea0db694, TC 0cb95c3
 
 2026-11-22 (cards-1122 r3-0): §1c: an `AC_SITE_SRC` tree without `TTS/checks` stops the run (its two test_tts_save tests
 skipped in 4 of the session's 5 sparse trees).
+
+2026-11-22 (cards-1122 r7-3): §1c: a site test never skips for a TTSCardMaker feature (`has()` and its 31 guards, the
+old-site and feature skips of 7 more files removed; a lane's TC tree without x37, x31, Papyrus and r52-1 had skipped 4).
