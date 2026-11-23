@@ -91,6 +91,9 @@ SERIES_NUMBER = compile(r"\s+(?:[ivx]+|\d+)$", IGNORECASE)   # or its closing nu
 SERIES_PARTS = compile(r"[:/]+")                         # or one part: Undertale/Deltarune, YIIK: A Postmodern RPG
 SERIES_STOP = frozenset(("the", "of", "and", "at", "a", "an", "in", "to", "vs", "series"))   # search.js STOP
 DIGITS = compile(r"[0-9]+\Z")                          # a number word: series_words keeps it
+ICON = compile(r"\[([0-9a-z_ ]+)(?::(?:no|tint|sticker|glow|darkglow))?\]", IGNORECASE)   # [fire], [fire:no] (text.js)
+ICON_SPELLED = {"darkmatter": "dark matter", "buffstack": "buff stack", "debuffstack": "debuff stack",
+                "debuffupgrade": "debuff upgrade"}   # joined type names as words (search.js ICON_SPELLED)
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -125,6 +128,15 @@ def loose(text: str, char=escape, gap: Optional[str] = None, hyphen: bool = Fals
 def squash(text: str) -> str:
     """text as letters and digits only, accents dropped (search.js squash): "Mom's Knife" -> momsknife."""
     return "".join(ch for ch in normalize("NFD", text).lower() if ch.isalnum())
+
+
+def icon_words(text: str) -> str:
+    """text with each icon token as its word ([machine] machine, [offensive_minion] offensive minion, [fire:no] fire);
+    a joined type name both ways, a line each ([darkmatter] darkmatter, dark matter); "" when it has none (search.js
+    iconWords)."""
+    words, n = ICON.subn(lambda m: m[1].replace("_", " "), text or "")
+    spelled = ICON.sub(lambda m: ICON_SPELLED.get(m[1].lower(), m[1].replace("_", " ")), text) if n else ""
+    return words if spelled == words else f"{words}\n{spelled}"
 
 
 def kind_values(value: str) -> tuple:
@@ -292,8 +304,10 @@ class CardRepository:
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
-        self._hay: tuple = (None, "", None, [], [], None, [], None)   # (cards_dff, Card Edits.json sha, haystack,
-        # squashed names, series and subseries names; pictures' names haystack, their squashed names, pictures_dff)
+        self._hay: tuple = (None, "", None, [], [], None, [], None, None)   # (cards_dff, Card Edits.json sha, haystack,
+        # squashed names, series and subseries names; pictures' names haystack, their squashed names, pictures_dff;
+        # the haystack with abilities as printed only)
+        self._types: tuple = (None, {})                  # (cards_dff, its types by squashed name) for _type_names
 
     def populate_files(self) -> int:
         """
@@ -595,9 +609,11 @@ class CardRepository:
                            if isinstance(v, (list, tuple)) and v else [] for v in each], index=df.index, dtype=object)
         return df[column] if column in df else None
 
-    def _haystack(self) -> Series:
+    def _haystack(self, printed: bool = False) -> Series:
         """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, old
-        names (renamed into it), ability (its line breaks and space runs as one space). Second pictures: their names."""
+        names (renamed into it), ability (its line breaks and space runs as one space), then on a line of its own the
+        ability with its icons as words (icon_words), so no phrase spans the two. printed: without that line. Second
+        pictures: their names."""
         df, sha, pictures = self.cards_dff, self._edit_names[0], self.pictures_dff
         if self._hay[0] is not df or self._hay[1] != sha:
             names, was = self._edit_names[1], self._was
@@ -606,17 +622,20 @@ class CardRepository:
                 list(names.get(CardAuthors.key(str(label)), [])) + list(was.get(label, ()))
             flat = lambda p: "\n" + "\n".join(map(squash, p)) + "\n"
             series = [df[c] if c in df else [None] * len(df) for c in ("series", "subseries")]
-            rows, flats = [], []
+            rows, prints, flats = [], [], []
             for label, title, ability in zip(df.index, titles(df), df["ability"]):
                 p = parts(label, title)
-                rows.append("\n".join(p + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
+                text = " ".join(ability.split()) if isinstance(ability, str) else ""
+                prints.append("\n".join(p + [text]).lower())
+                words = icon_words(text)
+                rows.append(f"{prints[-1]}\n{words.lower()}" if words else prints[-1])
                 flats.append(flat(p))
             pics = [parts(label, title) for label, title in zip(pictures.index, titles(pictures))]
             self._hay = (df, sha, Series(rows, index=df.index, dtype=object), flats,
                          [series_names(s) | series_names(u) for s, u in zip(*series)],
                          Series(["\n".join(p).lower() for p in pics], index=pictures.index, dtype=object),
-                         [flat(p) for p in pics], pictures)
-        return self._hay[2]
+                         [flat(p) for p in pics], pictures, Series(prints, index=df.index, dtype=object))
+        return self._hay[8 if printed else 2]
 
     def _plain_matches(self, text: str, pictures: bool = False, whole: bool = False):
         """Cards a plain term also finds (search.js compile): its letters in a name or alias (3 letters or fewer, or
@@ -715,12 +734,23 @@ class CardRepository:
                 hit |= df[column].isin(names).values
         return df[hit]
 
+    def _type_names(self, text: str) -> set:
+        """The types text is the name of, squashed ('defensive minion', 'N.M.E.', 'debuff stack': the font's aliases
+        too) (search.js typeNames)."""
+        df = self.cards_dff
+        if self._types[0] is not df:
+            names, each = {}, df["types"] if "types" in df else ()
+            for t in {t for ts in each if isinstance(ts, (list, tuple)) for t in ts}:
+                names.setdefault(squash(t), set()).add(t)
+            self._types = (df, names)
+        term = squash(text)
+        return set(self._types[1].get(term, ())) if term else set()
+
     def _by_type(self, text: str, notes: Optional[list]) -> Optional[DataFrame]:
-        """A plain term no card has that is a type's name, squashed ('defensive minion', 'N.M.E.', 'debuff stack': the
-        font's aliases too): that type's cards, noting (text, (), (), types) (search.js byType); else None."""
-        term, df = squash(text), self.cards_dff
+        """A plain term no card has that is a type's name (_type_names): that type's cards, noting (text, (), (), types)
+        (search.js byType); else None."""
+        df, names = self.cards_dff, self._type_names(text)
         each = df["types"] if "types" in df else ()
-        names = {t for ts in each if isinstance(ts, (list, tuple)) for t in ts if squash(t) == term} if term else set()
         if not names:
             return None
         if notes is not None:
@@ -803,6 +833,8 @@ class CardRepository:
         pattern = self._text_pattern(ability)
         if len(ability) > 2 and ability[0] == ability[-1] == "'":
             pattern = f"(?:{whole(ability[1:-1])})|(?:{pattern})"
+        if self._type_names(ability):                   # a type's name: abilities as printed (else its type's cards)
+            hay = self._haystack(printed=True)
         found = hay.str.contains(pattern, na=False).values | self._plain_matches(ability)
         exact_matches = self._with_pictures(found, pattern, ability)
         if not len(exact_matches) and by_series:              # a series by words, else a type by name
@@ -819,11 +851,14 @@ class CardRepository:
         return results
 
     def ability_hits(self, text: str) -> int:
-        """How many cards' abilities hold text as a /query_ability text term (lowercased, spaces as one, DMG damage...)."""
+        """How many cards' abilities hold text as a /query_ability text term (lowercased, spaces as one, DMG damage...,
+        icons as words but for a type's name: _haystack)."""
         df, term = self.cards_dff, " ".join(typed(text, quotes=True).split()).lower()
         if not term or "ability" not in df:
             return 0
-        abilities = df["ability"].map(lambda a: " ".join(a.split()))
+        printed = bool(self._type_names(term))
+        read = lambda a: a if printed or not (words := icon_words(a)) else f"{a}\n{words}"
+        abilities = df["ability"].map(lambda a: read(" ".join(a.split())))
         return int(abilities.str.contains(self._text_pattern(term), na=False).sum())
 
     def _fuzzy_labels(self, ability: str) -> Series:
