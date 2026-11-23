@@ -295,9 +295,11 @@ class _NameIndex:
         """CardRepository.closest over these keys."""
         stem = key[:len(key) - 4] if key.endswith(".png") else key
         if len(stem) >= 3:
-            hits = [(not s.startswith(stem), len(s), s) for s in self.names if s.startswith(stem) or "_" + stem in s]
+            whole = compile(f"(?:^|_){escape(stem)}(?![^\\W_])").search   # a whole word first: rogue, not Rogueport
+            hits = [(not whole(s), not s.startswith(stem), len(s), s) for s in self.names
+                    if s.startswith(stem) or "_" + stem in s]
             if hits:
-                return self.stems[min(hits)[2]]
+                return self.stems[min(hits)[3]]
         wanted = zeros(len(self.column), dtype=int32)
         for c in stem:
             col = self.column.get(c)
@@ -1122,9 +1124,9 @@ class CardRepository:
             chapters: The rulebook chapters, the ban list and series too (/query)
 
         Returns:
-            Up to 25 (shown, value): names starting with it, then with a word that does, then holding it (a chapter
-            or series named so: first); then names holding it without spaces and punctuation; none: up to 5 near
-            spellings (3+ letters; one per card)
+            Up to 25 (shown, value): names starting with it, then with a word that does (it as a whole word before
+            both, 3+ letters, as closest()), then holding it (a chapter or series named so: first); then names holding
+            it without spaces and punctuation; none: up to 5 near spellings (3+ letters; one per card)
         """
         text = " ".join(typed(current).lower().replace("_", " ").split())
         choices = self.choices                                   # one read: a rebuild swaps it whole
@@ -1141,9 +1143,11 @@ class CardRepository:
                 rank = 0 if c[0] == text else 3
             else:
                 rank = 0 if at == 0 else 1 if c[0][at - 1] in " (-." else 2
-            ranked.append((rank, len(c[0]), c[6], c[:3]))
+            end = at + len(text)
+            whole = len(text) >= 3 and rank < 2 and not c[0][end:end + 1].isalnum()     # 3+ letters, as closest()
+            ranked.append((not whole, rank, len(c[0]), c[6], c[:3]))
         ranked.sort()
-        found = [(r[3][1], r[3][2]) for r in ranked[:25]]
+        found = [(r[4][1], r[4][2]) for r in ranked[:25]]
         squeezed = NAME_NORM.sub("", text)
         if len(found) < 25 and squeezed:                         # Moms Knife, WX 78
             have = {value for _, value in found}
@@ -1280,9 +1284,10 @@ class CardRepository:
 
     def closest(self, key: str, keys: list) -> Optional[str]:
         """
-        The best guess for a key among keys: a name starting with it or with a word that does (3+ letters; the
-        shortest, a plain key before its folder-prefixed ones), else the most similar name above match_ratio, compared
-        without ".png" (it raised every score) and the folder ('creatures' was Panda).
+        The best guess for a key among keys: a name starting with it or with a word that does (3+ letters; it as a
+        whole word first, then starting so, then the shortest, a plain key before its folder-prefixed ones), else the
+        most similar name above match_ratio, compared without ".png" (it raised every score) and the folder
+        ('creatures' was Panda).
         """
         for index in self._indexes:                             # one per key list, kept while it is unchanged
             if index.keys == keys:

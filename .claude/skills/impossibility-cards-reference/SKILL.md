@@ -723,7 +723,8 @@ else a guess (`closest` :632), which the reply labels "Closest match: X" and the
 ability: /query_ability text" and a 'Cards with "text"' website search button (2026-11-19). `closest` compares
 names WITHOUT ".png" (it lifted every score:
 "luigi" used to find Light) and without their folder (creatures/panda, there for Types/Panda.png, answered 150 common
-ability words like "creatures and stats" with Panda until 2026-11-20): first a name starting with the text, or with a word that does (3+ letters; the shortest;
+ability words like "creatures and stats" with Panda until 2026-11-20): first a name starting with the text, or with a word that does (3+ letters; one
+holding it as a whole word first, so "rogue" is Warcraftian Rogue, not Rogueport (2026-11-22); then one starting so; the shortest;
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
 `DEFAULT_MATCH_RATIO` in query_card.py; `/set_ratio`, which set it until the next restart, was deleted 2026-11-12 — see
 autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so; a
@@ -750,7 +751,8 @@ picture, page and app.js's words (`_post_lost`, 2026-11-20: "**Computer Virus 2.
 first posted 2020-07-21 in #port; out of play."; logs `Search Morgue:`). The autocomplete never offers one, as
 retired cards.
 Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names; their squeezed
-text and letter pairs precomputed): today's substring ranking, then names holding the text without spaces and
+text and letter pairs precomputed): today's substring ranking (a whole-word hit first, 3+ letters, as the guess, so the
+first suggestion is the card the guess answers), then names holding the text without spaces and
 `_ - . ' ’ ! ? , : ™ ® ©` ("Moms Knife", "WX 78"), and when nothing matches (3+ letters) up to 5 near spellings
 (suggest()'s Dice > 0.35, one per card). /query alone also lists the rulebook chapters ("15. Minions (rulebook
 chapter)", after the cards unless the text is the title); a chapter's title or label answers before an MDW/ or
