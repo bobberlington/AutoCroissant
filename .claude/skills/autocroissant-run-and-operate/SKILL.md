@@ -362,8 +362,16 @@ each card's plate on the `plates` branch (the website's mock-up). Card sync star
 for that job's Commit data); only PSDs or PNGs without a result are read, so a fixed card clears on its next push;
 daily at 06:41 UTC (owner D18); a dispatch with `cards` re-checks those, `all` the whole tree in eight shards. Results
 in `db/card_checks.json` on `data` (its own commits; gate G6 lets them by); the website shows them. No Discord, no
-commit comment, no block. 2026-11-21 (whole tree, run 44929248646): 769 records, 0 hand, 33 bars, 1 name (Beholster
-prints "The Beholster", file Beholster.psd; there since 2026-11-20, left for the owner).
+commit comment, no block. 2026-11-22 (data 85d6f44a, run 45111548362): 769 records, 0 hand, 33 bars, 0 name
+(Beholster's names marked intended, TC b62f36de). Each record's `unredrawable`: the linked pictures Card sync could not
+draw again if their file changed (`psd_links.why_not_redrawn`: a warp, smart filters, or a placement the redraw can't
+reproduce), a hand note only once that file changes (`card_checks.LINK_STUCK`: '... Card sync could not draw it again
+(<why>); update it in Photoshop.'). Since the pin `cards-20261122` the fork draws Puppet Warp, a one-quad Perspective
+Warp, Invert, Gaussian and Motion Blur, Mosaic on the canvas's grid, master-only Hue/Saturation, untinted Black & White
+and Relative Selective Color (`SmartObject.can_draw_filters`), and 4 x 4 warpCustom warps (a file of another size only
+on an upright quad, as Photoshop's Update): 46 pictures on 40 cards -> 1 (Burly Bomb's Reduce Noise). Since the pin
+`cards-20261123` (baa9a901) also a Reduce Noise at Strength 10 alone (Preserve Details 0%, nothing else on; its filter
+mask off or white): 1 -> 0 (Card checks 45169866141, cards='Burly Bomb', data b954baaf, 2026-11-23).
 
 ### Card timelines (2026-11-17)
 
@@ -380,7 +388,7 @@ canvas (size, mode, depth, ICC description), type-icon style (images / tokens / 
 (template / two-row / pixel / other / none), `FX:` and overlay word layers, the title layer the parser reads (2026-10-23: a
 root `Name`, a layer named after the card or the one named after its own text is no deviation) and the Ability layers with the ledger's cheap deviations, and a
 compact layer tree (80 children per group, depth 8). Records are keyed by the PSD's git blob sha
-in the card data's `db/psd_details.json` (`{"version": 13, "cards": {sha: record}}` on 2026-11-21, the VERSIONs: autocroissant-config-and-flags; one card per line so diffs stay per
+in the card data's `db/psd_details.json` (`{"version": 15, "cards": {sha: record}}` since 2026-11-22, the VERSIONs: autocroissant-config-and-flags; one card per line so diffs stay per
 card; the AutoCroissant root file it was until 2026-10-25 is in git history).
 
 - **In the build** (`card_data`, the Card sync Action): after each re-parsed card's parse, `_details` reads the same open
@@ -863,7 +871,7 @@ section 9, keeping the pointer to autocroissant-failure-archaeology for the hist
 2026-10-20 (later): the optimization-pass pointers above moved from `~/Documents/ac-optimization/` to
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (scripts) and `docs/Finished/optimization-pass-2026-10-20/` (reports).
 
-2026-10-21: the queue drains tick every 0.1 s and `process_reminders` is the 1 s reminder heartbeat (section 1); main.py line numbers re-pointed (review: on_ready start range, /update range). Review: the "Loaded N cards" print is query_card.py:472.
+2026-10-21: the queue drains tick every 0.1 s and `process_reminders` is the 1 s reminder heartbeat (section 1); main.py line numbers re-pointed (review: on_ready start range, /update range). Review: the "Loaded N cards" print is query_card.py:472 (:1237 on 2026-11-23).
 
 2026-10-21 (later): `/fonts` added (section 7's Font check subsection, section 8's `font_names.json` row, 51 commands). main.py grew by eight
 lines at :278-285 (the /fonts block; its font_check import is lazy, so fontTools loads only when /fonts runs): every main.py citation in
@@ -980,3 +988,7 @@ a card timelines pointer. Checked at AC ea0db694, TC 0cb95c33.
 
 2026-11-22 (actbake-1122): card guards' Follow up and Tell Discord in the check job (the post and tell jobs gone); the
 cancel-by-hand timeouts (check 60, checks 40).
+
+2026-11-23 (wrap-1122): §7 Card checks: 2026-11-22 counts (0 name), the records' `unredrawable` and what the fork
+draws since `cards-20261122` and `cards-20261123` (Reduce Noise, unredrawable 0); psd_details version 15. Checked at
+AC 541feb9c, TC 25077c28, data b954baaf, fork baa9a901.

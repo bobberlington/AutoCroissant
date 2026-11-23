@@ -703,21 +703,21 @@ both to the repo root (gitignored). The card exports' rulebook-entry filter was 
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:217`, singleton `card_repo` at :2125) maintains
+`CardRepository` (`commands/query_card.py:319`, singleton `card_repo` at :2433) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :258). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :363). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `MDW/Assets/Markers`, and MDW card backs — except PNGs under `site/` and `TTS/` (the website's and the TTS save's own
 pictures, e.g. `site/favicon/`; `card_edits.NO_CARD_FOLDERS`, AC f4c08596, 2026-11-21); `EXCLUDE_FOLDERS` applies only
 to stats traversal, not here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick
 among `card_keys`, the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
 
-Lookup (`lookup` :1079, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
+Lookup (`lookup` :1254, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
 `_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today, else to the PNG beside
 the PSD its archive `moved_to` MDW/ (Pandiety -> MDW/Unfinished/6 Stars/Pandeity.png, not autocompleted); the reply says
 "(renamed from X)"); else a typed path's file name when its first folder is one of the tree's (`tops`) or it ends ".png" ("Creatures/Pizza.png",
 "items/pizz": the same steps; another folder's file is a guess, never an MDW/ or Types/ one; "fire/water" is no path, 2026-11-20);
-else a guess (`closest` :632), which the reply labels "Closest match: X" and the console logs
+else a guess (`closest` :1287), which the reply labels "Closest match: X" and the console logs
 (`Search guess:`; a miss logs `Search miss:`). When the typed text is also in card abilities (`ability_hits`,
 /query_ability's count: lowercased, spaces as one, synonyms), a guess (or a miss, after "No card found!") adds "· N cards have \"text\" in their
 ability: /query_ability text" and a 'Cards with "text"' website search button (2026-11-19). `closest` compares
@@ -733,6 +733,10 @@ the rename). A day before a live card's oldest stored version posts its picture 
 its Card page ("no stored card data is that old"), else the sentence with its Created date and Card page (2026-11-19).
 A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
 link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
+Then the ban list's own name (`ban list`, `constructed ban list`, letters and digits only: `BAN_NAMES`) posts the ban
+list: '**Constructed ban list** is in the rulebook: SITE_URL/#/rules/banlist', then each group's cards, those of one
+reason together ('Marx, Fawful (antifun)'), in one message (`_post_ban_list`, 2026-11-22; logs `Search ban list:`);
+/query alone lists it as 'Constructed ban list (rulebook)' (`BAN_CHOICE`).
 After the chapter, a series' or subseries' name as a search term takes it (`series_names`: no leading The or closing
 number, one part of "A: B" / "A/B") gets its card count and an 'Its cards on the website' search button instead of a
 guess or a Types/Stars icon (`_series`, 2026-11-19: "**Hollow Knight** is a series: 68 cards"; logs `Search series:`).
@@ -764,7 +768,7 @@ main.py's `on_interaction` logs one console line per slash command (option value
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options
-(`_add_file_to_registry` :208). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
+(`_add_file_to_registry` :516). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
 these instead" list of the CARDS (`other_cards`: MDW/ and Types/ files left out) when another card shares the name.
 Duplicated basenames in the repo today: active.png, cardback.png, equip.png, field.png, fragile equip.png, nme.png,
 panda.png (MDW-vs-Types files, and Panda vs its Types icon: none gets the note).
@@ -777,10 +781,10 @@ Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_blo
 card_data's duplicate names) and aliases are edited on the website (`/alias` and the migration CLI were retired
 2026-10-25, branch `archive/discord-edits`).
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:349)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:811)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
-:575): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
+:1209): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 the rulebook's chapters in a separate `rulebook_dff` (gotcha 9), and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`. Since 2026-11-15 (as the website's
 search) a text term also finds a card by a name renamed into it (`renamed_into`, the website's `was`: `magalor`,
@@ -820,11 +824,18 @@ in an OR or NOT each term falls back on its own (`!spongebob` drops that series'
 Else, a term that is a type's name as letters and digits only (`squash`; the stoogedings aliases squash the same) lists
 that type's cards (`_by_type`, search.js `byType`, 2026-11-22): `defensive minion`, `N.M.E.`, `debuff stack` -> "No
 card's text has “n.m.e.”: the type nme (types==nme)". A term some card's text has stays text (`offensive minion`: 2).
+Since 2026-11-22 a text term also finds an ability's icons as their words ([machine] machine, [offensive_minion]
+offensive minion, [fire:no] fire; a joined type name both ways: [darkmatter] darkmatter and dark matter), on a line of
+their own so no phrase spans printed text and icon words (`icon_words`, search.js `iconWords`); a term that is a type's
+name (`_type_names`) searches the abilities as printed (`_haystack(printed=True)`), else lists that type's cards.
 `site/Card Ratings.json`: card ratings from the TTS sessions, data only (the import `tts_ratings` deleted 2026-11-12); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
-count 0, no stats at all: no total). Text: type, subtype (any one item type), series, subseries, author, types (any one type or the whole
-list, `_` as a space, as the website: `types==fire`, `types==defensive minion`, `types==wind offensive_minion`), name (printed title, else the name), alias
+count 0, no stats at all: no total). Text: type (`==` also takes the website's Kind labels, dots and a closing s aside:
+`type==field cards` field, `type==status effects` buff and debuff, `type==N.M.E. items` nme, `type==auxiliary items` aux
+item; `type==creature` still misses the 7 'creatures', gotcha 5; `kind_values`, search.js `kindValues`, 2026-11-22),
+subtype (any one item type), series, subseries, author, types (any one type or the whole
+list, `_` as a space, compared as letters and digits since 2026-11-22: `types==dark matter`, `types==n.m.e.`; as the website: `types==fire`, `types==defensive minion`, `types==wind offensive_minion`), name (printed title, else the name), alias
 (alias/aliases: the website's aliases, i.e. Card Edits.json aliases then the file name, none the shown name; `==`/`~`
 test each one, 2026-11-17), ability, path, created. `has:alias`: cards with an alias (search.js FLAGS). Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
 Synonyms (`SYNONYMS`, the rulebook's Abbreviations; search.js has the same table): damage/DMG, defense/DEF, speed/SPD,
@@ -866,7 +877,7 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search runs a fuzzy pass only when no card has the text (since 2026-11-09):
-   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:518), for an
+   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:915), for an
    ability pasted with a typo. It compares against the ENTIRE ability, but 129 abilities are 40 characters or less, so
    when it always ran it padded short queries too (`+1 atk` also found Enfeebled's `-1 atk`; 164 of 518 common
    phrases got cards without the text). Now the results are the website's on 515 of those 518.
@@ -894,8 +905,11 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
    title alone in it holds it, shows its first lines (OPENING, 400 characters) then its later lines holding the text,
    "…" only where lines are left out; the chapter's "# Title" line is not a line; messages are filled whole sections at
    a time. `/query` on a section's title that is no exact or renamed card (or icon) links it
-   (`#/rules/<chapter id>/<slug>`), after chapters and series. An older rulebook.json (no `sections`) and the ban list:
-   as before. Since 2026-11-22 a joined icon's name typed in words finds the lines showing it (`_book_at`:
+   (`#/rules/<chapter id>/<slug>`), after chapters and series. The ban list: its name lists all of it (its notes, then
+   every group), a group's heading that group (`ban_list_part`, 2026-11-22; the website's Rulebook search keeps it in
+   the results too, app.js `banHit`). A text no line holds that is exactly a card's name, printed title, alias or old
+   name adds '**Enfeebled** is a debuff card: /query Enfeebled' and a Card page link (`_card_pointer`, 2026-11-22;
+   never an `MDW/` or `Types/` file). An older rulebook.json (no `sections`): as before. Since 2026-11-22 a joined icon's name typed in words finds the lines showing it (`_book_at`:
    `defensive minion` [defensive_minion], `buff stack` [buffstack]; one-word icons as printed; the website's app.js
    `bookHit` likewise, marking the icon). Since 2026-11-22 an abbreviation the Abbreviations chapter defines, typed
    alone in any case (`SP`, `os`, `DEF`; read from its `X = Y` lines), finds it only as a word or its meaning's word it
@@ -1025,3 +1039,7 @@ add5194d, TC 5f22cef0.
 2026-11-22 (cards-1122 x3): §2 a new creature's series is its folder's one shared series (else none), not the folder name
 lowercased. The editor's series "PSD value" (build_site.folder_series) stays the folder name lowercased; a series revert
 gives back the bot's parsed_values.series.
+
+2026-11-23 (wrap-1122): §7.1 the ban list by its name (/query); §7.2 type== Kind labels, types== as letters and
+digits, icons as words, gotcha 9 the ban list's parts and the card pointer; query_card.py citations re-pointed (§7.1,
+§7.2, gotcha 7). Checked at AC fdc718af, TC 2838c3e8.

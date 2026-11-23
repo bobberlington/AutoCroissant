@@ -267,7 +267,7 @@ part (`journalctl -u autocroissant | grep "Forum votes"` on the jetson).
 |---|---|---|---|
 | The jetson does not answer (ssh hangs, the bot is down, the LAN's DNS fails) | ping it; nothing else | A hung board (2026-11-10: a `sudo reboot` hung it and its AdGuard took the LAN's DNS down for an hour) | Ask the owner first. Then `ssh jetson sudo sync` if it answers and `~/.local/bin/jetson-powercycle cycle` on the Mac (Shelly plug). Never `sudo reboot` or `poweroff` there |
 | Python or bash processes left after a suite run | `ps -o pid,ppid,etime -p <pid>` on your own runs only (never print other processes' command lines: they hold tokens) | Pool workers whose run was killed (fixed 2026-11-12: `card_bake.exit_with_parent` in every card pool's initializer); a test's background loop (tests/test_card_guards.py: 2026-11-16, three loops 2 h 15 min old; 2026-11-20, one about 26 hours) | Kill those exact PIDs; a test stops its background jobs in try/finally (autocroissant-validation-and-qa) |
-| Two timing tests fail under heavy load, pass alone | Re-run them niced, without background QoS | `test_card_preview::test_the_lanes_next_cards` and `test_range_reads::test_other_psds_links_read_in_the_workers_as_one_at_a_time` flake under `taskpolicy -b` at load 40-60 (2026-11-21) | Not a regression; listed for the next session |
+| Two guards tests fail under heavy load, pass alone | Re-run them alone | `test_card_guards::test_the_checks_reports_come_once_that_job_ends` (reads checks.result as soon as the file exists, before anything is written) and `::test_the_bot_clone_and_records_run_here` (the Bot step waits 15 s for the clone) flaked on 2026-11-22 (the first in 2 of the fork land's 3 full suites, the second in the `taskpolicy -b` suite); the 2026-11-21 timing pair waits on events since AC 5700e58e | Not a regression; the fix (wait for a non-empty file) is in the plan |
 | A suite takes hours, git-heavy tests time out, while the owner games | Was it run under `taskpolicy -b`? | `-b` keeps the run on the E-cores the other sessions keep busy: each local git write waits seconds (2026-11-22: a full suite 2:05 h with 3 timing reds; 29 tests 711 s, 22 s under utility) | Run heavy work under `taskpolicy -c utility nice -n 15` instead |
 
 ---
@@ -410,3 +410,6 @@ the jetson's deploy installs requirements-bot.txt and removes leftover .so files
 left after a suite run, the two load-flaky timing tests. Checked at AC ea0db694, TC 0cb95c33.
 
 2026-11-22 (cards-1122): §12 suites slowed by `taskpolicy -b` while the owner games (utility clamp instead).
+
+2026-11-23 (wrap-1122): §12 the two load-flaky guards tests (the 2026-11-21 timing pair fixed, AC 5700e58e). Checked
+at AC fdc718af, TC 2838c3e8.

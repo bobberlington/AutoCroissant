@@ -174,7 +174,7 @@ Configuration, Helper Functions, Public API Functions, Initialization, Module Ex
    Functions", etc. — name it for the content).
 7. **`# Initialization` banner** — module-level singleton + `init_x()` function
    (`stats_db = StatsDatabase()` at card_models.py:343 and `init_psd` at the end of psd_analyzer.py;
-   `card_repo = CardRepository()` + `init_query` at query_card.py:2121-2122).
+   `card_repo = CardRepository()` + `init_query` at query_card.py:2433-2434).
 8. **`# Module Exports` banner + `__all__`** — every bot command module ends with
    an explicit `__all__` list (even help.py, whose `__all__ = ['print_help']`),
    except utils.py (the shared toolbox), backup and card_grid; 16 card-side modules (the timelines tools,
@@ -213,7 +213,7 @@ both halves of that pattern.
 Triple-quoted. One-liners for simple functions
 (`"""Send a message to the last active channel."""`, music_player.py:90).
 Args/Returns sections for anything with non-obvious parameters — real shapes:
-`get_card_url` has `Args:` and `Returns:` blocks (query_card.py:1128-1131); `update_bot`
+`get_card_url` has `Args:` and `Returns:` blocks (query_card.py:1305-1309); `update_bot`
 has an `Args:` block (update_bot.py:120-122). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
@@ -460,7 +460,7 @@ grep -n '"/help <' commands/help.py                          # 8 (the categories
 grep -n -A1 '^# ========================$' commands/psd_analyzer.py commands/query_card.py commands/type_emojis.py commands/music_player.py | grep -v '^\-\-$'
 
 # Singletons + init functions
-grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # card_models:343, query_card:2121, music_player:44
+grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = MusicState()' commands/*.py   # card_models:343, query_card:2433, music_player:44
 
 # __all__ ends every command module except utils.py
 grep -L '__all__' commands/*.py                              # 19: utils, backup, card_grid + 16 card-side (2026-11-21)
@@ -524,3 +524,6 @@ cythonized; the new-module reminder names the bot's import closure; the setup.py
 numbers re-pointed (§2, §3.1, §4, §5); §2.3's rendering is one `key: value` line per entry; §5.1-§5.4 censuses
 re-run (__all__ exceptions, 987/66 imports, the pickle import example gone); the ownership map's research-methodology
 and ttscardmaker-companion rows; provenance expectations re-read. Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-23 (wrap-1122): query_card.py lines re-pointed (§5 the Initialization banner, `get_card_url`'s docstring, the
+singletons census). Checked at AC fdc718af, TC 2838c3e8.

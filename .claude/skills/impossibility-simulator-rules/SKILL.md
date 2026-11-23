@@ -37,7 +37,7 @@ conversion table).
   (04; 08 breaks a last tie with "flip a dice, or roll a coin").
 - **Flow.** Slots take turns one at a time in *pair turns*, "a slot from one team, then a slot from the opposing team",
   fastest first; once every slot has gone a **global turn** has passed: star points reset, +1 BRICK each (08). A turn gives
-  the creature one **action** (attack, mine, defense mode) plus (OYT) abilities and items (09). "When a play occours [sic], a
+  the creature one **action** (attack, mine, defense mode) plus (OYT) abilities and items (09). "When a play occurs, a
   player may choose to react to it with one of their items or abilities" (12): (AAT) abilities "at any time" (11), facedown
   items "can be played at any time" (13, 04), hand items "reactively only if it's currently your turn" (12). A creature at
   0 HP dies; unless revived on the spot it is **defeated**: it goes to the graveyard and a prime creature gives ITS OWNER
@@ -125,7 +125,7 @@ are in the table after this one.
 | (OFS) forced | On first summon from the hand; cannot be negated or true negated; counts as (1PG) (11) | 34 |
 | (OS) forced | On summon, every time (11) | 8 |
 | (OD) forced | On death, forced (11); "does not apply to creatures not on the field" (17) | 23 |
-| (WOF) forced | While on field: passives, most "in constant effect (WOF)"; "“(WOF)” is often only included when the ability effects other creatures as to signfy that it goes away when the creature exits the field" (11). A (WOF) line can carry a cooldown: Michael "(WOF) Discarded items may be bought for 3/4 shop price (1CD)." | 20 |
+| (WOF) forced | While on field: passives, most "in constant effect (WOF)"; "“(WOF)” is often only included when the ability affects other creatures as to signify that it goes away when the creature exits the field" (11). A (WOF) line can carry a cooldown: Michael "(WOF) Discarded items may be bought for 3/4 shop price (1CD)." | 20 |
 | (Action) | "Costs the creature's action" (23); a grey badge | §7 |
 
 **Charge** (11). "***X*** is how many turns of charge the ability needs to be used (it can't go over ***X***). Abilities start
@@ -140,7 +140,7 @@ you can use it on the next turn, but its cooldown doesn't reset until it's used"
 the hand" (11); "Cooldown abilities such as (2CD) still gain charge even while they are negated" (22); a lost and regained
 stolen or swapped ability "gains 1 turn of charge" (11); a revive resets charge (17).
 
-**Time based, multi turn** (02). "Abilites marked with 🕐 are considered "time based". Time based abilities with a cooldown
+**Time based, multi turn** (02). "Abilities marked with 🕐 are considered "time based". Time based abilities with a cooldown
 become usable again once they are fully charged." "⏳ (XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with ***X*** of 2 or more are
 considered "multi turn" abilities." Forced tags are "non-optional and assumed to happen automatically" (11). "You may react to
 time based [such as (BOGT)] effects with any (AAT) effects or facedown items" (12); nothing is stated for (OFS)/(OS)/(OD), and
@@ -305,7 +305,7 @@ item, and vice versa; effects that increase healing increase that damage (Chef S
 
 ## 7. Abilities, reactions, negation, and how ability text reads
 
-An ability is "the main chunk of text at the bottom half of a creature"; when it can be used is "defined by abbrviations [sic]" (11), the
+An ability is "the main chunk of text at the bottom half of a creature"; when it can be used is "defined by abbreviations" (11), the
 tags of §3. Chapter examples: "(1CD) Summon a Mini Bee.", "(1GCD)(2U) Heal a creature by 2 HP.", "(AAT)(3PG) Spend 7 points to deal 10
 piercing damage.", "(ENDT) +5 DEF until (ENDGT)", "(OFS) Summon a Koopa.", "(WOF) Friendly creatures gain +1 DEF." (11). Points pay
 ability costs (04). Stolen/swapped abilities "start as brand new per creature"; damage-counting abilities ignore overkill (11).
@@ -314,7 +314,7 @@ Reading card text: a type icon in the text IS the type (stored as `[fire]`, rend
 represent any number" (02); "5T1 Poison" = 5 turns of 1 stack (19); "(Action)" marks an ability costing the action (36 uses in 28
 cards, 37 in 29 counting one "(action)"; 23, a grey badge since 2026-10-22); PF = primary field, CDMG = counter damage (02).
 
-**Reactions** (12): "When a play occours [sic], a player may choose to react to it with one of their items or abilities … the reaction
+**Reactions** (12): "When a play occurs, a player may choose to react to it with one of their items or abilities … the reaction
 happens before whatever you reacted to." Nothing resolves until plays stop; then reverse order (4>3>2>1), except "anything that deals
 damage resolves *last*" (Pebble 5 DMG → 6 Hardened "giving it 3 defense" → Bomb 7 DMG → Metal Shield resolves 4>2>3>1) and the original
 play "will always be resolved at the very end" (5>4>2>3>1). Example: Mighty Pebble (5 DMG); Toy Bonnie reacts with 6 Hardened (+3 DEF)
@@ -353,7 +353,7 @@ count down in phase 4 (19, 09); status DMG is piercing, not an attack, one insta
 global turn with a status effect" whose global turn "ends without the creature having ended its turn" has the effect tick at the end of the
 global turn, "even if the creature is in hand" (19). A creature that dies "loses all status effects" (17). **Standard** (icons
 `buff`/`debuff`): one instance per creature; **stacking** (`buffstack`/`debuffstack`): any number; stack/upgrade/reapply → longest duration;
-**upgradable** (`debuffupgrade`): Smouldering+Smouldering → Burning, +Burning → Blazing; Chilled+Chilled → Frostbite, +Frostbite → 1 turn of
+**upgradable** (`debuffupgrade`): Smoldering+Smoldering → Burning, +Burning → Blazing; Chilled+Chilled → Frostbite, +Frostbite → 1 turn of
 Frozen; Sickness+Sickness → Plague; Frozen/Blazing/Plague block the prior debuffs except to refresh the duration, and only an upgrade
 refreshes it ("need to upgrade to refresh duration", 19). Debuffs carry 1★–4★ (the undefined "tier"); buffs have no stars. Effects below are
 the 64 status effect cards' own text (card data, not rulebook); (k) stacking, (u) upgradable, unmarked standard; "not X" = "can't affect [X]".
@@ -382,7 +382,8 @@ the 64 status effect cards' own text (card data, not rulebook); (k) stacking, (u
   ability or healing; Hemorrhaging (k) 0.5 true DMG; Infected +2 ATK, negated; Marked For Death (k) +25% DMG taken;
   Recursion (BOT) double all stackable buffs/debuffs; Withering (BOT) 2 DMG −0.5 DEF −1 ATK −1 SPD.
 
-Spelling drift: chapter "Smouldering"/"Regeneration" vs cards "Smoldering"/"Regen".
+Spelling drift: chapter "Regeneration" vs cards "Regen" ("Smouldering" became "Smoldering" on 2026-11-22, owner; the
+picture status-panda.webp still shows the old card, owner: leave it).
 
 ## 10. Creature types and damage types
 
@@ -494,7 +495,9 @@ Assembled from the rulebook's own examples; the joins are this skill's.
    writes the bot's `db/rulebook.json` and prints `TTS/Rulebook/Rulebook.pdf`. Beside this file: `reference/glossary.md` (every defined term and tag
    by chapter) and `reference/data-facts.md` (the card-data counts behind this file).
 4. **The bot.** `/query_rulebook search_text [limit]`: the words typed (any case; a word without its `'` or `.`, a hyphen between two letters,
-   either quotes, whole icons, a timing tag's row), quoted by chapter and section with the ban list too, icons as emojis (details:
+   either quotes, whole icons, a timing tag's row, a status duration's `[X]T[Y]` rule, an icon's name in words, an
+   abbreviation typed alone as a word), quoted by chapter and section with the ban list too (its name: all of it; a
+   card's exact name with no lines points to its card, 2026-11-22), icons as emojis (details:
    impossibility-cards-reference); `search_text` is required
    by the slash command (main.py); a whitespace-only search only gets "Give a word or phrase to search the rulebook for.". `/export_rulebook`: all chapters as a
    text file. `/query_ability` searches card text (`type==debuff & stars==3`, `(1gcd)`; DSL in impossibility-cards-reference §7) in the bot's card
@@ -589,3 +592,9 @@ verbatim Photoshop extract and its build scripts removed (a copy would drift; th
 with Time Riddle's pointer to them;
 /query_rulebook is a loose word search by section (here and in data-facts §8); data-facts: the Morgue's 13 PNGs and the
 website's 75 lost cards. Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-23 (wrap-1122): "Smoldering" as chapter 19 spells it since TC 2be56ea7 (owner 2026-11-22; here, the glossary
+and data-facts §3); "4. The bot" and data-facts §8: what /query_rulebook finds since 2026-11-22, /query's ban list, `!`
+on any term; the lines TC 876f5b70 and daca7927 respelled (owner 2026-11-23: occurs, affects, signify, Abilities,
+certain, abbreviations) quoted as they read now (here §1, §3, §7; the glossary §1, §2; data-facts §2). Checked at AC
+541feb9c, TC 93e5892f.

@@ -211,7 +211,7 @@ colors (ch 02 and ch 23; old tags appear only in ch 23's conversion table):
 (nU) is uses per full charge (ch 02, ch 11); the chapters list it under USES, and only its badge stays in the orange `trigger` group.
 
 Ch 02 also defines: SP = Star Points, DMG = Damage, HP/ATK/DEF/SPD = the stats, PF = Primary field, CDMG = Counter damage;
-'(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities.'; 'Abilites
+'(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities.'; 'Abilities
 marked with 🕐 are considered "time based".'; "Time based abilities with a cooldown become usable again once they are
 fully charged." Every tag and tooltip is in ch 23, the website's Timing Tags chapter.
 
@@ -224,11 +224,10 @@ piercing, and not an attack. The creature's owner chooses the order of resolutio
 If a creature started the global turn with a status effect and the global turn ends before it ended its turn, the effect
 ticks at the end of the global turn, even in hand. Syntax: "[X]T[Y] [Status]", X = duration in turns, Y = stacks
 ("5T1 Poison" = 5 turns of 1 stack of Poison). Standard status effects: only one instance per creature. Stacking: any
-number. On stack/upgrade/reapply, the duration becomes the longest of the applications. Upgrades: Smouldering +
-Smouldering -> Burning; Smouldering/Burning + Burning -> Blazing; Chilled + Chilled -> Frostbite; Chilled/Frostbite +
+number. On stack/upgrade/reapply, the duration becomes the longest of the applications. Upgrades: Smoldering +
+Smoldering -> Burning; Smoldering/Burning + Burning -> Blazing; Chilled + Chilled -> Frostbite; Chilled/Frostbite +
 Frostbite -> 1 turn of Frozen; Sickness + Sickness -> Plague. A creature with Frozen/Blazing/Plague can't have the prior
-debuffs reapplied except to refresh the duration (need to upgrade to refresh). (The rulebook spells "Smouldering"; the
-card is "Smoldering".)
+debuffs reapplied except to refresh the duration (need to upgrade to refresh).
 
 Kind icons (the card's `types`): buffs: `buff` 1 (Diligent Watch), `buffstack` 11. Debuffs: `debuff` 27, `debuffstack`
 20, `debuffupgrade` 5 (exactly the five upgradable ones: Smoldering, Burning, Chilled, Frostbite, Sickness). Mapping
@@ -582,13 +581,18 @@ Bot (AutoCroissant, `main.py` + `commands/query_card.py`):
   icons, a timing tag's row; `loose`); no DSL; the reply quotes the matching lines under their chapter and section, the
   chapters with the most lines holding it at a word start first ("ring" before "during"), then the most lines, the ban
   list last (`rulebook_lines`), as written, with `render_type_tokens` (icons as emojis); a section's own title brings
-  its rules. An empty search asks for a word or phrase.
+  its rules. A status duration typed as cards print it ('2T1') finds the `[X]T[Y]` line; an icon's name in words, the
+  lines showing the icon; an abbreviation typed alone (SP, OS, DEF), itself as a word; the ban list's name lists it, a
+  group's heading that group; a card's exact name with no lines points to its card (2026-11-22). An empty search asks
+  for a word or phrase.
 - `/export_rulebook`: a UTF-8 text file of every chapter, in book order, then the ban list (★, −, emojis kept).
-- `/query name`: card image by fuzzy file-name match (works for status effect cards, e.g. "poison", and for Types/ icons).
+- `/query name`: card image by fuzzy file-name match (works for status effect cards, e.g. "poison", and for Types/ icons;
+  the ban list by its name, 2026-11-22).
 - `/query_ability query [limit] [howmany]`: the DSL over every non-rulebook card with ability text. For status effects
   and types: `type==debuff`, `type==buff`, `type==debuff & stars==3`, `types~debuffstack`, `types~debuffupgrade`,
   `types~undead`, `type~creature` (creature + the 7 large "creatures"), `subtype==equip`, text like `(1gcd)`, `"2t1 poison"`,
-  `[fire]`, `can't affect [ice]`. The query is lowercased; `|` splits before `&`; `!` negates text only. It searches the
+  `[fire]`, `can't affect [ice]`, `type==status effects`, `types==dark matter`. The query is lowercased; `|` splits
+  before `&`; `!` negates any term, conditions too. It searches the
   bot's card data, without the rulebook: `(1gcd)` hit 82 cards and `(1pt)` none at this snapshot (old tags are only in
   ch 23's conversion table).
 - `/website`: link to https://michaeljsr.github.io/TTSCardMaker.

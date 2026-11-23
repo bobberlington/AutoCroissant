@@ -74,13 +74,13 @@ top-level ones below, their dependencies pinned beside them):
 | GitPython | The bot's self-update commands (`/pull`, `/update`; `/push` until 2026-10-25), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
 | numpy | The card name index in `commands/query_card.py` (`_NameIndex`: the closest-name guesses); the card code's pixel checks too. |
 | opencv-python | Removed 2026-11-12 with /frankenstein, its only user (`commands/frankenstein.py` and utils' `url_to_cv2image`/`cv2discordfile`; owner). TTSCardMaker's font build keeps its own opencv-python-headless. |
-| pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
+| pandas | The card query engine's DataFrames: `commands/query_card.py:19`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`, `card_grid.py` (/query_ability's grids; `ImageFont.load_default(size)` wants Pillow >= 10.1 with FreeType: the wheels have it); lazily in `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (`commands/psd_remote.py`, section 4). Not on the jetson since 2026-11-11. Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c`, `cards-20261112d`, `cards-20261113`, `cards-20261113b`, `cards-20261114`, `cards-20261121`, `cards-20261121b`, `cards-20261122` and `cards-20261123`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
 | oxipng CLI (cards; not a pip package since 2026-10-25, docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) | png_export's lossless PNG recompression of card_preview's previews (`png_export.optimize`; since 2026-11-11 the PNGs the guards, the bake and the sweeps commit are banded by `png_export.band`, zlib only, no oxipng): the `oxipng` binary on PATH, 10.2.1 in the Actions (cards-python keeps the release, its pinned sha256 checked, in the cached venv's `.oxipng/`, on PATH only in the jobs that write PNGs: the guards' check and post, Card sync's Bake and save); on the Mac `brew install oxipng` (10.2.1, as the Actions). Without it no recompression (the pyoxipng fallback was dropped on 2026-11-10); everything runs without it. The tests need it (tests/conftest.py TOOLS); the jetson needs none. |
 | PyGithub | Removed 2026-10-25 (step 10): its only importers, card_data's legacy `_committed_since_update` and `_repo`, went with the pickles. PyNaCl stays declared on its own. |
 | PyNaCl | discord.py voice encryption (music is silent without it). Declared since 2026-10-20 (section 3). |
-| requests (cards) | HTTP fetches/downloads: `commands/query_card.py:9`, `commands/github_api.py:7`, `commands/tts_save.py:35`, `commands/git_commit.py:19`. |
+| requests (cards) | HTTP fetches/downloads: `commands/query_card.py:14`, `commands/github_api.py:8`, `commands/tts_save.py:32`, `commands/git_commit.py:21`. |
 | yt-dlp | Music downloading (`commands/music_player.py:73`). Pinned in requirements-bot.txt since 2026-11-11: when downloads break, bump its pin there and deploy (deploy.sh installs the file; autocroissant-debugging-playbook §6). |
 
 ## 3. Transitive-dependency history (Pillow, PyNaCl)
@@ -359,3 +359,5 @@ yt-dlp pinned; the setup.py re-verify rows replaced.
 2026-11-21 (wrap-1121): 28 bot pins; discord_match's OCR (Vision by hand, else --no-ocr) back with the card timelines;
 step 3 names what the suite needs (fork venv, clone, AC_SITE_SRC, ESBUILD, the six CLIs), its count lives in
 validation-and-qa row 1c. Checked at AC ea0db694.
+
+2026-11-23 (wrap-1122): the pandas and requests rows' import lines re-pointed. Checked at AC 541feb9c.

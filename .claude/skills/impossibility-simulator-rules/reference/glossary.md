@@ -33,7 +33,7 @@ Source: the website chapters `TTSCardMaker/site/rulebook/NN-slug.md` (24 files, 
 | (XU) | "X use(s) per full charge." | USES | 11 Basic abilities; 23 |
 | (Action) | "Costs the creature's action" | colour note (grey) | 23 Other tags |
 | ⏳ | "(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities." | footer | 11 Multi-turn |
-| 🕐 | "Abilites marked with 🕐 are considered "time based"." | footer | 11 Multi-turn tip |
+| 🕐 | "Abilities marked with 🕐 are considered "time based"." | footer | 11 Multi-turn tip |
 | usable again | "Time based abilities with a cooldown become usable again once they are fully charged." | footer | 11 Basic abilities |
 
 X is replaced by the number on cards: (1CD), (2GCD), (1/2CD), (2U), (3PG). In a pair "the first number is the charge the ability starts with: it can also be 0 or −1" (23). Ch 23's tables are also the tooltips: (1/2CD) "Cooldown: starts with 1 of 2 turns of charge", (-1/1GCD) "Global cooldown: starts with -1 of 1 turn of charge". Badge colours (02, 23): blue on your turn, purple at any time, red forced, orange per game and triggers, grey (Action).
@@ -81,7 +81,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | item shop | 2 items per star level; "Items in the shop cost 4x their star level in points"; reshuffle once per global turn for 1 point; restocked with the same star level | 05 |
 | field shop | 2 field cards per star level, 1 per level revealed at start, the other 4 at the end of global turn 1; "Field Cards cost 2x their star level in BRICKS"; "does not restock" | 05 |
 | N.M.E shop | 4 random N.M.E. items, restocked at random; "purchase cost is written on each card" | 05 |
-| types (creature) | "Special markers that give creatures certian effects." | 06 |
+| types (creature) | "Special markers that give creatures certain effects." | 06 |
 | star level | "A higher star level means the creature is more powerful."; for items, "how much the item costs to play in star points" | 06 |
 | stat bars | "Max Health, Defense, Attack, and Speed bars." "The health value is double of what is shown." "The defense value is half of what is shown." | 06; 07 |
 | abilities | "Text explaining what a creature is capable of doing while they are on the field."; "the main chunk of text at the bottom half of a creature" | 06; 11 |
@@ -129,8 +129,8 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | CONFLICTION | both teams setting the same value: "it remains random"; simultaneous revives that set HP add together (up to Max); directly conflicting effects: player chooses | 11 Confliction |
 | ability copying/stealing/swapping | "Stolen/Swapped abilities start as brand new per creature, if the creature loses that ability then gains it back, it's not reset but instead gains 1 turn of charge."; "The first time a creature gains an on first summon ability (or if this is the first opportunity that an OFS ability can be procced), proc it now." | 11 |
 | healing items dealing DMG | "If a healing item is used to deal DMG, it is instead treated as an attack item, and vice versa."; "If a healing item deals DMG instead of healing (such as with Chef Saltbaker), effects that increase healing (such as Toy Chica) increase that damage." | 11 Misc |
-| passive abilities | "abilites that happen automatically, without the player actively choosing to use it"; most are (WOF) | 11 Passives |
-| reaction | "When a play occours, a player may choose to react to it with one of their items or abilities. When you react to something, the reaction happens before whatever you reacted to." | 12 |
+| passive abilities | "abilities that happen automatically, without the player actively choosing to use it"; most are (WOF) | 11 Passives |
+| reaction | "When a play occurs, a player may choose to react to it with one of their items or abilities. When you react to something, the reaction happens before whatever you reacted to." | 12 |
 | reaction chain / resolve order | plays resolve in reverse; "anything that deals damage resolves last"; "Whatever was originally being reacted to within a reaction chain will always be resolved at the very end." | 12 |
 | SPENDING | star points are spent when played; refunds when the target becomes invalid, or when the target dies before an attack resolves | 12 Spending |
 | NO TAKE BACKS | "A decision to attack or use an ability/item cannot be retracted if your opponent reacts to it in some way." | 12 |
@@ -178,7 +178,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | standard status effects | "can only have one instance of themselves applied to a single creature" | 19 Types |
 | stacking status effects | "can have any number of themselves applied" | 19 Types |
 | duration (stack/upgrade/reapply) | "set the duration to the longest lasting of the applications" | 19 Duration |
-| upgradable | "Certain status effects upgrade themselves when applied": Smouldering→Burning→Blazing, Chilled→Frostbite→1 turn of Frozen, Sickness→Plague | 19 Upgradable |
+| upgradable | "Certain status effects upgrade themselves when applied": Smoldering→Burning→Blazing, Chilled→Frostbite→1 turn of Frozen, Sickness→Plague | 19 Upgradable |
 | creature types | "Every type has a unique function, typically an immunity to a debuff." (14 types, see §2a) | 20 |
 | damage types together | "Multiple damage types can be applied to an instance of damage, combining their effects." | 21 |
 | NORMAL (damage) | "Reduced by the defense of the target." DMG - DEF | 21 |
@@ -230,7 +230,7 @@ The chapters name these but do not define them, except as noted. The effect text
 | Enraged | buff (stacking) | +25% ATK | 07 |
 | Hardened | buff (stacking) | +0.5 DEF | 12 ("6 Hardened (3 DEF)") |
 | Softened | debuff (stacking), 1★ | -0.5 DEF | 12, 19 ("Softened (-0.5 DEF)") |
-| Smouldering / Smoldering | debuff (upgradable), 1★ | 2 DMG, can't affect [fire] | 19 ("Smouldering (2 DMG)"), 20 |
+| Smoldering | debuff (upgradable), 1★ | 2 DMG, can't affect [fire] | 19 ("Smoldering (2 DMG)"), 20 |
 | Burning | debuff (upgradable), 1★ | 3 DMG, can't affect [fire] | 11, 19, 20 |
 | Blazing | debuff, 2★ | 4 DMG, can't affect [fire] | 19, 20 |
 | Frostbite | debuff (upgradable), 2★ | 2 DMG. -25% SPD, can't affect [ice] | 19, 20 |

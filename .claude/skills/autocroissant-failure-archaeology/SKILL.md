@@ -5,7 +5,7 @@ description: "The record of AutoCroissant's settled investigations, dead ends, r
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30), **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era) and **2026-11-21** (10.38-10.43). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30), **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era), **2026-11-21** (10.38-10.43) and **2026-11-22** (10.44). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23); 2026-11-04/05: the ring badge rollout's lessons (10.35); 2026-11-11..21: forum votes, the guards over newer work, check-suite presses, the save's data names, D15's erased characters (OPEN), what the session settled (10.38-10.43)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23); 2026-11-04/05: the ring badge rollout's lessons (10.35); 2026-11-11..21: forum votes, the guards over newer work, check-suite presses, the save's data names, D15's erased characters (the bake fix landed 2026-11-22), what the session settled (10.38-10.43); 2026-11-22: what that session settled (10.44)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -784,7 +784,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   and the split untouched); `check_reminder` moved to its own 1 s loop `process_reminders` (main.py:874-876), started
   and stopped with the drains, so the reminder heartbeat is unchanged. Idle cost (a 10-20 one-off script, deleted, in git history; on a snapshot, 10 s,
   no Discord): 1.29 ms CPU/s with 0 reminders, 1.53 with 200 (0.33 / 0.40 at 1 s), 2 threads alive.
-  `query_ability` (query_card.py:577-623; :966 on 2026-10-25) posts one match as before (its image URL, a preview; since 2026-10-21 its name when
+  `query_ability` (query_card.py:577-623; :966 on 2026-10-25; :1943 on 2026-11-23) posts one match as before (its image URL, a preview; since 2026-10-21 its name when
   the PNG is not in the tree: `get_card_url` returned None and the content=None message was dropped by Discord); more as
   `<name> — <url>` lines, `RESULTS_PER_MESSAGE` = 10 per message through `queue_long_message`.
   Tests: `tests/test_query_output.py` (0, 1, 10, 11, 25 results; limit; long links; a card without an image, alone or listed).
@@ -1005,11 +1005,13 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   11-19) failed the same way (no '+' or '/' there, and a 7th line).
 - **Evidence**: s1110/cardfix-1116-d15/ (session scratch); Gasoline variant E/B, TC f52f4a53 (those glyphs stay in
   stoogedings; 'Card-sweep: fonts').
-- **Status**: the four cards stay as they are (owner 11-17). The owner's directed bake fix (a typed character the line's
-  font can't draw keeps the font the card prints it in) is still OPEN: built twice and rejected both times (research
-  round 51; retry x31 on 2026-11-21: a stray run's baseline shift and size stayed, e.g. Minecraft Panda's '∞' run).
-  Today a typed character with no glyph is set in Myriad Pro, Photoshop's Missing Glyph Protection (`psd_edit.MGP_FONT`,
-  1402a516); an empty glyph is not caught.
+- **Status**: the four cards stay as they are (owner 11-17). The owner's directed bake fix LANDED 2026-11-22 (x31, third
+  build; AC 76b171cb + e56b259c, TC f5acb468, bc52b0da; ship d-actbake, AC 6db56432): a typed character the line's font
+  can't draw, or draws empty, keeps the font the card prints it in (`psd_edit.glyph_fonts`; `MGP_FONT`, Myriad Pro, is
+  only its last pick); psd_details VERSION 14 records each layer's `faces`. Rejected twice before (research round 51;
+  x31 on 2026-11-21: a stray run's baseline shift and size stayed, Minecraft Panda's '∞' run). Owner 11-21 (~23:58):
+  NiseSegaSonic's side effect (its own huge '"' glyph prints a typed curly quote like '2', Ability ~17% smaller)
+  accepted.
 
 ### 10.43 Settled this session, and what stays open (2026-11-10..21)
 
@@ -1021,12 +1023,32 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   them to one more try (7 dropped: x2, x3, x5, x7, x8, x11, x15) and 28 were rebuilt with the objection fixed, kept by a
   fresh skeptic and landed in wave 2 (2026-11-21). Not kept after the rebuild: x4 (Dr. Robotnik's Roboticizer
   apostrophe), x26 (rulebook icons blank in search results), x27 (10 KB verdicts break Card sync's jq merge), x30
-  (focus after closeModal), x31 (10.42), x37 (a press before its dispatch answered). The other 34 stay rejected, each
+  (focus after closeModal); x31 and x37 (a press before its dispatch answered) were built once more on 11-21 and landed
+  2026-11-22 (10.42; x37 TC 34b497f8). The other 34 stay rejected, each
   with its reason in the session report (docs/Finished/session-2026-11-10-21/, research findings).
 - **Not kept, numbers for next time**: r60-2, Card data's AWS warm-up: on AWS runners the first step to the venv check
   went 6.61 s -> 3.66 s (median +2.95 s, p=0.0006; 19 of 180 probes landed on AWS), Azure none (3.04 -> 3.22 s); it
   clears the 11-16 bar only on its narrowest reading. Branch deleted at wrap-up: its TC commit abb071f5 is in the
   wrap bundle s1110/bundles/tc-unlanded-1121.bundle (session scratch); the AC branch had no commits of its own.
+
+### 10.44 Settled 2026-11-22
+
+- **Photoshop 2023's JSX PNG exports "up to 55 levels off since 11-16"**: no fault. The 11-16 land agent diffed a raw
+  export without the Display -> sRGB conversion; `saveAs(PNGSaveOptions)` always writes the document's values untagged,
+  and Display-profile cards' repo PNGs are converted. Chris & Jordi: raw max 55, converted max 1, converted in
+  Photoshop 0 px. No setting changed. Evidence: scratch/s1122/tasks/jsx-png/ (session scratch).
+- **`taskpolicy -b`** made full suites 2:05 h with false timeout reds (E-cores busy with other sessions); the utility
+  clamp since (owner 11-22).
+- **research5's ship skips**: its accepted list matched agents' descriptive branch strings, so ships s2 and s3 said
+  "nothing to ship" with 15+ verified commits per lane; shipped from snapshot branches (ship2, ship3). Rule: ship from
+  git (research-methodology §7).
+- **The 11-08 untrailered pushes**: all five posted "New art" (39 cards), the four Single-line batches too (321);
+  nothing to undo.
+- **The fork release was refused once**: a fix made before the owner's "Keep the 19-job matrix" (11-22 18:35) had cut
+  the fork CI to one job; restored (fork e5915747). The newest owner ruling wins over a prepared fix.
+- **Research rejects**: actbake x0 (Spur's second paragraph one space right) and x1 (same-length edits preview smaller)
+  not kept on retry; cards x8 (r8-3, PSD_DIRTY_VERIFY only in the edit tests) dropped by both judges (owner G3). The
+  fork lane's two rejects (Perspective Warp + Mosaic; a warpCustom from a file of another size) landed reworked.
 
 ## How to add an entry
 
@@ -1113,3 +1135,8 @@ re-verify row reads setup.py from before its deletion.
 2026-11-21 (wrap-1121): Entries 10.38 (forum votes' refused steps), 10.39 (the guards over Croissant's newer work), 10.40
 (check-suite presses reverted), 10.41 (the save read older data names), 10.42 (D15's erased characters; the bake fix
 still open), 10.43 (settled by the owner, the research rejects and their retries, r60-2's numbers). Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-23 (wrap-1122): 10.42's bake fix landed (x31, 2026-11-22); 10.43's x31 and x37 landed; Entry 10.44 (what
+2026-11-22 settled: the JSX PNG exports, `taskpolicy -b`, research5's ship skips, the 11-08 pushes, the refused fork
+release, the retries not kept); the index row and date of record; query_ability's line. Checked at AC fdc718af, TC
+2838c3e8 (10.42's owner answer dated 11-21 ~23:58, the session brief).

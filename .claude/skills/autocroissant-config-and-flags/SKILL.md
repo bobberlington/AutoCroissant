@@ -255,7 +255,7 @@ extraction" goal). Their semantics and the validation rules live in
 **impossibility-cards-reference**; the elimination campaign in
 **autocroissant-psd-extraction-campaign**.
 
-### commands/query_card.py (lines 31-32)
+### commands/query_card.py (line 37)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -395,6 +395,7 @@ It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before
 | `TEXT_CHARS` | `2000` | characters of text kept per type layer |
 | `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
 | `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |
+| `GRADIENT_SPREAD` | `60` | levels a gradient Stroke's stops may be off their mean (the plates' `far`; VERSION 15, 2026-11-22) |
 
 No CLI since 2026-10-25 (the one-time backfill is done). In the build the `supplied` flags come from
 `psd_details.font_index()` (`PSD_TOOLS_FONT_DIRS`, else the checkout's MDW/Fonts).
@@ -538,7 +539,8 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `VIEW_W`, `QUALITY` | 720, AVIF q60 | the crops: the card view's width |
 | `TRIES` | 5 | publish pushes, each from the branch head |
 | `BAR_TOP`, `BAR_MOVED` | 20, 2 | stat pictures (`with_bars`, 2026-11-11): each value 0-20 the bake takes, its view pixels moved past 2 levels |
-| `with_stars`' top | `card_checks.MAX_STARS` (7) | stars pictures (the plate's `icons`, 2026-11-12): each count 1-7 but the card's, as the bake draws it |
+| `with_stars`' top | `card_checks.MAX_STARS` (7) | stars pictures (the plate's `icons`, 2026-11-12; a tagged PSD's picture n past 1 its own `icons@<n>`, 2026-11-22, none when their stars differ): each count 1-7 but the card's, as the bake draws it |
+| `COVER_MIN`, `COVER_RIM` | 0.5, 2 | the plate's `covers` (2026-11-22): a picture over a text layer covers it where its alpha passes 0.5, with 2 px of fainter alpha round that; a faint overlay none |
 | `TYPE_PROBE` | (("fire", "electric"), ("water", "ice")) | type probe (the plate's `typeProbe`, 2026-11-20): one types edit adding a warm and a cool type (a pair's second on a card printing its first; one edit each when the pair is refused or stepped down), the bake's made icons in the view; their Types/ PNGs are in `blobs_of`'s shared list (one git fetch, `Context.types()` once a run, no REST read a card) |
 | `BAR_BYTES`, `BAR_AVIF` | 192000, 50 | a lossless WebP bar sheet past this goes AVIF at the site's 720 px image quality |
 | `BAR_SIDE` | 16383 | the bar sheet's cuts stack in columns of at most this height (WebP's largest side) |
@@ -566,6 +568,11 @@ to `LOCAL_REF` `refs/card-plates/head`: a bars/icons sheet whose pixels equal th
 | `PARITY_FLOOR` | `25.0` % | the only pixel refusal: a box past this is a broken render (owner, 2026-10-23) |
 | `PARITY_MEAN_MAX` | `2.0` | mean difference over a box (owner, 2026-10-22); a reported measure since 2026-10-23 |
 | env `PSD_DIRTY_VERIFY` | unset | `"1"`: the dirty-box gate also renders whole and raises on any difference (K-1; on in tests/conftest.py) |
+| `psd_edit.TITLE_MIN`, `TOUCH_PAD`, `REACH_PX` | 0.7, 10, 0 | `fit_title` (2026-11-22): a title over the stars or type icons set smaller, down to 70%; an icon within 10 px of the old title's box is printed so (left out); ink inside an icon's core past 0 px is over it |
+| `psd_edit.REVEAL_BAND`, `REVEAL_MIN`, `REVEAL_SPREAD`, `REVEAL_PX`, `REVEAL_SIGMA` | 12, 3, 4, 200, 12.0 | uncovered pixels keep the PNG's offset (2026-11-22, `reveal_offset`: Beholster, Pandora, P.A.N.D.A. Mk F): read 12 px round the changed pixels, a median offset of 3+ levels with every channel within 4, at least 200 pixels, smoothed over 12 px |
+| `psd_edit.OK_FONTS` | `("exact",)` | how a font may resolve; loose or substituted faces refuse (`("exact", "system")` until ce635f35, 2026-11-22) |
+| `psd_edit.MGP_FONT` | `"MyriadPro-Regular"` | `glyph_fonts`' last pick for a typed character no font of the card draws (Photoshop 2023's Missing Glyph Protection; failure-archaeology 10.42) |
+| `psd_edit.LINE_INK` | (15, 0.75) | `edit_styles`: in a line of several colours, text typed between runs or at its end takes the commonest colour when it holds 15+ and 75% of the line's letters, else the body fill (2026-11-22; failure-archaeology 10.34) |
 | `card_bake.MAX_BAKES` | `40` | PSD edits per run; the rest wait for the next |
 | `card_bake.RECENT` | removed 2026-11-04 (0 since 2026-11-03; 30 min before) | a PSD or PNG pushed more recently was its author's: the bake and the guards didn't race them |
 | `card_bake.BUDGET` | 40 min | no card starts later, so the commit lands within the job's 60 minutes |
@@ -858,3 +865,7 @@ Checked at AC ea0db694, TC 0cb95c33.
 
 2026-11-22 (actbake-1122): re-pin step 5, one Card checks dispatch after the AutoCroissant push builds the runners' venv;
 psd_details `VERSION` 15 (14 `faces`, 15 `rim`/`rims`); card-guards.yml's venv jobs are check and checks.
+
+2026-11-23 (wrap-1122): card_plates' `icons@<n>` and `COVER_MIN`/`COVER_RIM`; psd_details `GRADIENT_SPREAD`;
+psd_edit's `fit_title`, `REVEAL_*`, `OK_FONTS`, `MGP_FONT` and `LINE_INK` rows; the query_card.py heading's line.
+Checked at AC fdc718af, TC 2838c3e8.

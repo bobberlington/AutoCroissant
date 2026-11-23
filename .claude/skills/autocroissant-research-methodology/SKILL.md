@@ -301,10 +301,12 @@ one sentence; anything heavier (issue tracker, templates) is ceremony this proje
   out, and what the next cheap experiment would be — it does not round "I ran out of evening"
   up to "it's probably X". Unproven ideas stay labeled open/candidate.
 
-## 7. Research rounds (multi-agent workflows; session 2026-11-10..21)
+## 7. Research rounds (multi-agent workflows; sessions 2026-11-10..21 and 2026-11-22)
 
-How the session's research ran (lanes cards and actbake: 360 ideas kept, 62 rejected, each verdict by an independent
-reviewer; the psd-tools fork lane ran its own rounds until dry). The acceptance procedure for each change stays autocroissant-validation-and-qa's.
+How the sessions' research ran (lanes cards and actbake: 360 ideas kept, 62 rejected, each verdict by an independent
+reviewer; the psd-tools fork lane ran its own rounds until dry; 2026-11-22: 8 rounds per lane, actbake 18 and cards 33
+kept and landed, the fork lens down from 46 unredrawable pictures to 1, then 0 with Burly Bomb's Reduce Noise on
+2026-11-23). The acceptance procedure for each change stays autocroissant-validation-and-qa's.
 
 - **A round per lane**: finders propose (what, evidence, risk); a builder builds each on its own branch and worktree; a
   fresh skeptic reproduces the gain and hunts regressions; kept ones merge into `work/<lane>`. Ship every 4 rounds.
@@ -316,6 +318,12 @@ reviewer; the psd-tools fork lane ran its own rounds until dry). The acceptance 
 - **Dry**: a finder with nothing returns an EMPTY list (notes beside it). Never a 'NO BUILD' / 'NO CHANGE' record: those
   were built as empty branches, kept the lanes from going dry and ran a workflow into its 1000-agent cap (2026-11-16).
   Filter such titles in code. Dry = two empty rounds in a row; cap the rounds per run.
+- **Finders' time** (2026-11-22): a finder returns within about 60 minutes, measures on a sample, and never runs a full
+  AC suite (it blocks the ships' suites; the tests lens reads the ships' suite logs or times single files); what it
+  could not finish goes in its notes for the next round.
+- **Ship from git** (2026-11-22): key items by the branch name the script gave the builder, never an agent's free-text
+  field; decide what ships with `git cherry origin/main work/<lane>` in both repos inside the ship step; log a skip
+  loudly; before the wrap-up diff every integration branch against main by patch-id.
 - **Never twice**: accepted and rejected titles are not proposed again (the lists: docs/NEXT_SESSION_PLAN.md).
 - **One more try**: a rejected idea whose reviewer saw a real gain gets two judges first (still needed, no owner ruling
   against it, fixable), then a rebuild with the objection fixed and a fresh skeptic (2026-11-20: 41 such rejects, 34
@@ -329,7 +337,8 @@ reviewer; the psd-tools fork lane ran its own rounds until dry). The acceptance 
   owner.
 - **Workflows**: never resume a multi-lane workflow after editing its caps; never message a workflow agent (it starts a
   second copy); pass long lists through a file, never a sliced string.
-- **Budget** (owner, 2026-11-21): about 8 rounds per lane, ship every 4, then stop and finish everything found.
+- **Budget** (owner, 2026-11-21): about 8 rounds per lane, ship every 4, then stop and finish everything found (again
+  2026-11-22: about 8 a lane, neither went dry).
 - **Speed claims on the website** are measured live (a phone, cold, n >= 5) before shipping.
 
 ## Provenance and maintenance
@@ -389,3 +398,6 @@ Maintenance rules:
 2026-11-21 (wrap-1121): §7 research rounds (the owner's bar, dry rounds, one more try for real-gain rejects, the
 budget); the flag mechanism without runtime `/set_*` commands (getattr sites re-pointed); the exclusion-list warning in
 the past tense. Checked at AC ea0db694, TC 0cb95c33.
+
+2026-11-23 (wrap-1122): §7 the 2026-11-22 session (8 rounds a lane, its counts, the fork lens to 0), finders' time,
+ship from git, the budget held. Checked at AC 541feb9c, TC 25077c28.
