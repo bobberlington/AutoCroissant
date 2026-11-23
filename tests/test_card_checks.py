@@ -265,7 +265,8 @@ def test_refresh_clears():
 
 def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
     """Owner 11-09: a picture-only duplicate (dup_of) its PSD's variant tags draw (picture 2 titled as it: Gust of Trees)
-    is no "drawn apart" flag, never measured (Regeneration Potion's clipped adjustment misreads); untagged, it is."""
+    is no "drawn apart" flag, never measured (Regeneration Potion's clipped adjustment misreads); untagged, it is.
+    Each picture's stars sheet merges into the plate (stand-ins: test_card_plates draws them)."""
     import sys
     from hashlib import sha1
     from io import BytesIO
@@ -287,6 +288,8 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
              cc.EDITS_PATH: json.dumps({"cards": {"Breakfast": {"dup_of": "A Snack"}}}).encode()}
     monkeypatch.setattr(cc, "_stat_notes", lambda *args: [])    # the stat bakes: test_card_bake's
     monkeypatch.setattr(cc.png_export, "drawn_apart", lambda *args: True)  # a drawn picture is never measured
+    ink = np.full((4, 4, 4), 200, np.uint8)
+    monkeypatch.setattr(cc.card_plates, "star_changes", lambda *args: {1: (0, 0, ink, ink * 0)})
     sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
     for data, flagged in (((clone / rel).read_bytes(), True), (tagged.getvalue(), False)):
         found = {rel: data, **files}
@@ -298,6 +301,8 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
     snapshot.fetch = lambda blob, get=snapshot.fetch: None if blob == lost else get(blob)
     plate = cc.check_card(cc.Context(snapshot, _bare_parser(), ""), rel)["plate"]
     assert plate and plate["crops"] and record["plate"]["crops"] != plate["crops"]
+    icons = lambda one: sorted(key for key in one if key.startswith("icons"))
+    assert icons(record["plate"]) == ["icons", "icons@2", "icons@3"] and icons(plate) == ["icons", "icons@2"]
 
 
 def test_sweeps_keep_flags(tmp_path):
