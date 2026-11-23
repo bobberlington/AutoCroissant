@@ -54,7 +54,9 @@ KIND_NAMES = {"field card": ("field",), "minion": ("minion",), "item": ("item",)
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
             "health": "hp", "hp": "health", "star points": "sp", "sp": "star points", "primary field": "pf",
             "pf": "primary field", "counter damage": "cdmg", "cdmg": "counter damage"}   # either finds both (rulebook)
-SYNONYM_WORDS = compile(r"\b(" + "|".join(sorted(SYNONYMS, key=len, reverse=True)) + r")\b")   # longest key first
+AFTER_NUMBER = {"attack": "atk", "atk": "attack"}       # only after a number (+1 attack: +1 ATK); attack alone stays a word
+SYNONYM_WORDS = compile(r"\b(" + "|".join(sorted(SYNONYMS, key=len, reverse=True))   # longest key first
+                        + "".join(r"|(?<=[\d%] )" + word for word in AFTER_NUMBER) + r")\b")
 BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
 MAX_CONTENT = 2000                                       # Discord's message length limit
@@ -662,14 +664,14 @@ class CardRepository:
     @staticmethod
     def _text_pattern(text: str) -> str:
         """A regex for a text term: the text (loose: cant finds can't), each SYNONYMS word also finding its other (damage
-        DMG, SP star points...)."""
+        DMG, SP star points...), an AFTER_NUMBER word after a number too (+1 attack: +1 ATK)."""
         parts = SYNONYM_WORDS.split(text)
         out = []
         for i, part in enumerate(parts):
             if i % 2 == 0:
                 out.append(loose(part))
                 continue
-            other = SYNONYMS[part]
+            other = SYNONYMS.get(part) or AFTER_NUMBER[part]
             other = r"\b" + other + r"\b" if len(other) < len(part) else other      # dmg as a word, not in "admg"
             out.append("(?:" + part + "|" + other + ")")
         return "".join(out)

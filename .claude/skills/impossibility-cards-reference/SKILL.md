@@ -824,7 +824,9 @@ list, `_` as a space, as the website: `types==fire`, `types==defensive minion`, 
 test each one, 2026-11-17), ability, path, created. `has:alias`: cards with an alias (search.js FLAGS). Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
 Synonyms (`SYNONYMS`, the rulebook's Abbreviations; search.js has the same table): damage/DMG, defense/DEF, speed/SPD,
 health/HP, star points/SP, primary field/PF, counter damage/CDMG find each other in text terms (longest key first, so
-`counter damage` is not read as `counter` + `damage`; quoted terms stay literal). Since 2026-11-14 a plain text term
+`counter damage` is not read as `counter` + `damage`; quoted terms stay literal); attack/ATK too, only right after a
+digit or % and a space (`AFTER_NUMBER`, 2026-11-22: `+1 attack` finds `+1 ATK`; `attack` or `atk` alone stays the
+word). Since 2026-11-14 a plain text term
 also finds (as search.js): a card whose name, title or Card Edits names, as letters and digits only (`squash`: NFD,
 accents and punctuation dropped), hold the term squashed (4+ letters anywhere, 3 or fewer only a whole name:
 `moms knife`, `hrh`), and a series' cards when the squashed term is the series, without a leading The or a closing
