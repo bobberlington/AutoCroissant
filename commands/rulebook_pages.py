@@ -26,7 +26,8 @@ INPUTS (Card sync's look in the background: kept unless main's head moved one si
 and PDF are the checkout's.
 --local URL: the push's Pages build served there (Card sync, before it deploys): the same look, deciding only. Its pages
 the same: pages.json's key and pre written as above; else (a page changed, not HEAD's build, not drawn) nothing written,
-exit 4 (Card sync looks at the website then, so a printed PDF always links the website).
+exit 4 (Card sync looks at the website then, so a printed PDF always links the website); a page's text changed: no
+screenshots.
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
@@ -241,18 +242,19 @@ def book_fonts(checkout: str) -> list:
     return found
 
 
-def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list] = None) -> tuple:
+def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list] = None, stop=None) -> tuple:
     """
     The website's TTS pages.
 
     Args:
         key_of: what the pages draw (KEY_JS's text) -> their key; known: the last print's key (no screenshots when the same)
         fonts: book_fonts(), the page's BOOK_FONTS
+        stop: the sheet entries with their text -> True when no screenshots are needed (--local: a page's text changed)
 
     Returns:
-        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, or None when
-        the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it in any case), the key,
-        the page's stamp, PLAIN_JS's {url: blob id})
+        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order ([] when
+        stopped), or None when the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it
+        in any case), the key, the page's stamp, PLAIN_JS's {url: blob id})
     """
     chrome, target = start(exe)
     try:
@@ -291,6 +293,8 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
         texts = run(TEXT_JS)
         for entry, (text, heads) in zip(listed["sheets"], texts or []):
             entry["text"], entry["heads"] = text, heads      # the TTS save's search (Global.lua)
+        if stop and stop(listed["sheets"]):
+            return dict(listed["chapters"]), [], Printer(None, chrome.close), key, page, plain
         shots = []
         for entry, (x, y, w, h) in zip(listed["sheets"], boxes):
             if (round(w), round(h)) != SHEET:
@@ -582,6 +586,10 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
     note = "; a kept look" if (old.get("key"), old.get("pre")) != stored else ""
     where = "; the push's build" if local else ""
     known = old.get("key", "") if has_pdf else ""
+    said = [(p.get("name"), p.get("t"), p.get("h")) for p in old.get("pages") or [] if isinstance(p, dict)]
+    # --local: no screenshots when it would print (a page's name, text or headings, the count, no PDF: write_pages)
+    stop = (lambda sheets: not has_pdf or said != [(e["name"], e.get("text") or None, e.get("heads") or None)
+                                                   for e in sheets]) if local else None
     until = monotonic() + (0 if local else wait)
     while True:
         seen = wait_for_site(local or site, checkout, mine, until - monotonic())   # before the draw: that build or a later one
@@ -596,7 +604,7 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
             if note:
                 _put_listing(join(folder, PAGES_JSON), old)
             return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started{note}{where})."
-        theirs, shots, printer, drawn, page, plain = draw(local or site, exe, lambda text: key(text, checkout, trees), known, fonts)
+        theirs, shots, printer, drawn, page, plain = draw(local or site, exe, lambda text: key(text, checkout, trees), known, fonts, stop)
         try:
             met = page != seen["page"]                                   # a deploy mid-look: the new build is live
             lags = met or theirs != mine or plain != heads(checkout, plain)   # the CDN's old copy (same page: its data's)
@@ -607,7 +615,7 @@ def update_pages(checkout: str, site: str = SITE_URL, wait: float = 0, full: boo
                     if (drawn, pre) != stored:
                         _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
                     return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''}{note}{where})."
-                done = write_pages(folder, shots, None if local else printer.pdf, drawn, pre)
+                done = write_pages(folder, shots, None if local else printer.pdf, drawn, pre) if shots or not local else None
         finally:
             printer.close()
         if local and (lags or done is None):

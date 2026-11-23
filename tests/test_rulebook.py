@@ -184,7 +184,7 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: True)
     drawn = {"key": "k1", "n": 0}
 
-    def draw(site, exe, key_of, known, fonts):
+    def draw(site, exe, key_of, known, fonts, stop=None):
         drawn["n"] += 1
         new = drawn["key"] != known
         return ({"01-a.md": "# A\n![[Mushroom]] and [[Panda|the panda]]\n"}, shots if new else None,
@@ -238,7 +238,7 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     good = ("pg", dict(font, **{"rulebook/img/gone.webp": None}))
     drawn = {"n": 0, "lag": []}                            # what the next draws meet: (page, plain), then good
 
-    def draw(site, exe, key_of, known, fonts):
+    def draw(site, exe, key_of, known, fonts, stop=None):
         drawn["n"] += 1
         clock["t"] += draw_s
         page, plain = drawn["lag"].pop(0) if drawn["lag"] else good
@@ -290,7 +290,7 @@ def test_the_push_build_decides_only(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
     drawn = {"png": _png("white"), "printed": 0, "fail": False}
 
-    def draw(site, exe, key_of, known, fonts):
+    def draw(site, exe, key_of, known, fonts, stop=None):
         asked.append(site)
         if drawn["fail"]:
             raise RuntimeError("Chrome quit")
