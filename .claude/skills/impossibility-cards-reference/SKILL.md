@@ -903,6 +903,11 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
     count first and "Displayed ..." with the website button last. From 2026-10-21 to 2026-10-23 they were listed as
     `<name> — <url>` lines, 10 per message, then one message per card;
     `howmany:True` returns just the count; `limit` caps output (main.py:316-332).
+11. A miss (no card; `/query_rulebook`: no line, the ban list too) asks "Did you mean 'piercing' (78 cards)?" with a
+    website button to that search (since 2026-11-22; `respelled`, `book_respelled`, `respell`): each 4+ letter word
+    nothing holds swapped for the printed word 1 edit away (Damerau; 2 at 7+ letters; a field's name stays), ties to
+    the word on the most cards / printed most; only when the new search finds something; nothing replaced by itself.
+    The website's Cards and Rulebook search alike (search.js `respell`, app.js `respelled`, `bookRespell`).
 
 ## 8. When NOT to use this skill
 
