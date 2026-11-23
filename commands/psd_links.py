@@ -376,8 +376,8 @@ def _plain_source(layer) -> bool:
 def fork_filters(layer) -> bool:
     """The fork draws the layer's smart filters on a new picture (SmartObject.can_draw_filters) and its FEid source is
     plain: none on, or one Gaussian or Motion Blur (a filter mask does not refuse: the composite applies it), Puppet
-    Warp, Perspective Warp (a turned quad: at a scale the fork's place_picture is proven at) or Invert (proven with the
-    mask off or white)."""
+    Warp, Perspective Warp (a turned quad: at a scale the fork's place_picture is proven at), Invert or Reduce Noise
+    (proven with the mask off or white)."""
     so = layer.smart_object
     if not _plain_source(layer) or not so.can_draw_filters():
         return False
