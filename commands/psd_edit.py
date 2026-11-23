@@ -6808,12 +6808,13 @@ def color_copies(psd: PSDImage, spans: list, view: Optional[int] = None, memo: O
 
 
 def _hiding(node) -> list:
-    """[(effect, kind)]: the node's enabled opaque Normal Color, Gradient and Pattern Overlays."""
+    """[(effect, kind)]: the node's enabled Normal Color, Gradient and Pattern Overlays, at any opacity (Ice Staff's two
+    at 69%: the website counts any, its record has none)."""
     from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
     kinds = {ColorOverlay: "Color Overlay", GradientOverlay: "Gradient Overlay", PatternOverlay: "Pattern Overlay"}
     effects = node.effects
     return [(effect, kind) for effect in (effects if effects.enabled else ()) for cls, kind in kinds.items()
-            if isinstance(effect, cls) and effect.enabled and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL]
+            if isinstance(effect, cls) and effect.enabled and float(effect.opacity) > 0 and effect.blend_mode == BlendMode.NORMAL]
 
 
 def _opaque(one) -> bool:
@@ -6847,7 +6848,7 @@ def _clip_text(chain: list) -> str:
 
 
 def _painted_over(layer, own: bool = True, skip=None) -> Optional[str]:
-    """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
+    """What hides a text layer's own colours, its own or a group's: a Normal Color, Gradient or Pattern Overlay (_hiding)
     ("its Gradient Overlay"), a layer clipped onto it, or a fill at 0; None when they show. own False: not its own
     overlays, clipped layers or fill (_overlay_off's); skip: a group whose overlays go off too (_owned_group)."""
     node = layer
@@ -6873,8 +6874,8 @@ def _solid_overlay(layer) -> Optional[tuple]:
     effects = layer.effects
     overlays = [e for e in (effects if effects.enabled else ()) if e.enabled and isinstance(e, (ColorOverlay, GradientOverlay, PatternOverlay))]
     hiding = _hiding(layer)
-    if len(overlays) != 1 or len(hiding) != 1 or hiding[0][1] != "Color Overlay" or _painted_over(layer, own=False) \
-            or layer.fill_opacity < 255 or _clipped_over(layer):
+    if len(overlays) != 1 or len(hiding) != 1 or hiding[0][1] != "Color Overlay" or float(hiding[0][0].opacity) < 100 \
+            or _painted_over(layer, own=False) or layer.fill_opacity < 255 or _clipped_over(layer):
         return None
     text, salted = layer.text, _salted(layer)
     if any(icon and i not in salted and not text[i].isspace() for i, icon in enumerate(_char_styles(layer)[1])):
