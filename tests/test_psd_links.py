@@ -674,6 +674,31 @@ def test_mosaic_redrawn(clone):
     assert _off(_canvas(psd, layer.numpy(), layer.bbox), stored) <= 2 and plain > 3000
 
 
+BURLY = "Items/Attack/3 Stars/Burly_Bomb.psd"                  # its art under Reduce Noise (Strength 10)
+
+
+def test_reduce_noise_redrawn(clone):
+    """Burly Bomb's Reduce Noise is drawn by the fork: its own filter source lands on Photoshop's stored pixels (as near
+    as Photoshop's own runs, which dither), not without the filter; a changed file is drawn again, no hand note."""
+    from conftest import at_rev
+    psd, layer, _ = _linked(clone, BURLY, "124678 (1)")
+    assert pl._filtered(layer) and pl.why_not_redrawn(layer) is None
+    box, color, alpha = layer.smart_object.filter_source()
+    source, box = np.dstack([color, alpha]).astype(np.float32) / 255, tuple(box)
+    stored = _canvas(psd, layer.numpy(), layer.bbox)
+    drawn = _canvas(psd, *layer.smart_object.draw_filters(source, box))
+    assert _off(drawn, stored) * 50 < _off(_canvas(psd, source, box), stored)
+    path = f"MDW/Linked/{layer.smart_object.filename}"
+    old = at_rev(clone, LINKED_REV, path)
+    rgba = pl._decoded(old, "png")[0].copy()
+    ys, xs = np.nonzero(rgba[..., 3] == 255)
+    rgba[ys[len(ys) // 2], xs[len(ys) // 2], 0] ^= 1
+    new = _png(Image.fromarray(rgba, "RGBA"))
+    blobs = {pl.git_blob(data): data for data in (old, new)}
+    seen = {path: {pl.git_blob(old): len(old)}}
+    assert pl.redraw_psd(psd, BURLY, {path: pl.git_blob(new)}, blobs.get, seen) == (True, True, [])
+
+
 MOL_D = "Creatures/Monkey D Folder/2 Stars/Mol_D_Truffy.psd"    # its art under a warpCustom, no smart filters
 
 
