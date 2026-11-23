@@ -50,8 +50,8 @@ Research again at about 8 per lane: owner answer 19 (11-23).
   the s3 ships); titles in the report's accepted.md.
 - Not kept after one more try (rejected twice: don't retry): actbake x0 (Mock-up rows that start with spaces: Spur's
   second paragraph laid one space in), x1 (a growing Ability set smaller from the plate: same-length edits on The
-  Ringed City, Whacka Bump, Papa Chip preview smaller). Dropped by both judges: cards r8-3 (PSD_DIRTY_VERIFY only in
-  the edit tests: owner G3 keeps it on everywhere).
+  Ringed City, Whacka Bump, The Evil, Fricked Up Cursed Idol preview smaller). Dropped by both judges: cards r8-3
+  (PSD_DIRTY_VERIFY only in the edit tests: owner G3 keeps it on everywhere).
 - Seeds from the 11-22 notes: the first maker guarded push after TC cbd4bb1d (see Waiting on events); x3's website
   half (the editor's series "PSD value" vs what a revert restores; x3's parser half landed); the text-colour
   boundaries where the bake and the mock-up still differ (Chris & Jordi, Pix, Grimmchild; report, Watch items); two
@@ -71,8 +71,8 @@ series and Smoldering (owner 12-13), the 11 rulebook typos (owner 18, 23), the f
 fork CI cut to 2 jobs (owner 25; fork bb8c62fc, Tests 45203571689 green, so 1b970405's red run needs no rerun), the
 Desktop TC repack (owner 6: 1189 packs -> 2, fsck ok), the s1109 bundles, CardBrowser v0.1.2.
 
-- [ ] **TTS Saves folder**: the 11-23 01:40 copy is main's save at 25077c28; main's save changed since (93e5892f, the
-      rulebook PDF's address): copy main's in again unless `final_state.md` says the cleanup did.
+- [x] **TTS Saves folder**: main's save at 93e5892f (after both typo pushes) copied in 11-23 08:18; the old test
+      save was deleted 01:40. Re-copy after the next save change.
 - [ ] **D24**: the stoogedings build number in the font's name at the next real font build (owner 11-22: no build
       just for it).
 - [ ] **CardBrowser** v0.1.2 (main 4c1bd38): quiet (owner 11-22); the owner tells the makers; Linux only if a maker
@@ -80,7 +80,7 @@ Desktop TC repack (owner 6: 1189 packs -> 2, fsck ok), the s1109 bundles, CardBr
 
 ### Waiting on events
 
-Proven 11-22 (report): the delta-free Land, PNGs recompressed after Decided, the Follow-up window past Landed (runs
+Proven 11-22: the delta-free Land, PNGs recompressed after Decided, the Follow-up window past Landed (runs
 44839860535, 44839860345), x12's WebP encode (45082969963), the push-lane Rulebook PDF on its own artifact
 (44987581999), psd_details VERSION 13 -> 14 -> 15 through gate G4.
 
@@ -228,7 +228,8 @@ Proven 11-22 (report): the delta-free Land, PNGs recompressed after Decided, the
 - CardBrowser main 4c1bd38 = pre-release v0.1.2.
 - Branches: every ref adjudicated in `docs/Finished/session-2026-11-22/branches.md` (SHAs in
   `scratch/s1122/wrap/branch_record.tsv`). GitHub holds only main, data, history, plates, previews (TC), main and
-  `archive/*` (AC), and the fork's main, `archive/*` and `cards-*` tags (newest `cards-20261123`).
+  `archive/*` (AC), and the fork's main, `archive/*` and `cards-*` tags (newest `cards-20261123`) besides upstream's
+  own version tags.
 
 ## Owner
 

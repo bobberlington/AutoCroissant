@@ -47,10 +47,10 @@ Other results:
   corrects the 11-16 incident in the last report.
 - **11-08 commits without a Card-sweep trailer:** all five posted "New art" (39 cards, 5 messages); the four
   Single-line batches too (321 cards). Nothing to undo.
-- **Desktop TC repack** (owner 6, 11-23 04:15-05:35, no agent running): 1189 packs + 9756 loose objects (29.3 GiB)
+- **Desktop TC repack** (owner 6, 11-23 04:15-05:35, no agent touching the clone): 1189 packs + 9756 loose objects (29.3 GiB)
   -> 2 packs, 0 loose (29.1 GiB); 43,860 objects, 0 missing; promisor flag kept; fsck ok. `git repack -a -d -k
   --window=0` (the default delta search ran 40 min without writing and was stopped).
-- **TTS Saves folder** (11-23 01:40): the old test save deleted; main's save (25077c28) copied in.
+- **TTS Saves folder** (11-23 01:40, 08:18): the old test save deleted; main's save copied in (93e5892f, after both typo pushes).
 - **Correction:** the plan's "71 cards gain faces" was a sample size; after the VERSION 14 re-read 29 current records
   carry faces.
 
@@ -65,7 +65,7 @@ Other results:
 No deploy for the deferred five, actbake s1-s3, the two fork re-pins or the docs (no file the bot loads; the jetson
 has no fork). Always 42 commands, 777 cards.
 
-## Owner answers (memory `owner-decisions-2026-11-22`)
+## Owner answers (numbered as in the session brief; memory `owner-decisions-2026-11-22` uses the same numbers)
 
 | # | When | Answer |
 |---|---|---|
@@ -112,7 +112,7 @@ measure first; no record proposals. Full lists: accepted.md, rejected.md.
 - Neither research lane went dry; both stopped at the 8-round cap. Everything kept landed (s3 on 11-23).
 - Fork: owner answer 20 added Reduce Noise after the release (`cards-20261123`): no linked picture is left that Card
   sync can't redraw.
-- Cardfix judges (2 passes): 0 card fixes. The rulebook typos they found were fixed on owner answers 18 and 23.
+- Cardfix judges (2 passes): 0 card fixes. The 9 rulebook typos they found were fixed on owner answer 18; 2 more, found later, on answer 23.
 
 ## Incidents and lessons
 

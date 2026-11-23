@@ -12,7 +12,7 @@ r5-2), plus cards r6-3 part 2.
 | Round | Idea | Why not | Retry |
 |---|---|---|---|
 | r1-2 | Mock-up: Ability rows that start with spaces, and stacked boxes, drawn where the bake sets them (Miracle Matter, Warcraftian Druid, Twin Emperors) | Rule 3 made Hive Knight's redrawn lines paler and bolder than the bake | x0, rules 1-2 only: NOT KEPT. On Spur, a re-wrap draws the second paragraph one space right (the verifier names a 4-line fix) |
-| r7-0 | Mock-up: a growing Ability set smaller where the bake sets it smaller (Papa Chip, Warcraftian Mage, Whispy Woods...) | Shrinks Abilities the bake keeps full size (Nefarious Chip, Godskin Apostle) | x1: NOT KEPT. Same-length edits now preview smaller (The Ringed City '+2' -> '+3', Whacka Bump, The Evil Fricked Up Cursed Idol) |
+| r7-0 | Mock-up: a growing Ability set smaller where the bake sets it smaller (Papa Chip, Warcraftian Mage, Whispy Woods...) | Shrinks Abilities the bake keeps full size (Nefarious Chip, Godskin Apostle) | x1: NOT KEPT. Same-length edits now preview smaller (The Ringed City '+2' -> '+3', Whacka Bump, The Evil, Fricked Up Cursed Idol) |
 | r7-1 | Bake and mock-up: words typed at a coloured paragraph's end take its colour | Yin Yarn: the mock-up drew tan, the bake lavender | x2: KEPT (accepted.md) |
 | r1-3 | Card sync: the main-lane push retry warnings say what happened | Not built: already on main (TC 8ae326d1, 11-06) | - |
 | r5-2 | Rulebook PDF: the push's Pages zip downloaded again after a 404 | Kept, but the same fix as r5-0: dropped at merge | - |
@@ -42,4 +42,4 @@ r5-2), plus cards r6-3 part 2.
 ## Card fixes (cardfix judges, 2 passes)
 
 0 cleared both judges. Beholster's copied Ability and the 'Smouldering' spelling went to the owner (answers 12, 13).
-The rulebook typos they found were fixed on owner answers 18 and 23 (TC 876f5b70, daca7927).
+The 9 rulebook typos they found were fixed on owner answer 18 (TC 876f5b70); 2 more, found later, on answer 23 (daca7927).
