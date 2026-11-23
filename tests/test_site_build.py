@@ -542,6 +542,20 @@ def test_tts_and_game_txt_kinds_name_each_item_type(bs):
     assert bs.ICON_ITEM_TYPES == cm.AUX_ITEM_TYPES
 
 
+def test_tts_rules_buttons_follow_minions_death_attacks_and_the_field(bs):
+    """tts.json r (Card details' Rules buttons): a minion card named or 'minions' -> Minions ('On first summon' not, nor
+    a minion card: its type's), revive/graveyard -> Death, redirect -> Attacking, PF as printed/primary field -> The Field."""
+    chapters = [{"id": i, "num": n, "title": i, "source": s} for i, n, s in (
+        ("attacking", "10", "# Attacking\n"), ("the-field", "16", "# The Field\n"), ("death", "17", "# Death\n"),
+        ("minions", "15", "# Minions\n[offensive_minion]:Offensive minions occupy the same field.\n"))]
+    cards = [dict(name="Mini Bee", type="minion", types=["offensive_minion"], ability="Attacks the minion's PF target.", png="m.png"),
+             dict(name="Hive Knight", type="creature", ability="(OYT) Summon a Mini Bee.", png="a.png"),
+             dict(name="Grimora", type="creature", ability="Revive a creature from the graveyard to the primary field.", png="b.png"),
+             dict(name="Portal", type="item", ability="Redirect an attack. On first summon, pf and sf.", png="c.png")]
+    r = {c["n"]: c.get("r") for c in bs.tts_details(cards, chapters, {"offensiveminion": {}}, {})["cards"].values()}
+    assert r == {"Mini Bee": ["the-field"], "Hive Knight": ["minions"], "Grimora": ["death", "the-field"], "Portal": ["attacking"]}
+
+
 def test_psd_sizes_read_only_new_folders(bs, tmp_path, monkeypatch):
     """site.yml's PSD sizes (psd_sizes.py): kept by blob; the first run reads the whole tree, a later one only a new
     PSD's folder; build_site.psd_sizes reads its file as the trees API's reply."""
