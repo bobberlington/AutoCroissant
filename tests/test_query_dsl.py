@@ -658,6 +658,85 @@ process.stdout.write(JSON.stringify({json.dumps(list(queries))}.map(q => {{ cons
     assert [mark for _, mark in web] == [True, False, False, False, False, False]   # the icon marked: its words found it
 
 
+def test_rulebook_abbreviations_found_as_words(monkeypatch, tmp_path):
+    """An abbreviation the real Abbreviations chapter defines, typed alone (any case): only lines holding it as a word (OS:
+    not most; DEF: defense, not defeated), its meaning said; the website (app.js bookAbbr) lists the same chapters and
+    marks the same words. No such chapter: as before."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    from commands import rulebook
+    from global_config import RULEBOOK_SRC
+    book = rulebook.chapters({f"{RULEBOOK_SRC}/{p.name}": p.read_text(encoding="utf-8")
+                              for p in (SITE_SRC / "site" / "rulebook").glob("*.md")})
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": [c["text"] for c in book], "title": [c["title"] for c in book],
+                                   "sections": [c.get("sections") for c in book]}, index=[rulebook.label(c) for c in book])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    files = {rulebook.label(c): c["file"] for c in book}
+    typed = ["OS", "sp", "DEF", "BOT"]
+    bot = {}
+    for text in typed:
+        meaning, words = qc.book_abbreviation(text, repo.rulebook_dff)
+        whole = re.compile(r"(?<![a-z])(?:" + "|".join(words) + r")(?![a-z])", re.I)
+        pages = qc.rulebook_lines(repo.rulebook_search_engine(qc.Whole(text, words)), qc.Whole(text, words))
+        lines = [line for _, groups, _ in pages for _, ls in groups for line in ls if line != "\u2026"]
+        assert lines and all(whole.search(line) for line in lines), (text, lines)
+        bot[text] = (meaning, sorted(files[name] for name, *_ in pages if name in files))
+    assert qc.book_abbreviation("DEF", repo.rulebook_dff) == ("Defense stat", ("DEF", "Defense"))
+    assert qc.book_abbreviation("speed", repo.rulebook_dff) is None
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "os")
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent[0].startswith("'os' (On summon) is on ") and "most" not in sent[0].lower()
+    site = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
+    return {{ file: f, ast, title: ast.title, text: bookFold(`${{ast.title}}\\n${{RB.plainText(ast)}}`) }}; }});
+process.stdout.write(JSON.stringify({json.dumps(typed + ["most"])}.map(q => {{ const a = bookAbbr(bookFold(q), chapters);
+  out.length = 0; highlight([[{{ nodeValue: "Most OS; (os) DEF defense defensive defeated", replaceWith() {{}} }}]], a || bookFold(q));
+  return [a && a.meaning, chapters.filter(c => bookHit(bookRe(a || bookFold(q)), c.text)).map(c => c.file).sort(), [...out]]; }})));""")
+    for text, (meaning, shown, _) in zip(typed, site):
+        assert (meaning, [f for f in shown if f in files.values()]) == bot[text], text
+    assert [marks for *_, marks in site] == [["OS", "os"], [], ["DEF", "defense"], [], ["Most"]]
+    assert site[-1][0] is None
+    repo.rulebook_dff = DataFrame({"ability": ["Most of it.", "(OS) = On summon."], "title": ["A", "Old"]}, index=["A", "Old"])
+    assert qc.book_abbreviation("OS", repo.rulebook_dff) is None    # no Abbreviations chapter: as before
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "OS")
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent[0].startswith("'OS' is on 2 lines of 2 rulebook chapters:")
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    assert "!x ? a || typed :" in app[app.index("function renderRules(r) {"):app.index("// a deep link's place, again once")]
+
+
+def test_website_rulebook_keeps_a_section_a_word_starts(tmp_path):
+    """The website's Rulebook search keeps a block whose first line starts with the word (app.js bookWords: headings,
+    lines and cells apart, as plainText): DMG keeps Damage Types' LIFE STEAL; SP shows only Abbreviations' GENERAL."""
+    found = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
+    return {{ file: f, ast, title: ast.title, num: f.slice(0, 2) }}; }});
+const ctx = {{ render: s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;"), card: () => null, cardImg: () => "", imgUrl: f => f,
+  size: () => null, shape: () => null, icon: () => "", chapters }};
+const dom = html => {{ const root = {{ kids: [] }}, stack = [root];   // chapterHtml as nodes, enough for bookWords
+  for (const [, end, tag, attrs, text] of html.matchAll(/<(\\/?)(\\w+)([^>]*)>|([^<]+)/g)) {{ const top = stack[stack.length - 1];
+    if (text !== undefined) {{ top.kids.push({{ nodeType: 3, nodeValue: text }}); continue; }}
+    if (end) {{ stack.pop(); continue; }}
+    const cls = (/class="([^"]*)"/.exec(attrs) || ["", ""])[1].split(" "), el = {{ nodeType: 1, tagName: tag.toUpperCase(), cls, kids: [], up: top,
+      alt: (/alt="([^"]*)"/.exec(attrs) || [])[1] }};
+    el.matches = sel => sel.split(",").some(s => {{ const [, c, a] = /\\.([\\w-]+)(?:\\[([\\w-]+)\\])?/.exec(s); return cls.includes(c) && (!a || attrs.includes(a)); }});
+    el.closest = sel => {{ for (let n = el; n.matches; n = n.up) if (n.matches(sel)) return n; return null; }};
+    top.kids.push(el);
+    if (!/^(img|br)$/i.test(tag)) stack.push(el);
+  }}
+  const link = n => {{ n.firstChild = n.kids[0] || null; n.kids.forEach((k, i) => {{ k.nextSibling = n.kids[i + 1] || null; if (k.kids) link(k); }}); }};
+  link(root);
+  return root.kids.filter(el => !el.cls.includes("rb-head")); }};
+process.stdout.write(JSON.stringify([["dmg", "21-damage-types.md"], ["sp", "02-abbreviations.md"]].map(([q, f]) => {{
+  const hit = bookRe(bookAbbr(q, chapters)), els = dom(RB.chapterHtml(chapters.find(c => c.file === f), ctx));
+  return els.filter(el => bookHit(hit, bookWords(el))).map(el => bookWords(el).trim().split(" ").slice(0, 2).join(" ")); }})));""")
+    assert found == [["normal reduced", "life steal"], ["general sp"]]   # before: ["normal reduced"], [] (all shown)
+
+
 def test_old_rulebook_page_links_open_their_chapter(tmp_path):
     """The bot's 10-25 changelog posts link old Photoshop rulebook pages (#/rules?q=11%20Abilities4): app.js bookPage
     opens the chapter of that number and title; any other search still searches."""
