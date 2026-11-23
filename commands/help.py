@@ -29,7 +29,7 @@ text_commands = {
 }
 
 card_commands = {
-    "/query <query> [as_of]":                "Posts a card by name, title or alias (closest match if none; a rulebook chapter or section's title links it); as_of: the card on a date.",
+    "/query <query> [as_of]":                "Posts a card by name, title or alias (closest match if none; a rulebook chapter or section's title links it; ban list: the banned cards); as_of: the card on a date.",
     "/website":                              "Links the card website.",
     "/query_ability <query> [limit] [howmany]": "Posts the cards matching text or conditions (syntax below); howmany: just the count.",
     "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter and section (the ban list too); "

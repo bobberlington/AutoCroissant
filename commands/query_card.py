@@ -58,6 +58,7 @@ URL_MAX = 512                                            # Discord's longest lin
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 OPENING = 400                                            # /query_rulebook: a section titled the text, its first characters
 BAN_LIST = "Constructed ban list"                        # the website's (cards.json banlist): a rulebook section
+BAN_NAMES = frozenset(("constructedbanlist", "banlist"))  # its own names (squash): /query, /query_rulebook answer with it
 KIND_WORDS = {"creature": "a creature", "creatures": "an auxiliary creature", "minion": "a minion", "item": "an item",
               "aux item": "an auxiliary item", "nme": "an N.M.E. item", "field": "a field card",
               "buff": "a buff card", "debuff": "a debuff card"}   # a kind in a sentence (app.js KIND_LABEL)
@@ -162,15 +163,35 @@ def ban_list_text(banlist: dict) -> str:
     """The ban list as its file reads (build_site.py parse_banlist): notes, then "Group:" lines, each card "Name - reason"."""
     lines = list(banlist.get("notes") or [])
     for group in banlist.get("groups") or []:
-        lines += ["", f"{group.get('title', '')}:"]
-        lines += [e.get("name", "") + (f" - {e['reason']}" if e.get("reason") else "") for e in group.get("entries") or []]
+        lines += ["", f"{group.get('title', '')}:"] + ban_lines(group)
     return "\n".join(lines).strip()
+
+
+def ban_lines(group: dict) -> list:
+    """A ban list group's cards as its file reads them: "Name - reason"."""
+    return [e.get("name", "") + (f" - {e['reason']}" if e.get("reason") else "") for e in group.get("entries") or []]
+
+
+def ban_list_part(banlist: dict, text: str) -> Optional[list]:
+    """The ban list's [(group title or "", [lines])] for text that is one of its names (BAN_NAMES: its notes, then every
+    group) or a group's heading (that group), letters and digits compared (squash); else None."""
+    key, groups = squash(text), banlist.get("groups") or []
+    if not key or not groups:
+        return None
+    if key in BAN_NAMES:
+        notes = list(banlist.get("notes") or [])
+        return [("", notes)] * bool(notes) + [(g.get("title", ""), ban_lines(g)) for g in groups]
+    return next(([(g.get("title", ""), ban_lines(g))] for g in groups if squash(g.get("title", "")) == key), None)
 
 
 def _pairs(text: str) -> set:
     """search.js suggest()'s letter pairs: the text lowercased, a space at each end."""
     text = f" {text.lower()} "
     return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+BAN_CHOICE = (BAN_LIST.lower(), f"{BAN_LIST} (rulebook)", BAN_LIST, NAME_NORM.sub("", BAN_LIST.lower()),
+              frozenset(_pairs(BAN_LIST)), "#banlist", True)      # autocomplete's row for it (/query only, as a chapter)
 
 
 def _creature_stat(creature: dict, column: str) -> Optional[int]:
@@ -977,7 +998,7 @@ class CardRepository:
 
         Args:
             current: What is typed so far
-            chapters: The rulebook chapters and series too (/query)
+            chapters: The rulebook chapters, the ban list and series too (/query)
 
         Returns:
             Up to 25 (shown, value): names starting with it, then with a word that does, then holding it (a chapter
@@ -986,6 +1007,8 @@ class CardRepository:
         """
         text = " ".join(typed(current).lower().replace("_", " ").split())
         choices = self.choices                                   # one read: a rebuild swaps it whole
+        if self.banlist.get("groups"):                           # the ban list, once the website's is read
+            choices += (BAN_CHOICE,)
         if not text:
             return [(c[1], c[2]) for c in choices if not c[6]][:25]
         ranked = []
@@ -1227,6 +1250,9 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
     if chapter:                                         # a chapter's title, not a card's: the chapter, not a guess
         _post_chapter(interaction, query, chapter)
         return
+    if not card and squash(query) in BAN_NAMES and card_repo.banlist.get("groups"):     # 'ban list': it, not a guess
+        _post_ban_list(interaction, query)
+        return
     series = None if card else _series(query)          # a series' name: its cards, not a guess or a star icon
     if series:
         print(f"Search series: /query {query!r}")
@@ -1362,6 +1388,20 @@ def _post_chapter(interaction: Interaction, query: str, chapter: dict, said: str
     print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
     page = f"{SITE_URL}/#/rules/{chapter['id']}"
     queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {page}{said}", links=more)
+
+
+def _post_ban_list(interaction: Interaction, query: str) -> None:
+    """'**Constructed ban list** is in the rulebook: <its page>', then each group: its cards, those of one reason together
+    ('Marx, Fawful (antifun)'), in one message."""
+    print(f"Search ban list: /query {query!r}")
+    lines = [f"**{BAN_LIST}** is in the rulebook: {SITE_URL}/#/rules/banlist"]
+    for group in card_repo.banlist.get("groups") or []:
+        why = {}
+        for e in group.get("entries") or []:
+            why.setdefault(e.get("reason") or "", []).append(escape_markdown(e.get("name", "")))
+        cards = (", ".join(names) + (f" ({escape_markdown(reason)})" if reason else "") for reason, names in why.items())
+        lines.append(f"**{escape_markdown(group.get('title', ''))}**: {' · '.join(cards)}")
+    queue_message(interaction, "\n".join(lines))
 
 
 def series_known(df: DataFrame) -> dict:
@@ -1966,6 +2006,10 @@ def query_rulebook(interaction: Interaction,
     pages = rulebook_lines(card_repo.rulebook_search_engine(find), find)
     if dur:                                          # the rule's page first
         pages.sort(key=lambda page: not any(STATUS_RULE.lower() in line.lower() for _, ls in page[1] for line in ls))
+    part = ban_list_part(card_repo.banlist, text)
+    if part:                                         # its name: all of it; a group's heading: that group's cards (x6)
+        n = next((n for name, _, n in pages if name == BAN_LIST), 0)
+        pages = [page for page in pages if page[0] != BAN_LIST] + [(BAN_LIST, part, n or 1)]
     links = [("Rulebook on the website", search_link("rules", link))]
     if not pages:
         print(f"Search miss: /query_rulebook {text!r}")
@@ -1977,7 +2021,7 @@ def query_rulebook(interaction: Interaction,
     count = sum(n for *_, n in pages)
     chapters = sum(name != BAN_LIST for name, *_ in pages)
     where = [f"{chapters} rulebook chapter{'s' if chapters != 1 else ''}"] if chapters else []
-    if chapters < len(pages):                        # the ban list: its own link (the website's ?q= search skips it)
+    if chapters < len(pages):                        # the ban list: its own link
         where.append(f"the {BAN_LIST}")
         if not chapters:
             links = []
