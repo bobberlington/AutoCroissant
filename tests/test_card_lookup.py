@@ -48,6 +48,8 @@ CARDS = {                                               # name -> (PNG path, pri
     "Indoctrination": ("Auxiliary/Items/Indoctrination.png", None),
     "Dogma": ("Creatures/Isaac/5 Stars/Dogma.png", None),
     "Panda": ("Creatures/Kirby/3 Stars/Panda.png", None),        # Types/Panda.png too: an ambiguous name
+    "Rogueport": ("Field/3 Stars/Rogueport.png", None),
+    "Warcraftian Rogue": ("Creatures/WoW/3 Stars/Warcraftian_Rogue.png", None),     # rogue: a whole word first
 }
 RENAMED = {                                             # archived name -> (renamed_to, printed title)
     "Chestnut": ("The Forbidden One", None), "Chestnutter": ("Spawn of the Forbidden One", None),
@@ -106,7 +108,7 @@ LOOKUPS = [
     ("crossroads", "forgotten_crossroads.png", RENAMED_), ("plan ahead", "tomorrow_i'll.png", RENAMED_),
     ("wx78", "wx-78.png", RENAMED_), ("magalor", "magolor.png", RENAMED_), ("zealotry", "indoctrination.png", RENAMED_),
     ("dogma (item)", "indoctrination.png", RENAMED_),
-    # guesses: a name or a word in it starting so (shortest first), then the closest spelling
+    # guesses: a name or a word in it starting so (a whole word first, then the shortest), then the closest spelling
     ("nebulous", "nebulous_precipice.png", GUESS), ("eden", "tainted_eden.png", GUESS),
     ("freezer", "the_freezer.png", GUESS), ("doomer", "mini_doomer.png", GUESS), ("frost", "frostmourne.png", GUESS),
     ("mettaton", "mettaton_ex.png", GUESS), ("pot full", "pot_full_of_spiders!.png", GUESS),
@@ -116,6 +118,7 @@ LOOKUPS = [
     ("magolr", "magolor.png", GUESS), ("spawn of the forbiden one", "spawn_of_the_forbidden_one.png", GUESS),
     ("tainted isac", "tainted_isaac.png", GUESS), ("bowser", "bobbery.png", GUESS), ("sanz", "sans.png", GUESS),
     ("spcie", "spice.png", GUESS), ("pand", "panda.png", GUESS), ("panda", "panda.png", EXACT),   # not types/panda
+    ("rogue", "warcraftian_rogue.png", GUESS), ("rogu", "rogueport.png", GUESS),
     # nothing: .png no longer lifts every score (luigi/light was 0.78, is 0.60: at the ratio is not above it)
     ("luigi", None, ""), ("goku", None, ""), ("pikachu", None, ""), ("xyz", None, ""), ("zz", None, ""),
     ("old gone", None, ""), ("long gone", None, ""), ("", None, ""),
@@ -146,10 +149,13 @@ def test_lookup(repo, capsys):
 
 
 def test_autocomplete(repo):
-    """Names starting with the text first, then a word that does, then holding it; old names say what they became."""
+    """Names starting with the text first, then a word that does (a whole word before both, 3+ letters), then holding
+    it; old names say what they became."""
     names = lambda text: [shown for shown, _ in repo.name_choices(text)]
     assert names("mett") == ["Mettaton EX", "Mettaton NEO"]
     assert names("doomer") == ["Mini Doomer", "Grand Doomer"]
+    assert names("rogue") == ["Warcraftian Rogue", "Rogueport"] and names("rogu") == ["Rogueport", "Warcraftian Rogue"]
+    assert names("i")[0] == "Indoctrination"                     # not Tomorrow I'll: a 1-letter word stays put
     assert names("chestnut") == ["Chestnut (now The Forbidden One)", "Chestnutter (now Spawn of the Forbidden One)"]
     assert repo.name_choices("black") == [("Black Clot", "Black Clot"), ("Clot Black (Black Clot)", "Clot Black")]
     assert ("snas. (Sans)", "snas.") in repo.name_choices("sna")
