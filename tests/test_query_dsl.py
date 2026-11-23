@@ -207,6 +207,37 @@ def test_a_type_name_finds_its_cards(tmp_path):
          "No card's text has \u201cdebuffstack\u201d: the type debuffstack (types==debuffstack)"]]
 
 
+def test_an_icons_name_reads_as_a_word(tmp_path):
+    """A phrase typed with an icon's name as a word finds the card printing the icon ([fire:glow] fire, [darkmatter]
+    both ways), brackets still too, never across the two readings; a bare type's name still finds its type's cards (not
+    the card printing its icon); the bot, its counts and the website alike."""
+    cards = [dict(name="Plague", type="debuff", ability="Can't affect [machine] [undead]"),
+             dict(name="Pep Drink", type="item", ability="Heal 2.5 HP, or heal a [machine] by 4 HP."),
+             dict(name="Freezer", type="field", ability="[water] Turns into [ice]. [ice]: +1 DEF"),
+             dict(name="Ward", type="item", ability="Shield a [fire:glow] creature."),
+             dict(name="Corruption", type="debuff", ability="Can't affect [darkmatter]."),
+             dict(name="Hive", type="field", ability="Summon a Mini Bee [offensive_minion] onto any creature."),
+             dict(name="Guard Dog", type="minion", types=["offensive_minion"], ability="Bite."),
+             dict(name="Zero", type="creatures", types=["darkmatter"], ability="Void.")]
+    rows = [("can't affect machine", {"Plague"}), ("cant affect machine undead", {"Plague"}),
+            ("heal a machine", {"Pep Drink"}), ('"heal a machine"', {"Pep Drink"}), ("turns into ice", {"Freezer"}),
+            ("a fire creature", {"Ward"}), ("affect darkmatter", {"Corruption"}), ("affect dark matter", {"Corruption"}),
+            ("mini bee offensive minion", {"Hive"}), ("heal a [machine]", {"Pep Drink"}),
+            ("machine", {"Plague", "Pep Drink"}), ("[undead] can't", set()), ("ice: +1 def [water]", set()),
+            ("offensive minion", {"Guard Dog"}), ("dark matter", {"Zero"})]
+    repo = _repo(cards)
+    assert [set(repo.ability_search_engine(q, near=False).index) for q, _ in rows] == [c for _, c in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
+    assert [repo.ability_hits(q) for q in ("heal a machine", "affect dark matter", "offensive minion")] == [1, 1, 0]
+    notes = []
+    repo.ability_search_engine("offensive minion", notes=notes)
+    assert [qc.series_note(n) for n in notes] == _website(tmp_path, ["offensive minion"], cards, notes=True)[0] == [
+        "No card's text has “offensive minion”: the type offensive minion (types==offensive minion)"]
+    js = (SITE_SRC / "site" / "assets" / "search.js").read_text(encoding="utf-8")   # one token rule and table
+    spelled = re.search(r"const ICON_SPELLED = new Map\(\[(.*?)\]\);", js, re.S).group(1)
+    assert f"/{qc.ICON.pattern}/gi" in js and dict(re.findall(r'\["(\w+)", "([\w ]+)"\]', spelled)) == qc.ICON_SPELLED
+
+
 def _website(tmp_path, queries, cards=CARDS, notes=False) -> list:
     """search.js on cards as cards.json has them (app.js filterCards): each query's card names, or notes: its series
     fallback notes."""
