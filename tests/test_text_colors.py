@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from PIL import Image
 from psd_tools import PSDImage
 
 import commands.psd_edit as pe
@@ -407,6 +408,35 @@ def test_see_through_title_fills(clone):
     edit = pe.set_colors(psd, [whole, part], str(clone / pe.FONTS_DIR), "The Freezer")
     assert "colors: title: its fill goes from 0% to 100% for the colour" in edit.notes and layer.fill_opacity == 255
     assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
+
+
+def test_blended_layer_goes_normal(clone, tmp_path):
+    """Holy Mantle's Pin Light Ability mixes a colour with the paper below: a whole Ability's sets it Normal (its mode the
+    record's one more change), baked even over letters already that colour, the pick showing; a phrase's keeps Pin
+    Light (its blue letters would change) and says so."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel, red = "Items/Equip/4 Stars/Holy_Mantle.psd", {"field": "ability", "color": "#e8312f"}
+    psd_path, png = _card(clone, rel)
+    probe = PSDImage.open(psd_path)
+    layer = pe.ability_layer(probe)
+    assert layer.blend_mode == pe.BlendMode.PIN_LIGHT
+    edit = pe.set_colors(probe, [{**red, "phrase": "reactively"}], str(clone / pe.FONTS_DIR), "Holy Mantle")
+    assert layer.blend_mode == pe.BlendMode.PIN_LIGHT and not edit.blended
+    assert "colors: ability: its Pin Light mixes the colour with the art below: check the card" in edit.notes
+    layer.set_span_style(0, len(layer.text), fill=pe._fill(red["color"]))
+    assert pe.plan_colors(probe, [red], "Holy Mantle") == [(red, "baked")]
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    got = pe.classify(parsed, {"colors": [red]}, psd, parser)
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert "colors: ability: its Pin Light goes Normal for the colour" in baked.fx_notes
+    assert [(name, fields) for _, name, fields in baked.records] == [("Ability", ["blend", "blocks", "channels"])]
+    assert pe.ability_layer(PSDImage.open(baked.psd_path)).blend_mode == pe.BlendMode.NORMAL
+    a, b = (np.asarray(Image.open(p).convert("RGB")).astype(int) for p in (png, baked.png_path))
+    moved = b[np.abs(a - b).max(axis=2) > 24]
+    assert (np.abs(moved - [0xe8, 0x31, 0x2f]).max(axis=1) <= 40).mean() > 0.6      # 1% while it mixed
 
 
 def test_split_title_part_overlay_goes_off(clone, tmp_path):
