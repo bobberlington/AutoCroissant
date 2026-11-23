@@ -376,6 +376,23 @@ out([fit(cost, () => w2, null, "Cost: 5 Points"), fit(cost, () => w2, [0, 14], "
     assert out == [[11.76, 0.59, 1], [20, 1, 1], [20, 1, 1]]
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "only this line's size differs"), reason="no outsize lines in this mockup.js")
+def test_a_line_set_far_larger_keeps_its_size(tmp_path):
+    """A title line set 2.5x the layer's size (Zenith Martlet's 'Martlet'): spliced at its own size when the layer's
+    other lines match this font; alone, or beside a line that doesn't match either, refused (a font far off)."""
+    out = node(tmp_path, """
+const lf = (t, z) => [...t].length * z / 2; lf.hx = 1;
+const plate = rows => { let text = ""; const lines = [], glyphs = [];
+  rows.forEach(([t, w], n) => { const s = text.length; let x = 10; [...t].forEach((ch, i) => { const a = x; x += w; glyphs.push(ch === " " ? [s + i, a] : [s + i, a, a + 1, x - 1]); });
+    lines.push([s, s + t.length, 100 + 60 * n, 10, x, 50 + 60 * n, 105 + 60 * n, 0]); text += t + (n < rows.length - 1 ? "\\n" : ""); });
+  return { text, lines, glyphs, frame: [0, 400] }; };
+const fit = (rows, now) => { const c = plate(rows), R = m.recordLayout(c, c.text, 1), f = m.spliceFit(R, m.geoPlan(R, now).splice, { measure: lf, z: 20 });
+  return f && [+f.z.toFixed(2), +f.k.toFixed(2)]; };
+const z = "Zenith of Monsterkind";
+out([fit([["Martlet", 25], [z, 10]], "Martlets\\n" + z), fit([["Martlet", 25]], "Martlets"), fit([["Martlet", 25], [z, 13]], "Martlets\\n" + z)]);""")
+    assert out == [[50, 2.5], None, None]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "export function paintLines"), reason="no exported paintLines in this mockup.js")
 def test_a_redrawn_pill_keeps_the_layers_stroke(tmp_path):
     """A badge painted again on a layer with a Stroke is outlined in its colour at its width under the pill (as the card
