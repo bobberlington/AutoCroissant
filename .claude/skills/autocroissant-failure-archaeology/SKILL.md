@@ -889,7 +889,8 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   keeps its trailing blank, Frostmourne's off-canvas line fitted at 88%.
 - **Status**: built 2026-10-25 on work/bakebugs. (a) narrowed 2026-11-22: a line whose commonest colour holds
   `LINE_INK` (75% of 15+ letters) gives typed text that colour, else `body_fill` (Toriel's purple last line took its pink;
-  52 lines on 42 cards; Binge Eater's 54% line unchanged); the mock-up's `bakeInk` mirrors it.
+  52 lines on 42 cards; Binge Eater's 54% line unchanged); the mock-up's `bakeInk` mirrors it. Colours count by 8-bit
+  value (`_hex`, the mock-up's): Yin Yarn's tan, stored as float variants, held 61% by exact fill and 85% seen.
 
 ### 10.35 The ring badge rollout: lessons (2026-11-04/05)
 
