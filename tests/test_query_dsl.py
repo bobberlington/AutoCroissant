@@ -162,14 +162,22 @@ def test_any_creature_meets_a_stat(repo, tmp_path):
 
 
 def test_types_any_one(tmp_path):
-    """types== and types~ match any one type or the whole list, _ read as a space; the bot and the website alike."""
+    """types== and types~ match any one type or the whole list, letters and digits only (dark matter, _ as a space);
+    type== a Kind label too (field cards, status effect), creatures as stored; the bot and the website alike."""
     cards = [dict(name="Abyss Watcher", type="creature", types=["fire", "undead"], ability="Burn."),
              dict(name="Ember", type="creature", types=["fire"], ability="Glow."),
-             dict(name="Wall", type="minion", types=["defensive_minion"], ability="Block.")]
+             dict(name="Wall", type="minion", types=["defensive_minion"], ability="Block."),
+             dict(name="Zero", type="creatures", types=["darkmatter"], ability="Void."),
+             dict(name="Nexus", type="field", ability="A field."), dict(name="Bubble", type="nme", ability="Pop."),
+             dict(name="Chilled", type="debuff", ability="-1 SPD."), dict(name="Hasted", type="buff", ability="+1 SPD.")]
     rows = [("types==fire", {"Abyss Watcher", "Ember"}), ("types==undead", {"Abyss Watcher"}),
             ("types==fire undead", {"Abyss Watcher"}), ("types==fire & types==undead", {"Abyss Watcher"}),
-            ("types==defensive minion", {"Wall"}), ("types==defensive_minion", {"Wall"}), ("!types==fire", {"Wall"}),
-            ("types~minion", {"Wall"}), ("types~fire undead", {"Abyss Watcher"})]
+            ("types==defensive minion", {"Wall"}), ("types==defensive_minion", {"Wall"}),
+            ("!types==fire & type==minion", {"Wall"}), ("types~minion", {"Wall"}), ("types~fire undead", {"Abyss Watcher"}),
+            ("types==dark matter", {"Zero"}),
+            ("types~dark", {"Zero"}), ("type==field cards", {"Nexus"}), ("type==N.M.E. item", {"Bubble"}),
+            ("type==status effects", {"Chilled", "Hasted"}), ("type==minions", {"Wall"}), ("type==creatures", {"Zero"}),
+            ("type==auxiliary creature", {"Zero"}), ("type==creature", {"Abyss Watcher", "Ember"})]
     repo = _repo(cards)
     assert [set(repo.ability_search_engine(q).index) for q, _ in rows] == [c for _, c in rows]
     assert _website(tmp_path, [q for q, _ in rows], cards) == [c for _, c in rows]
