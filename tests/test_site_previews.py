@@ -391,6 +391,18 @@ out([run({}), run({ one: true }), run({ strokeW: 0 })]);""")
     assert not any(s.endswith("rgb(1,2,3) 6") for s in one + bare) and bare[0] == "fill"
 
 
+@pytest.mark.skipif(not has(MOCKUP_JS, "tc.stroke || stroke"), reason="no record Stroke in this mockup.js's shades")
+def test_a_gradients_shades_leave_out_the_records_stroke(tmp_path):
+    """Black-outlined orange letters on a dark backdrop (the outline not 25 levels under it, so the pixels show no
+    outline): the shades leave out the record's Stroke, so the top is orange, not black (Fire Staff, The Maelstrom)."""
+    out = node(tmp_path, """const W = 120, H = 60, d = new Uint8ClampedArray(W * H * 4), put = (x, y, c) => d.set([...c, 255], (y * W + x) * 4);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put(x, y, [10, 10, 90]);
+for (let s = 0; s < 6; s++) for (let y = 15; y < 45; y++) for (let x = 12 + s * 16, e = x + 12; x < e; x++) put(x, y, e - x > 9 || e - x <= 3 || y < 18 || y >= 42 ? [0, 0, 0] : [240, 140, 20]);
+const run = stroke => m.erase(Uint8ClampedArray.from(d), W, H, [0, 0, W, H], { lines: [[12, 15, 108, 45]], reach: 2, cell: 8, edge: 25, close: 10, profile: true, stroke });
+out([run(null), run([0, 0, 0])].map(r => [r.stroke, r.shades.stops[0][1]]));""")
+    assert out == [[None, [0, 0, 0]], [None, [240, 140, 20]]]
+
+
 @pytest.mark.skipif(not has(MOCKUP_JS, "function seeThrough"), reason="no see-through Strokes in this mockup.js")
 def test_a_see_through_stroke_is_one_layer_at_its_opacity(tmp_path):
     """A Stroke under 100% (psd_details rim): the letters' outlines drawn opaque on a layer of their own, put on the card
