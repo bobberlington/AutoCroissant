@@ -611,6 +611,31 @@ process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors,
 
 
 @site
+def test_mockup_reads_a_layers_own_overlay(clone, tmp_path):
+    """Twin Emperors' five Ability layers share one path; only 'Vek'nilash:' and 'Vek'lor:' carry a Gradient Overlay (the
+    record's text[].effects). paintedOver refuses a phrase on them alone, as plan_colors does; the draw gives only them
+    gradient shades and no main ink."""
+    from commands import psd_details as pd
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel, card = "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "Twin Emperors"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
+    red = {"field": "ability", "color": "#ff2200"}
+    sets = [[{**red, "phrase": "entities"}], [{**red, "phrase": "Attacks#2"}], [{**red, "phrase": "Vek#2"}]]
+    want = [[[one, how] for one, how in pe.plan_colors(psd, colors, card) if "paints over" in how] for colors in sets]
+    (tmp_path / "jobs.json").write_text(json.dumps({"rec": record, "sets": sets}), encoding="utf-8")
+    (tmp_path / "own.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
+const {{ rec, sets }} = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
+process.stdout.write(JSON.stringify([sets.map(c => M.paintedOver(rec, c).map(n => [n.one, n.why])),
+  rec.text.filter(t => t.layer === "Text/Ability").map(t => [t.text.trim().slice(0, 4), M.gradientOn(rec, t.layer, t), !M.mainInk(rec, t)])]));""", encoding="utf-8")
+    got, layers = json.loads(run_process(["node", str(tmp_path / "own.mjs")], capture_output=True, text=True, check=True).stdout)
+    assert got == want and [len(w) for w in want] == [0, 0, 1], (got, want)
+    assert sorted(layers) == [["Atta", False, False], ["Immu", False, False], ["This", False, False], ["Vek'", True, True], ["Vek'", True, True]], layers
+
+
+@site
 @pytest.mark.skipif(not (ASSETS / "mockup.js").is_file() or "keptOver" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"),
                     reason="no keptOver in this mockup.js")
 def test_mockup_says_kept_colours_as_the_bake(clone, tmp_path):
