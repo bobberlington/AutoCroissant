@@ -2439,6 +2439,19 @@ def test_typed_text_keeps_the_layers_characters_and_takes_the_body_colour(clone,
     assert pe.ability_layer(psd).text == "Does nothing at all, reroll :3"
 
 
+def test_text_typed_at_a_lines_end_takes_the_lines_colour(clone, parser, chart):
+    """Words typed at the end of a line in several colours take the line's own colour where one holds LINE_INK of its
+    letters: Chris & Jordi's blue last line printed them in the magenta of its first (Binge Eater's short line: the
+    body's)."""
+    psd = PSDImage.open(_card(clone, "Creatures/Everhood/5 Stars/Chris_&_Jordi.psd")[0])
+    layer = pe.ability_layer(psd)
+    body, blue = pe.body_fill(layer, chart), pe._char_styles(layer)[0][layer.text.index("If this creature chooses to d")]
+    old = pe.normalize_ability(layer.text)
+    pe.set_text_layer(psd, "ability", old + " Gain 2 DEF.", str(clone / pe.FONTS_DIR), chart, parser=parser)
+    fills, text = pe._char_styles(layer)[0], layer.text
+    assert body != blue and {fills[i] for i in range(text.index("Gain 2"), text.index("Gain 2") + 11)} == {blue}
+
+
 def test_story_style_drift_compares_kerning(clone):
     """B12: Pandamonium's Health is kerned off in its Txt2 story (Photoshop's), on in TySh (the engine's); the drift says
     so, the bake's own check leaves it (kerning=False: an edited layer follows the story, the others keep their pixels)
