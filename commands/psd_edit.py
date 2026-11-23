@@ -115,6 +115,7 @@ GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo
 LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
 SHOWN_PLAIN = r"(?::(?:%s))?" % "|".join(TEXT_COLOURED + GLOWS)   # variants the website shows plain ([light:tint]: [light])
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
+LINE_INK = (15, 0.75)       # edit_styles: a line's own colour holds this many of its letters and this share
 PLAIN_MARKS = {"\u2014": "-", "\u2013": "-", "\u2026": "...", "\u201c": '"', "\u201d": '"'}   # typed: plain where its
 #   font has no glyph for it (owner D13, 2026-11-15)
 MGP_FONT = "MyriadPro-Regular"  # glyph_fonts' last pick: Photoshop 2023's Missing Glyph Protection stand-in
@@ -2121,12 +2122,13 @@ def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) ->
     title's do ("[unknown]" made "Unknown", "(1CD)" made "Once per turn:"); an insertion, or a part replacing only
     status words and blanks, the nearest character before it in its line (\\r or
     \\x03), else after, that is no status word, blank or badge and shares no run with a status word (Astr's "3" of its
-    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the body's (body_fill)
-    when typed between two runs or at a line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took
-    the olive). A kept status word's characters take that too: the edit resets status words, set_text_layer giving the
-    new text's their swatch after. A paragraph the edit moved (moves: text_align.moves) takes its own old colours,
-    letter for letter where it kept them, else its commonest (a line moved up no longer takes the colour of the line
-    it lands under). Before set_text.
+    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the line's commonest
+    when it holds LINE_INK of the line's letters, else the body's (body_fill), when typed between two runs or at a
+    line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took the olive; on Toriel's purple last
+    line it took the pink first line's). A kept status word's characters take that too: the edit resets status words,
+    set_text_layer giving the new text's their swatch after. A paragraph the edit moved (moves: text_align.moves) takes
+    its own old colours, letter for letter where it kept them, else its commonest (a line moved up no longer takes the
+    colour of the line it lands under). Before set_text.
 
     Args:
         layer: The text layer
@@ -2167,14 +2169,18 @@ def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) ->
     body = body_fill(layer, chart or {})
 
     def typed(lo: int, hi: int) -> Optional[tuple]:
-        """Text typed between two runs, or at a line's end, of a line in several colours: the body fill, not the
-        coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"); typed inside a run: that run's."""
+        """Text typed between two runs, or at a line's end, of a line in several colours: the line's own colour where
+        one holds LINE_INK of its letters (Toriel's purple last line), else the body fill, not the coloured word
+        beside it (Binge Eater's ", 1T" after its olive "SPD"); typed inside a run: that run's."""
         inside = 0 < lo and hi < len(old) and old[lo - 1] not in "\r\x03" and old[hi] not in "\r\x03" \
             and runs[lo - 1] == runs[hi]
         top = max(old.rfind("\r", 0, lo), old.rfind("\x03", 0, lo)) + 1
         bottom = min([j for j in (old.find("\r", hi), old.find("\x03", hi)) if j >= 0] or [len(old)])
-        line = {fills[j] for j in range(top, bottom) if source(j)}
-        return body if not inside and len(line) > 1 else None
+        line = Counter(fills[j] for j in range(top, bottom) if source(j))
+        if inside or len(line) < 2:
+            return None
+        fill, n = line.most_common(1)[0]
+        return fill if n >= LINE_INK[0] and n >= LINE_INK[1] * sum(line.values()) else body
 
     out = []
     for a0, a1, b0, b1, kept in parts:

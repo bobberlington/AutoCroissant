@@ -887,7 +887,9 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   0.55 -> 0.98), none worse; an edit on them spliced instead of redrawn whole (17.3% and 7.7% bad -> 0.3% and 0.6%).
   Proof bakes (`PSD_DIRTY_VERIFY=1`, base vs branch): 11 other cards byte-identical (Mini Doomer's title too), The Hive
   keeps its trailing blank, Frostmourne's off-canvas line fitted at 88%.
-- **Status**: built 2026-10-25 on work/bakebugs.
+- **Status**: built 2026-10-25 on work/bakebugs. (a) narrowed 2026-11-22: a line whose commonest colour holds
+  `LINE_INK` (75% of 15+ letters) gives typed text that colour, else `body_fill` (Toriel's purple last line took its pink;
+  52 lines on 42 cards; Binge Eater's 54% line unchanged); the mock-up's `bakeInk` mirrors it.
 
 ### 10.35 The ring badge rollout: lessons (2026-11-04/05)
 
