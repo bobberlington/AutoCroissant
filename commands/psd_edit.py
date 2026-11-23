@@ -344,6 +344,7 @@ class Edit:
     moves: list = field(default_factory=list)   # (record from, record to or None, block key): effect blocks moved or cleared
     hidden: list = field(default_factory=list)  # record indices of the clipped layers hidden (set_colors)
     groups: list = field(default_factory=list)  # record indices of the groups whose overlays went off (set_colors)
+    blended: list = field(default_factory=list)  # record indices of the layers set to Normal (set_colors, _goes_normal)
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer made above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted (their words left the text)
     rebuilt: list = field(default_factory=list)  # (record index, old name, name): an FX layer cut again in place, its own
@@ -6912,6 +6913,40 @@ def _unveils(layer, group=None) -> bool:
 
 
 FILLED = "fill goes from 0% to 100%"     # _overlay_off's note for a see-through text layer
+PURE = 8 / 255      # a channel this near 0 or 1 shows as itself under Pin Light (white, black, #ff0000, #00ff24)
+LIGHTENING = (BlendMode.LINEAR_DODGE, BlendMode.SCREEN, BlendMode.LIGHTEN)     # white stays white
+DARKENING = (BlendMode.MULTIPLY, BlendMode.DARKEN, BlendMode.LINEAR_BURN)      # black stays black
+
+
+def _blend_shows(mode, fill) -> bool:
+    """Whether a fill (RGB 0..1) looks the same under the blend mode as in Normal."""
+    if fill is None:
+        return False
+    if mode == BlendMode.PIN_LIGHT:
+        return all(v <= PURE or v >= 1 - PURE for v in fill)
+    if mode in LIGHTENING:
+        return all(v >= 1 - PURE for v in fill)
+    return mode in DARKENING and all(v <= PURE for v in fill)
+
+
+def _goes_normal(layer, paint: dict) -> Optional[bool]:
+    """
+    A colour on a layer blended other than Normal shows mixed with the art below (22 items' Pin Light Abilities,
+    Michael's Blessing's Linear Dodge title): True when the layer goes Normal for it (every letter, badge and icon it
+    leaves unpainted looks the same in Normal: _blend_shows, never a colour icon; no effect but a Drop Shadow), False
+    when it keeps its mode, None when nothing mixes. paint: {str index: RGB 0..1} the colours set.
+    """
+    from psd_tools.api.effects import DropShadow
+    mode = layer.blend_mode
+    if mode == BlendMode.NORMAL or all(_blend_shows(mode, fill) for fill in paint.values()):
+        return None
+    effects = layer.effects
+    if effects.enabled and any(effect.enabled and not isinstance(effect, DropShadow) for effect in effects):
+        return False
+    fills, icons = _char_styles(layer)[:2]
+    salted, text = _salted(layer), layer.text
+    return all((not icons[i] or i in salted) and _blend_shows(mode, fills[i]) for i, ch in enumerate(text)
+               if i not in paint and not ch.isspace() and ch != "\x03")
 
 
 def _overlay_off(layer, group=None) -> str:
@@ -7017,7 +7052,8 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     its layers' own overlays off and hides the layers clipped onto them (set_colors), as a phrase's does on a layer it
     is all of (_whole_span) or under a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after
     it, and baked even in the colour it has; a fill at 0 goes to 100% (_overlay_off). A whole field's colour turns a group's overlays off too when every layer
-    the group shows is the field's (_owned_group); a phrase's alone never does.
+    the group shows is the field's (_owned_group); a phrase's alone never does. A layer blended other than Normal that
+    goes Normal for its colours (_goes_normal): baked.
     """
     out, final, painted, lit, unveil, gone, memo = {}, {}, {}, set(), set(), {}, {}
     ordered = color_order(value)
@@ -7087,10 +7123,15 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
             painted[id(layer)] = layer
             final[(id(layer), i)] = k
     fills = {key: _char_styles(layer)[0] for key, layer in painted.items()}
+    paints = {}
+    for (key, i), k in final.items():
+        paints.setdefault(key, {})[i] = _fill(ordered[k]["color"])
+    normal = {key for key, layer in painted.items() if _goes_normal(layer, paints[key])}
     for k, one in enumerate(ordered):
         if k not in out:
             last = [(key, i) for (key, i), by in final.items() if by == k]
-            out[k] = "baked" if k in unveil or any(_hex(fills[key][i]) != one["color"] for key, i in last) else "redundant"
+            out[k] = "baked" if k in unveil or any(key in normal or _hex(fills[key][i]) != one["color"] for key, i in last) \
+                else "redundant"
     found = {id(one): how for k, one in enumerate(ordered) for how in [out[k]]}
     return [(one, found[id(one)]) for one in value]
 
@@ -7147,9 +7188,10 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         One Edit ("colors", over every layer it set: gate_bytes reads it as a text edit, gate_stories lets their stories
         change). Told: an overlay on a layer that paints over its colours (one_colour), the layer's own turned off for a
         whole field's colour or a whole layer's (_whole_span), or a phrase's under a lone Color Overlay (_overlay_off;
-        that one's colour then goes to the rest, its one-colour badges too), words an effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
+        that one's colour then goes to the rest, its one-colour badges too), words an effect layer keeps, a layer's blend
+        mode set Normal for the colours or kept mixing them (_goes_normal). Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
-    jobs, notes, hidden, owned, groups, memo, source = {}, [], [], {}, [], {}, {}
+    jobs, notes, hidden, owned, groups, memo, source, blended = {}, [], [], {}, [], {}, {}, []
     for one in color_order(value):
         spans, why = color_spans(color_layers(psd, one["field"], card, view), one)
         if why:
@@ -7190,6 +7232,13 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
                 layer.set_span_style(c, d, fill=fill)
                 paint.update(dict.fromkeys(range(c, d), fill))
         recolour(layer, paint, fonts)
+        normal, mode = _goes_normal(layer, paint), layer.blend_mode.name.replace("_", " ").title()
+        if normal:
+            layer.blend_mode = BlendMode.NORMAL
+            blended.append(_record_index(layer))
+            notes.append(f"colors: {what}: its {mode} goes Normal for the colour")
+        elif normal is False:
+            notes.append(f"colors: {what}: its {mode} mixes the colour with the art below: check the card")
         if one_colour(layer):
             notes.append(f"colors: {what}: {_tinted(layer) or 'an overlay'} paints over its colours")
         layers.append(layer)
@@ -7199,7 +7248,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     if not layers:
         return Edit("colors", value, value, [], [], None)
     return Edit("colors", value, value, layers, records, union_box(boxes), story=stories[0], stories=stories[1:],
-                notes=list(dict.fromkeys(notes)), hidden=hidden, groups=groups)
+                notes=list(dict.fromkeys(notes)), hidden=hidden, groups=groups, blended=blended)
 
 
 # ========================
@@ -11458,7 +11507,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     edit: rect, channels, EngineData; its FX
     layers: exactly the declared records gone and come, the new ones pixel records carrying the chart's effect blocks
     byte for byte, the rebuilt ones their rect and channels (and the declared name; never an effect block,
-    _fx_rebuilt); a clipped layer hidden (Edit.hidden): one flag byte; a star or type icon shown or hidden: one flag byte; one
+    _fx_rebuilt); a clipped layer hidden (Edit.hidden): one flag byte; a colour's layer set Normal (Edit.blended): its blend
+    mode; a star or type icon shown or hidden: one flag byte; one
     moved: its rect and mask moved by the declared offset, only its transform and anchor blocks changed (_record_moved);
     a star's copy: the source's record moved, a new id and name; a type icon from Types/: a pixel record carrying the
     reference icon's effect blocks). Records are paired in file order once the FX records declared removed and added
@@ -11506,6 +11556,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     bar = {index: (edit.field, spec) for edit in edits for index, spec in edit.bar}  # a stat on a card maker's own bar
     removed = {index for edit in edits for index in edit.removed}         # a part edit's deleted layers
     renumbered = {index for edit in edits for index in edit.renumbered}   # their stories' later layers
+    blended = {index for edit in edits for index in edit.blended}         # a colour's layer set Normal
     changed, flag_bytes, block_bytes, old_of = [], 0, 0, {}
     i = j = 0
     while i < len(old) or j < len(new):
@@ -11577,6 +11628,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                 if why:
                     raise Refused("bytes", f"layer {j} {a['name']!r} (its TextIndex renumbered) {why}")
                 kind, ok = "story", {"blocks"}
+            if j in blended and b["blend"] == (BlendMode.NORMAL, *a["blend"][1:]):   # its mode alone
+                ok = ok | {"blend"}
             if not set(fields) <= ok:
                 raise Refused("bytes", f"layer {j} {a['name']!r} changed {', '.join(fields)}")
             if "name" in fields and b["name"] != names.get(j):
