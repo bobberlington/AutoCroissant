@@ -520,7 +520,8 @@ process.stdout.write(JSON.stringify(["2T1 Stuffed", "1t", "5t1", "e2t"].map(q =>
 
 def test_a_misspelled_rulebook_word_suggests_the_printed_one(monkeypatch, tmp_path):
     """/query_rulebook's miss on the real book: its misspelled words swapped for the printed chapters' (the most printed
-    first), with a button to that search; the website's Rulebook search (app.js bookRespell) alike."""
+    first; a word the ban list holds stays), with a button to that search; the website's Rulebook search (app.js
+    bookRespell) alike."""
     import commands.utils as utils
     from pandas import DataFrame
     from commands import rulebook
@@ -531,9 +532,13 @@ def test_a_misspelled_rulebook_word_suggests_the_printed_one(monkeypatch, tmp_pa
     repo.rulebook_dff = DataFrame({"ability": [c["text"] for c in book], "sections": [c.get("sections") for c in book]},
                                   index=[rulebook.label(c) for c in book])
     monkeypatch.setattr(qc, "card_repo", repo)
-    queries = ["defence", "atack", "minon", "creture types", "zzzzzz"]
+    queries, bans = ["defence", "atack", "minon", "creture types", "zzzzzz", "the atack"], {
+        "notes": [], "groups": [{"title": "Banned", "entries": [{"name": "Mosling", "reason": "Atack wins"}]}]}
     fixed = [(repo.book_respelled(q) or [None])[0] for q in queries]
-    assert fixed == ["defense", "attack", "minion", "creature types", None]
+    assert fixed == ["defense", "attack", "minion", "creature types", None, "the attack"]
+    repo.banlist = bans                                  # 'atack': the ban list's, so 'the atack' stays
+    assert repo.book_respelled("the atack") is None
+    repo.banlist = {}
     qc.query_rulebook(utils.make_simple_fake_interaction(1), "Defence")
     [(_, kw)] = utils.dispatch_queue
     utils.dispatch_queue.clear()
@@ -542,8 +547,9 @@ def test_a_misspelled_rulebook_word_suggests_the_printed_one(monkeypatch, tmp_pa
     site = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
   .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
     return {{ file: f, ast, text: bookFold(`${{ast.title}}\\n${{RB.plainText(ast)}}`) }}; }});
-process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => bookRespell(bookFold(q), chapters)?.q ?? null)));""")
-    assert site == fixed
+process.stdout.write(JSON.stringify([...{json.dumps(queries)}.map(q => bookRespell(bookFold(q), chapters)?.q ?? null),
+  bookRespell("the atack", chapters, {json.dumps(bans)})]));""")
+    assert site == fixed + [None]
 
 
 def _app_book(tmp_path, tail: str):
