@@ -1,5 +1,6 @@
 """The rulebook written on the website (owner 2026-10-29): its chapters as plain text for db/rulebook.json, its TTS PDF
 printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF."""
+import base64
 import json
 import os
 import subprocess
@@ -312,6 +313,41 @@ def test_the_push_build_decides_only(tmp_path, monkeypatch, capsys):
         assert code == 4 and (tmp_path / "out" / "pages.json").read_text(encoding="utf-8") == before, (case, out)
         assert drawn["printed"] == 0 and len(asked) - n == (1 if case == "unsettled" else 2), case
     assert set(asked) == {local}
+
+
+def test_the_push_build_stops_at_a_changed_text(tmp_path, monkeypatch, capsys):
+    """--local: a page's text changed (it would print): exit 4 before the screenshots (2be56ea7: 45 taken, 35 s before
+    the website's look); the same text: screenshots as before."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _commit(tmp_path, "2026-11-18T16:00:00+00:00", {"site/rulebook/01-a.md": b"# A\n"})
+    (tmp_path / "TTS" / "Rulebook").mkdir(parents=True)
+    page = ({"name": "Cover", "num": "", "text": "Smouldering"}, _png("white"))
+    rulebook_pages.write_pages(str(tmp_path / "TTS" / "Rulebook"), [page], lambda: b"%PDF", "k0")
+    seen = dict(_seen(), rules=json.dumps({"chapters": [{"file": "01-a.md", "source": "# A\n"}]}).encode())
+    monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: seen)
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: True)
+    monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
+    calls, text = [], {"now": "Smoldering"}
+    listed = json.dumps({"chapters": {"01-a.md": "# A\n"}, "sheets": [{"name": "Cover", "num": ""}]})
+    answers = (("dataset.sheets", "1"), ("rb-sheet-list", listed), ("getBoundingClientRect", [[0, 0, 1080, 1920]]), ('name="page"', "pg"))
+
+    class Chrome:
+        def call(self, method, params=None, session="", seconds=0):
+            calls.append(method)
+            e = (params or {}).get("expression", "")
+            exact = {rulebook_pages.TEXT_JS: [[text["now"], []]], rulebook_pages.PLAIN_JS: {}, rulebook_pages.KEY_JS: "drawn"}
+            value = exact[e] if e in exact else next((v for k, v in answers if k in e), 1)
+            return {"sessionId": "s", "data": base64.b64encode(page[1]).decode(), "result": {"value": value}}
+
+        def close(self):
+            calls.append("close")
+    monkeypatch.setattr(rulebook_pages, "start", lambda exe: (Chrome(), "t"))
+    run = lambda: (rulebook_pages.main([str(tmp_path), "--local", "http://127.0.0.1:8137", "--out", str(tmp_path / "out")]), capsys.readouterr().out)
+    code, out = run()
+    assert code == 4 and "a page changed" in out and "Page.captureScreenshot" not in calls and calls[-1] == "close", out
+    text["now"] = "Smouldering"
+    code, out = run()
+    assert code == 0 and "kept; the push's build" in out and calls.count("Page.captureScreenshot") == 1, out
 
 
 def test_chrome_started_again_when_its_start_stalls(tmp_path, monkeypatch):
