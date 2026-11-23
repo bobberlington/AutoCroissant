@@ -33,7 +33,8 @@ card_commands = {
     "/website":                              "Links the card website.",
     "/query_ability <query> [limit] [howmany]": "Posts the cards matching text or conditions (syntax below); howmany: just the count.",
     "/query_rulebook <search_text> [limit]": "Quotes the rulebook lines holding the text, by chapter and section (the ban list too); "
-                                             "a section's title brings its rules; multi hit also finds multi-hit; "
+                                             "a section's title brings its rules; multi hit also finds multi-hit, "
+                                             "defensive minion and buff stack their icons; "
                                              "a card's name with no lines points to its card.",
     "/sync_emojis [refresh] [prune]":        "Uploads the icons in Types/ as the bot's emojis (admin).",
     "Query syntax":                          "\n  \"exact text\" or 'exact text'  !not  a | b  a & b  has:alias"

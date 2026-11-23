@@ -890,7 +890,9 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
    "…" only where lines are left out; the chapter's "# Title" line is not a line; messages are filled whole sections at
    a time. `/query` on a section's title that is no exact or renamed card (or icon) links it
    (`#/rules/<chapter id>/<slug>`), after chapters and series. An older rulebook.json (no `sections`) and the ban list:
-   as before.
+   as before. Since 2026-11-22 a joined icon's name typed in words finds the lines showing it (`_book_at`:
+   `defensive minion` [defensive_minion], `buff stack` [buffstack]; one-word icons as printed; the website's app.js
+   `bookHit` likewise, marking the icon).
 10. One result (or `limit` 1) posts as /query does since 2026-11-15 (`_post_card`: one embed, the count line above it,
     'Card page' + the website button, no ambiguity line; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
