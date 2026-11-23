@@ -506,6 +506,22 @@ process.stdout.write(JSON.stringify([["(2PG)", "2pg", "(3CD)", "(3U)", "(1CD)", 
     assert "x.printed ? [x.tag.toLowerCase(), x.row] : x.row" in rules
 
 
+def test_website_rulebook_search_keeps_the_ban_list(tmp_path):
+    """The website's Rulebook search (app.js banHit): the ban list stays in the results, counted, when its title, a note,
+    a group's heading, a card or a reason holds the text; all of it for one of its names (banName: the bot's BAN_NAMES)."""
+    bans = {"notes": ["One of each item."], "groups": [{"title": "5 star creatures", "entries": [{"name": "Marx", "reason": "antifun"}]},
+                                                       {"title": "Field Cards", "entries": [{"name": "The Bank", "reason": None}]}]}
+    queries = ["marx", "Antifun", "5 star creatures", "constructed ban list", "ban list", "banlist", "Ban-List", "one of each",
+               "the bank", "poison", "bans"]
+    found = _app_book(tmp_path, f"""const b = {json.dumps(bans)};
+process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => banHit(bookFold(q), bookRe(bookFold(q)), b))));""")
+    assert found == [True] * 9 + [False] * 2
+    app = (SITE_SRC / "site" / "assets" / "app.js").read_text(encoding="utf-8")
+    rules = app[app.index("function renderRules(r) {"):app.index("// a deep link's place, again once")]
+    assert "bans = !q || banHit(q, hit, banned)" in rules and '${bans ? `<article class="rb-chapter rb-extra" id="banlist">' in rules
+    assert 'q && bans ? "the Constructed ban list" : ""' in rules and 'if (ch.id === "banlist" && banName(q)) continue;' in rules
+
+
 def test_old_rulebook_page_links_open_their_chapter(tmp_path):
     """The bot's 10-25 changelog posts link old Photoshop rulebook pages (#/rules?q=11%20Abilities4): app.js bookPage
     opens the chapter of that number and title; any other search still searches."""

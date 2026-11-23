@@ -214,6 +214,38 @@ def test_guesses_cards_only(repo, monkeypatch):
     assert not any("section" in str(c) for c in sent[2] + sent[3])
 
 
+def test_ban_list_by_its_names(repo, monkeypatch):
+    """The website's Constructed ban list answers to its names ('ban list', 'banlist'; not 'bans'): /query, its groups'
+    cards (one reason's together) and page; the autocomplete (/query only); /query_rulebook: its notes and every group,
+    a group's heading that group's cards."""
+    repo.banlist = {"notes": ["One of each item."], "groups": [
+        {"title": "5 star creatures", "entries": [{"name": "Marx", "reason": "antifun", "id": "marx"},
+                                                  {"name": "Baba", "reason": "combos", "id": "baba"},
+                                                  {"name": "Fawful", "reason": "antifun", "id": "fawful"}]},
+        {"title": "4 star items", "entries": [{"name": "Mimic", "reason": "", "id": None}]}]}
+    shown = ("Constructed ban list (rulebook)", "Constructed ban list")
+    assert repo.name_choices("ban list", chapters=True) == [shown] and shown not in repo.name_choices("ban list")
+    sent = []
+    for query in ("ban list", "BANLIST", "Constructed ban list", "bans"):
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        sent.append([kw.get("content") for _, kw in utils.dispatch_queue])
+    assert sent[:3] == [[f"**Constructed ban list** is in the rulebook: {qc.SITE_URL}/#/rules/banlist\n"
+                         "**5 star creatures**: Marx, Fawful (antifun) · Baba (combos)\n**4 star items**: Mimic"]] * 3
+    assert "banlist" not in str(sent[3])
+    repo.rulebook_dff = DataFrame({"ability": ["Use an item."]}, index=["13. Items"])
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    utils.dispatch_queue.clear()
+    for text in ("banlist", "5 Star Creatures"):
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    assert [kw["content"] for _, kw in utils.dispatch_queue] == [
+        "'banlist' is on 1 line of the Constructed ban list:\n\n**Constructed ban list**\n- One of each item.\n\n"
+        "**Constructed ban list · 5 star creatures**\n- Marx - antifun\n- Baba - combos\n- Fawful - antifun\n\n"
+        "**Constructed ban list · 4 star items**\n- Mimic",
+        "'5 Star Creatures' is on 1 line of the Constructed ban list:\n\n**Constructed ban list · 5 star creatures**\n"
+        "- Marx - antifun\n- Baba - combos\n- Fawful - antifun"]
+
+
 def test_guess_points_to_abilities(repo, monkeypatch):
     """A guess whose text is in abilities says how many, as /query_ability counts them, with a website search button
     (real uses: 'draw', 'assume' then typed into /query_ability), a rulebook section's title too; exact names and other
