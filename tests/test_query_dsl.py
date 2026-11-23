@@ -250,22 +250,38 @@ def test_an_icons_name_reads_as_a_word(tmp_path):
     assert f"/{qc.ICON.pattern}/gi" in js and dict(re.findall(r'\["(\w+)", "([\w ]+)"\]', spelled)) == qc.ICON_SPELLED
 
 
-def _website(tmp_path, queries, cards=CARDS, notes=False) -> list:
+def test_a_misspelled_word_suggests_the_printed_one(tmp_path):
+    """A search no card meets: each 4+ letter word no card holds swapped for the printed word one edit away (two at 7+
+    letters), the one on the most cards first; a field's name stays; None unless that search finds cards. The bot and
+    the website alike."""
+    rows = [("atack", ("attack", 1)), ("deas", ("deal", 3)),            # deal (on 2 cards) before deals (1)
+            ("every atack", ("every attack", 1)), ("fire & creture", ("fire & creature", 1)),
+            ("type==creture", ("type==creature", 5)), ("emparers", ("emperors", 1)), ("emprer", None),
+            ("atack & fire", None), ("has:alais", None)]
+    repo = _repo(CARDS)
+    assert [repo.respelled(q) for q, _ in rows] == [want for _, want in rows]
+    assert _website(tmp_path, [q for q, _ in rows], spell=True) == [list(want) if want else None for _, want in rows]
+
+
+def _website(tmp_path, queries, cards=CARDS, notes=False, spell=False) -> list:
     """search.js on cards as cards.json has them (app.js filterCards): each query's card names, or notes: its series
-    fallback notes."""
+    fallback notes, or spell: its respelled search and count (app.js respelled)."""
     stats = lambda x: dict(zip(("hp", "def", "atk", "spd"), x))
     keys = ("name", "aliases", "ability", "type", "subtype", "types", "series", "subseries", "hp", "atk", "spd", "stars")
     shaped = [{**{k: c.get(k) for k in keys}, "def": c.get("defense"),
                "creatures": [stats(x) for x in c.get("creatures", ())]} for c in cards]
     script = tmp_path / "search.mjs"
+    out = "(p.notes || []).map(S.seriesNote)" if notes else "cards.filter(p).map(c => c.name)"
+    if spell:
+        out = """(() => { const q = S.respell(S.straight(q0), counts, w => { const f = S.compile(w, cards); return !!f && cards.some(f); });
+    const n = q ? cards.filter(S.compile(q, cards)).length : 0; return n ? [q, n] : null; })()"""
     script.write_text(f"""const S = await import({json.dumps((SITE_SRC / "site" / "assets" / "search.js").as_uri())});
-const cards = {json.dumps(shaped)};
-process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => {{ const p = S.compile(q, cards);
-  return {"(p.notes || []).map(S.seriesNote)" if notes else "cards.filter(p).map(c => c.name)"}; }})));""",
-                      encoding="utf-8")
+const cards = {json.dumps(shaped)}, counts = S.spellCounts(cards.filter(c => !c.dup).map(S.haystack));
+process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q0 => {{ const q = q0, p = S.compile(q, cards);
+  return {out}; }})));""", encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
-    return json.loads(done.stdout) if notes else [set(names) for names in json.loads(done.stdout)]
+    return json.loads(done.stdout) if notes or spell else [set(names) for names in json.loads(done.stdout)]
 
 
 # the 9 items printing two item-type symbols (data 903e6fd1): kind, subtype (folder or left-most icon), icons
@@ -502,6 +518,34 @@ process.stdout.write(JSON.stringify(["2T1 Stuffed", "1t", "5t1", "e2t"].map(q =>
     assert found[1]["says"] == "X = 1 turn" and found[2:] == [None, None]    # 1T only in the website-only Stoogedings
 
 
+def test_a_misspelled_rulebook_word_suggests_the_printed_one(monkeypatch, tmp_path):
+    """/query_rulebook's miss on the real book: its misspelled words swapped for the printed chapters' (the most printed
+    first), with a button to that search; the website's Rulebook search (app.js bookRespell) alike."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    from commands import rulebook
+    from global_config import RULEBOOK_SRC
+    book = rulebook.chapters({f"{RULEBOOK_SRC}/{p.name}": p.read_text(encoding="utf-8")
+                              for p in (SITE_SRC / "site" / "rulebook").glob("*.md")})
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": [c["text"] for c in book], "sections": [c.get("sections") for c in book]},
+                                  index=[rulebook.label(c) for c in book])
+    monkeypatch.setattr(qc, "card_repo", repo)
+    queries = ["defence", "atack", "minon", "creture types", "zzzzzz"]
+    fixed = [(repo.book_respelled(q) or [None])[0] for q in queries]
+    assert fixed == ["defense", "attack", "minion", "creature types", None]
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "Defence")
+    [(_, kw)] = utils.dispatch_queue
+    utils.dispatch_queue.clear()
+    assert re.fullmatch(r"No rulebook lines match 'Defence'\. Did you mean 'defense' \(\d+ lines\)\?", kw["content"])
+    assert kw["links"][0] == ("'defense' on the website", f"{qc.SITE_URL}/#/rules?q=defense")
+    site = _app_book(tmp_path, f"""const dir = {json.dumps(str(SITE_SRC / "site" / "rulebook"))}, chapters = fs.readdirSync(dir)
+  .filter(f => /^\\d\\d-.*\\.md$/.test(f)).sort().map(f => {{ const ast = RB.parse(fs.readFileSync(`${{dir}}/${{f}}`, "utf8"));
+    return {{ file: f, ast, text: bookFold(`${{ast.title}}\\n${{RB.plainText(ast)}}`) }}; }});
+process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => bookRespell(bookFold(q), chapters)?.q ?? null)));""")
+    assert site == fixed
+
+
 def _app_book(tmp_path, tail: str):
     """app.js's rulebook search (bookFold to the deck builder: bookRe, highlight...) in node, its marks into out; then
     tail, which writes JSON."""
@@ -509,7 +553,7 @@ def _app_book(tmp_path, tail: str):
     code = app[app.index("const bookFold"):app.index("// ---- deck builder")]
     script = tmp_path / "book.mjs"
     script.write_text(f"""import fs from "fs";
-const {{ straight, loose, iconReadings }} = await import({json.dumps((assets / "search.js").as_uri())});
+const {{ straight, loose, iconReadings, respell, spellCounts }} = await import({json.dumps((assets / "search.js").as_uri())});
 const RB = await import({json.dumps((assets / "rulebook.js").as_uri())});
 const NodeFilter = {{ SHOW_TEXT: 4 }}, out = [];
 const document = {{ createTreeWalker: el => {{ let i = -1; return {{ nextNode: () => ++i < el.length, get currentNode() {{ return el[i]; }} }}; }},

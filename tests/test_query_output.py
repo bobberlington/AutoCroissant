@@ -59,6 +59,12 @@ def test_nothing_found_is_one_reply_with_the_websites_guesses(repo, monkeypatch)
     out, kwargs = _search(repo, 0)
     assert out == ["No cards match 'Fire'.\nDid you mean: [Fire Ant](<https://site/c/fire_ant/>), Firefly?"]
     assert "links" in kwargs[0]
+    utils.dispatch_queue.clear()                     # a misspelled word: the printed one's search first, its button too
+    repo.respelled = lambda text: ("fire ant", 2) if text == "Fire" else None
+    out, kwargs = _search(repo, 0)
+    assert out == ["No cards match 'Fire'. Did you mean 'fire ant' (2 cards)?\n"
+                   "Or one of these cards: [Fire Ant](<https://site/c/fire_ant/>), Firefly?"]
+    assert kwargs[0]["links"][0] == ("'fire ant' on the website", f"{qc.SITE_URL}/#/cards?q=fire%20ant")
 
 
 def test_a_long_paste_keeps_a_website_button():
