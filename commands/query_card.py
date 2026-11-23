@@ -96,6 +96,8 @@ DIGITS = compile(r"[0-9]+\Z")                          # a number word: series_w
 ICON = compile(r"\[([0-9a-z_ ]+)(?::(?:no|tint|sticker|glow|darkglow))?\]", IGNORECASE)   # [fire], [fire:no] (text.js)
 ICON_SPELLED = {"darkmatter": "dark matter", "buffstack": "buff stack", "debuffstack": "debuff stack",
                 "debuffupgrade": "debuff upgrade"}   # joined type names as words (search.js ICON_SPELLED)
+SPELL_WORD = compile(r"[a-z]+")                          # respell's words: a-z runs of 4+ letters
+SPELL_FIELD = compile(r"\s*[<>=~]")                      # after a condition's field name
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -219,6 +221,49 @@ BAN_CHOICE = (BAN_LIST.lower(), f"{BAN_LIST} (rulebook)", BAN_LIST, NAME_NORM.su
               frozenset(_pairs(BAN_LIST)), "#banlist", True)      # autocomplete's row for it (/query only, as a chapter)
 
 
+def spell_counts(texts, each: bool = True) -> Counter:
+    """Each 4+ letter word of texts: how many texts hold it (each), else how often it is printed (search.js)."""
+    counts = Counter()
+    for text in texts:
+        words = [w for w in SPELL_WORD.findall(str(text).lower()) if len(w) > 3]
+        counts.update(set(words) if each else words)
+    return counts
+
+
+def edits(a: str, b: str, cap: int) -> int:
+    """a to b's Damerau distance (two letters swapped: one edit), cap + 1 once past cap (search.js)."""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    before, row = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(row[j] + 1, cur[j - 1] + 1, row[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], before[j - 2] + 1)
+        if min(cur) > cap:
+            return cap + 1
+        before, row = row, cur
+    return min(row[len(b)], cap + 1)
+
+
+def respell(text: str, counts: Counter, held) -> Optional[str]:
+    """text, lowercased, with each 4+ letter word that held(word) refuses swapped for the counted word one edit away (two
+    at 7+ letters), the most counted first, then A-Z; a field's name (hp>, has:) stays. None if none is (search.js)."""
+    text, out, at = text.lower(), [], 0
+    for m in SPELL_WORD.finditer(text):
+        word = m.group()
+        if len(word) < 4 or text[m.start() - 1:m.start()] == ":" or SPELL_FIELD.match(text, m.end()) or held(word):
+            continue
+        cap = 1 if len(word) < 7 else 2
+        best = min(((edits(word, w, cap), -n, w) for w, n in counts.items() if abs(len(w) - len(word)) <= cap),
+                   default=(cap + 1,))
+        if best[0] <= cap:
+            out += [text[at:m.start()], best[2]]
+            at = m.end()
+    return "".join(out) + text[at:] if out else None
+
+
 def _creature_stat(creature: dict, column: str) -> Optional[int]:
     """One creature's hp/def/atk/spd or total (search.js NUM): None when it has none."""
     got = [v for k, v in creature.items() if (k == column or column == "total") and isinstance(v, int) and v >= 0]
@@ -310,6 +355,7 @@ class CardRepository:
         # squashed names, series and subseries names; pictures' names haystack, their squashed names, pictures_dff;
         # the haystack with abilities as printed only)
         self._types: tuple = (None, {})                  # (cards_dff, its types by squashed name) for _type_names
+        self._spell: tuple = (None, Counter(), None, Counter())   # (haystack, its words; rulebook_dff, its words)
 
     def populate_files(self) -> int:
         """
@@ -899,6 +945,29 @@ class CardRepository:
                 last = bool(getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None))
                 found.append((-score, last, name.lower(), name, title))
         return [(name, title) for *_, name, title in sorted(found)[:n]]
+
+    def respelled(self, text: str) -> Optional[tuple]:
+        """A search no card meets with its misspelled words swapped for the cards' (respell; ties: on the most cards,
+        second pictures aside): (that search, the cards it finds), or None (app.js respelled)."""
+        hay = self._haystack()
+        if self._spell[0] is not hay:
+            self._spell = (hay, spell_counts(hay), *self._spell[2:])
+        fixed = respell(text, self._spell[1], lambda word: not self.ability_search_engine(word, near=False).empty)
+        try:
+            found = len(self.ability_search_engine(fixed, near=False)) if fixed else 0
+        except QueryError:
+            found = 0
+        return (fixed, found) if found else None
+
+    def book_respelled(self, text: str) -> Optional[tuple]:
+        """A rulebook search no line meets with its misspelled words swapped for the chapters' (respell; ties: the most
+        printed): (that search, its pages as rulebook_lines), or None (app.js bookRespell)."""
+        book = self.rulebook_dff
+        if self._spell[2] is not book:
+            self._spell = (*self._spell[:2], book, spell_counts(book["ability"] if "ability" in book else (), each=False))
+        fixed = respell(text, self._spell[3], lambda word: not self.rulebook_search_engine(word).empty)
+        pages = rulebook_lines(self.rulebook_search_engine(fixed), fixed) if fixed else []
+        return (fixed, pages) if pages else None
 
     def rulebook_search_engine(self, search_text) -> DataFrame:
         """
@@ -1857,6 +1926,12 @@ def search_link(route: str, text: str) -> str:
     return head + quote(cut + '"' * (text.endswith('"') and cut.count('"') % 2))   # a cut "phrase" closed
 
 
+def respelled_link(route: str, text: str) -> tuple:
+    """A respelled search's button: its text on the website (a button's label: at most 80 characters)."""
+    label = f"'{text}' on the website"
+    return (label if len(label) <= 80 else "The suggested search on the website", search_link(route, text))
+
+
 def query_ability(interaction: Interaction,
                   ability: str,
                   limit: int = -1) -> None:
@@ -1897,8 +1972,11 @@ def query_ability(interaction: Interaction,
         for label, title in card_repo.suggest(text):
             page, title = card_repo.site_url(card_repo._key_of(label) or ""), escape_markdown(title)
             names.append(f"[{title.replace('[', '(').replace(']', ')')}](<{page}>)" if page else title)
-        more = f"\nDid you mean: {', '.join(names)}?" if names else ""
-        queue_message(interaction, f"No cards match '{ability}'.{more}", links=links)
+        fix = card_repo.respelled(text)                  # 'peircing': piercing's cards
+        said = f" Did you mean '{fix[0]}' ({fix[1]} card{'s' * (fix[1] != 1)})?" if fix else ""
+        more = f"\n{'Or one of these cards' if fix else 'Did you mean'}: {', '.join(names)}?" if names else ""
+        links = [respelled_link("cards", fix[0])] + links if fix else links
+        queue_message(interaction, f"No cards match '{ability}'.{said}{more}", links=links)
         return
 
     found = f"Found {total_results} result{'s' * (total_results != 1)} for '{ability}'!"
@@ -2066,6 +2144,11 @@ def query_rulebook(interaction: Interaction,
         print(f"Search miss: /query_rulebook {text!r}")
         said, page = _card_pointer(text)                 # a card's name: its card ('Enfeebled')
         links += [("Card page", page)] if page else []
+        fix = card_repo.book_respelled(text) if find == text else None     # 'defence': defense's lines
+        if fix:
+            n = sum(k for *_, k in fix[1])
+            said = f" Did you mean '{fix[0]}' ({n} line{'s' * (n != 1)})?{said}"
+            links = [respelled_link("rules", fix[0])] + links
         queue_message(interaction, f"No rulebook lines match '{text}'.{said}", links=links)
         return
     shown = pages if limit < 0 else pages[:limit]
