@@ -1367,7 +1367,7 @@ real lane in a shallow GitHub clone across TTSCardMaker d0f0eae3 -> 2d3bab82 -> 
 those pushes changed (Marilyn, Astr Meiana; one rung), all byte-identical to cold runs at their commits. Any other
 newer run of its editor ends it, and that run is the next lane. The doorbell (2026-11-16, actbake r41; commit statuses since 2026-11-18, r50): GitHub's runs
 lists show a new run 2-6 s after it is made (the 4 real lane presses: 2.9, 3.7, 4.9 and 8.5 s after `created_at`), so
-once the blob is posted the website creates a commit status at the lane's commit (the lane run's `GITHUB_SHA`: the
+beside the blob (since 2026-11-22; before, once it was posted) the website creates a commit status at the lane's commit (the lane run's `GITHUB_SHA`: the
 website's `laneHead`, kept across the lane's follows), state success, context `preview lane`, description
 `<lane run> <request> <blob sha>`. A status is no push (no workflow runs on `status`; the repo's only hook takes
 pushes) and can't be deleted, so nothing cleans up; each names its lane, so a later lane on that commit reads none.
@@ -1384,6 +1384,13 @@ reads); a conditional statuses read answers 304 in 0.34-0.39 s and leaves the ra
 twice, the blob and then the status posted 0.4 s each): main's lane took a press a median 5.11 s after it and its
 hand-over was on screen at 7.3 s; rung, 2.06 s and 4.3 s at a 1 s status lag, 3.07 s and 5.3 s at those upper bounds
 (16 of 16 sooner; the 8.5 s press from 11.3 s to 3.8-5.3 s). The land measures the lag on the card repo.
+Sooner (2026-11-22, actbake-1122 r5-1): the website rings beside the blob and the dispatch (a doorbell heard before its
+blob costs one more 0.25 s read) and looks for the lane's hand-over every 250 ms from a round's start (500 ms after a
+round's end before); the lane reads a press's blob beside the records, the bot's main and a rung press's card repo
+main (`sides`: two more kept connections; `card_preview_reads.read_records`), then the card's files (`read_card`).
+Replayed end to end (`s1122/research5/actbake-1122-r5-1/`: the real preview.js in node and the lane's listen/take/reads
+against a stand-in GitHub, 16 presses each): press to picture 5.04 -> 4.24 s at a 1 s status lag, 5.84 -> 5.14 s at
+1.38-2.18 s, 48 of 48 sooner (the blob post's 0.4 s is assumed; at 0.2 s, -0.62 to -0.84 s).
 A taken press gets its out dir in `$RUNNER_TEMP/lane/`,
 and the Hand process (`card_preview_branch --hand ... --lane`, the runtime token on its stdin alone) hands it over as
 `card-preview-<request>` in the lane's run. Its result.json is the cold one's but for `took_s`, `at` and `run` (the

@@ -12,9 +12,9 @@ A press names the lane in its run's title (card-preview.yml's run-name, from the
     Card preview <request> lane <run id>-<blob>
 
 blob = the git blob the website posts beside the dispatch (press_blob: the request, card and edit, one line each):
-GitHub cuts run titles at 512 characters, so the press itself never rides in one. Once that blob is posted, the
-website also rings the lane's doorbell: a commit status at the lane's commit (this run's GITHUB_SHA; no push, no
-workflow, no Discord post), context CONTEXT, its description:
+GitHub cuts run titles at 512 characters, so the press itself never rides in one. Beside that blob (one not in yet:
+read_press tries again), the website also rings the lane's doorbell: a commit status at the lane's commit (this run's
+GITHUB_SHA; no push, no workflow, no Discord post), context CONTEXT, its description:
 
     <run id> <request> <blob>
 
