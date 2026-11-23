@@ -1,7 +1,7 @@
 # Session 2026-11-22: research rounds, the deferred five, two fork releases
 
 From 11-21 23:40 (AC ce4bae3a = add5194d + docs, jetson add5194d; TC 5f22cef0, data ea50731e, psd_details VERSION
-13; fork 977e4067, pin `cards-20261121b`) to the morning of 11-23. The owner answered questions in six bursts plus two
+13; fork 977e4067, pin `cards-20261121b`) to the morning of 11-23. The owner answered questions in six bursts plus three
 single rulings (below); the rest ran unattended.
 
 Heads at the end:
@@ -11,7 +11,7 @@ Heads at the end:
 | AC main | 541feb9c (114 commits since ce4bae3a, all ours) + the wrap-up docs (`work/wrap-1122`) |
 | TC main | 93e5892f (73 commits: 63 ours, 10 Card sync) |
 | TC data | 9fc74401 (psd_details VERSION 15, 769 current records; card_checks 0 hand, 33 bars, 0 unredrawable); plates 01e56f95 |
-| Fork | main 1b970405 (46 commits); tag `cards-20261123` = baa9a901, pinned since AC 541feb9c; shared venv @baa9a901 |
+| Fork | main bb8c62fc (47 commits; CI 2 jobs since 07:17); tag `cards-20261123` = baa9a901, pinned since AC 541feb9c; shared venv @baa9a901 |
 | Jetson | 5553f8da (42 commands, 777 cards); nothing the bot loads changed after it |
 | CardBrowser | main 4c1bd38, v0.1.2 (quiet pre-release) |
 | AC suite | 1294 passed at the start, 1350 at AC 541feb9c + TC daca7927 |
@@ -36,6 +36,7 @@ Heads at the end:
 | Owner: Reduce Noise, `cards-20261123` (answer 20) | 04:01 | fork baa9a901, AC 541feb9c | Burly Bomb's Reduce Noise redrawn: unredrawable 1 -> 0 (Card checks 45169866141, data b954baaf). Tests 19/19 |
 | Owner: two more typos (answer 23) | 06:20 | TC daca7927 (PDF 5c6dc92f, save 93e5892f) | 'abbrviations' x2, 'reactivley'. Data 9fc74401 |
 | Owner: fork docs 2 (answer 22) | 06:51 | fork 1b970405 | index, architecture, composite docstrings. Tests red: two macOS jobs never got a runner (Incidents) |
+| Owner: fork CI, 2 jobs (answer 25) | 07:17 | fork bb8c62fc | test.yml: Linux + macOS on Python 3.14 (tests, linter, formatting, type checks); Windows, 3.11-3.13, 3.15/3.15t, the 3 no-composite jobs and the summary job dropped; CLAUDE.md, contributing.rst. Tests 45203571689 2/2 (macOS got a runner on the second try) |
 | CardBrowser v0.1.2 | 11-22 01:05 | CardBrowser 4c1bd38 | A maker's Windows launch failed ('Python.Runtime.Loader.Initialize'). Fix: exe .config loadFromRemoteSources + an error box with the text; CI tests a downloaded-marked copy. README 120 -> 40 lines (owner: less is more). Quiet (owner 3) |
 
 Other results:
@@ -82,7 +83,7 @@ has no fork). Always 42 commands, 777 cards.
 | 12 | | Beholster: series Enter the Gungeon (its copied Ability stays for Croissant) |
 | 13 | | Rulebook Status effects: Smoldering |
 | 14 | 18:35 | status-panda.webp (old 'Smouldering' card picture): leave it |
-| 15 | | Fork CI: keep the 19-job matrix (supersedes G8 fork-r1-9) |
+| 15 | | Fork CI: keep the 19-job matrix (supersedes G8 fork-r1-9; superseded by 25) |
 | 16 | | Fork release: land when ready |
 | 17 | | Drop the release's per-round changelog entries |
 | 18 | 11-23 00:40 | Fix all 9 rulebook typos (TC 876f5b70) |
@@ -92,6 +93,7 @@ has no fork). Always 42 commands, 777 cards.
 | 22 | 04:20 | Also index, architecture and the docstrings (fork 1b970405; docs only, no release) |
 | 23 | | Also 'abbrviations' x2 and 'reactivley' (TC daca7927) |
 | 24 | | Delete the s1109 `tc-unlanded-1110.bundle` (done; its heads in `wrap/branch_record.tsv.tc-unlanded-heads.txt`) |
+| 25 | 07:05 | Fork CI: Linux + macOS on Python 3.14, 2 jobs (supersedes 15; fork bb8c62fc) |
 
 Also 00:55: CardBrowser docs as short as possible.
 
@@ -121,10 +123,10 @@ measure first; no record proposals. Full lists: accepted.md, rejected.md.
 | Finders ran up to 3.5 h | One ran 2 full suites and blocked ships behind suite-wait | 03:00: a finder returns in ~60 min, no full suite |
 | before.json in the Desktop AC tree (~01:53) | A fork-lane script chdir'd into the AC path and wrote a relative output | Moved 05:10. Absolute output paths; never the Desktop tree as working folder |
 | Orphaned tail | `tail -f` + grep shim from the fork r5 verify, parent gone 13.5 h | Killed by PID 23:55. Sweep for orphans after each wave |
-| Fork release: three skeptic refusals | (1) no Card checks run after the re-pin, G8 CI cut not done, no release-level Photoshop test. (2) the push plan's revert could undo other lanes' AC work. (3) fix 1 had cut CI to one job, against the owner's 18:35 "keep the 19-job matrix" | The orchestrator's 18:35 question wrongly said the release kept 19 jobs; fix 1 had already cut them. fork-land-1122 restored and proved the 19 jobs, then landed. Read a branch's head before asking about it |
+| Fork release: three skeptic refusals | (1) no Card checks run after the re-pin, G8 CI cut not done, no release-level Photoshop test. (2) the push plan's revert could undo other lanes' AC work. (3) fix 1 had cut CI to one job, against the owner's 18:35 "keep the 19-job matrix" | The orchestrator's 18:35 question wrongly said the release kept 19 jobs; fix 1 had already cut them. fork-land-1122 restored and proved the 19 jobs, then landed (11-23: 2 jobs, answer 25). Read a branch's head before asking about it |
 | cards s2 skeptic refusal | r6-3 part 2 quietly unset PSD_DIRTY_VERIFY in one test (owner G3 keep); the push plan moved the lane branch | Backed out as a revert on top (43ebb2c0) so s3 skips it; ships use snapshots |
 | AC main ahead of the shared venv | 20:23-20:42, AC main needed the new fork before the venv was re-pinned | Lanes rebase onto main after a re-pin (BRIEF 17:20 rule) |
-| Fork Tests on 1b970405 (11-23) | macOS 3.12 and 3.13 never got a GitHub runner in 4 attempts; every job that ran passed; Test Summary red | Docs only: nothing reverted. A rerun of the failed jobs is left (plan, Other open tasks) |
+| Fork Tests on 1b970405 (11-23) | macOS 3.12 and 3.13 never got a GitHub runner in 4 attempts; every job that ran passed; Test Summary red | Docs only: nothing reverted, not rerun: the 2-job CI (answer 25) passed on bb8c62fc, which holds it (45203571689) |
 | Shell slips (owner5, ship3-actbake) | A tag reached the fork a minute before its main (the shell ate the refspec; same SHA); relative paths made two empty worktrees inside tc-1122; a zsh `path` loop variable overwrote PATH | Nothing wrong left. Multi-step shell as a bash script with absolute paths |
 
 ## Conservative choices (unattended)

@@ -81,7 +81,7 @@ Ships:
 
 | Round | Idea |
 |---|---|
-| dead code | Owner G8 deletions (20 fork + 3 AC commits); the 19-job CI kept (owner 15) |
+| dead code | Owner G8 deletions (20 fork + 3 AC commits); the 19-job CI kept (owner 15; 2 jobs since 11-23, owner 25) |
 | r1-0 | Smart filters: Gaussian and Motion Blur; a painted mask no longer refuses |
 | r1-1 | Card sync redraws Puppet Warp, Invert and all-off filters |
 | r2-0 | Smart filters: Hue/Saturation, Black & White, Selective Color |

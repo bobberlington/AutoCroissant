@@ -1044,8 +1044,9 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   git (research-methodology §7).
 - **The 11-08 untrailered pushes**: all five posted "New art" (39 cards), the four Single-line batches too (321);
   nothing to undo.
-- **The fork release was refused once**: a fix made before the owner's "Keep the 19-job matrix" (11-22 18:35) had cut
-  the fork CI to one job; restored (fork e5915747). The newest owner ruling wins over a prepared fix.
+- **The fork release was refused three times**; the third: a fix made before the owner's "Keep the 19-job matrix"
+  (11-22 18:35) had cut the fork CI to one job; restored (fork e5915747). The newest owner ruling wins over a prepared
+  fix. On 11-23 07:05 the owner chose 2 jobs, Linux + macOS on Python 3.14 (fork bb8c62fc).
 - **Research rejects**: actbake x0 (Spur's second paragraph one space right) and x1 (same-length edits preview smaller)
   not kept on retry; cards x8 (r8-3, PSD_DIRTY_VERIFY only in the edit tests) dropped by both judges (owner G3). The
   fork lane's two rejects (Perspective Warp + Mosaic; a warpCustom from a file of another size) landed reworked.

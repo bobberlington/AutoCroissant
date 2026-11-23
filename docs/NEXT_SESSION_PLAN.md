@@ -11,7 +11,7 @@ Start in `~/Desktop/AutoCroissant`. Read memories `owner-decisions-2026-11-22` (
 accepted.md, rejected.md, branches.md); the session before: `session-2026-11-10-21/`. That session's binding lines
 are in `~/Documents/Tools/wt/scratch/s1122/BRIEF.md`; the lasting ones are under Standing rules.
 
-The Desktop TC clone (93e5892f, 06:20) and the fork's `~/Documents/Tools/psd-tools` (1b970405, 06:51) were
+The Desktop TC clone (93e5892f, 06:20) and the fork's `~/Documents/Tools/psd-tools` (bb8c62fc, 07:17) were
 fast-forwarded to main on 11-23; the Desktop AC checkout follows the wrap-up docs' push. The last check is in
 `~/Documents/Tools/wt/scratch/s1122/wrap/final_state.md`. If one is behind, `git pull --ff-only` first (TC with
 `GIT_NO_LAZY_FETCH=1`). Nothing is in flight or half-landed: both ship3s landed (cards 00:36, actbake 01:12) and every
@@ -68,11 +68,9 @@ Finished 11-22/23 (see the report): the five deferred items (x31, r52-1, Papyrus
 and linked pictures (`cards-20261122`, then Reduce Noise in `cards-20261123`: unredrawable 46 on 40 cards -> 0), game
 reports retired, the Photoshop PNG export "issue" (no fault), the 11-08 trailer check (nothing to undo), Beholster's
 series and Smoldering (owner 12-13), the 11 rulebook typos (owner 18, 23), the fork's composite docs (owner 21-22), the
+fork CI cut to 2 jobs (owner 25; fork bb8c62fc, Tests 45203571689 green, so 1b970405's red run needs no rerun), the
 Desktop TC repack (owner 6: 1189 packs -> 2, fsck ok), the s1109 bundles, CardBrowser v0.1.2.
 
-- [ ] **Fork Tests on 1b970405** (run 45186672060, docs only): macOS 3.12 and 3.13 never got a GitHub runner in 4
-      attempts; every job that ran passed. Unless `scratch/s1122/wrap/final_state.md` shows it green:
-      `gh run rerun 45186672060 --failed -R MichaelJSr/psd-tools` when macOS runners are free.
 - [ ] **TTS Saves folder**: the 11-23 01:40 copy is main's save at 25077c28; main's save changed since (93e5892f, the
       rulebook PDF's address): copy main's in again unless `final_state.md` says the cleanup did.
 - [ ] **D24**: the stoogedings build number in the font's name at the next real font build (owner 11-22: no build
@@ -177,8 +175,8 @@ Proven 11-22 (report): the delta-free Land, PNGs recompressed after Decided, the
   venv `~/.venvs/ac-py314-fork` re-pinned. A release that changes what Card sync writes gets a release-level Photoshop
   2023 open test of the PSDs it reaches before any push (11-22: 133 copies on 75 cards). After a re-pin, AC code from
   before it can fail on removed psd_tools parameters (TypeErrors in card_standards / psd_edit): builders and merge
-  agents rebase onto AC origin/main first; such a TypeError in a verify means a stale base, not a defect. Fork CI keeps
-  its 19-job matrix (owner 11-22); no per-round changelog entries (owner fork-r6-1).
+  agents rebase onto AC origin/main first; such a TypeError in a verify means a stale base, not a defect. Fork CI: 2
+  jobs, Linux + macOS on Python 3.14 (owner 11-23; was 19 jobs); no per-round changelog entries (owner fork-r6-1).
 - **No test branches on TTSCardMaker's GitHub** (every push posts in #github-updates): Actions by dry dispatches on
   main or locally; a prepare step may prove a change on a `scratch/<lane>-<n>` branch of the fork's origin, deleted
   after. `gh run list -c` needs the FULL sha. Multi-step shell as a `set -euo pipefail` bash script (zsh arrays start
@@ -224,7 +222,7 @@ Proven 11-22 (report): the delta-free Land, PNGs recompressed after Decided, the
 - AutoCroissant main 541feb9c + the wrap-up docs (skills, this plan, the report), deployed on the jetson at 5553f8da
   (42 commands, 777 cards; nothing the bot loads changed after it). Fork pin `cards-20261123` = baa9a901 (11-22's
   `cards-20261122` = e5915747: dead code out, linked pictures with smart filters and warps redrawn; 11-23: Reduce
-  Noise); fork main 1b970405 (docs since the tag); shared venv @baa9a901.
+  Noise); fork main bb8c62fc (docs and the 2-job CI since the tag); shared venv @baa9a901.
 - TTSCardMaker main 93e5892f; data 9fc74401 (11-23 06:12: psd_details VERSION 15; card_checks 769 records, 0 hand,
   33 bars, 0 name, 0 unredrawable); branches `history` b8e865a8, `plates` 01e56f95, `previews` ce568f04.
 - CardBrowser main 4c1bd38 = pre-release v0.1.2.
@@ -328,7 +326,8 @@ bake "even if it looks wrong" (11-13). Comp-bar cards at 0 keep the exact mock-u
 the table show creature 1 (11-18). The forum's role keeps Manage Threads server-wide (11-16). 11-22: x31's side effect
 on NiseSegaSonic (its own huge '"' glyph, Ability ~17% smaller) accepted; PSD_DIRTY_VERIFY stays on in every test
 (G3); the rulebook picture `status-panda.webp` keeps the old 'Smouldering' card; Beholster's printed Ability (The
-Puppet's, word for word) is left for Croissant; the fork CI keeps its 19-job matrix.
+Puppet's, word for word) is left for Croissant. The fork CI runs 2 jobs, Linux + macOS on 3.14 (11-23: Windows, other
+Pythons and the no-composite jobs dropped).
 
 ## Queue (`docs/Future/`)
 
