@@ -40,7 +40,7 @@ card_commands = {
                                              "\n  hp>5  def<=10  atk==3  spd>=7  stars<6  total>=25"
                                              "\n  type==creature  series==kirby  subseries~door  alias~clot  (== or = exact, ~ contains)"
                                              "\n  series== and series~ find a subseries too"
-                                             "\n  types==fire: any one type"
+                                             "\n  types==fire: any one type; type==status effects: a kind by its label too"
                                              "\n  created>=2025, 2023-10 or 2021-06-01; values with & or | in quotes"
                                              "\n  damage/DMG, defense/DEF, speed/SPD, health/HP, star points/SP,"
                                              "\n  primary field/PF, counter damage/CDMG find each other"

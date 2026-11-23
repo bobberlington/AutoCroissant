@@ -47,6 +47,10 @@ FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd"
 VALUE_HINTS = {"type": "creature", "subtype": "attack", "series": "kirby", "subseries": "door", "types": "fire",
                "name": "knight", "alias": "clot", "ability": "heal", "path": "items", "created": "2025"}   # 'series~' alone
 NO_TERM = "Give text or a condition to search for: fire | ice, hp>5 & type==creature."   # '|' or '&' alone
+# type==: the website's Kind labels too, dots and a closing s aside (search.js KIND_NAMES); creatures stays as stored
+KIND_NAMES = {"field card": ("field",), "minion": ("minion",), "item": ("item",), "auxiliary item": ("aux item",),
+              "auxiliary creature": ("creatures",), "nme item": ("nme",), "nme": ("nme",), "buff": ("buff",),
+              "debuff": ("debuff",), "status": ("buff", "debuff"), "status effect": ("buff", "debuff")}
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
             "health": "hp", "hp": "health", "star points": "sp", "sp": "star points", "primary field": "pf",
             "pf": "primary field", "counter damage": "cdmg", "cdmg": "counter damage"}   # either finds both (rulebook)
@@ -121,6 +125,13 @@ def loose(text: str, char=escape, gap: Optional[str] = None, hyphen: bool = Fals
 def squash(text: str) -> str:
     """text as letters and digits only, accents dropped (search.js squash): "Mom's Knife" -> momsknife."""
     return "".join(ch for ch in normalize("NFD", text).lower() if ch.isalnum())
+
+
+def kind_values(value: str) -> tuple:
+    """The type values type==value finds: a Kind label's (field cards: field; status effect: buff, debuff), else value
+    (search.js kindValues)."""
+    label = " ".join(value.replace(".", "").split())
+    return KIND_NAMES.get(label) or (label.endswith("s") and KIND_NAMES.get(label[:-1])) or (value,)
 
 
 def series_names(series) -> frozenset:
@@ -540,14 +551,16 @@ class CardRepository:
                 raise QueryError(f"{column}{operator} takes a value" + (f": {column}{operator}{hint}." if hint else "."))
             value = value.strip('"')
             if column in ("alias", "subtype", "types"):  # any one alias, item type or type (search.js)
-                value = value.replace("_", " ") if column == "types" else value
+                fold = squash if column == "types" and squash(value) else str.lower   # a type: letters and digits
+                value = fold(value.replace("_", " ") if column == "types" else value)   # (dark matter, n.m.e.)
                 same = (lambda a: a == value) if operator == "==" else (lambda a: value in a)
-                kept = col.map(lambda names: any(same(a.lower()) for a in names)).astype(bool)
+                kept = col.map(lambda names: any(same(fold(a)) for a in names)).astype(bool)
             else:
+                kinds = kind_values(value) if column == "type" else (value,)   # type==field card, ==status effect
                 for part in (col, self._field("subseries") if column == "series" else None):   # series: a subseries too
                     if part is not None:
                         text = part.where(part.notna(), "").astype(str).str.lower()
-                        hit = part.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
+                        hit = part.notna() & (text.isin(kinds) if operator == "==" else text.str.contains(value, regex=False))
                         kept = hit if kept is None else kept | hit
         else:
             raise QueryError(f"{column} takes == or ~" + (" or a date: created>=2025, created<2021-06." if column == "created" else "."))
