@@ -961,13 +961,14 @@ class CardRepository:
 
     def book_respelled(self, text: str) -> Optional[tuple]:
         """A rulebook search no line meets with its misspelled words swapped for the chapters' (respell; ties: the most
-        printed): (that search, its pages as rulebook_lines), or None (app.js bookRespell)."""
+        printed; a word the ban list holds stays): (that search, its pages as rulebook_lines), or None unless a chapter
+        has it (app.js bookRespell)."""
         book = self.rulebook_dff
         if self._spell[2] is not book:
             self._spell = (*self._spell[:2], book, spell_counts(book["ability"] if "ability" in book else (), each=False))
         fixed = respell(text, self._spell[3], lambda word: not self.rulebook_search_engine(word).empty)
         pages = rulebook_lines(self.rulebook_search_engine(fixed), fixed) if fixed else []
-        return (fixed, pages) if pages else None
+        return (fixed, pages) if any(name != BAN_LIST for name, *_ in pages) else None
 
     def rulebook_search_engine(self, search_text) -> DataFrame:
         """
