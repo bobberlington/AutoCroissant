@@ -221,7 +221,7 @@ def read_card(card: str, fields: dict, clone: str, repository: str, head: str, b
     Returns {what: [seconds, "ok" or why not]}; never raises."""
     started, done = started or perf_counter(), {}
     one = lambda what, read, *args: _timed(done, started, what, read, *args)
-    with ThreadPoolExecutor(5) as pool:
+    with ThreadPoolExecutor(6) as pool:         # paths_of's five and Card Edits.json
         try:
             tree = tree_of(clone, head)
             paths = paths_of(tree, card, fields)
