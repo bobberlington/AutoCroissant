@@ -2452,6 +2452,17 @@ def test_text_typed_at_a_lines_end_takes_the_lines_colour(clone, parser, chart):
     assert body != blue and {fills[i] for i in range(text.index("Gain 2"), text.index("Gain 2") + 11)} == {blue}
 
 
+def test_a_lines_colour_counts_by_8_bit_value(clone, parser, chart):
+    """Yin Yarn's Mega Form line is 85% tan seen (#d29c52, as the mock-up counts), its top float variant 61%: words
+    typed at its end take the tan, not the body's lavender."""
+    psd = PSDImage.open(_card(clone, "Creatures/Kirby/5 Stars/Yin_Yarn.psd")[0])
+    layer = pe.ability_layer(psd)
+    new = pe.normalize_ability(layer.text).replace("damage reduction.", "damage reduction. Gain 2 DEF.", 1)
+    pe.set_text_layer(psd, "ability", new, str(clone / pe.FONTS_DIR), chart, parser=parser)
+    fills, at = pe._char_styles(layer)[0], layer.text.index("Gain 2")
+    assert {pe._hex(fills[i]) for i in range(at, at + 11)} == {"#d29c52"}
+
+
 def test_story_style_drift_compares_kerning(clone):
     """B12: Pandamonium's Health is kerned off in its Txt2 story (Photoshop's), on in TySh (the engine's); the drift says
     so, the bake's own check leaves it (kerning=False: an edited layer follows the story, the others keep their pixels)

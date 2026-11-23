@@ -100,8 +100,12 @@ const out = {{
         const t = "Deal no fatal attack to a creature.\\nMay heal a creature for 4 HP.\\n+2 HP, -1 SPD", at = (w, k = 0) => t.indexOf(w, k);
         const hp = at("HP"), hp2 = at("HP", hp + 1);
         const h = {{ ability: t, ink: {{ ability: [[at("May"), hp, "#6c60c9"], [hp, hp + 2, "#00ff00"], [hp + 2, hp + 3, "#6c60c9"], [at("+2"), hp2, "#ffd21f"], [hp2, hp2 + 2, "#00ff00"], [hp2 + 2, t.length, "#ffd21f"]] }} }};
-        T.anchorInks([h]);
-        return [t.replace("HP.", "HP. Gain 2 DEF."), t + " Gain 2 DEF."].map(now => {{ const k = now.indexOf("DEF"); return (M.baseInk(h, "ability", now) || []).find(r => r.start <= k && k < r.end)?.color ?? null; }});
+        // Sans's: a lowercase status word counts for no colour (psd_edit status_spans: any case)
+        const s = "Deal no fatal attack to a creature this turn or the next.\\nattacks are piercing and inflict 1T1 smeckeldorfed.", z = s.indexOf("smeck"), one = s.indexOf("1T1");
+        const q = {{ ability: s, ink: {{ ability: [[s.indexOf("attacks"), one, "#31e1f7"], [one, one + 3, "#00ff00"], [one + 3, z, "#31e1f7"], [z, z + 13, "#5596ed"], [z + 13, s.length, "#31e1f7"]] }} }};
+        T.anchorInks([h, q]);
+        const end = (c, now, st) => {{ const k = now.indexOf("DEF"); return (M.baseInk(c, "ability", now, null, st) || []).find(r => r.start <= k && k < r.end)?.color ?? null; }};
+        return [end(h, t.replace("HP.", "HP. Gain 2 DEF.")), end(h, t + " Gain 2 DEF."), end(q, s + " Gain 2 DEF.", ["Smeckeldorfed"])];
       }})(),
       head: (() => {{   // a line typed under a header line: the next line's colour (psd_edit header_looks)
         const h = {{ ability: "Purchase Cost: 4 Points\\nForcibly move.", ink: {{ ability: [[24, 38, "#ac43dc"]] }} }}, now = "Purchase Cost: 4 Points\\nGain 1 SP.\\nForcibly move.";
@@ -148,7 +152,7 @@ process.stdout.write(JSON.stringify(out));
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
     # as the bake: "3" takes the "2"'s colour (bakeInk); a moved line keeps its own; a status word is never a source
     head = out["mock"].pop("head")     # under the cost line: the next line's purple, else the caret's (none)
-    assert out["mock"].pop("line") == ["#6c60c9", None]     # the purple line's own; a short line's: the body's (none)
+    assert out["mock"].pop("line") == ["#6c60c9", None, "#31e1f7"]   # the purple line's; a short line's: the body's; Sans's
     assert [any(r["start"] <= 24 and r["end"] >= 34 and r["color"] == "#ac43dc" for r in runs or []) for runs in head] == [True, False]
     assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["3", "#00ff00"], ["HP", "#00ff00"]],
                            "part": [{"start": 5, "end": 9, "color": "#00ff00"}],
