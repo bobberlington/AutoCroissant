@@ -594,6 +594,31 @@ def test_ability_overlay_goes_off(clone, tmp_path):
     assert "Gradient Overlay paints over" in pe.classify(parsed, {"colors": [word]}, psd, parser).refusals[0].why
 
 
+def test_faint_overlay_goes_off(clone, tmp_path):
+    """Ice Staff's Ability under two 69% Gradient Overlays (mockup.js counts any opacity): a whole Ability's colour turns
+    both off and its letters print red, not mauve; a phrase there is refused, as the website says."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Items/Equip/2 Stars/Ice_Staff.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    phrase = {"field": "ability", "phrase": "Attacks", "color": "#e8312f"}
+    assert "its Gradient Overlay paints over" in pe.classify(parsed, {"colors": [phrase]}, psd, parser).refusals[0].why
+    edits = {"colors": [{"field": "ability", "color": "#e8312f"}]}
+    got = pe.classify(parsed, edits, psd, parser)
+    assert got.jobs == edits and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert "colors: ability: its Gradient Overlay is off for the colour" in baked.fx_notes
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    assert [e.enabled for e in layer.effects if type(e).__name__ == "GradientOverlay"] == [False, False]
+    old, new = (np.asarray(Image.open(p).convert("RGB"), dtype=int) for p in (png, baked.png_path))
+    moved = np.abs(new - old).sum(2) > 30
+    r, g, b = new[moved].mean(0)
+    assert r > 150 and g < 90 and b < 90, (r, g, b)      # mauve (130, 112, 150) before
+
+
 @site
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
