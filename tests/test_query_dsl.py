@@ -112,10 +112,22 @@ def test_bot(repo):
 
 
 def test_website_synonyms_are_the_bots():
-    """search.js's SYNONYMS is the bot's table."""
+    """search.js's SYNONYMS and AFTER_NUMBER are the bot's tables."""
     js = (SITE_SRC / "site" / "assets" / "search.js").read_text(encoding="utf-8")
-    table = re.search(r"const SYNONYMS = \{(.*?)\};", js, re.S).group(1)
-    assert dict(re.findall(r'"?([a-z][a-z ]*)"?: "([a-z ]+)"', table)) == qc.SYNONYMS
+    for name in ("SYNONYMS", "AFTER_NUMBER"):
+        table = re.search(rf"const {name} = \{{(.*?)\}};", js, re.S).group(1)
+        assert dict(re.findall(r'"?([a-z][a-z ]*)"?: "([a-z ]+)"', table)) == getattr(qc, name), name
+
+
+def test_attack_after_a_number_finds_atk(tmp_path):
+    """attack right after a number finds ATK and back (+1 attack: +1 ATK), on the bot and the website; attack or atk
+    alone stays the word."""
+    cards = CARDS + [dict(name="Rally Flag", type="item", ability="Give +2 attack.")]
+    rows = [("+1 attack", {"Power Ring"}), ("-1 attack", {"Enfeebled"}), ("+2 atk", {"Rally Flag"}),
+            ("attack", {"sans.", "Rally Flag"}), ("atk", {"Power Ring", "Enfeebled"})]
+    repo = _repo(cards)
+    assert [_shown(repo, repo.ability_search_engine(q).index) for q, _ in rows] == [found for _, found in rows]
+    assert _website(tmp_path, [q for q, _ in rows], cards) == [found for _, found in rows]
 
 
 def test_plain_terms_find_series_and_bare_names(tmp_path):
