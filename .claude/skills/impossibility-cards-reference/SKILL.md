@@ -897,7 +897,10 @@ on each side (`multihit` and `multi hit` find MULTI-HIT, `negation immune` negat
    (`#/rules/<chapter id>/<slug>`), after chapters and series. An older rulebook.json (no `sections`) and the ban list:
    as before. Since 2026-11-22 a joined icon's name typed in words finds the lines showing it (`_book_at`:
    `defensive minion` [defensive_minion], `buff stack` [buffstack]; one-word icons as printed; the website's app.js
-   `bookHit` likewise, marking the icon).
+   `bookHit` likewise, marking the icon). Since 2026-11-22 an abbreviation the Abbreviations chapter defines, typed
+   alone in any case (`SP`, `os`, `DEF`; read from its `X = Y` lines), finds it only as a word or its meaning's word it
+   starts (DEF: Defense), never inside others (os: most, cost), the reply saying its meaning (`book_abbreviation`,
+   `Whole`; app.js `bookAbbr`, whose `bookWords` reads a section's heading and first line apart); none read: as before.
 10. One result (or `limit` 1) posts as /query does since 2026-11-15 (`_post_card`: one embed, the count line above it,
     'Card page' + the website button, no ambiguity line; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
