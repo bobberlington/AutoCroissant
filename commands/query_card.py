@@ -17,7 +17,7 @@ from typing import Optional
 from unicodedata import category, normalize
 from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
-from re import compile, escape, IGNORECASE, search, split
+from re import compile, escape, IGNORECASE, MULTILINE, search, split
 from urllib.parse import quote
 
 from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZONE
@@ -72,6 +72,7 @@ BOOK_QUOTES = str.maketrans("\u201c\u201d", '""')          # /query_rulebook: cu
 TIMING_TAG = compile(r"\(?(?:(-?\d+)/)?(\d+)(cd|gcd|u|pg|pt|pgt)\)?", IGNORECASE)   # (2PG), -1/3cd (TTS xTag, app.js)
 DURATION = compile(r"(\d+)t(\d*)", IGNORECASE)          # a status duration as cards print it: 2T, 2T1 (TTS duration)
 STATUS_RULE = "[X]T[Y]"                                  # Status Effects' SYNTAX line: how a duration reads
+ABBREVIATION = compile(r"(?:^|(?<=\. ))\(?([A-Z]+(?:/[A-Z]+)*)\)?\s*=\s*([^.\n]+)", MULTILINE)   # "SP = Star Points." (app.js)
 PUNCT = "[.'\u2019]"                                      # what a word typed without them also finds (loose)
 ABBR_END = r"(?:(?<=\.[a-z])\.)?"                          # after the last letter: only an abbreviation's '.' (N.M.E.)
 WORD_END = r"(?:['\u2019]|(?<=\.[a-z])\.)?"                 # before the next word: a ' or ABBR_END, never a sentence's end
@@ -977,8 +978,8 @@ class CardRepository:
         Search rulebook entries for matching text.
 
         Args:
-            search_text: Text to search for (case-insensitive; a straight or curly " finds either; loose), or a tuple
-                of texts (any of them)
+            search_text: Text to search for (case-insensitive; a straight or curly " finds either; loose; a Whole: its
+                words, whole), or a tuple of texts (any of them)
 
         Returns:
             DataFrame of matching rulebook entries
@@ -991,7 +992,8 @@ class CardRepository:
         if not all(words):
             return pages
         # any spaces or line breaks between the words; nme N.M.E.; icons as words ([defensive_minion]: _book_at)
-        pattern = compile("|".join(loose(" ".join(w), gap=r"\s+", hyphen=True) for w in words), IGNORECASE)
+        pattern = compile("|".join(_book_pattern(t) if isinstance(t, Whole) else loose(" ".join(w), gap=r"\s+", hyphen=True)
+                                   for t, w in zip(texts, words)), IGNORECASE)
         held = lambda t: isinstance(t, str) and _book_at(pattern, t.translate(BOOK_QUOTES)) is not None
         return pages[pages["ability"].map(held).astype(bool)]
 
@@ -2138,6 +2140,8 @@ def query_rulebook(interaction: Interaction,
             find, said = (STATUS_RULE, rest), f"{said} and '{rest}' are"
         else:
             find, said, note = STATUS_RULE, f"{said} is", f" (no line has '{rest}')" if rest else ""
+    elif abbr := book_abbreviation(text, card_repo.rulebook_dff):   # 'OS': as a word, not in 'most'
+        find, said = Whole(text, abbr[1]), f"'{text}' ({abbr[0]}) is"
     pages = rulebook_lines(card_repo.rulebook_search_engine(find), find)
     if dur:                                          # the rule's page first
         pages.sort(key=lambda page: not any(STATUS_RULE.lower() in line.lower() for _, ls in page[1] for line in ls))
@@ -2230,6 +2234,34 @@ def duration_rule(text: str, book) -> Optional[tuple]:
     x, y = DURATION.fullmatch(words[at[0]]).groups()
     says = f"X = {x} turn{'s' * (int(x) != 1)}" + (f", Y = {y} stack{'s' * (int(y) != 1)}" if y else "")
     return words[at[0]].upper(), says, " ".join(w for i, w in enumerate(words) if i not in at)
+
+
+class Whole(str):
+    """Typed text found only as any of words, whole (no letter beside; any case) (book_abbreviation)."""
+    def __new__(cls, text: str, words: tuple):
+        self = super().__new__(cls, text)
+        self.words = words
+        return self
+
+
+def book_abbreviation(text: str, pages: DataFrame) -> Optional[tuple]:
+    """
+    text, any case, as an abbreviation the Abbreviations chapter defines ('SP = Star Points.', '(OS) = On summon.'),
+    read from pages (rulebook_dff) (app.js bookAbbr).
+
+    Returns:
+        ('Defense stat', ('DEF', 'Defense')): its meaning, and the words that find it: itself, and its meaning's word it
+        starts; None (no such chapter or line: as before)
+    """
+    titles = pages.get("title")
+    book = "" if titles is None else next((str(t) for t, title in zip(pages["ability"], titles)
+                                           if squash(str(title)) == "abbreviations"), "")
+    for abbr, meaning in ABBREVIATION.findall(book):
+        if len(abbr) > 1 and abbr.lower() == text.lower():
+            low = abbr.lower()
+            starts = (w for w in split(r"[^A-Za-z]+", meaning) if w.lower().startswith(low) and w.lower() != low)
+            return meaning.strip(), (abbr, *starts)
+    return None
 
 
 def rulebook_lines(pages: DataFrame, text: str) -> list:
@@ -2360,6 +2392,8 @@ def _book_pattern(text) -> str:
     """text as a regex (loose), its " (straight or curly) finding either printed quote; a tuple: any of its texts."""
     if isinstance(text, tuple):
         return "|".join(_book_pattern(t) for t in text)
+    if isinstance(text, Whole):
+        return r"(?<![a-z])(?:" + "|".join(escape(w) for w in text.words) + r")(?![a-z])"
     return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch),
                  hyphen=True)
 
