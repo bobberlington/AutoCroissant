@@ -918,9 +918,10 @@ class CardRepository:
         words = [text.translate(BOOK_QUOTES).split() for text in texts]
         if not all(words):
             return pages
-        # any spaces or line breaks between the words; nme N.M.E.
-        pattern = "|".join(loose(" ".join(w), gap=r"\s+", hyphen=True) for w in words)
-        return pages[pages["ability"].str.translate(BOOK_QUOTES).str.contains(pattern, na=False, case=False)]
+        # any spaces or line breaks between the words; nme N.M.E.; icons as words ([defensive_minion]: _book_at)
+        pattern = compile("|".join(loose(" ".join(w), gap=r"\s+", hyphen=True) for w in words), IGNORECASE)
+        held = lambda t: isinstance(t, str) and _book_at(pattern, t.translate(BOOK_QUOTES)) is not None
+        return pages[pages["ability"].map(held).astype(bool)]
 
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json (EDITS_PATH)."""
@@ -2160,7 +2161,7 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
     none = [None] * len(pages)
     for name, ability, title, secs in zip(pages.index, pages["ability"], pages.get("title", none), pages.get("sections", none)):
         rows = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
-        hits = [i for i, line in enumerate(rows) if pattern.search(line)]
+        hits = [i for i, line in enumerate(rows) if _book_at(pattern, line) is not None]
         if not isinstance(secs, list):               # no sections: the lines under the page
             held = [rows[i] for i in hits] or [" ".join(str(ability).split())]     # none: the text runs over a line break
             if lead:
@@ -2173,8 +2174,8 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
             groups = [("", [_cut(" ".join(str(ability).split()), text)])]
         held = [rows[i] for i in hits if i >= own] or [rows[i] for i in hits] or groups[0][1]
         found.append((name, groups, held))
-    found.sort(key=lambda page: (page[0] == BAN_LIST, -sum(bool(start.search(line)) for line in page[2]), -len(page[2]),
-                                 str(page[0]).lower()))      # the ban list after the chapters
+    starts = lambda page: sum(_book_at(start, line) is not None for line in page[2])
+    found.sort(key=lambda page: (page[0] == BAN_LIST, -starts(page), -len(page[2]), str(page[0]).lower()))   # bans last
     return [(name, groups, len(held)) for name, groups, held in found]
 
 
@@ -2239,7 +2240,8 @@ def _opening(rows: list, text: str, pattern) -> tuple:
         if size and size + len(line) > OPENING:
             return out, n
         if len(line) > OPENING:
-            return out + [_cut(line, text) if pattern.search(line) else line[:OPENING].rsplit(" ", 1)[0] + "…"], n + 1
+            held = _book_at(pattern, line) is not None
+            return out + [_cut(line, text) if held else line[:OPENING].rsplit(" ", 1)[0] + "…"], n + 1
         out.append(line)
         size += len(line)
     return out, len(rows)
@@ -2254,8 +2256,7 @@ def _cut(line: str, text: str) -> str:
     """line, or SNIPPET characters of it around text's first match (_book_pattern), a [token] at an edge kept whole."""
     if len(line) <= SNIPPET:
         return line
-    found = compile(_book_pattern(text), IGNORECASE).search(line)
-    at = found.start() if found else 0
+    at = _book_at(compile(_book_pattern(text), IGNORECASE), line) or 0
     start = max(0, min(at - SNIPPET // 3, len(line) - SNIPPET))
     end = start + SNIPPET
     for token in TOKEN_PATTERN.finditer(line):            # an icon cut in two: its emoji lost
@@ -2272,6 +2273,27 @@ def _book_pattern(text) -> str:
         return "|".join(_book_pattern(t) for t in text)
     return loose(text.translate(BOOK_QUOTES), char=lambda ch: '["\u201c\u201d]' if ch == '"' else escape(ch),
                  hyphen=True)
+
+
+def _book_at(pattern, line: str) -> Optional[int]:
+    """Where pattern first matches line, else line with its joined icons as words (icon_words: [defensive_minion]
+    defensive minion, [buffstack] buffstack or buff stack; [fire] as printed; app.js bookHit): its start in line (in an
+    icon's words: the icon's)."""
+    found, icons = pattern.search(line), list(ICON.finditer(line))
+    for spell in (str, lambda name: ICON_SPELLED.get(name.lower(), name)) if icons and not found else ():
+        words = [w if (w := spell(m[1]).replace("_", " ")) != m[1] else m[0] for m in icons]   # [fire]: as printed
+        reading, last = "", 0
+        for m, w in zip(icons, words):
+            reading, last = reading + line[last:m.start()] + w, m.end()
+        found = pattern.search(reading + line[last:])
+        if found:
+            shift = 0                                # the reading's length past line's so far
+            for m, w in zip(icons, words):
+                if found.start() < m.start() + shift + len(w):
+                    return min(found.start() - shift, m.start())
+                shift += len(w) - len(m[0])
+            return found.start() - shift
+    return found.start() if found else None
 
 
 def _bold(line: str, text: str) -> str:
