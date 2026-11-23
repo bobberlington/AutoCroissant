@@ -509,7 +509,7 @@ def _app_book(tmp_path, tail: str):
     code = app[app.index("const bookFold"):app.index("// ---- deck builder")]
     script = tmp_path / "book.mjs"
     script.write_text(f"""import fs from "fs";
-const {{ straight, loose }} = await import({json.dumps((assets / "search.js").as_uri())});
+const {{ straight, loose, iconReadings }} = await import({json.dumps((assets / "search.js").as_uri())});
 const RB = await import({json.dumps((assets / "rulebook.js").as_uri())});
 const NodeFilter = {{ SHOW_TEXT: 4 }}, out = [];
 const document = {{ createTreeWalker: el => {{ let i = -1; return {{ nextNode: () => ++i < el.length, get currentNode() {{ return el[i]; }} }}; }},
@@ -571,6 +571,41 @@ process.stdout.write(JSON.stringify({json.dumps(queries)}.map(q => banHit(bookFo
     rules = app[app.index("function renderRules(r) {"):app.index("// a deep link's place, again once")]
     assert "bans = !q || banHit(q, hit, banned)" in rules and '${bans ? `<article class="rb-chapter rb-extra" id="banlist">' in rules
     assert 'q && bans ? "the Constructed ban list" : ""' in rules and 'if (ch.id === "banlist" && banName(q)) continue;' in rules
+
+
+def test_rulebook_finds_joined_icons_by_their_words(monkeypatch, tmp_path):
+    """/query_rulebook and the website's Rulebook search: a joined icon's name typed in words ([defensive_minion]
+    defensive minion, [buffstack] buff stack) finds the lines showing it, a long one cut around it, never bolded inside
+    its emoji; one-word icons as before ([machine] is no word of 'used on machine'); the website's chapters, blocks and
+    icon marks alike (app.js bookHit)."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    far = "Behind " + "x " * 100 + "by this symbol: [defensive_minion]"
+    pages = {"15. Minions": "TYPES\n[defensive_minion]:Protective Minions stay back.", "16. The Field": far,
+             "19. Status Effects": "Stacking: [buffstack] [debuffstack]\nUPGRADABLE [debuffupgrade]",
+             "14. Item Types": "May not be used on [machine]."}
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": list(pages.values())}, index=list(pages))
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: re.sub(r"\[(\w+)\]", r"<:\1:1>", text))
+    queries = {"defensive minion": ["15. Minions", "16. The Field"], "buff stack": ["19. Status Effects"],
+               "debuff upgrade": ["19. Status Effects"], "stack debuff stack": ["19. Status Effects"],
+               "used on machine": [], "defensive_minion": ["15. Minions", "16. The Field"]}
+    found = {q: qc.rulebook_lines(repo.rulebook_search_engine(q), q) for q in queries}
+    assert {q: [name for name, *_ in pages] for q, pages in found.items()} == queries
+    assert found["buff stack"][0][1] == [("", ["Stacking: [buffstack] [debuffstack]"])]
+    cut = found["defensive minion"][1][1][0][1][0]
+    assert cut.startswith("\u2026x x") and cut.endswith("symbol: [defensive_minion]")   # before: cut off at x
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "defensive minion")
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent[0].startswith("'defensive minion' is on 2 lines of 2 rulebook chapters:") and "**d" not in sent[0]
+    assert "- <:defensive_minion:1>:Protective Minions stay back." in sent[0]
+    web = _app_book(tmp_path, f"""const pages = {json.dumps(pages)}, icon = "[defensive_minion]";
+process.stdout.write(JSON.stringify({json.dumps(list(queries))}.map(q => {{ const hit = bookRe(bookFold(q));
+  return [Object.keys(pages).filter(p => bookHit(hit, bookFold(pages[p]))), !hit.test(icon) && bookHit(hit, icon)]; }})));""")
+    assert [names for names, _ in web] == list(queries.values())
+    assert [mark for _, mark in web] == [True, False, False, False, False, False]   # the icon marked: its words found it
 
 
 def test_old_rulebook_page_links_open_their_chapter(tmp_path):
