@@ -618,7 +618,7 @@ Re-pin:
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers).
 4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c`, `cards-20261112d`, `cards-20261113`, `cards-20261113b`, `cards-20261114`, `cards-20261121`, `cards-20261121b` and `cards-20261122`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110`, `cards-20261111`, `cards-20261112`, `cards-20261112b`, `cards-20261112c`, `cards-20261112d`, `cards-20261113`, `cards-20261113b`, `cards-20261114`, `cards-20261121`, `cards-20261121b`, `cards-20261122` and `cards-20261123`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 5. Right after the AutoCroissant push, build the runners' venv once: `gh workflow run card-checks.yml --ref main -R
    MichaelJSr/TTSCardMaker -f cards='<the cards the release changes>'` (none: `cards='Mini Doomer'`; no Discord, it
    commits only flags that are due), then `gh run watch <id> -R MichaelJSr/TTSCardMaker --exit-status` (the id ends
@@ -837,6 +837,7 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-11-21 (fork release): the fork's version list runs to `cards-20261121`.
 2026-11-21 (fork release): the fork's version list runs to `cards-20261121b`.
 2026-11-22 (fork release): the fork's version list runs to `cards-20261122`.
+2026-11-23 (fork release): the fork's version list runs to `cards-20261123`.
 
 2026-11-11 (docs check): `ADD_ABILITY_LIVE` True; `PARSER_VERSION` 7 and its card_data.py citations; setup.py table without `EXCLUDE_FILES` (10 compiled modules).
 
