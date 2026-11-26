@@ -1051,6 +1051,21 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   not kept on retry; cards x8 (r8-3, PSD_DIRTY_VERIFY only in the edit tests) dropped by both judges (owner G3). The
   fork lane's two rejects (Perspective Warp + Mosaic; a warpCustom from a file of another size) landed reworked.
 
+### 10.45 The Bloons' ninja stars (2026-11-26)
+
+- **Symptom**: the owner saw every Bloon minion (PoD01Red_Bloon .. PoD12BAD) show gold stars instead of ninja stars.
+- **Root cause**: the 11-07 big pass (TC d4f2b911, batch 3/17; Prince of Darkness in dddef197) linked header pictures to
+  Types/ by NAME alone in star and type rows (TypesIndex.match: `if named and rows: return REDRAW, named[0]`, before
+  any look). The Bloons' star layers were named 'star' (file 'star.png') but held a 512 px ninja star, so they became
+  Types/Stars/star.png and were redrawn gold. Bytes and ink missed: Types/Stars/Ninja Star.png is the same art at
+  147x150. The guards run the same match on every push, so a hand restore would have been undone.
+- **Evidence**: audit of every automated pass since 11-07 (3171 pairs, 914 relinks; scratch s1126/audit/work/
+  relinks.json): row name matches at look distance <= 14 were the same icon (older Wind, Equip, Fragile Equip, Crystal
+  Star); the only far ones were the ninja stars (distance 69, nearest Ninja Star.png at 1), 13 cards.
+- **Status**: fixed in AC (Links: a row name needs a close look): a name counts only with a look within LOOK_NAMED,
+  else the closest-look Types file or the picture kept as its own file; name alone only when either side has no look.
+  Test: test_psd_links.py::test_row_name_needs_a_close_look. The 13 cards were left as they are (owner 11-26).
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):

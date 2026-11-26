@@ -97,6 +97,33 @@ def test_names_and_classes():
     assert types.match("x", None, ["ember"], False, pl.look_of(lookalike)) is None
 
 
+def test_row_name_needs_a_close_look():
+    """A star row picture named "star" that shows another Types icon links that icon (the Bloons' ninja stars were
+    drawn as star.png, 11-07); one that looks like no icon keeps its picture; an old copy of star.png stays star.png."""
+    def ninja(size):
+        art = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        s = size / 100
+        ImageDraw.Draw(art).polygon([(50 * s, 2 * s), (60 * s, 40 * s), (98 * s, 50 * s), (60 * s, 60 * s),
+                                     (50 * s, 98 * s), (40 * s, 60 * s), (2 * s, 50 * s), (40 * s, 40 * s)],
+                                    fill=(90, 100, 120, 255), outline=(120, 0, 0, 255))
+        return art
+    star = Image.new("RGBA", (30, 30), (0, 0, 0, 0))
+    ImageDraw.Draw(star).polygon([(15, 1), (19, 11), (29, 11), (21, 18), (24, 29), (15, 22), (6, 29), (9, 18),
+                                  (1, 11), (11, 11)], fill=(250, 200, 30, 255))
+    files = {"Types/Stars/star.png": _png(star), "Types/Stars/Ninja Star.png": _png(ninja(150)),
+             "Types/fire.png": _png(_art())}
+    types = pl.TypesIndex(files)
+
+    def hit(image, name="star"):
+        data = _png(image)
+        rgba = np.asarray(image.convert("RGBA"))
+        return types.match(pl.git_blob(data), pl.ink_key(rgba), [name, name + ".png"], True, pl.look_of(rgba))
+    assert hit(ninja(512)) == (pl.REDRAW, "Types/Stars/Ninja Star.png")
+    assert hit(star.resize((60, 60))) == (pl.REDRAW, "Types/Stars/star.png")
+    assert hit(_art().transpose(Image.Transpose.ROTATE_90)) is None
+    assert types.match("x", None, ["star"], True, None) == (pl.REDRAW, "Types/Stars/star.png")    # no look: the name
+
+
 def test_trim_map_on_star_of_beth(clone):
     """Croissant's trim (the same ink, the margins cut): each of Delta's Star of beth items links the trimmed file, its
     raster kept, its quad moved so the file's ink draws where the old one did; the rest by bytes or as new files."""

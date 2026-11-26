@@ -955,9 +955,10 @@ class TypesIndex:
     def match(self, blob: str, key: Optional[tuple], names: list, rows: bool, look: Optional[str] = None) -> Optional[tuple]:
         """
         (class, Types path) for a picture by its git blob, ink key, names and look (look_of), wherever it sits (owner
-        2026-11-09), else None. A name alone counts only when every layer showing it sits in a star or type row (rows);
-        elsewhere it needs a close look (LOOK_NAMED: a big art picture named "fire" is no fire icon). With no name, a
-        look within LOOK_SAME and well clear of every other Types file is that icon at another size.
+        2026-11-09), else None. A name needs a close look (LOOK_NAMED: a big art picture named "fire" is no fire icon;
+        the Bloons' ninja stars named "star" are no star.png, 2026-11-26); a name alone counts only in a star or type
+        row (rows) when either side has no look. With no name, a look within LOOK_SAME and well clear of every other
+        Types file is that icon at another size.
         """
         if blob in self.by_blob:
             return BYTES, self.by_blob[blob]
@@ -967,7 +968,7 @@ class TypesIndex:
             return REDRAW, self.older[blob]
         named = [path for path in (self.by_name.get(stem_key(name)) for name in names)
                  if path is not None and self.inks[path][1] is not None]
-        if named and rows:
+        if named and rows and (look is None or named[0] not in self.looks):
             return REDRAW, named[0]
         if look is None or not self.looks:
             return None
