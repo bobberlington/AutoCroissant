@@ -1,4 +1,4 @@
-# Next session plan (after 2026-11-23)
+# Next session plan (after 2026-11-26)
 
 ## Where to start
 
@@ -7,7 +7,9 @@ Start in `~/Desktop/AutoCroissant`. Read memories `owner-decisions-2026-11-22` (
 `never-pkill-shell-snapshot`, `research-rounds-future`, `research-loop-records`, `workflow-bookkeeping-from-git`,
 `land-agents-owner-approval`, `eta-and-long-tail-verifies`, `card-app-project`, `jetson-server`, `jetson-reboot-hang`,
 `headless-browser-keychain`, `storage-space`, `persistent-work-paths`, `agent-model-preference`,
-`no-sendmessage-to-workflow-agents`. What landed 11-21 23:40 to 11-23: `docs/Finished/session-2026-11-22/` (README,
+`no-sendmessage-to-workflow-agents`, `owner-decisions-2026-11-26`, `tts-workshop-research`. 11-26 (a short session:
+the Bloons' ninja-star cause fixed in AC 74d08d09, the TTS Workshop item updated by Actions since TC 779aefd):
+`docs/Finished/session-2026-11-26/README.md`. What landed 11-21 23:40 to 11-23: `docs/Finished/session-2026-11-22/` (README,
 accepted.md, rejected.md, branches.md); the session before: `session-2026-11-10-21/`. That session's binding lines
 are in `~/Documents/Tools/wt/scratch/s1122/BRIEF.md`; the lasting ones are under Standing rules.
 
@@ -79,6 +81,14 @@ Desktop TC repack (owner 6: 1189 packs -> 2, fsck ok), the s1109 bundles, CardBr
       asks.
 
 ### Waiting on events
+
+- [ ] **The first automatic Workshop upload** (TC `workshop.yml`, 11-26): a Card sync run that changes the save, then
+      one Workshop run 10 minutes later (`result=updated`). If a save change goes un-uploaded (workflow_run may not fire
+      for Card sync runs other workflows start), add `gh workflow run workshop.yml` to card-sync.yml's save points.
+- [ ] **The Steam token's first renewal**: from 2027-05-25 (expiry 2027-06-24) a run renews it and saves it with
+      `WORKSHOP_SECRETS_TOKEN` ("login token renewed until ... and saved" in the steam step).
+- [ ] The next guarded push of a PSD with an embedded star/type picture named unlike its look (AC 74d08d09): it links
+      the look's Types file or keeps the picture.
 
 Proven 11-22: the delta-free Land, PNGs recompressed after Decided, the Follow-up window past Landed (runs
 44839860535, 44839860345), x12's WebP encode (45082969963), the push-lane Rulebook PDF on its own artifact
@@ -217,8 +227,10 @@ Proven 11-22: the delta-free Land, PNGs recompressed after Decided, the Follow-u
 - **Discord archive and timelines**: never copy message text into a repo; `firstrepo.git` is kept (never deleted).
 - **Dead code** is deleted (owner 10-23, 11-12), except the owner's KEEP picks (`owner-decisions-2026-11-12`).
 
-## State (2026-11-23, final)
+## State (2026-11-26, final)
 
+- 11-26: AutoCroissant main 74d08d09 (card tooling only: no deploy owed) + the wrap-up docs; TTSCardMaker main 779aefd
+  (the Workshop workflow) + Card sync's later commits; environment `workshop`, variable `WORKSHOP_ITEM_ID`.
 - AutoCroissant main 541feb9c + the wrap-up docs (skills, this plan, the report), deployed on the jetson at 5553f8da
   (42 commands, 777 cards; nothing the bot loads changed after it). Fork pin `cards-20261123` = baa9a901 (11-22's
   `cards-20261122` = e5915747: dead code out, linked pictures with smart filters and warps redrawn; 11-23: Reduce
@@ -255,6 +267,9 @@ Proven 11-22: the delta-free Land, PNGs recompressed after Decided, the Follow-u
       `composite` is required?
 
 ## Owner checks (nothing is blocked on them)
+
+- [ ] Load Workshop item 2202286126 in TTS once (first CI upload 11-26 04:38; save name `auto_update`; restart Steam and
+      TTS if it shows the old copy).
 
 - [ ] The ring badges on real cards: the website, the TTS save and the rulebook PDF; deep starts; the one-colour
       version under overlays.

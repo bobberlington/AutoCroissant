@@ -257,6 +257,15 @@ with `add_new_since`, Nicknames set to the website's names (each variant picture
 Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role tags were cleared once, until
 2026-10-22); new cards start with them empty.
 
+- **The Steam Workshop item** (2202286126, "THE Card Game", the owner's account; since 2026-11-26): TTSCardMaker's
+  Workshop workflow (`.github/workflows/workshop.yml`) uploads main's save after every Card sync run (workflow_run, a
+  10-minute wait, a newer run cancels a waiting one), as the BSON TTS itself uploads (`.github/scripts/workshop.py`)
+  through TTS's own legacy update over Steam's CM network (`.github/workshop/steam.mjs`, node-steam-user; never
+  steamcmd `workshop_build_item`: it converts the item to a folder item TTS can't load). Main's save always wins (hand
+  uploads from TTS are replaced; the item is re-checked at least daily). The change note lists the card changelog's
+  player-facing events. By hand: Run workflow, mode `upload` (forces), `check` (read-only login), `build` (artifact).
+  Login token: `cd .github/workshop && npm ci --ignore-scripts && node mint.mjs` on the Mac (QR in the Steam app),
+  about every 200 days only if auto-renewal fails; failures ping the owner in the standards channel once a day.
 - **Automatic: TTSCardMaker's Card sync Action** (`.github/workflows/card-sync.yml`, its "TTS save" step, since the
   cutover 2026-10-24): one updater run per Card sync run with work, the save committed in Card sync's one main commit M
   (section 12; docs/Campaigns/DATA_BUILD_ACTION.md §6). Guarded pushes (P-2, owner 2026-10-25, amended twice): a push
